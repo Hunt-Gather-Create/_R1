@@ -18,18 +18,13 @@ import type { BoardWithColumnsAndIssues } from "@/lib/types";
 function MainContent() {
   const {
     currentView,
-    setCurrentView,
     detailPanelOpen,
-    isCommandPaletteOpen,
-    setCommandPaletteOpen,
     isCreateIssueOpen,
     setCreateIssueOpen,
-    toggleSidebar,
   } = useAppShell();
 
   const {
     board,
-    allIssues,
     labels,
     selectedIssue,
     selectIssue,
@@ -69,17 +64,8 @@ function MainContent() {
         onRemoveLabel={removeLabelFromSelectedIssue}
       />
 
-      {/* Command Palette */}
-      <CommandPalette
-        open={isCommandPaletteOpen}
-        onOpenChange={setCommandPaletteOpen}
-        issues={allIssues}
-        onSelectIssue={selectIssue}
-        onCreateIssue={() => setCreateIssueOpen(true)}
-        onGoToBoard={() => setCurrentView(VIEW.BOARD)}
-        onGoToList={() => setCurrentView(VIEW.LIST)}
-        onToggleSidebar={toggleSidebar}
-      />
+      {/* Command Palette - now uses context directly */}
+      <CommandPalette />
 
       {/* Create Issue Drawer */}
       <CreateIssueDrawer

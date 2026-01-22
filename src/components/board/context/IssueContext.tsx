@@ -121,7 +121,13 @@ export function issueReducer(
           ...col,
           issues: col.issues.map((issue) =>
             issue.id === action.issueId
-              ? { ...issue, labels: [...issue.labels, action.label] }
+              ? {
+                  ...issue,
+                  // Only add if not already present (prevent duplicates)
+                  labels: issue.labels.some((l) => l.id === action.label.id)
+                    ? issue.labels
+                    : [...issue.labels, action.label],
+                }
               : issue
           ),
         })),

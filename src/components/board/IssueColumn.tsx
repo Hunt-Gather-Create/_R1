@@ -10,22 +10,20 @@ import { IssueCard } from "@/components/issues";
 import { AddIssueForm } from "./AddIssueForm";
 import { ChevronDown, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useBoardContext } from "./context";
 import type { ColumnWithIssues, IssueWithLabels } from "@/lib/types";
-import type { CreateIssueInput } from "@/lib/types";
 
 interface IssueColumnProps {
   column: ColumnWithIssues;
   onIssueClick: (issue: IssueWithLabels) => void;
-  onAddIssue: (columnId: string, input: CreateIssueInput) => void;
-  onDeleteIssue?: (issueId: string) => void;
 }
 
 export function IssueColumn({
   column,
   onIssueClick,
-  onAddIssue,
-  onDeleteIssue,
 }: IssueColumnProps) {
+  const { addIssue, removeIssue } = useBoardContext();
+
   const [mounted, setMounted] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -43,8 +41,12 @@ export function IssueColumn({
   }, []);
 
   const handleAddIssue = (title: string) => {
-    onAddIssue(column.id, { title });
+    addIssue(column.id, { title });
     setShowAddForm(false);
+  };
+
+  const handleDeleteIssue = (issueId: string) => {
+    removeIssue(issueId);
   };
 
   return (
@@ -123,16 +125,14 @@ export function IssueColumn({
                   key={issue.id}
                   issue={issue}
                   onClick={() => onIssueClick(issue)}
-                  onDelete={onDeleteIssue ? () => onDeleteIssue(issue.id) : undefined}
+                  onDelete={() => handleDeleteIssue(issue.id)}
                 />
               ))}
             </div>
 
             {column.issues.length === 0 && !showAddForm && (
-              <div className="flex flex-col items-center justify-center py-8 text-center flex-1 min-h-[120px]">
-                <p className="text-sm text-muted-foreground mb-2">
-                  No issues
-                </p>
+              <div className="flex flex-col items-center justify-start py-8 text-center flex-1">
+                <p className="text-sm text-muted-foreground mb-2">No issues</p>
                 <button
                   onClick={() => setShowAddForm(true)}
                   className="text-xs text-primary hover:underline"

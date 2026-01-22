@@ -19,28 +19,18 @@ import {
   List,
   Plus,
   Search,
-  Settings,
   SidebarClose,
-  FileText,
 } from "lucide-react";
 import {
   createNavigationCommands,
   createActionCommands,
   searchIssues,
 } from "@/lib/commands";
+import { useAppShell } from "@/components/layout";
+import { useBoardContext } from "@/components/board/context";
+import { VIEW } from "@/lib/design-tokens";
 import type { IssueWithLabels } from "@/lib/types";
 import type { Status, Priority } from "@/lib/design-tokens";
-
-interface CommandPaletteProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  issues: IssueWithLabels[];
-  onSelectIssue: (issue: IssueWithLabels) => void;
-  onCreateIssue: () => void;
-  onGoToBoard: () => void;
-  onGoToList: () => void;
-  onToggleSidebar: () => void;
-}
 
 const iconMap: Record<string, React.ReactNode> = {
   "go-to-board": <LayoutGrid className="w-4 h-4" />,
@@ -50,43 +40,44 @@ const iconMap: Record<string, React.ReactNode> = {
   "open-search": <Search className="w-4 h-4" />,
 };
 
-export function CommandPalette({
-  open,
-  onOpenChange,
-  issues,
-  onSelectIssue,
-  onCreateIssue,
-  onGoToBoard,
-  onGoToList,
-  onToggleSidebar,
-}: CommandPaletteProps) {
+export function CommandPalette() {
+  const {
+    isCommandPaletteOpen,
+    setCommandPaletteOpen,
+    setCurrentView,
+    toggleSidebar,
+    setCreateIssueOpen,
+  } = useAppShell();
+
+  const { allIssues, selectIssue } = useBoardContext();
+
   const [query, setQuery] = useState("");
 
   // Reset query when closed
   useEffect(() => {
-    if (!open) {
+    if (!isCommandPaletteOpen) {
       setQuery("");
     }
-  }, [open]);
+  }, [isCommandPaletteOpen]);
 
   // Build navigation commands
   const navigationCommands = useMemo(
     () =>
       createNavigationCommands({
         goToBoard: () => {
-          onGoToBoard();
-          onOpenChange(false);
+          setCurrentView(VIEW.BOARD);
+          setCommandPaletteOpen(false);
         },
         goToList: () => {
-          onGoToList();
-          onOpenChange(false);
+          setCurrentView(VIEW.LIST);
+          setCommandPaletteOpen(false);
         },
         toggleSidebar: () => {
-          onToggleSidebar();
-          onOpenChange(false);
+          toggleSidebar();
+          setCommandPaletteOpen(false);
         },
       }),
-    [onGoToBoard, onGoToList, onToggleSidebar, onOpenChange]
+    [setCurrentView, toggleSidebar, setCommandPaletteOpen]
   );
 
   // Build action commands
@@ -94,35 +85,35 @@ export function CommandPalette({
     () =>
       createActionCommands({
         createIssue: () => {
-          onCreateIssue();
-          onOpenChange(false);
+          setCreateIssueOpen(true);
+          setCommandPaletteOpen(false);
         },
         openSearch: () => {
           // Already in search, just focus
         },
       }),
-    [onCreateIssue, onOpenChange]
+    [setCreateIssueOpen, setCommandPaletteOpen]
   );
 
   // Search issues
   const filteredIssues = useMemo(
-    () => searchIssues(issues, query),
-    [issues, query]
+    () => searchIssues(allIssues, query),
+    [allIssues, query]
   );
 
   const handleSelectIssue = useCallback(
     (issue: IssueWithLabels) => {
-      onSelectIssue(issue);
-      onOpenChange(false);
+      selectIssue(issue);
+      setCommandPaletteOpen(false);
     },
-    [onSelectIssue, onOpenChange]
+    [selectIssue, setCommandPaletteOpen]
   );
 
   // Don't show navigation/action commands when there's a query
   const showStaticCommands = !query;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={isCommandPaletteOpen} onOpenChange={setCommandPaletteOpen}>
       <DialogContent className="overflow-hidden p-0 shadow-lg max-w-[640px]">
         <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground">
           <CommandInput

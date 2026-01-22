@@ -17,8 +17,6 @@ export function BoardView({ onIssueSelect }: BoardViewProps) {
   const {
     board,
     findColumn,
-    addIssue,
-    removeIssue,
     moveIssueToColumn,
   } = useBoardContext();
 
@@ -56,8 +54,6 @@ export function BoardView({ onIssueSelect }: BoardViewProps) {
             key={column.id}
             column={column}
             onIssueClick={handleIssueClick}
-            onAddIssue={addIssue}
-            onDeleteIssue={removeIssue}
           />
         ))}
       </div>

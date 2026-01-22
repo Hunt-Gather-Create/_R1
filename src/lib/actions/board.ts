@@ -2,7 +2,7 @@
 
 import { db } from "../db";
 import { boards, columns, cards, issues, labels, issueLabels, cycles } from "../db/schema";
-import { eq, asc, inArray } from "drizzle-orm";
+import { eq, asc } from "drizzle-orm";
 import type {
   BoardWithColumnsAndCards,
   BoardWithColumnsAndIssues,
@@ -152,9 +152,17 @@ export async function getBoardWithColumnsAndIssues(
             .innerJoin(labels, eq(issueLabels.labelId, labels.id))
             .where(eq(issueLabels.issueId, issue.id));
 
+          // Deduplicate labels by id (defensive against bad data)
+          const uniqueLabels = issueLabelRows.reduce((acc, row) => {
+            if (!acc.some((l) => l.id === row.label.id)) {
+              acc.push(row.label);
+            }
+            return acc;
+          }, [] as typeof issueLabelRows[number]["label"][]);
+
           return {
             ...issue,
-            labels: issueLabelRows.map((row) => row.label),
+            labels: uniqueLabels,
           };
         })
       );

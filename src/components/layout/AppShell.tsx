@@ -56,14 +56,6 @@ export function AppShell({
     setSidebarCollapsed((prev) => !prev);
   }, []);
 
-  const handleOpenSearch = useCallback(() => {
-    setCommandPaletteOpen(true);
-  }, []);
-
-  const handleCreateIssue = useCallback(() => {
-    setCreateIssueOpen(true);
-  }, []);
-
   // Global keyboard shortcuts
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -138,25 +130,11 @@ export function AppShell({
     <AppShellContext.Provider value={contextValue}>
       <div className="flex h-screen bg-background overflow-hidden">
         {/* Sidebar */}
-        <Sidebar
-          isCollapsed={sidebarCollapsed}
-          onToggle={toggleSidebar}
-          currentView={currentView}
-          onViewChange={setCurrentView}
-          onCreateIssue={handleCreateIssue}
-          onOpenSearch={handleOpenSearch}
-        />
+        <Sidebar />
 
         {/* Main Content Area */}
         <div className="flex flex-col flex-1 min-w-0">
-          <Header
-            title={title}
-            currentView={currentView}
-            onViewChange={setCurrentView}
-            groupBy={groupBy}
-            onGroupByChange={setGroupBy}
-            issueCount={issueCount}
-          />
+          <Header title={title} issueCount={issueCount} />
 
           {/* Content with optional detail panel */}
           <div className="flex flex-1 min-h-0">

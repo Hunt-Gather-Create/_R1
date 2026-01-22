@@ -224,13 +224,17 @@ export function BoardProvider({ initialBoard, children }: BoardProviderProps) {
       const label = board.labels.find((l) => l.id === labelId);
       if (!label) return;
 
+      // Check if label already exists on issue (prevent duplicates)
+      const issue = findIssue(issueId);
+      if (issue?.labels.some((l) => l.id === labelId)) return;
+
       startTransition(async () => {
         addOptimistic({ type: "addLabel", issueId, label });
         await addLabelAction(issueId, labelId);
         await refreshBoard();
       });
     },
-    [board.labels, addOptimistic, refreshBoard]
+    [board.labels, addOptimistic, refreshBoard, findIssue]
   );
 
   const removeLabelFromIssue = useCallback(

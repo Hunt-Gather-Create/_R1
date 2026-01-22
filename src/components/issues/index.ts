@@ -2,7 +2,6 @@ export { IssueCard, IssueCardCompact } from "./IssueCard";
 export { PriorityIcon, PriorityBadge } from "./PriorityIcon";
 export { StatusDot, StatusBadge } from "./StatusDot";
 export { QuickActions, IssueMenu } from "./QuickActions";
-export { IssueDetailPanel } from "./IssueDetailPanel";
 export { Comments } from "./Comments";
 export { ActivityFeed } from "./ActivityFeed";
 export { StatusSelect } from "./properties/StatusSelect";

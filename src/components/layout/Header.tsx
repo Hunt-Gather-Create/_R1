@@ -8,28 +8,22 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { VIEW, GROUP_BY, type ViewType, type GroupBy } from "@/lib/design-tokens";
+import { VIEW, GROUP_BY, type GroupBy } from "@/lib/design-tokens";
 import { Button } from "@/components/ui/button";
+import { useAppShell } from "./AppShell";
 
 interface HeaderProps {
   title: string;
-  currentView: ViewType;
-  onViewChange: (view: ViewType) => void;
-  groupBy: GroupBy;
-  onGroupByChange: (groupBy: GroupBy) => void;
   issueCount?: number;
 }
 
-interface ViewSwitcherProps {
-  currentView: ViewType;
-  onViewChange: (view: ViewType) => void;
-}
+function ViewSwitcher() {
+  const { currentView, setCurrentView } = useAppShell();
 
-function ViewSwitcher({ currentView, onViewChange }: ViewSwitcherProps) {
   return (
     <div className="flex items-center gap-0.5 bg-muted rounded-md p-0.5">
       <button
-        onClick={() => onViewChange(VIEW.BOARD)}
+        onClick={() => setCurrentView(VIEW.BOARD)}
         className={cn(
           "flex items-center justify-center w-7 h-7 rounded transition-colors",
           currentView === VIEW.BOARD
@@ -41,7 +35,7 @@ function ViewSwitcher({ currentView, onViewChange }: ViewSwitcherProps) {
         <LayoutGrid className="w-4 h-4" />
       </button>
       <button
-        onClick={() => onViewChange(VIEW.LIST)}
+        onClick={() => setCurrentView(VIEW.LIST)}
         className={cn(
           "flex items-center justify-center w-7 h-7 rounded transition-colors",
           currentView === VIEW.LIST
@@ -56,12 +50,9 @@ function ViewSwitcher({ currentView, onViewChange }: ViewSwitcherProps) {
   );
 }
 
-interface GroupByDropdownProps {
-  groupBy: GroupBy;
-  onGroupByChange: (groupBy: GroupBy) => void;
-}
+function GroupByDropdown() {
+  const { groupBy, setGroupBy } = useAppShell();
 
-function GroupByDropdown({ groupBy, onGroupByChange }: GroupByDropdownProps) {
   const groupByLabels: Record<GroupBy, string> = {
     [GROUP_BY.STATUS]: "Status",
     [GROUP_BY.PRIORITY]: "Priority",
@@ -81,7 +72,7 @@ function GroupByDropdown({ groupBy, onGroupByChange }: GroupByDropdownProps) {
         {Object.entries(GROUP_BY).map(([key, value]) => (
           <button
             key={key}
-            onClick={() => onGroupByChange(value)}
+            onClick={() => setGroupBy(value)}
             className={cn(
               "w-full px-3 py-1.5 text-left text-sm hover:bg-accent transition-colors",
               groupBy === value && "bg-accent text-accent-foreground"
@@ -97,10 +88,6 @@ function GroupByDropdown({ groupBy, onGroupByChange }: GroupByDropdownProps) {
 
 export function Header({
   title,
-  currentView,
-  onViewChange,
-  groupBy,
-  onGroupByChange,
   issueCount,
 }: HeaderProps) {
   return (
@@ -122,11 +109,11 @@ export function Header({
           <span>Filter</span>
         </Button>
 
-        <GroupByDropdown groupBy={groupBy} onGroupByChange={onGroupByChange} />
+        <GroupByDropdown />
 
         <div className="w-px h-5 bg-border mx-1" />
 
-        <ViewSwitcher currentView={currentView} onViewChange={onViewChange} />
+        <ViewSwitcher />
       </div>
     </header>
   );
