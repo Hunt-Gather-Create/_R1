@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { BoardView } from "@/components/board/BoardView";
 import { ListView } from "@/components/list";
-import { IssueDetailPanel } from "@/components/issues";
+import { IssueDetailPanel, CreateIssueDrawer } from "@/components/issues";
 import { CommandPalette } from "@/components/command/CommandPalette";
 import { AppShell, useAppShell } from "@/components/layout";
 import { BoardProvider, useBoardContext } from "@/components/board/context";
@@ -22,8 +22,9 @@ function MainContent() {
     detailPanelOpen,
     isCommandPaletteOpen,
     setCommandPaletteOpen,
-    toggleSidebar,
+    isCreateIssueOpen,
     setCreateIssueOpen,
+    toggleSidebar,
   } = useAppShell();
 
   const {
@@ -81,6 +82,12 @@ function MainContent() {
         onGoToBoard={() => setCurrentView(VIEW.BOARD)}
         onGoToList={() => setCurrentView(VIEW.LIST)}
         onToggleSidebar={toggleSidebar}
+      />
+
+      {/* Create Issue Drawer */}
+      <CreateIssueDrawer
+        open={isCreateIssueOpen}
+        onOpenChange={setCreateIssueOpen}
       />
     </>
   );

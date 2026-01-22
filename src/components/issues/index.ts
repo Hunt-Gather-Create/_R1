@@ -10,3 +10,6 @@ export { PrioritySelect } from "./properties/PrioritySelect";
 export { LabelSelect } from "./properties/LabelSelect";
 export { DatePicker } from "./properties/DatePicker";
 export { EstimateInput } from "./properties/EstimateInput";
+export { CreateIssueDrawer } from "./CreateIssueDrawer";
+export { ChatPanel } from "./ChatPanel";
+export { IssueFormPanel } from "./IssueFormPanel";
