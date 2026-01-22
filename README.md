@@ -1,36 +1,97 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Auto Kanban
+
+A Trello-style kanban board built with Next.js, featuring drag-and-drop card management and database persistence.
+
+## Tech Stack
+
+- **Framework**: Next.js 16 with React 19
+- **Database**: SQLite via Drizzle ORM + libSQL
+- **Drag & Drop**: @dnd-kit/core + @dnd-kit/sortable
+- **UI Components**: shadcn/ui + Radix UI primitives
+- **Styling**: Tailwind CSS v4
+- **Testing**: Vitest + React Testing Library
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 20+
+- pnpm
+
+### Installation
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Database Setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Generate and run migrations:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+pnpm db:generate
+pnpm db:migrate
+```
 
-## Learn More
+### Development
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+pnpm dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Scripts
 
-## Deploy on Vercel
+| Command | Description |
+|---------|-------------|
+| `pnpm dev` | Start development server |
+| `pnpm build` | Build for production |
+| `pnpm start` | Start production server |
+| `pnpm lint` | Run ESLint |
+| `pnpm test` | Run tests in watch mode |
+| `pnpm test:run` | Run tests once |
+| `pnpm db:generate` | Generate database migrations |
+| `pnpm db:migrate` | Run database migrations |
+| `pnpm db:studio` | Open Drizzle Studio |
+| `pnpm format` | Format code with Prettier |
+| `pnpm format:check` | Check code formatting |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Project Structure
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/
+├── app/                    # Next.js app router
+│   ├── page.tsx            # Main board page
+│   └── globals.css         # Global styles
+├── components/
+│   ├── board/              # Kanban board components
+│   │   ├── Board.tsx       # Main board with DnD context
+│   │   ├── Column.tsx      # Column with droppable zone
+│   │   ├── Card.tsx        # Draggable card
+│   │   ├── CardModal.tsx   # Card edit dialog
+│   │   └── AddCardForm.tsx # Inline card creation
+│   └── ui/                 # shadcn/ui components
+├── lib/
+│   ├── actions/            # Server actions
+│   │   ├── board.ts        # Board fetching/creation
+│   │   └── cards.ts        # Card CRUD operations
+│   ├── db/                 # Database configuration
+│   │   ├── index.ts        # Drizzle client
+│   │   └── schema.ts       # Database schema
+│   ├── types.ts            # TypeScript types
+│   └── utils.ts            # Utility functions
+```
+
+## Features
+
+- Create, edit, and delete cards
+- Drag and drop cards between columns
+- Reorder cards within columns
+- Optimistic UI updates
+- Dark mode support
+- Persistent storage with SQLite
+
+## License
+
+MIT

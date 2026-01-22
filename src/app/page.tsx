@@ -1,4 +1,9 @@
-export default function Home() {
+import { Board } from "@/components/board/Board";
+import { getOrCreateDefaultBoard } from "@/lib/actions/board";
+
+export default async function Home() {
+  const board = await getOrCreateDefaultBoard();
+
   return (
     <div className="min-h-screen bg-background text-foreground p-8">
       <header className="mb-8">
@@ -7,16 +12,8 @@ export default function Home() {
           AI-powered kanban board with automatic user story generation
         </p>
       </header>
-      <main className="flex gap-4">
-        <div className="flex-1 bg-zinc-900 rounded-lg p-4 min-h-[500px]">
-          <h2 className="font-semibold mb-4 text-zinc-300">To Do</h2>
-        </div>
-        <div className="flex-1 bg-zinc-900 rounded-lg p-4 min-h-[500px]">
-          <h2 className="font-semibold mb-4 text-zinc-300">In Progress</h2>
-        </div>
-        <div className="flex-1 bg-zinc-900 rounded-lg p-4 min-h-[500px]">
-          <h2 className="font-semibold mb-4 text-zinc-300">Done</h2>
-        </div>
+      <main>
+        <Board initialBoard={board} />
       </main>
     </div>
   );
