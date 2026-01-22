@@ -47,7 +47,7 @@ export function Card({ card, onClick }: CardProps) {
       {...(mounted ? listeners : {})}
       onClick={onClick}
       className={`bg-zinc-800 rounded-lg p-3 cursor-grab active:cursor-grabbing shadow-sm hover:bg-zinc-750 hover:ring-1 hover:ring-zinc-600 transition-all ${
-        isDragging ? "opacity-50 ring-2 ring-zinc-500" : ""
+        isDragging ? "ring-2 ring-blue-500 shadow-lg" : ""
       }`}
     >
       <h3 className="text-sm font-medium text-zinc-100">{card.title}</h3>
