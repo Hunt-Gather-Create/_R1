@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { withAuth } from "@workos-inc/authkit-nextjs";
 import { db } from "../db";
 import {
   workspaces,
@@ -19,6 +18,8 @@ import type {
   WorkspaceRole,
   User,
 } from "../types";
+import { getCurrentUser } from "../auth";
+import { syncUserFromWorkOS } from "./users";
 
 const DEFAULT_COLUMNS = ["Backlog", "Todo", "In Progress", "Done"];
 const DEFAULT_LABELS: Array<{ name: string; color: string }> = [
@@ -29,23 +30,23 @@ const DEFAULT_LABELS: Array<{ name: string; color: string }> = [
 ];
 
 /**
- * Get the current authenticated user or throw
+ * Get the current authenticated user or redirect to auth
  */
 export async function requireAuth(): Promise<User> {
-  const { user } = await withAuth();
-  if (!user) {
-    redirect("/auth/callback");
+  const authUser = await getCurrentUser();
+
+  if (!authUser) {
+    redirect("/login");
   }
 
-  const dbUser = await db
-    .select()
-    .from(users)
-    .where(eq(users.id, user.id))
-    .get();
-
-  if (!dbUser) {
-    redirect("/auth/callback");
-  }
+  // Sync user to database if needed
+  const dbUser = await syncUserFromWorkOS({
+    id: authUser.id,
+    email: authUser.email,
+    firstName: authUser.firstName ?? null,
+    lastName: authUser.lastName ?? null,
+    avatarUrl: authUser.profilePictureUrl ?? null,
+  });
 
   return dbUser;
 }

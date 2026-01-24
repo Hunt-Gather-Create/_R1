@@ -1,5 +1,5 @@
 import { redirect, notFound } from "next/navigation";
-import { withAuth } from "@workos-inc/authkit-nextjs";
+import { getCurrentUser } from "@/lib/auth";
 import { getWorkspaceBySlug, requireWorkspaceAccess } from "@/lib/actions/workspace";
 
 interface WorkspaceLayoutProps {
@@ -12,9 +12,9 @@ export default async function WorkspaceLayout({
   params,
 }: WorkspaceLayoutProps) {
   // Check authentication
-  const { user } = await withAuth();
+  const user = await getCurrentUser();
   if (!user) {
-    redirect("/auth/callback");
+    redirect("/login");
   }
 
   // Get workspace by slug

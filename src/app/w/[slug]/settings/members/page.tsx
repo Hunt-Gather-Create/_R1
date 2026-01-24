@@ -10,7 +10,7 @@ import {
   removeMember,
   updateMemberRole,
 } from "@/lib/actions/workspace";
-import { getCurrentUserId } from "@/lib/actions/users";
+import { getCurrentUserId } from "@/lib/auth";
 import type { Workspace, WorkspaceMemberWithUser, WorkspaceRole } from "@/lib/types";
 
 const ROLE_OPTIONS: { value: WorkspaceRole; label: string; icon: React.ReactNode }[] = [

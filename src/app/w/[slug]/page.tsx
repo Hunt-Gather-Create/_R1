@@ -8,8 +8,10 @@ import { IssueDetailDrawer, CreateIssueDrawer } from "@/components/issues";
 import { CommandPalette } from "@/components/command/CommandPalette";
 import { AppShell, useAppShell } from "@/components/layout";
 import { BoardProvider, useBoardContext } from "@/components/board/context";
+import { WorkspaceProvider } from "@/components/workspace";
 import { VIEW } from "@/lib/design-tokens";
 import { getWorkspaceBySlugWithIssues } from "@/lib/actions/board";
+import { getCurrentUser } from "@/lib/auth";
 import type { WorkspaceWithColumnsAndIssues } from "@/lib/types";
 
 /**
@@ -105,16 +107,23 @@ function WorkspaceContent({
 export default function WorkspacePage() {
   const params = useParams<{ slug: string }>();
   const [workspace, setWorkspace] = useState<WorkspaceWithColumnsAndIssues | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (params.slug) {
-      getWorkspaceBySlugWithIssues(params.slug)
-        .then((data) => {
-          if (data) {
-            setWorkspace(data);
+      Promise.all([
+        getWorkspaceBySlugWithIssues(params.slug),
+        getCurrentUser(),
+      ])
+        .then(([workspaceData, user]) => {
+          if (workspaceData) {
+            setWorkspace(workspaceData);
           } else {
             setError("Workspace not found");
+          }
+          if (user) {
+            setUserId(user.id);
           }
         })
         .catch((err) => {
@@ -134,7 +143,7 @@ export default function WorkspacePage() {
     );
   }
 
-  if (!workspace) {
+  if (!workspace || !userId) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="flex flex-col items-center gap-2">
@@ -145,5 +154,9 @@ export default function WorkspacePage() {
     );
   }
 
-  return <WorkspaceContent workspace={workspace} />;
+  return (
+    <WorkspaceProvider workspace={workspace} userId={userId}>
+      <WorkspaceContent workspace={workspace} />
+    </WorkspaceProvider>
+  );
 }

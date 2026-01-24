@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { withAuth } from "@workos-inc/authkit-nextjs";
+import { getCurrentUserId } from "../auth";
 import { db } from "../db";
 import {
   issues,
@@ -26,16 +26,6 @@ import type {
 } from "../types";
 import { STATUS } from "../design-tokens";
 import { requireWorkspaceAccess } from "./workspace";
-
-// Helper to get current user ID (returns null if not authenticated)
-async function getCurrentUserId(): Promise<string | null> {
-  try {
-    const { user } = await withAuth();
-    return user?.id ?? null;
-  } catch {
-    return null;
-  }
-}
 
 // Helper to generate next identifier
 async function getNextIdentifier(workspaceId: string): Promise<string> {

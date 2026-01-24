@@ -3,10 +3,9 @@
 import { db } from "../db";
 import { users } from "../db/schema";
 import { eq } from "drizzle-orm";
-import { withAuth } from "@workos-inc/authkit-nextjs";
 import type { User } from "../types";
 
-interface WorkOSUserData {
+export interface WorkOSUserData {
   id: string;
   email: string;
   firstName: string | null;
@@ -80,17 +79,4 @@ export async function getUserById(userId: string): Promise<User | null> {
 export async function getUserByEmail(email: string): Promise<User | null> {
   const user = await db.select().from(users).where(eq(users.email, email)).get();
   return user ?? null;
-}
-
-/**
- * Get the current authenticated user's ID.
- * Returns null if not authenticated.
- */
-export async function getCurrentUserId(): Promise<string | null> {
-  try {
-    const { user } = await withAuth();
-    return user?.id ?? null;
-  } catch {
-    return null;
-  }
 }
