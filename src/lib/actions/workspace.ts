@@ -86,10 +86,10 @@ export async function requireWorkspaceAccess(
       admin: 2,
     };
 
-    if (roleHierarchy[member.role as WorkspaceRole] < roleHierarchy[minimumRole]) {
-      throw new Error(
-        `Access denied: Requires ${minimumRole} role or higher`
-      );
+    if (
+      roleHierarchy[member.role as WorkspaceRole] < roleHierarchy[minimumRole]
+    ) {
+      throw new Error(`Access denied: Requires ${minimumRole} role or higher`);
     }
   }
 
@@ -143,7 +143,10 @@ export async function createWorkspace(
     id: workspaceId,
     name,
     slug,
-    identifier: name.toUpperCase().slice(0, 4).replace(/[^A-Z]/g, "A"),
+    identifier: name
+      .toUpperCase()
+      .slice(0, 4)
+      .replace(/[^A-Z]/g, "A"),
     issueCounter: 0,
     purpose,
     ownerId: user.id,
@@ -222,7 +225,9 @@ export async function getUserWorkspaces(): Promise<Workspace[]> {
 /**
  * Get workspace by slug
  */
-export async function getWorkspaceBySlug(slug: string): Promise<Workspace | null> {
+export async function getWorkspaceBySlug(
+  slug: string
+): Promise<Workspace | null> {
   const workspace = await db
     .select()
     .from(workspaces)
@@ -423,7 +428,10 @@ export async function updateWorkspace(
     updates.identifier = data.identifier.toUpperCase();
   }
 
-  await db.update(workspaces).set(updates).where(eq(workspaces.id, workspaceId));
+  await db
+    .update(workspaces)
+    .set(updates)
+    .where(eq(workspaces.id, workspaceId));
 
   revalidatePath(`/w/${workspaceId}`);
 }
@@ -475,7 +483,10 @@ export async function updateWorkspaceSettings(
     updates.purpose = data.purpose;
   }
 
-  await db.update(workspaces).set(updates).where(eq(workspaces.id, workspaceId));
+  await db
+    .update(workspaces)
+    .set(updates)
+    .where(eq(workspaces.id, workspaceId));
 
   revalidatePath("/");
 
@@ -490,7 +501,10 @@ export async function updateWorkspaceSettings(
  * Delete a workspace (owner only)
  */
 export async function deleteWorkspace(workspaceId: string): Promise<void> {
-  const { user, workspace } = await requireWorkspaceAccess(workspaceId, "admin");
+  const { user, workspace } = await requireWorkspaceAccess(
+    workspaceId,
+    "admin"
+  );
 
   if (workspace.ownerId !== user.id) {
     throw new Error("Only the workspace owner can delete the workspace");

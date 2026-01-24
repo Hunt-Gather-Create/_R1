@@ -14,11 +14,7 @@ interface BoardViewProps {
 }
 
 export function BoardView({ onIssueSelect }: BoardViewProps) {
-  const {
-    board,
-    findColumn,
-    moveIssueToColumn,
-  } = useBoardContext();
+  const { board, findColumn, moveIssueToColumn } = useBoardContext();
 
   const handleIssueClick = useCallback(
     (issue: IssueWithLabels) => {

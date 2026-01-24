@@ -32,6 +32,7 @@ interface IssueDetailFormProps {
   onUpdate: (data: UpdateIssueInput) => void;
   onAddLabel: (labelId: string) => void;
   onRemoveLabel: (labelId: string) => void;
+  onCreateLabel?: (name: string, color: string) => Promise<Label | undefined>;
   // For syncing with external description changes (e.g., from AI)
   externalDescription?: string;
   highlightDescription?: boolean;
@@ -44,6 +45,7 @@ export function IssueDetailForm({
   onUpdate,
   onAddLabel,
   onRemoveLabel,
+  onCreateLabel,
   externalDescription,
   highlightDescription = false,
   onCommentsLoad,
@@ -74,7 +76,10 @@ export function IssueDetailForm({
 
   // Handle external description updates (from AI)
   useEffect(() => {
-    if (externalDescription !== undefined && externalDescription !== description) {
+    if (
+      externalDescription !== undefined &&
+      externalDescription !== description
+    ) {
       setDescription(externalDescription);
       setDescriptionHighlight(true);
       // Persist the update
@@ -212,6 +217,7 @@ export function IssueDetailForm({
               availableLabels={allLabels}
               onAdd={onAddLabel}
               onRemove={onRemoveLabel}
+              onCreateLabel={onCreateLabel}
             />
           </div>
 

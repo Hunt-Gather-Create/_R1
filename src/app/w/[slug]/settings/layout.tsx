@@ -2,7 +2,7 @@
 
 import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Building2, Users } from "lucide-react";
+import { ArrowLeft, Building2, Tag, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SettingsProvider, useSettingsContext } from "./context";
 
@@ -62,6 +62,12 @@ function SettingsSidebar() {
               isActive={pathname === baseSettingsPath}
             />
             <NavItem
+              href={`${baseSettingsPath}/labels`}
+              icon={<Tag className="w-4 h-4" />}
+              label="Labels"
+              isActive={pathname === `${baseSettingsPath}/labels`}
+            />
+            <NavItem
               href={`${baseSettingsPath}/members`}
               icon={<Users className="w-4 h-4" />}
               label="Members"
@@ -97,7 +103,9 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
         <SettingsSidebar />
         <main className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <h1 className="text-xl font-semibold text-foreground mb-2">Error</h1>
+            <h1 className="text-xl font-semibold text-foreground mb-2">
+              Error
+            </h1>
             <p className="text-sm text-muted-foreground">{error}</p>
           </div>
         </main>

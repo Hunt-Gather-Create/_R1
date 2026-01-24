@@ -20,6 +20,7 @@ import {
   addLabel as addLabelAction,
   removeLabel as removeLabelAction,
 } from "@/lib/actions/issues";
+import { createLabel as createLabelAction } from "@/lib/actions/board";
 import { getWorkspaceWithIssues } from "@/lib/actions/board";
 import { issueReducer } from "./IssueContext";
 import type {
@@ -50,9 +51,14 @@ interface BoardContextValue {
   addIssue: (columnId: string, input: CreateIssueInput) => void;
   updateIssue: (issueId: string, data: UpdateIssueInput) => void;
   removeIssue: (issueId: string) => void;
-  moveIssueToColumn: (issueId: string, targetColumnId: string, targetPosition: number) => void;
+  moveIssueToColumn: (
+    issueId: string,
+    targetColumnId: string,
+    targetPosition: number
+  ) => void;
   addLabelToIssue: (issueId: string, labelId: string) => void;
   removeLabelFromIssue: (issueId: string, labelId: string) => void;
+  createLabel: (name: string, color: string) => Promise<Label | undefined>;
 
   selectedIssue: IssueWithLabels | null;
   selectIssue: (issue: IssueWithLabels) => void;
@@ -80,8 +86,13 @@ interface BoardProviderProps {
   children: ReactNode;
 }
 
-export function BoardProvider({ initialBoard, workspaceId, children }: BoardProviderProps) {
-  const { selectedIssueId, setSelectedIssueId, setDetailPanelOpen } = useAppShell();
+export function BoardProvider({
+  initialBoard,
+  workspaceId,
+  children,
+}: BoardProviderProps) {
+  const { selectedIssueId, setSelectedIssueId, setDetailPanelOpen } =
+    useAppShell();
   const { urlState, setIssue } = useURLState();
 
   const [serverBoard, setServerBoard] = useState(initialBoard);
@@ -110,7 +121,10 @@ export function BoardProvider({ initialBoard, workspaceId, children }: BoardProv
 
   // Generic issue finder - DRY helper
   const findIssueBy = useCallback(
-    <K extends keyof IssueWithLabels>(key: K, value: IssueWithLabels[K]): IssueWithLabels | undefined => {
+    <K extends keyof IssueWithLabels>(
+      key: K,
+      value: IssueWithLabels[K]
+    ): IssueWithLabels | undefined => {
       for (const col of board.columns) {
         const issue = col.issues.find((i) => i[key] === value);
         if (issue) return issue;
@@ -122,7 +136,9 @@ export function BoardProvider({ initialBoard, workspaceId, children }: BoardProv
 
   const findColumn = useCallback(
     (issueId: string): ColumnWithIssues | undefined => {
-      return board.columns.find((col) => col.issues.some((issue) => issue.id === issueId));
+      return board.columns.find((col) =>
+        col.issues.some((issue) => issue.id === issueId)
+      );
     },
     [board.columns]
   );
@@ -140,7 +156,9 @@ export function BoardProvider({ initialBoard, workspaceId, children }: BoardProv
   const allIssues = board.columns.flatMap((col) => col.issues);
 
   // Selected issue derived from URL identifier
-  const selectedIssue = selectedIssueId ? findIssue(selectedIssueId) ?? null : null;
+  const selectedIssue = selectedIssueId
+    ? (findIssue(selectedIssueId) ?? null)
+    : null;
 
   const selectIssue = useCallback(
     (issue: IssueWithLabels) => {
@@ -158,7 +176,12 @@ export function BoardProvider({ initialBoard, workspaceId, children }: BoardProv
         setSelectedIssueId(issue.id);
       }
     }
-  }, [urlState.issue, selectedIssueId, findIssueByIdentifier, setSelectedIssueId]);
+  }, [
+    urlState.issue,
+    selectedIssueId,
+    findIssueByIdentifier,
+    setSelectedIssueId,
+  ]);
 
   const closeDetailPanel = useCallback(() => {
     setDetailPanelOpen(false);
@@ -178,7 +201,8 @@ export function BoardProvider({ initialBoard, workspaceId, children }: BoardProv
         estimate: input.estimate ?? null,
         dueDate: input.dueDate ?? null,
         cycleId: input.cycleId ?? null,
-        position: board.columns.find((c) => c.id === columnId)?.issues.length ?? 0,
+        position:
+          board.columns.find((c) => c.id === columnId)?.issues.length ?? 0,
         createdAt: new Date(),
         updatedAt: new Date(),
         labels: [],
@@ -218,7 +242,12 @@ export function BoardProvider({ initialBoard, workspaceId, children }: BoardProv
   const moveIssueToColumn = useCallback(
     (issueId: string, targetColumnId: string, targetPosition: number) => {
       startTransition(async () => {
-        addOptimistic({ type: "moveIssue", issueId, targetColumnId, targetPosition });
+        addOptimistic({
+          type: "moveIssue",
+          issueId,
+          targetColumnId,
+          targetPosition,
+        });
         await moveIssue(issueId, targetColumnId, targetPosition);
         await refreshBoard();
       });
@@ -254,6 +283,23 @@ export function BoardProvider({ initialBoard, workspaceId, children }: BoardProv
     [addOptimistic, refreshBoard]
   );
 
+  const createLabel = useCallback(
+    async (name: string, color: string): Promise<Label | undefined> => {
+      const wsId = workspaceId ?? initialBoard.id;
+      if (!wsId) return undefined;
+
+      try {
+        const newLabel = await createLabelAction(wsId, name, color);
+        await refreshBoard();
+        return newLabel;
+      } catch (error) {
+        console.error("Failed to create label:", error);
+        return undefined;
+      }
+    },
+    [workspaceId, initialBoard.id, refreshBoard]
+  );
+
   // Selected issue convenience methods
   const updateSelectedIssue = useCallback(
     (data: UpdateIssueInput) => {
@@ -284,7 +330,8 @@ export function BoardProvider({ initialBoard, workspaceId, children }: BoardProv
   );
 
   const workspacePurpose: WorkspacePurpose =
-    ("purpose" in board && (board.purpose === "software" || board.purpose === "marketing"))
+    "purpose" in board &&
+    (board.purpose === "software" || board.purpose === "marketing")
       ? board.purpose
       : "software";
 
@@ -305,6 +352,7 @@ export function BoardProvider({ initialBoard, workspaceId, children }: BoardProv
     moveIssueToColumn,
     addLabelToIssue,
     removeLabelFromIssue,
+    createLabel,
     selectedIssue,
     selectIssue,
     closeDetailPanel,
@@ -314,5 +362,7 @@ export function BoardProvider({ initialBoard, workspaceId, children }: BoardProv
     removeLabelFromSelectedIssue,
   };
 
-  return <BoardContext.Provider value={value}>{children}</BoardContext.Provider>;
+  return (
+    <BoardContext.Provider value={value}>{children}</BoardContext.Provider>
+  );
 }

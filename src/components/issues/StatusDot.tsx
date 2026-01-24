@@ -2,7 +2,13 @@
 
 import { cn } from "@/lib/utils";
 import { STATUS, STATUS_CONFIG, type Status } from "@/lib/design-tokens";
-import { Circle, CircleDot, CircleCheck, CircleX, CircleDashed } from "lucide-react";
+import {
+  Circle,
+  CircleDot,
+  CircleCheck,
+  CircleX,
+  CircleDashed,
+} from "lucide-react";
 
 interface StatusDotProps {
   status: Status;
@@ -11,7 +17,10 @@ interface StatusDotProps {
   className?: string;
 }
 
-const StatusIcons: Record<Status, React.ComponentType<{ className?: string }>> = {
+const StatusIcons: Record<
+  Status,
+  React.ComponentType<{ className?: string }>
+> = {
   [STATUS.BACKLOG]: CircleDashed,
   [STATUS.TODO]: Circle,
   [STATUS.IN_PROGRESS]: CircleDot,

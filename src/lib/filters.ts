@@ -82,13 +82,16 @@ export function filterIssues(
       const query = filters.search.toLowerCase();
       const matchTitle = issue.title.toLowerCase().includes(query);
       const matchIdentifier = issue.identifier.toLowerCase().includes(query);
-      const matchDescription = issue.description
-        ?.toLowerCase()
-        .includes(query);
+      const matchDescription = issue.description?.toLowerCase().includes(query);
       const matchLabels = issue.labels.some((l) =>
         l.name.toLowerCase().includes(query)
       );
-      if (!matchTitle && !matchIdentifier && !matchDescription && !matchLabels) {
+      if (
+        !matchTitle &&
+        !matchIdentifier &&
+        !matchDescription &&
+        !matchLabels
+      ) {
         return false;
       }
     }
@@ -129,13 +132,14 @@ export function serializeFilters(filters: FilterState): URLSearchParams {
 // Deserialize filters from URL params
 export function deserializeFilters(params: URLSearchParams): FilterState {
   return {
-    status: params.get("status")?.split(",").filter(Boolean) as Status[] || [],
+    status:
+      (params.get("status")?.split(",").filter(Boolean) as Status[]) || [],
     priority:
-      params
+      (params
         .get("priority")
         ?.split(",")
         .filter(Boolean)
-        .map(Number) as Priority[] || [],
+        .map(Number) as Priority[]) || [],
     labels: params.get("labels")?.split(",").filter(Boolean) || [],
     cycleId: params.get("cycle") || null,
     hasDueDate: params.has("hasDueDate")

@@ -1,6 +1,9 @@
 import { redirect, notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { getWorkspaceBySlug, requireWorkspaceAccess } from "@/lib/actions/workspace";
+import {
+  getWorkspaceBySlug,
+  requireWorkspaceAccess,
+} from "@/lib/actions/workspace";
 
 interface WorkspaceLayoutProps {
   children: React.ReactNode;

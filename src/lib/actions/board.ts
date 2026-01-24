@@ -1,12 +1,16 @@
 "use server";
 
 import { db } from "../db";
-import { workspaces, columns, issues, labels, issueLabels, cycles } from "../db/schema";
+import {
+  workspaces,
+  columns,
+  issues,
+  labels,
+  issueLabels,
+  cycles,
+} from "../db/schema";
 import { eq, asc } from "drizzle-orm";
-import type {
-  WorkspaceWithColumnsAndIssues,
-  Label,
-} from "../types";
+import type { WorkspaceWithColumnsAndIssues, Label } from "../types";
 import { requireWorkspaceAccess } from "./workspace";
 
 // Get workspace with issues (requires authentication)
@@ -64,12 +68,15 @@ export async function getWorkspaceWithIssues(
             .where(eq(issueLabels.issueId, issue.id));
 
           // Deduplicate labels by id (defensive against bad data)
-          const uniqueLabels = issueLabelRows.reduce((acc, row) => {
-            if (!acc.some((l) => l.id === row.label.id)) {
-              acc.push(row.label);
-            }
-            return acc;
-          }, [] as typeof issueLabelRows[number]["label"][]);
+          const uniqueLabels = issueLabelRows.reduce(
+            (acc, row) => {
+              if (!acc.some((l) => l.id === row.label.id)) {
+                acc.push(row.label);
+              }
+              return acc;
+            },
+            [] as (typeof issueLabelRows)[number]["label"][]
+          );
 
           return {
             ...issue,
@@ -136,7 +143,11 @@ export async function updateLabel(
   data: { name?: string; color?: string }
 ): Promise<void> {
   // Get the label first to check workspace access
-  const label = await db.select().from(labels).where(eq(labels.id, labelId)).get();
+  const label = await db
+    .select()
+    .from(labels)
+    .where(eq(labels.id, labelId))
+    .get();
   if (!label) throw new Error("Label not found");
 
   await requireWorkspaceAccess(label.workspaceId, "member");
@@ -144,14 +155,20 @@ export async function updateLabel(
 }
 
 export async function deleteLabel(labelId: string): Promise<void> {
-  const label = await db.select().from(labels).where(eq(labels.id, labelId)).get();
+  const label = await db
+    .select()
+    .from(labels)
+    .where(eq(labels.id, labelId))
+    .get();
   if (!label) throw new Error("Label not found");
 
   await requireWorkspaceAccess(label.workspaceId, "admin");
   await db.delete(labels).where(eq(labels.id, labelId));
 }
 
-export async function getWorkspaceLabels(workspaceId: string): Promise<Label[]> {
+export async function getWorkspaceLabels(
+  workspaceId: string
+): Promise<Label[]> {
   await requireWorkspaceAccess(workspaceId);
 
   return db

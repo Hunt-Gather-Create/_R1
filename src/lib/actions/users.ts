@@ -17,7 +17,9 @@ export interface WorkOSUserData {
  * Sync a user from WorkOS to the database.
  * Creates new user or updates existing one.
  */
-export async function syncUserFromWorkOS(userData: WorkOSUserData): Promise<User> {
+export async function syncUserFromWorkOS(
+  userData: WorkOSUserData
+): Promise<User> {
   const now = new Date();
 
   const existingUser = await db
@@ -77,6 +79,10 @@ export async function getUserById(userId: string): Promise<User | null> {
  * Get a user by email.
  */
 export async function getUserByEmail(email: string): Promise<User | null> {
-  const user = await db.select().from(users).where(eq(users.email, email)).get();
+  const user = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, email))
+    .get();
   return user ?? null;
 }

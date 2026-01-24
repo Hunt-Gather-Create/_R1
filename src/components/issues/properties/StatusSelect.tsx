@@ -17,7 +17,11 @@ interface StatusSelectProps {
   className?: string;
 }
 
-export function StatusSelect({ value, onChange, className }: StatusSelectProps) {
+export function StatusSelect({
+  value,
+  onChange,
+  className,
+}: StatusSelectProps) {
   return (
     <Select value={value} onValueChange={(v) => onChange(v as Status)}>
       <SelectTrigger className={cn("w-[180px] h-8 text-xs", className)}>

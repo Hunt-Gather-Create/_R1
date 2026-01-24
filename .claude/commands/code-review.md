@@ -122,7 +122,7 @@ After refactoring:
 
 1. Run `pnpm build` to verify no build errors
 
-4. Generate a final summary of all changes made
+2. Generate a final summary of all changes made
 
 ## Output Format
 

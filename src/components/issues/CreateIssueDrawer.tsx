@@ -2,11 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { X } from "lucide-react";
-import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
 import { ChatPanel } from "./ChatPanel";
 import { IssueFormPanel, type IssueFormState } from "./IssueFormPanel";
@@ -31,22 +27,28 @@ export function CreateIssueDrawer({
   open,
   onOpenChange,
 }: CreateIssueDrawerProps) {
-  const { board, addIssue, labels } = useBoardContext();
+  const { board, addIssue, labels, createLabel } = useBoardContext();
   const [formState, setFormState] = useState<IssueFormState>(initialFormState);
-  const [highlightedFields, setHighlightedFields] = useState<Set<keyof IssueFormState>>(new Set());
+  const [highlightedFields, setHighlightedFields] = useState<
+    Set<keyof IssueFormState>
+  >(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Find the "Todo" column to add issues to
-  const todoColumn = board.columns.find(
-    (col) => col.name.toLowerCase() === "todo"
-  ) || board.columns[0];
+  const todoColumn =
+    board.columns.find((col) => col.name.toLowerCase() === "todo") ||
+    board.columns[0];
 
   const handleFormChange = useCallback((updates: Partial<IssueFormState>) => {
     setFormState((prev) => ({ ...prev, ...updates }));
   }, []);
 
   const handleSuggestion = useCallback(
-    (suggestion: { title: string; description: string; priority: Priority }) => {
+    (suggestion: {
+      title: string;
+      description: string;
+      priority: Priority;
+    }) => {
       const newHighlights = new Set<keyof IssueFormState>();
 
       if (suggestion.title) {
@@ -144,6 +146,7 @@ export function CreateIssueDrawer({
               onCancel={handleCancel}
               isSubmitting={isSubmitting}
               highlightedFields={highlightedFields}
+              onCreateLabel={createLabel}
             />
           </div>
         </div>

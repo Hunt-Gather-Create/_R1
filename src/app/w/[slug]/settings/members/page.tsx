@@ -12,20 +12,28 @@ import { Button } from "@/components/ui/button";
 import { useSettingsContext } from "../context";
 import type { WorkspaceRole } from "@/lib/types";
 
-const ROLE_OPTIONS: { value: WorkspaceRole; label: string; icon: React.ReactNode }[] = [
+const ROLE_OPTIONS: {
+  value: WorkspaceRole;
+  label: string;
+  icon: React.ReactNode;
+}[] = [
   { value: "admin", label: "Admin", icon: <Shield className="w-4 h-4" /> },
   { value: "member", label: "Member", icon: <User className="w-4 h-4" /> },
   { value: "viewer", label: "Viewer", icon: <Eye className="w-4 h-4" /> },
 ];
 
 export default function MembersPage() {
-  const { workspace, members, currentUserId, isAdmin, refreshMembers } = useSettingsContext();
+  const { workspace, members, currentUserId, isAdmin, refreshMembers } =
+    useSettingsContext();
 
   // Invite form state
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<WorkspaceRole>("member");
   const [isInviting, setIsInviting] = useState(false);
-  const [inviteMessage, setInviteMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [inviteMessage, setInviteMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,7 +43,11 @@ export default function MembersPage() {
     setInviteMessage(null);
 
     try {
-      const result = await inviteMember(workspace.id, inviteEmail.trim(), inviteRole);
+      const result = await inviteMember(
+        workspace.id,
+        inviteEmail.trim(),
+        inviteRole
+      );
       setInviteMessage({
         type: result.success ? "success" : "error",
         text: result.message,
@@ -167,7 +179,9 @@ export default function MembersPage() {
                   ) : (
                     <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
                       <span className="text-sm font-medium text-primary">
-                        {(member.user.firstName?.[0] ?? member.user.email[0]).toUpperCase()}
+                        {(
+                          member.user.firstName?.[0] ?? member.user.email[0]
+                        ).toUpperCase()}
                       </span>
                     </div>
                   )}
@@ -201,7 +215,10 @@ export default function MembersPage() {
                       <select
                         value={member.role}
                         onChange={(e) =>
-                          handleRoleChange(member.userId, e.target.value as WorkspaceRole)
+                          handleRoleChange(
+                            member.userId,
+                            e.target.value as WorkspaceRole
+                          )
                         }
                         className="px-2 py-1 bg-background border border-input rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                       >

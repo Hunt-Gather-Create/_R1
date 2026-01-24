@@ -183,7 +183,11 @@ interface IssueProviderProps {
   onMutate?: () => void;
 }
 
-export function IssueProvider({ initialBoard, children, onMutate }: IssueProviderProps) {
+export function IssueProvider({
+  initialBoard,
+  children,
+  onMutate,
+}: IssueProviderProps) {
   const [board, addOptimistic] = useOptimistic(initialBoard, issueReducer);
   const [, startTransition] = useTransition();
 
@@ -213,7 +217,8 @@ export function IssueProvider({ initialBoard, children, onMutate }: IssueProvide
       estimate: input.estimate ?? null,
       dueDate: input.dueDate ?? null,
       cycleId: input.cycleId ?? null,
-      position: board.columns.find((c) => c.id === columnId)?.issues.length ?? 0,
+      position:
+        board.columns.find((c) => c.id === columnId)?.issues.length ?? 0,
       createdAt: new Date(),
       updatedAt: new Date(),
       labels: [],

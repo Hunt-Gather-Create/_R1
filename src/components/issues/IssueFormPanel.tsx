@@ -30,6 +30,7 @@ interface IssueFormPanelProps {
   onCancel: () => void;
   isSubmitting?: boolean;
   highlightedFields?: Set<keyof IssueFormState>;
+  onCreateLabel?: (name: string, color: string) => Promise<Label | undefined>;
 }
 
 export function IssueFormPanel({
@@ -40,6 +41,7 @@ export function IssueFormPanel({
   onCancel,
   isSubmitting = false,
   highlightedFields = new Set(),
+  onCreateLabel,
 }: IssueFormPanelProps) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const [localHighlights, setLocalHighlights] = useState<
@@ -217,6 +219,7 @@ export function IssueFormPanel({
             availableLabels={availableLabels}
             onAdd={handleAddLabel}
             onRemove={handleRemoveLabel}
+            onCreateLabel={onCreateLabel}
           />
         </div>
       </div>

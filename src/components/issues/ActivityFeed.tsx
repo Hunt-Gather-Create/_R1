@@ -62,9 +62,7 @@ function getActivityDescription(activity: Activity): string {
     case "label_removed":
       return `removed label "${data?.labelName}"`;
     case "cycle_changed":
-      return data?.newValue
-        ? `added to cycle`
-        : `removed from cycle`;
+      return data?.newValue ? `added to cycle` : `removed from cycle`;
     case "comment_added":
       return "added a comment";
     case "moved":

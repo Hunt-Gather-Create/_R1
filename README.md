@@ -43,19 +43,19 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Scripts
 
-| Command | Description |
-|---------|-------------|
-| `pnpm dev` | Start development server |
-| `pnpm build` | Build for production |
-| `pnpm start` | Start production server |
-| `pnpm lint` | Run ESLint |
-| `pnpm test` | Run tests in watch mode |
-| `pnpm test:run` | Run tests once |
-| `pnpm db:generate` | Generate database migrations |
-| `pnpm db:migrate` | Run database migrations |
-| `pnpm db:studio` | Open Drizzle Studio |
-| `pnpm format` | Format code with Prettier |
-| `pnpm format:check` | Check code formatting |
+| Command             | Description                  |
+| ------------------- | ---------------------------- |
+| `pnpm dev`          | Start development server     |
+| `pnpm build`        | Build for production         |
+| `pnpm start`        | Start production server      |
+| `pnpm lint`         | Run ESLint                   |
+| `pnpm test`         | Run tests in watch mode      |
+| `pnpm test:run`     | Run tests once               |
+| `pnpm db:generate`  | Generate database migrations |
+| `pnpm db:migrate`   | Run database migrations      |
+| `pnpm db:studio`    | Open Drizzle Studio          |
+| `pnpm format`       | Format code with Prettier    |
+| `pnpm format:check` | Check code formatting        |
 
 ## Project Structure
 

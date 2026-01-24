@@ -30,7 +30,10 @@ import { requireWorkspaceAccess } from "./workspace";
 // Helper to generate next identifier
 async function getNextIdentifier(workspaceId: string): Promise<string> {
   const workspace = await db
-    .select({ identifier: workspaces.identifier, counter: workspaces.issueCounter })
+    .select({
+      identifier: workspaces.identifier,
+      counter: workspaces.issueCounter,
+    })
     .from(workspaces)
     .where(eq(workspaces.id, workspaceId))
     .get();
@@ -206,10 +209,15 @@ export async function updateIssue(
 
   if (input.status !== undefined && input.status !== existingIssue.status) {
     updates.status = input.status;
-    await logActivity(issueId, "status_changed", {
-      oldValue: existingIssue.status,
-      newValue: input.status,
-    }, userId);
+    await logActivity(
+      issueId,
+      "status_changed",
+      {
+        oldValue: existingIssue.status,
+        newValue: input.status,
+      },
+      userId
+    );
   }
 
   if (
@@ -217,10 +225,15 @@ export async function updateIssue(
     input.priority !== existingIssue.priority
   ) {
     updates.priority = input.priority;
-    await logActivity(issueId, "priority_changed", {
-      oldValue: existingIssue.priority,
-      newValue: input.priority,
-    }, userId);
+    await logActivity(
+      issueId,
+      "priority_changed",
+      {
+        oldValue: existingIssue.priority,
+        newValue: input.priority,
+      },
+      userId
+    );
   }
 
   if (input.estimate !== undefined) {
@@ -233,19 +246,29 @@ export async function updateIssue(
 
   if (input.cycleId !== undefined && input.cycleId !== existingIssue.cycleId) {
     updates.cycleId = input.cycleId ?? null;
-    await logActivity(issueId, "cycle_changed", {
-      oldValue: existingIssue.cycleId,
-      newValue: input.cycleId ?? null,
-    }, userId);
+    await logActivity(
+      issueId,
+      "cycle_changed",
+      {
+        oldValue: existingIssue.cycleId,
+        newValue: input.cycleId ?? null,
+      },
+      userId
+    );
   }
 
   await db.update(issues).set(updates).where(eq(issues.id, issueId));
 
   // Log general update if there were field changes
   if (changedFields.length > 0) {
-    await logActivity(issueId, "updated", {
-      field: changedFields.map((c) => c.field).join(", "),
-    }, userId);
+    await logActivity(
+      issueId,
+      "updated",
+      {
+        field: changedFields.map((c) => c.field).join(", "),
+      },
+      userId
+    );
   }
 
   // Revalidate workspace path
@@ -279,7 +302,10 @@ export async function deleteIssue(issueId: string): Promise<void> {
     .update(issues)
     .set({ position: sql`position - 1` })
     .where(
-      and(eq(issues.columnId, issue.columnId), gt(issues.position, issue.position))
+      and(
+        eq(issues.columnId, issue.columnId),
+        gt(issues.position, issue.position)
+      )
     );
 
   // Revalidate workspace path
@@ -378,10 +404,15 @@ export async function moveIssue(
       .where(eq(issues.id, issueId));
 
     // Log the move with user ID
-    await logActivity(issueId, "moved", {
-      fromColumn: sourceColumnId,
-      toColumn: targetColumnId,
-    }, userId);
+    await logActivity(
+      issueId,
+      "moved",
+      {
+        fromColumn: sourceColumnId,
+        toColumn: targetColumnId,
+      },
+      userId
+    );
   }
 
   // Revalidate workspace path
@@ -394,7 +425,10 @@ export async function moveIssue(
 }
 
 // Label operations
-export async function addLabel(issueId: string, labelId: string): Promise<void> {
+export async function addLabel(
+  issueId: string,
+  labelId: string
+): Promise<void> {
   const label = await db
     .select()
     .from(labels)
@@ -408,12 +442,20 @@ export async function addLabel(issueId: string, labelId: string): Promise<void> 
 
   const userId = await getCurrentUserId();
 
-  await db.insert(issueLabels).values({ issueId, labelId }).onConflictDoNothing();
+  await db
+    .insert(issueLabels)
+    .values({ issueId, labelId })
+    .onConflictDoNothing();
 
-  await logActivity(issueId, "label_added", {
-    labelId,
-    labelName: label.name,
-  }, userId);
+  await logActivity(
+    issueId,
+    "label_added",
+    {
+      labelId,
+      labelName: label.name,
+    },
+    userId
+  );
 
   await db
     .update(issues)
@@ -447,10 +489,15 @@ export async function removeLabel(
     );
 
   if (label) {
-    await logActivity(issueId, "label_removed", {
-      labelId,
-      labelName: label.name,
-    }, userId);
+    await logActivity(
+      issueId,
+      "label_removed",
+      {
+        labelId,
+        labelName: label.name,
+      },
+      userId
+    );
 
     const slug = await getWorkspaceSlug(label.workspaceId);
     revalidatePath(slug ? `/w/${slug}` : "/");
@@ -499,10 +546,7 @@ export async function addComment(
 
   await logActivity(issueId, "comment_added", undefined, userId);
 
-  await db
-    .update(issues)
-    .set({ updatedAt: now })
-    .where(eq(issues.id, issueId));
+  await db.update(issues).set({ updatedAt: now }).where(eq(issues.id, issueId));
 
   if (workspaceId) {
     const slug = await getWorkspaceSlug(workspaceId);

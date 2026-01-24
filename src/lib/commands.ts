@@ -66,7 +66,9 @@ export function searchIssues(
   return issues
     .filter((issue) => {
       const matchTitle = issue.title.toLowerCase().includes(lowerQuery);
-      const matchIdentifier = issue.identifier.toLowerCase().includes(lowerQuery);
+      const matchIdentifier = issue.identifier
+        .toLowerCase()
+        .includes(lowerQuery);
       const matchDescription = issue.description
         ?.toLowerCase()
         .includes(lowerQuery);

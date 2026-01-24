@@ -16,7 +16,11 @@ interface EstimateInputProps {
 
 const ESTIMATE_OPTIONS = [0.5, 1, 2, 3, 5, 8, 13, 21];
 
-export function EstimateInput({ value, onChange, className }: EstimateInputProps) {
+export function EstimateInput({
+  value,
+  onChange,
+  className,
+}: EstimateInputProps) {
   const [open, setOpen] = useState(false);
 
   return (

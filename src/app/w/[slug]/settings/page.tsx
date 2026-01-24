@@ -27,7 +27,9 @@ function SettingsRow({
       <div className="flex-shrink-0 min-w-[140px]">
         <div className="text-sm font-medium text-foreground">{label}</div>
         {description && (
-          <div className="text-xs text-muted-foreground mt-0.5">{description}</div>
+          <div className="text-xs text-muted-foreground mt-0.5">
+            {description}
+          </div>
         )}
       </div>
       <div className="flex-1 max-w-md">{children}</div>
@@ -38,7 +40,8 @@ function SettingsRow({
 export default function WorkspaceSettingsPage() {
   const params = useParams<{ slug: string }>();
   const router = useRouter();
-  const { workspace, isAdmin, isOwner, refreshWorkspace } = useSettingsContext();
+  const { workspace, isAdmin, isOwner, refreshWorkspace } =
+    useSettingsContext();
 
   // Form state - initialized from workspace
   const [name, setName] = useState(workspace?.name ?? "");
@@ -47,17 +50,25 @@ export default function WorkspaceSettingsPage() {
     (workspace?.purpose as WorkspacePurpose) ?? "software"
   );
   const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [saveMessage, setSaveMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Check for changes
   const hasChanges = useMemo(() => {
     if (!workspace) return false;
-    return name !== workspace.name || slug !== workspace.slug || purpose !== workspace.purpose;
+    return (
+      name !== workspace.name ||
+      slug !== workspace.slug ||
+      purpose !== workspace.purpose
+    );
   }, [workspace, name, slug, purpose]);
 
   // Get hostname for URL display
-  const hostname = typeof window !== "undefined" ? window.location.host : "localhost:3000";
+  const hostname =
+    typeof window !== "undefined" ? window.location.host : "localhost:3000";
 
   const handleSave = async () => {
     if (!workspace || !hasChanges) return;
@@ -66,7 +77,11 @@ export default function WorkspaceSettingsPage() {
     setSaveMessage(null);
 
     try {
-      const result = await updateWorkspaceSettings(workspace.id, { name, slug, purpose });
+      const result = await updateWorkspaceSettings(workspace.id, {
+        name,
+        slug,
+        purpose,
+      });
 
       if (result.success) {
         setSaveMessage({ type: "success", text: result.message });
@@ -174,7 +189,10 @@ export default function WorkspaceSettingsPage() {
           </div>
         </SettingsRow>
 
-        <SettingsRow label="Type" description="Affects AI suggestions and default workflows">
+        <SettingsRow
+          label="Type"
+          description="Affects AI suggestions and default workflows"
+        >
           <select
             value={purpose}
             onChange={(e) => setPurpose(e.target.value as WorkspacePurpose)}
@@ -203,10 +221,7 @@ export default function WorkspaceSettingsPage() {
               </span>
             )}
           </div>
-          <Button
-            onClick={handleSave}
-            disabled={!hasChanges || isSaving}
-          >
+          <Button onClick={handleSave} disabled={!hasChanges || isSaving}>
             {isSaving ? "Saving..." : "Save changes"}
           </Button>
         </div>
@@ -216,7 +231,9 @@ export default function WorkspaceSettingsPage() {
       {isOwner && (
         <>
           <div className="mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Danger zone</h2>
+            <h2 className="text-lg font-semibold text-foreground">
+              Danger zone
+            </h2>
             <p className="text-sm text-muted-foreground">
               Irreversible and destructive actions
             </p>
@@ -225,7 +242,9 @@ export default function WorkspaceSettingsPage() {
           <div className="rounded-lg border border-destructive/50 bg-card">
             <div className="flex items-center justify-between gap-4 px-6 py-4">
               <div>
-                <div className="text-sm font-medium text-foreground">Delete workspace</div>
+                <div className="text-sm font-medium text-foreground">
+                  Delete workspace
+                </div>
                 <div className="text-xs text-muted-foreground mt-0.5">
                   Permanently delete this workspace and all of its data
                 </div>

@@ -22,7 +22,9 @@ function createLabel(overrides: Partial<Label> = {}): Label {
 }
 
 // Helper to create mock issues
-function createIssue(overrides: Partial<IssueWithLabels> = {}): IssueWithLabels {
+function createIssue(
+  overrides: Partial<IssueWithLabels> = {}
+): IssueWithLabels {
   return {
     id: "issue-1",
     columnId: "column-1",

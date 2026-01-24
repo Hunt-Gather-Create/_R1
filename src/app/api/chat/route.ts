@@ -55,7 +55,9 @@ Priority levels:
 - 4 = No priority (backlog ideas)`;
 
 function getSystemPrompt(purpose: WorkspacePurpose): string {
-  return purpose === "marketing" ? MARKETING_SYSTEM_PROMPT : SOFTWARE_SYSTEM_PROMPT;
+  return purpose === "marketing"
+    ? MARKETING_SYSTEM_PROMPT
+    : SOFTWARE_SYSTEM_PROMPT;
 }
 
 const suggestIssueSchema = z.object({
