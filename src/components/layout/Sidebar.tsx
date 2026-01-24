@@ -264,6 +264,7 @@ export function Sidebar() {
           icon={<Settings className="w-4 h-4" />}
           label="Settings"
           isCollapsed={sidebarCollapsed}
+          onClick={() => workspace && router.push(`/w/${workspace.slug}/settings`)}
         />
         {sidebarCollapsed && (
           <button

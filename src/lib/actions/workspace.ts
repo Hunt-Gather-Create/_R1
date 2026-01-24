@@ -431,6 +431,60 @@ export async function updateWorkspace(
 }
 
 /**
+ * Update workspace settings (name and/or slug)
+ */
+export async function updateWorkspaceSettings(
+  workspaceId: string,
+  data: { name?: string; slug?: string }
+): Promise<{ success: boolean; message: string; newSlug?: string }> {
+  await requireWorkspaceAccess(workspaceId, "admin");
+
+  const updates: Partial<Workspace> = {
+    updatedAt: new Date(),
+  };
+
+  if (data.name !== undefined && data.name.trim()) {
+    updates.name = data.name.trim();
+  }
+
+  if (data.slug !== undefined) {
+    // Normalize slug: lowercase, alphanumeric + hyphens only
+    const normalizedSlug = data.slug
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 50);
+
+    if (!normalizedSlug) {
+      return { success: false, message: "URL slug cannot be empty" };
+    }
+
+    // Check if slug is already taken by another workspace
+    const existingWorkspace = await db
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.slug, normalizedSlug))
+      .get();
+
+    if (existingWorkspace && existingWorkspace.id !== workspaceId) {
+      return { success: false, message: "This URL is already taken" };
+    }
+
+    updates.slug = normalizedSlug;
+  }
+
+  await db.update(workspaces).set(updates).where(eq(workspaces.id, workspaceId));
+
+  revalidatePath("/");
+
+  return {
+    success: true,
+    message: "Workspace settings updated",
+    newSlug: updates.slug,
+  };
+}
+
+/**
  * Delete a workspace (owner only)
  */
 export async function deleteWorkspace(workspaceId: string): Promise<void> {
