@@ -8,7 +8,13 @@ import {
 import { useDroppable } from "@dnd-kit/core";
 import { IssueCard } from "@/components/issues";
 import { AddIssueForm } from "./AddIssueForm";
-import { ChevronDown, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  MoreHorizontal,
+  Plus,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useBoardContext } from "./context";
 import type { ColumnWithIssues, IssueWithLabels } from "@/lib/types";
@@ -24,6 +30,8 @@ export function IssueColumn({ column, onIssueClick }: IssueColumnProps) {
   const [mounted, setMounted] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+
+  const isOrphaned = column.isSystem;
 
   const { setNodeRef, isOver } = useDroppable({
     id: `column-${column.id}`,
@@ -49,13 +57,21 @@ export function IssueColumn({ column, onIssueClick }: IssueColumnProps) {
   return (
     <div
       className={cn(
-        "flex flex-col bg-secondary/30 rounded-lg border border-border/50",
+        "flex flex-col rounded-lg border",
         "min-w-[280px] max-w-[320px]",
-        isCollapsed ? "max-h-12" : "max-h-[calc(100vh-180px)]"
+        isCollapsed ? "max-h-12" : "max-h-[calc(100vh-180px)]",
+        isOrphaned
+          ? "bg-amber-500/10 border-amber-500/50"
+          : "bg-secondary/30 border-border/50"
       )}
     >
       {/* Column Header */}
-      <div className="flex items-center justify-between h-10 px-3 border-b border-border/50">
+      <div
+        className={cn(
+          "flex items-center justify-between h-10 px-3 border-b",
+          isOrphaned ? "border-amber-500/30" : "border-border/50"
+        )}
+      >
         <div className="flex items-center gap-2 min-w-0">
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
@@ -67,7 +83,17 @@ export function IssueColumn({ column, onIssueClick }: IssueColumnProps) {
               <ChevronDown className="w-4 h-4 text-muted-foreground" />
             )}
           </button>
-          <h2 className="text-sm font-medium text-foreground truncate">
+          {isOrphaned && (
+            <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+          )}
+          <h2
+            className={cn(
+              "text-sm font-medium truncate",
+              isOrphaned
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-foreground"
+            )}
+          >
             {column.name}
           </h2>
           <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
@@ -75,21 +101,23 @@ export function IssueColumn({ column, onIssueClick }: IssueColumnProps) {
           </span>
         </div>
 
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="p-1 hover:bg-accent rounded transition-colors text-muted-foreground hover:text-foreground"
-            title="Add issue"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-          <button
-            className="p-1 hover:bg-accent rounded transition-colors text-muted-foreground hover:text-foreground"
-            title="Column options"
-          >
-            <MoreHorizontal className="w-4 h-4" />
-          </button>
-        </div>
+        {!isOrphaned && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="p-1 hover:bg-accent rounded transition-colors text-muted-foreground hover:text-foreground"
+              title="Add issue"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+            <button
+              className="p-1 hover:bg-accent rounded transition-colors text-muted-foreground hover:text-foreground"
+              title="Column options"
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Column Content */}
@@ -130,12 +158,22 @@ export function IssueColumn({ column, onIssueClick }: IssueColumnProps) {
             {column.issues.length === 0 && !showAddForm && (
               <div className="flex flex-col items-center justify-start py-8 text-center flex-1">
                 <p className="text-sm text-muted-foreground mb-2">No issues</p>
-                <button
-                  onClick={() => setShowAddForm(true)}
-                  className="text-xs text-primary hover:underline"
-                >
-                  Create an issue
-                </button>
+                {!isOrphaned && (
+                  <button
+                    onClick={() => setShowAddForm(true)}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Create an issue
+                  </button>
+                )}
+              </div>
+            )}
+
+            {isOrphaned && column.issues.length > 0 && (
+              <div className="mt-2 p-2 rounded bg-amber-500/10 text-center">
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  Drag issues to another column
+                </p>
               </div>
             )}
           </SortableContext>

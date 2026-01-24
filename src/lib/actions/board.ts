@@ -92,9 +92,14 @@ export async function getWorkspaceWithIssues(
     })
   );
 
+  // Filter out empty system columns (e.g., orphaned column with no issues)
+  const visibleColumns = columnsWithIssues.filter(
+    (col) => !col.isSystem || col.issues.length > 0
+  );
+
   return {
     ...workspace,
-    columns: columnsWithIssues,
+    columns: visibleColumns,
     labels: workspaceLabels,
     cycles: workspaceCycles,
   };

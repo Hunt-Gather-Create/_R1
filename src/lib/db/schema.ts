@@ -57,6 +57,7 @@ export const columns = sqliteTable("columns", {
     .references(() => workspaces.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   position: integer("position").notNull(),
+  isSystem: integer("is_system", { mode: "boolean" }).notNull().default(false),
 });
 
 // Cycles - time-boxed iterations (sprints)

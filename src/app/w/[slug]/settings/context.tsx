@@ -14,12 +14,14 @@ import {
   getWorkspaceMembers,
 } from "@/lib/actions/workspace";
 import { getWorkspaceLabels } from "@/lib/actions/board";
+import { getAllWorkspaceColumns } from "@/lib/actions/columns";
 import { getCurrentUserId } from "@/lib/auth";
 import type {
   Workspace,
   WorkspaceMemberWithUser,
   WorkspaceRole,
   Label,
+  Column,
 } from "@/lib/types";
 
 interface SettingsContextValue {
@@ -27,6 +29,7 @@ interface SettingsContextValue {
   workspace: Workspace | null;
   members: WorkspaceMemberWithUser[];
   labels: Label[];
+  columns: Column[];
 
   // Loading states
   isLoading: boolean;
@@ -42,6 +45,7 @@ interface SettingsContextValue {
   refreshWorkspace: () => Promise<void>;
   refreshMembers: () => Promise<void>;
   refreshLabels: () => Promise<void>;
+  refreshColumns: () => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -66,6 +70,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [members, setMembers] = useState<WorkspaceMemberWithUser[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
+  const [columns, setColumns] = useState<Column[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +106,16 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     }
   }, [workspace]);
 
+  const refreshColumns = useCallback(async () => {
+    if (!workspace) return;
+    try {
+      const wsColumns = await getAllWorkspaceColumns(workspace.id);
+      setColumns(wsColumns);
+    } catch (err) {
+      console.error("Failed to refresh columns:", err);
+    }
+  }, [workspace]);
+
   // Initial data load
   useEffect(() => {
     async function loadData() {
@@ -119,12 +134,14 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
 
         setWorkspace(ws);
 
-        const [wsMembers, wsLabels] = await Promise.all([
+        const [wsMembers, wsLabels, wsColumns] = await Promise.all([
           getWorkspaceMembers(ws.id),
           getWorkspaceLabels(ws.id),
+          getAllWorkspaceColumns(ws.id),
         ]);
         setMembers(wsMembers);
         setLabels(wsLabels);
+        setColumns(wsColumns);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load data");
       } finally {
@@ -145,6 +162,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     workspace,
     members,
     labels,
+    columns,
     isLoading,
     error,
     currentUserId,
@@ -154,6 +172,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     refreshWorkspace,
     refreshMembers,
     refreshLabels,
+    refreshColumns,
   };
 
   return (

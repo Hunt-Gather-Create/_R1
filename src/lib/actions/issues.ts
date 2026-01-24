@@ -26,6 +26,7 @@ import type {
 } from "../types";
 import { STATUS } from "../design-tokens";
 import { requireWorkspaceAccess } from "./workspace";
+import { getWorkspaceSlug } from "./helpers";
 
 // Helper to generate next identifier
 async function getNextIdentifier(workspaceId: string): Promise<string> {
@@ -75,16 +76,6 @@ async function getColumnWorkspaceId(columnId: string): Promise<string | null> {
     .where(eq(columns.id, columnId))
     .get();
   return column?.workspaceId ?? null;
-}
-
-// Helper to get workspace slug for revalidation
-async function getWorkspaceSlug(workspaceId: string): Promise<string | null> {
-  const workspace = await db
-    .select({ slug: workspaces.slug })
-    .from(workspaces)
-    .where(eq(workspaces.id, workspaceId))
-    .get();
-  return workspace?.slug ?? null;
 }
 
 export async function createIssue(
