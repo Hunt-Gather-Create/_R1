@@ -1,16 +1,22 @@
 "use client";
 
-import { useState, useCallback, createContext, useContext, useEffect } from "react";
+import { useState, useCallback, createContext, useContext, useEffect, Suspense } from "react";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
-import { VIEW, GROUP_BY, type ViewType, type GroupBy } from "@/lib/design-tokens";
+import type { ViewType, GroupBy } from "@/lib/design-tokens";
+import { useURLState, URLStateProvider } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 interface AppShellContextValue {
+  // URL-synced state (read from useURLState)
   currentView: ViewType;
   setCurrentView: (view: ViewType) => void;
   groupBy: GroupBy;
   setGroupBy: (groupBy: GroupBy) => void;
+  isCreateIssueOpen: boolean;
+  setCreateIssueOpen: (open: boolean) => void;
+
+  // Local UI state
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
   detailPanelOpen: boolean;
@@ -19,8 +25,6 @@ interface AppShellContextValue {
   setSelectedIssueId: (id: string | null) => void;
   isCommandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
-  isCreateIssueOpen: boolean;
-  setCreateIssueOpen: (open: boolean) => void;
 }
 
 const AppShellContext = createContext<AppShellContextValue | null>(null);
@@ -39,18 +43,30 @@ interface AppShellProps {
   issueCount?: number;
 }
 
-export function AppShell({
+function AppShellContent({
   children,
   title = "All Issues",
   issueCount,
 }: AppShellProps) {
-  const [currentView, setCurrentView] = useState<ViewType>(VIEW.BOARD);
-  const [groupBy, setGroupBy] = useState<GroupBy>(GROUP_BY.STATUS);
+  const { urlState, setView, setGroupBy, setCreate, setIssue } = useURLState();
+
+  // Local UI state (not in URL)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [detailPanelOpen, setDetailPanelOpen] = useState(false);
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [isCreateIssueOpen, setCreateIssueOpen] = useState(false);
+
+  // Detail panel is open when there's an issue in URL
+  const detailPanelOpen = !!urlState.issue;
+
+  const setDetailPanelOpen = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        setSelectedIssueId(null);
+        setIssue(null);
+      }
+    },
+    [setIssue]
+  );
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => !prev);
@@ -74,7 +90,7 @@ export function AppShell({
         document.activeElement?.tagName !== "TEXTAREA"
       ) {
         e.preventDefault();
-        setCreateIssueOpen(true);
+        setCreate(true);
       }
 
       // [ to toggle sidebar
@@ -91,29 +107,29 @@ export function AppShell({
       if (e.key === "Escape") {
         if (isCommandPaletteOpen) {
           setCommandPaletteOpen(false);
-        } else if (isCreateIssueOpen) {
-          setCreateIssueOpen(false);
+        } else if (urlState.create) {
+          setCreate(false);
         } else if (detailPanelOpen) {
           setDetailPanelOpen(false);
-          setSelectedIssueId(null);
         }
       }
     },
-    [isCommandPaletteOpen, isCreateIssueOpen, detailPanelOpen, toggleSidebar]
+    [isCommandPaletteOpen, urlState.create, detailPanelOpen, toggleSidebar, setCreate, setDetailPanelOpen]
   );
 
   // Register global keyboard listener
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => handleKeyDown(e);
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
   const contextValue: AppShellContextValue = {
-    currentView,
-    setCurrentView,
-    groupBy,
+    currentView: urlState.view,
+    setCurrentView: setView,
+    groupBy: urlState.groupBy,
     setGroupBy,
+    isCreateIssueOpen: urlState.create,
+    setCreateIssueOpen: setCreate,
     sidebarCollapsed,
     toggleSidebar,
     detailPanelOpen,
@@ -122,23 +138,17 @@ export function AppShell({
     setSelectedIssueId,
     isCommandPaletteOpen,
     setCommandPaletteOpen,
-    isCreateIssueOpen,
-    setCreateIssueOpen,
   };
 
   return (
     <AppShellContext.Provider value={contextValue}>
       <div className="flex h-screen bg-background overflow-hidden">
-        {/* Sidebar */}
         <Sidebar />
 
-        {/* Main Content Area */}
         <div className="flex flex-col flex-1 min-w-0">
           <Header title={title} issueCount={issueCount} />
 
-          {/* Content with optional detail panel */}
           <div className="flex flex-1 min-h-0">
-            {/* Main content */}
             <main
               className={cn(
                 "flex-1 overflow-auto scrollbar-thin",
@@ -148,15 +158,43 @@ export function AppShell({
               {children}
             </main>
 
-            {/* Detail Panel Slot - rendered by children */}
             {detailPanelOpen && (
-              <aside className="w-[480px] flex-shrink-0 bg-background overflow-auto scrollbar-thin">
-                {/* IssueDetailPanel will be rendered here via portal or context */}
-              </aside>
+              <aside className="w-[480px] flex-shrink-0 bg-background overflow-auto scrollbar-thin" />
             )}
           </div>
         </div>
       </div>
     </AppShellContext.Provider>
+  );
+}
+
+function AppShellLoading({
+  children,
+  title = "All Issues",
+  issueCount,
+}: AppShellProps) {
+  return (
+    <div className="flex h-screen bg-background overflow-hidden">
+      <div className="w-60 border-r border-border" />
+      <div className="flex flex-col flex-1 min-w-0">
+        <div className="h-14 border-b border-border px-4 flex items-center">
+          <span className="font-semibold">{title}</span>
+          {issueCount !== undefined && (
+            <span className="ml-2 text-muted-foreground text-sm">{issueCount}</span>
+          )}
+        </div>
+        <main className="flex-1 overflow-auto">{children}</main>
+      </div>
+    </div>
+  );
+}
+
+export function AppShell(props: AppShellProps) {
+  return (
+    <Suspense fallback={<AppShellLoading {...props} />}>
+      <URLStateProvider>
+        <AppShellContent {...props} />
+      </URLStateProvider>
+    </Suspense>
   );
 }

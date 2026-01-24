@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Copy, Trash2, X } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Check, Copy, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Sheet,
@@ -33,8 +34,10 @@ export function IssueDetailDrawer({
   onAddLabel,
   onRemoveLabel,
 }: IssueDetailDrawerProps) {
+  const pathname = usePathname();
   const [comments, setComments] = useState<Comment[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
   const [externalDescription, setExternalDescription] = useState<string | undefined>(undefined);
   const [highlightDescription, setHighlightDescription] = useState(false);
 
@@ -48,6 +51,15 @@ export function IssueDetailDrawer({
     // Reset highlight state after animation
     setTimeout(() => setHighlightDescription(false), 2000);
   }, []);
+
+  const handleCopyLink = useCallback(() => {
+    if (!issue) return;
+    const url = `${window.location.origin}${pathname}?issue=${issue.identifier}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    });
+  }, [pathname, issue]);
 
   const handleDelete = () => {
     if (isDeleting) {
@@ -81,10 +93,16 @@ export function IssueDetailDrawer({
           </SheetTitle>
           <div className="flex items-center gap-1">
             <button
-              className="p-1.5 hover:bg-accent rounded text-muted-foreground hover:text-foreground"
-              title="Copy link"
+              onClick={handleCopyLink}
+              className={cn(
+                "p-1.5 rounded transition-colors",
+                isCopied
+                  ? "bg-green-500/20 text-green-500"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              )}
+              title={isCopied ? "Copied!" : "Copy link"}
             >
-              <Copy className="w-4 h-4" />
+              {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
             </button>
             <button
               onClick={handleDelete}
