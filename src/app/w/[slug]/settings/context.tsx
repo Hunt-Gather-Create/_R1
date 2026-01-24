@@ -13,13 +13,20 @@ import {
   getWorkspaceBySlug,
   getWorkspaceMembers,
 } from "@/lib/actions/workspace";
+import { getWorkspaceLabels } from "@/lib/actions/board";
 import { getCurrentUserId } from "@/lib/auth";
-import type { Workspace, WorkspaceMemberWithUser, WorkspaceRole } from "@/lib/types";
+import type {
+  Workspace,
+  WorkspaceMemberWithUser,
+  WorkspaceRole,
+  Label,
+} from "@/lib/types";
 
 interface SettingsContextValue {
   // Workspace data
   workspace: Workspace | null;
   members: WorkspaceMemberWithUser[];
+  labels: Label[];
 
   // Loading states
   isLoading: boolean;
@@ -34,6 +41,7 @@ interface SettingsContextValue {
   // Actions
   refreshWorkspace: () => Promise<void>;
   refreshMembers: () => Promise<void>;
+  refreshLabels: () => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -41,7 +49,9 @@ const SettingsContext = createContext<SettingsContextValue | null>(null);
 export function useSettingsContext() {
   const context = useContext(SettingsContext);
   if (!context) {
-    throw new Error("useSettingsContext must be used within a SettingsProvider");
+    throw new Error(
+      "useSettingsContext must be used within a SettingsProvider"
+    );
   }
   return context;
 }
@@ -55,6 +65,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
 
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [members, setMembers] = useState<WorkspaceMemberWithUser[]>([]);
+  const [labels, setLabels] = useState<Label[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +91,16 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     }
   }, [workspace]);
 
+  const refreshLabels = useCallback(async () => {
+    if (!workspace) return;
+    try {
+      const wsLabels = await getWorkspaceLabels(workspace.id);
+      setLabels(wsLabels);
+    } catch (err) {
+      console.error("Failed to refresh labels:", err);
+    }
+  }, [workspace]);
+
   // Initial data load
   useEffect(() => {
     async function loadData() {
@@ -98,8 +119,12 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
 
         setWorkspace(ws);
 
-        const wsMembers = await getWorkspaceMembers(ws.id);
+        const [wsMembers, wsLabels] = await Promise.all([
+          getWorkspaceMembers(ws.id),
+          getWorkspaceLabels(ws.id),
+        ]);
         setMembers(wsMembers);
+        setLabels(wsLabels);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load data");
       } finally {
@@ -119,6 +144,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
   const value: SettingsContextValue = {
     workspace,
     members,
+    labels,
     isLoading,
     error,
     currentUserId,
@@ -127,6 +153,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     isOwner,
     refreshWorkspace,
     refreshMembers,
+    refreshLabels,
   };
 
   return (

@@ -36,6 +36,7 @@ function MainContent() {
     deleteSelectedIssue,
     addLabelToSelectedIssue,
     removeLabelFromSelectedIssue,
+    createLabel,
   } = useBoardContext();
 
   return (
@@ -65,6 +66,7 @@ function MainContent() {
         onDelete={deleteSelectedIssue}
         onAddLabel={addLabelToSelectedIssue}
         onRemoveLabel={removeLabelFromSelectedIssue}
+        onCreateLabel={createLabel}
       />
 
       {/* Command Palette */}
@@ -106,16 +108,14 @@ function WorkspaceContent({
  */
 export default function WorkspacePage() {
   const params = useParams<{ slug: string }>();
-  const [workspace, setWorkspace] = useState<WorkspaceWithColumnsAndIssues | null>(null);
+  const [workspace, setWorkspace] =
+    useState<WorkspaceWithColumnsAndIssues | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (params.slug) {
-      Promise.all([
-        getWorkspaceBySlugWithIssues(params.slug),
-        getCurrentUser(),
-      ])
+      Promise.all([getWorkspaceBySlugWithIssues(params.slug), getCurrentUser()])
         .then(([workspaceData, user]) => {
           if (workspaceData) {
             setWorkspace(workspaceData);

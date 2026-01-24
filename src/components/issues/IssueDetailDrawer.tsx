@@ -4,14 +4,15 @@ import { useState, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import { Check, Copy, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { IssueChatPanel } from "./IssueChatPanel";
 import { IssueDetailForm } from "./IssueDetailForm";
-import type { IssueWithLabels, Label, Comment, UpdateIssueInput } from "@/lib/types";
+import type {
+  IssueWithLabels,
+  Label,
+  Comment,
+  UpdateIssueInput,
+} from "@/lib/types";
 
 interface IssueDetailDrawerProps {
   open: boolean;
@@ -22,6 +23,7 @@ interface IssueDetailDrawerProps {
   onDelete: () => void;
   onAddLabel: (labelId: string) => void;
   onRemoveLabel: (labelId: string) => void;
+  onCreateLabel?: (name: string, color: string) => Promise<Label | undefined>;
 }
 
 export function IssueDetailDrawer({
@@ -33,12 +35,15 @@ export function IssueDetailDrawer({
   onDelete,
   onAddLabel,
   onRemoveLabel,
+  onCreateLabel,
 }: IssueDetailDrawerProps) {
   const pathname = usePathname();
   const [comments, setComments] = useState<Comment[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  const [externalDescription, setExternalDescription] = useState<string | undefined>(undefined);
+  const [externalDescription, setExternalDescription] = useState<
+    string | undefined
+  >(undefined);
   const [highlightDescription, setHighlightDescription] = useState(false);
 
   const handleCommentsLoad = useCallback((loadedComments: Comment[]) => {
@@ -102,7 +107,11 @@ export function IssueDetailDrawer({
               )}
               title={isCopied ? "Copied!" : "Copy link"}
             >
-              {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              {isCopied ? (
+                <Check className="w-4 h-4" />
+              ) : (
+                <Copy className="w-4 h-4" />
+              )}
             </button>
             <button
               onClick={handleDelete}
@@ -145,6 +154,7 @@ export function IssueDetailDrawer({
               onUpdate={onUpdate}
               onAddLabel={onAddLabel}
               onRemoveLabel={onRemoveLabel}
+              onCreateLabel={onCreateLabel}
               externalDescription={externalDescription}
               highlightDescription={highlightDescription}
               onCommentsLoad={handleCommentsLoad}
