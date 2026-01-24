@@ -3,7 +3,10 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { IssueRow } from "./IssueRow";
 import { ListHeader, type SortField, type SortDirection } from "./ListHeader";
-import { IssueProvider, useIssueContext } from "@/components/board/context/IssueContext";
+import {
+  IssueProvider,
+  useIssueContext,
+} from "@/components/board/context/IssueContext";
 import { cn } from "@/lib/utils";
 import type { BoardWithColumnsAndIssues, IssueWithLabels } from "@/lib/types";
 
@@ -166,13 +169,17 @@ function ListViewContent({
         selectedCount={selectedIds.size}
         totalCount={sortedIssues.length}
         onSelectAll={selectAll}
-        isAllSelected={selectedIds.size === sortedIssues.length && sortedIssues.length > 0}
+        isAllSelected={
+          selectedIds.size === sortedIssues.length && sortedIssues.length > 0
+        }
       />
 
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         {sortedIssues.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <p className="text-sm text-muted-foreground mb-2">No issues found</p>
+            <p className="text-sm text-muted-foreground mb-2">
+              No issues found
+            </p>
             <p className="text-xs text-muted-foreground">
               Create an issue to get started
             </p>

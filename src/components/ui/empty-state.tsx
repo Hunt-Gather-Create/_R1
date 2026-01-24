@@ -48,7 +48,11 @@ export function EmptyState({
   );
 }
 
-export function NoIssuesFound({ onCreateIssue }: { onCreateIssue?: () => void }) {
+export function NoIssuesFound({
+  onCreateIssue,
+}: {
+  onCreateIssue?: () => void;
+}) {
   return (
     <EmptyState
       icon={<Inbox className="w-6 h-6 text-muted-foreground" />}
@@ -73,7 +77,11 @@ export function NoSearchResults() {
   );
 }
 
-export function NoFilterResults({ onClearFilters }: { onClearFilters: () => void }) {
+export function NoFilterResults({
+  onClearFilters,
+}: {
+  onClearFilters: () => void;
+}) {
   return (
     <EmptyState
       icon={<Filter className="w-6 h-6 text-muted-foreground" />}

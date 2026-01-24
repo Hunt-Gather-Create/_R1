@@ -25,10 +25,12 @@ pnpm db:studio        # Open Drizzle Studio GUI
 **Test location:** Co-located with source files as `*.test.ts` (e.g., `src/lib/utils.test.ts`)
 
 **Running tests:**
+
 - `pnpm test` - Watch mode for development
 - `pnpm test:run` - Single run for CI
 
 **Patterns:**
+
 - Use `describe` blocks to group related tests
 - Create factory helpers (e.g., `createIssue()`) for mock data
 - Test pure functions in `src/lib/` directly without mocking
@@ -71,12 +73,14 @@ Main tables: `boards`, `columns`, `issues`, `labels`, `issueLabels`, `cycles`, `
 ### Server Actions
 
 Located in `src/lib/actions/`:
+
 - `board.ts` - `getOrCreateDefaultBoardWithIssues()`
 - `issues.ts` - `createIssue()`, `updateIssue()`, `deleteIssue()`, `moveIssue()`, label/comment operations
 
 ### Design Tokens
 
 `src/lib/design-tokens.ts` defines constants used throughout:
+
 - `STATUS` - backlog, todo, in_progress, done, canceled
 - `PRIORITY` - 0 (urgent) to 4 (none)
 - `VIEW` - board, list, timeline
@@ -89,6 +93,7 @@ Uses @dnd-kit with custom collision detection in `src/lib/collision-detection.ts
 ### Type Definitions
 
 `src/lib/types.ts` - Key types are inferred from Drizzle schema:
+
 - `BoardWithColumnsAndIssues` - Full board with nested columns and issues
 - `IssueWithLabels` - Issue with its labels array
 - `CreateIssueInput` / `UpdateIssueInput` - Mutation input types

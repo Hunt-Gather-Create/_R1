@@ -54,13 +54,10 @@ export function useIssueDragAndDrop({
     [findColumn]
   );
 
-  const handleDragOver = useCallback(
-    (event: DragOverEvent) => {
-      const { over } = event;
-      setIsOverDropzone(!!over);
-    },
-    []
-  );
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    const { over } = event;
+    setIsOverDropzone(!!over);
+  }, []);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -92,7 +89,9 @@ export function useIssueDragAndDrop({
 
         if (draggedFromColumnId === targetColumnId) {
           // Same column reorder
-          const activeIndex = overColumn.issues.findIndex((i) => i.id === activeId);
+          const activeIndex = overColumn.issues.findIndex(
+            (i) => i.id === activeId
+          );
           if (activeIndex === -1 || activeIndex === overIndex) return;
 
           const reorderedIssues = arrayMove(
@@ -109,19 +108,17 @@ export function useIssueDragAndDrop({
 
       // Skip if dropping in same position
       if (draggedFromColumnId === targetColumnId) {
-        const currentColumn = board.columns.find((c) => c.id === draggedFromColumnId);
-        const currentIndex = currentColumn?.issues.findIndex((i) => i.id === activeId) ?? -1;
+        const currentColumn = board.columns.find(
+          (c) => c.id === draggedFromColumnId
+        );
+        const currentIndex =
+          currentColumn?.issues.findIndex((i) => i.id === activeId) ?? -1;
         if (currentIndex === targetPosition) return;
       }
 
       moveIssueToColumn(activeId, targetColumnId, targetPosition);
     },
-    [
-      board.columns,
-      originalColumnId,
-      findColumn,
-      moveIssueToColumn,
-    ]
+    [board.columns, originalColumnId, findColumn, moveIssueToColumn]
   );
 
   return {

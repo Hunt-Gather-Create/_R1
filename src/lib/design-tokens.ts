@@ -108,15 +108,30 @@ export const LABEL_COLORS = [
     bg: "bg-green-500/20",
     text: "text-green-400",
   },
-  { name: "Blue", value: "#3b82f6", bg: "bg-blue-500/20", text: "text-blue-400" },
+  {
+    name: "Blue",
+    value: "#3b82f6",
+    bg: "bg-blue-500/20",
+    text: "text-blue-400",
+  },
   {
     name: "Purple",
     value: "#a855f7",
     bg: "bg-purple-500/20",
     text: "text-purple-400",
   },
-  { name: "Pink", value: "#ec4899", bg: "bg-pink-500/20", text: "text-pink-400" },
-  { name: "Gray", value: "#6b7280", bg: "bg-gray-500/20", text: "text-gray-400" },
+  {
+    name: "Pink",
+    value: "#ec4899",
+    bg: "bg-pink-500/20",
+    text: "text-pink-400",
+  },
+  {
+    name: "Gray",
+    value: "#6b7280",
+    bg: "bg-gray-500/20",
+    text: "text-gray-400",
+  },
 ] as const;
 
 // Keyboard shortcuts
@@ -156,14 +171,18 @@ export const WORKSPACE_PURPOSE = {
   MARKETING: "marketing",
 } as const;
 
-export type WorkspacePurpose = (typeof WORKSPACE_PURPOSE)[keyof typeof WORKSPACE_PURPOSE];
+export type WorkspacePurpose =
+  (typeof WORKSPACE_PURPOSE)[keyof typeof WORKSPACE_PURPOSE];
 
-export const PURPOSE_CONFIG: Record<WorkspacePurpose, {
-  label: string;
-  description: string;
-  defaultColumns: string[];
-  defaultLabels: Array<{ name: string; color: string }>;
-}> = {
+export const PURPOSE_CONFIG: Record<
+  WorkspacePurpose,
+  {
+    label: string;
+    description: string;
+    defaultColumns: string[];
+    defaultLabels: Array<{ name: string; color: string }>;
+  }
+> = {
   software: {
     label: "Software Development",
     description: "Track bugs, features, and technical tasks",

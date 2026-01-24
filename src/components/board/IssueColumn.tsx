@@ -18,10 +18,7 @@ interface IssueColumnProps {
   onIssueClick: (issue: IssueWithLabels) => void;
 }
 
-export function IssueColumn({
-  column,
-  onIssueClick,
-}: IssueColumnProps) {
+export function IssueColumn({ column, onIssueClick }: IssueColumnProps) {
   const { addIssue, removeIssue } = useBoardContext();
 
   const [mounted, setMounted] = useState(false);

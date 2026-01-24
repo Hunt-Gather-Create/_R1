@@ -37,7 +37,9 @@ export default function NewWorkspacePage() {
       const workspace = await createWorkspace(name.trim(), purpose);
       router.push(`/w/${workspace.slug}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create workspace");
+      setError(
+        err instanceof Error ? err.message : "Failed to create workspace"
+      );
       setIsLoading(false);
     }
   };
@@ -49,7 +51,9 @@ export default function NewWorkspacePage() {
           <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center mb-4">
             <Layers className="w-6 h-6 text-primary-foreground" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground">Create Workspace</h1>
+          <h1 className="text-2xl font-bold text-foreground">
+            Create Workspace
+          </h1>
           <p className="text-sm text-muted-foreground mt-1">
             {step === "purpose"
               ? "What type of workspace do you need?"

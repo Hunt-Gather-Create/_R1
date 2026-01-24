@@ -86,10 +86,7 @@ function GroupByDropdown() {
   );
 }
 
-export function Header({
-  title,
-  issueCount,
-}: HeaderProps) {
+export function Header({ title, issueCount }: HeaderProps) {
   return (
     <header className="flex items-center justify-between h-12 px-4 border-b border-border bg-background">
       {/* Left: Title and count */}

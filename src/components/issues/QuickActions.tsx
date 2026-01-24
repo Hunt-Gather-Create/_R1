@@ -1,7 +1,13 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { MoreHorizontal, Copy, Trash2, ExternalLink, Archive } from "lucide-react";
+import {
+  MoreHorizontal,
+  Copy,
+  Trash2,
+  ExternalLink,
+  Archive,
+} from "lucide-react";
 
 interface QuickActionsProps {
   onOpen?: () => void;

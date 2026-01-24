@@ -1,9 +1,24 @@
 "use client";
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useCallback, useMemo, createContext, useContext, type ReactNode } from "react";
-import { VIEW, GROUP_BY, type ViewType, type GroupBy } from "@/lib/design-tokens";
-import { deserializeFilters, serializeFilters, type FilterState } from "@/lib/filters";
+import {
+  useCallback,
+  useMemo,
+  createContext,
+  useContext,
+  type ReactNode,
+} from "react";
+import {
+  VIEW,
+  GROUP_BY,
+  type ViewType,
+  type GroupBy,
+} from "@/lib/design-tokens";
+import {
+  deserializeFilters,
+  serializeFilters,
+  type FilterState,
+} from "@/lib/filters";
 
 export interface URLState {
   issue: string | null;
@@ -30,14 +45,16 @@ const VALID_GROUP_BY = Object.values(GROUP_BY);
 
 function parseURLState(searchParams: URLSearchParams): URLState {
   const viewParam = searchParams.get("view");
-  const view = viewParam && VALID_VIEWS.includes(viewParam as ViewType)
-    ? (viewParam as ViewType)
-    : VIEW.BOARD;
+  const view =
+    viewParam && VALID_VIEWS.includes(viewParam as ViewType)
+      ? (viewParam as ViewType)
+      : VIEW.BOARD;
 
   const groupByParam = searchParams.get("groupBy");
-  const groupBy = groupByParam && VALID_GROUP_BY.includes(groupByParam as GroupBy)
-    ? (groupByParam as GroupBy)
-    : GROUP_BY.STATUS;
+  const groupBy =
+    groupByParam && VALID_GROUP_BY.includes(groupByParam as GroupBy)
+      ? (groupByParam as GroupBy)
+      : GROUP_BY.STATUS;
 
   return {
     issue: searchParams.get("issue"),
@@ -87,13 +104,16 @@ function useURLStateInternal() {
     (newState: URLState) => {
       const newParams = serializeURLState(newState);
       const queryString = newParams.toString();
-      router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
+      router.replace(queryString ? `${pathname}?${queryString}` : pathname, {
+        scroll: false,
+      });
     },
     [pathname, router]
   );
 
   const setIssue = useCallback(
-    (identifier: string | null) => updateURL({ ...urlState, issue: identifier }),
+    (identifier: string | null) =>
+      updateURL({ ...urlState, issue: identifier }),
     [urlState, updateURL]
   );
 

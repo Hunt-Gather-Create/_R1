@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useCallback, createContext, useContext, useEffect, Suspense } from "react";
+import {
+  useState,
+  useCallback,
+  createContext,
+  useContext,
+  useEffect,
+  Suspense,
+} from "react";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import type { ViewType, GroupBy } from "@/lib/design-tokens";
@@ -114,7 +121,14 @@ function AppShellContent({
         }
       }
     },
-    [isCommandPaletteOpen, urlState.create, detailPanelOpen, toggleSidebar, setCreate, setDetailPanelOpen]
+    [
+      isCommandPaletteOpen,
+      urlState.create,
+      detailPanelOpen,
+      toggleSidebar,
+      setCreate,
+      setDetailPanelOpen,
+    ]
   );
 
   // Register global keyboard listener
@@ -180,7 +194,9 @@ function AppShellLoading({
         <div className="h-14 border-b border-border px-4 flex items-center">
           <span className="font-semibold">{title}</span>
           {issueCount !== undefined && (
-            <span className="ml-2 text-muted-foreground text-sm">{issueCount}</span>
+            <span className="ml-2 text-muted-foreground text-sm">
+              {issueCount}
+            </span>
           )}
         </div>
         <main className="flex-1 overflow-auto">{children}</main>

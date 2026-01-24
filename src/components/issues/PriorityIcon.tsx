@@ -27,10 +27,7 @@ export function PriorityIcon({
       title={config.label}
     >
       <div
-        className={cn(
-          "flex items-end gap-px",
-          size === "sm" ? "h-3" : "h-4"
-        )}
+        className={cn("flex items-end gap-px", size === "sm" ? "h-3" : "h-4")}
       >
         {[0, 1, 2, 3].map((i) => (
           <div
@@ -47,7 +44,9 @@ export function PriorityIcon({
             )}
             style={
               i < barCount
-                ? { backgroundColor: `var(--priority-${priority === PRIORITY.URGENT ? "urgent" : priority === PRIORITY.HIGH ? "high" : priority === PRIORITY.MEDIUM ? "medium" : priority === PRIORITY.LOW ? "low" : "none"})` }
+                ? {
+                    backgroundColor: `var(--priority-${priority === PRIORITY.URGENT ? "urgent" : priority === PRIORITY.HIGH ? "high" : priority === PRIORITY.MEDIUM ? "medium" : priority === PRIORITY.LOW ? "low" : "none"})`,
+                  }
                 : undefined
             }
           />
@@ -84,7 +83,13 @@ export function PriorityBadge({
       )}
       title={config.label}
     >
-      {priority === PRIORITY.URGENT ? "!" : priority === PRIORITY.HIGH ? "!!" : priority === PRIORITY.MEDIUM ? "!" : ""}
+      {priority === PRIORITY.URGENT
+        ? "!"
+        : priority === PRIORITY.HIGH
+          ? "!!"
+          : priority === PRIORITY.MEDIUM
+            ? "!"
+            : ""}
     </span>
   );
 }

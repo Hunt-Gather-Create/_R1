@@ -146,9 +146,7 @@ export function IssueCard({
         </div>
 
         {/* Due date */}
-        {issue.dueDate && (
-          <DueDateBadge date={new Date(issue.dueDate)} />
-        )}
+        {issue.dueDate && <DueDateBadge date={new Date(issue.dueDate)} />}
       </div>
 
       {/* Estimate badge (if set) */}

@@ -157,7 +157,9 @@ export function FilterBar({
                 className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-left text-sm"
               >
                 <PriorityIcon priority={priority} size="sm" />
-                <span className="flex-1">{PRIORITY_CONFIG[priority].label}</span>
+                <span className="flex-1">
+                  {PRIORITY_CONFIG[priority].label}
+                </span>
                 {filters.priority.includes(priority) && (
                   <Check className="w-4 h-4 text-primary" />
                 )}

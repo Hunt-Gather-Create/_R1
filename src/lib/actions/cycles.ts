@@ -54,7 +54,9 @@ export async function deleteCycle(cycleId: string): Promise<void> {
   revalidatePath("/");
 }
 
-export async function getWorkspaceCycles(workspaceId: string): Promise<Cycle[]> {
+export async function getWorkspaceCycles(
+  workspaceId: string
+): Promise<Cycle[]> {
   await requireWorkspaceAccess(workspaceId);
 
   return db

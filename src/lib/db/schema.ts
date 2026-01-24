@@ -1,4 +1,9 @@
-import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
+import {
+  sqliteTable,
+  text,
+  integer,
+  primaryKey,
+} from "drizzle-orm/sqlite-core";
 
 // Users - synced from WorkOS
 export const users = sqliteTable("users", {
@@ -82,7 +87,9 @@ export const issues = sqliteTable("issues", {
   priority: integer("priority").notNull().default(4), // 0=urgent, 1=high, 2=medium, 3=low, 4=none
   estimate: integer("estimate"), // Story points
   dueDate: integer("due_date", { mode: "timestamp" }),
-  cycleId: text("cycle_id").references(() => cycles.id, { onDelete: "set null" }),
+  cycleId: text("cycle_id").references(() => cycles.id, {
+    onDelete: "set null",
+  }),
   position: integer("position").notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),

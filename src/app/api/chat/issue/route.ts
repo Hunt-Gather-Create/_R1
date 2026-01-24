@@ -13,21 +13,25 @@ interface IssueContext {
   comments: Array<{ body: string }>;
 }
 
-function buildSystemPrompt(issueContext: IssueContext, purpose: WorkspacePurpose): string {
+function buildSystemPrompt(
+  issueContext: IssueContext,
+  purpose: WorkspacePurpose
+): string {
   const commentsText =
     issueContext.comments.length > 0
       ? `User comments on this issue:\n${issueContext.comments.map((c) => `- ${c.body}`).join("\n")}`
       : "No comments yet.";
 
-  const purposeGuidance = purpose === "marketing"
-    ? `Your job is to help the user:
+  const purposeGuidance =
+    purpose === "marketing"
+      ? `Your job is to help the user:
 1. Define clear campaign objectives and target audience
 2. Clarify deliverables and creative requirements
 3. Add success metrics and KPIs
 4. Structure the description with timeline and milestones
 
 Focus on marketing best practices: audience targeting, messaging, channels, and measurable outcomes.`
-    : `Your job is to help the user:
+      : `Your job is to help the user:
 1. Refine acceptance criteria and requirements
 2. Clarify ambiguous parts of the issue
 3. Improve the description with better structure

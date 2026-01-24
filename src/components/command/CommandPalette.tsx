@@ -14,13 +14,7 @@ import {
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { StatusDot } from "@/components/issues/StatusDot";
 import { PriorityIcon } from "@/components/issues/PriorityIcon";
-import {
-  LayoutGrid,
-  List,
-  Plus,
-  Search,
-  SidebarClose,
-} from "lucide-react";
+import { LayoutGrid, List, Plus, Search, SidebarClose } from "lucide-react";
 import {
   createNavigationCommands,
   createActionCommands,
@@ -134,10 +128,7 @@ export function CommandPalette() {
                     onSelect={() => handleSelectIssue(issue)}
                     className="flex items-center gap-2 py-2"
                   >
-                    <StatusDot
-                      status={issue.status as Status}
-                      size="sm"
-                    />
+                    <StatusDot status={issue.status as Status} size="sm" />
                     <span className="text-xs text-muted-foreground font-mono w-16">
                       {issue.identifier}
                     </span>
@@ -198,15 +189,21 @@ export function CommandPalette() {
           <div className="flex items-center justify-between px-3 py-2 border-t text-xs text-muted-foreground">
             <div className="flex items-center gap-4">
               <span>
-                <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">↑↓</kbd>{" "}
+                <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">
+                  ↑↓
+                </kbd>{" "}
                 Navigate
               </span>
               <span>
-                <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">↵</kbd>{" "}
+                <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">
+                  ↵
+                </kbd>{" "}
                 Select
               </span>
               <span>
-                <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">esc</kbd>{" "}
+                <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">
+                  esc
+                </kbd>{" "}
                 Close
               </span>
             </div>

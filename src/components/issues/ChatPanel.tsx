@@ -30,10 +30,11 @@ export function ChatPanel({ onSuggestion }: ChatPanelProps) {
   const [input, setInput] = useState("");
 
   const transport = useMemo(
-    () => new DefaultChatTransport({
-      api: "/api/chat",
-      body: { workspacePurpose },
-    }),
+    () =>
+      new DefaultChatTransport({
+        api: "/api/chat",
+        body: { workspacePurpose },
+      }),
     [workspacePurpose]
   );
 
@@ -52,20 +53,21 @@ export function ChatPanel({ onSuggestion }: ChatPanelProps) {
   });
 
   // Add welcome message if no messages exist
-  const displayMessages = messages.length === 0
-    ? [
-        {
-          id: "welcome",
-          role: "assistant" as const,
-          parts: [
-            {
-              type: "text" as const,
-              text: "Hi! I'm here to help you craft a great user story. What would you like to build today?",
-            },
-          ],
-        },
-      ]
-    : messages;
+  const displayMessages =
+    messages.length === 0
+      ? [
+          {
+            id: "welcome",
+            role: "assistant" as const,
+            parts: [
+              {
+                type: "text" as const,
+                text: "Hi! I'm here to help you craft a great user story. What would you like to build today?",
+              },
+            ],
+          },
+        ]
+      : messages;
 
   const isLoading = status === "streaming" || status === "submitted";
 
@@ -137,7 +139,10 @@ export function ChatPanel({ onSuggestion }: ChatPanelProps) {
                 {message.parts.map((part, index) => {
                   if (part.type === "text") {
                     return (
-                      <div key={index} className="prose prose-sm dark:prose-invert max-w-none">
+                      <div
+                        key={index}
+                        className="prose prose-sm dark:prose-invert max-w-none"
+                      >
                         <ReactMarkdown>{part.text}</ReactMarkdown>
                       </div>
                     );
