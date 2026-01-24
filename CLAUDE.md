@@ -18,6 +18,21 @@ pnpm db:migrate       # Run migrations (drizzle-kit push)
 pnpm db:studio        # Open Drizzle Studio GUI
 ```
 
+## Testing
+
+**Stack:** Vitest, @testing-library/react, happy-dom
+
+**Test location:** Co-located with source files as `*.test.ts` (e.g., `src/lib/utils.test.ts`)
+
+**Running tests:**
+- `pnpm test` - Watch mode for development
+- `pnpm test:run` - Single run for CI
+
+**Patterns:**
+- Use `describe` blocks to group related tests
+- Create factory helpers (e.g., `createIssue()`) for mock data
+- Test pure functions in `src/lib/` directly without mocking
+
 ## Architecture
 
 ### Data Flow

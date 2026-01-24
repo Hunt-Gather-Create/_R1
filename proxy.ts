@@ -1,6 +1,6 @@
 import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 
-export default authkitMiddleware({
+export const proxy = authkitMiddleware({
   middlewareAuth: {
     enabled: true,
     unauthenticatedPaths: ["/callback", "/login"],
@@ -8,8 +8,5 @@ export default authkitMiddleware({
 });
 
 export const config = {
-  matcher: [
-    // Skip static files and Next.js internals
-    "/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|public/).*)"],
 };

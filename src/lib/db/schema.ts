@@ -44,15 +44,6 @@ export const workspaceMembers = sqliteTable(
   })
 );
 
-// Boards - workspace containers (legacy, kept for migration)
-export const boards = sqliteTable("boards", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  identifier: text("identifier").notNull().default("AUTO"), // For issue IDs like AUTO-123
-  issueCounter: integer("issue_counter").notNull().default(0),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
-
 // Columns - status columns within workspaces
 export const columns = sqliteTable("columns", {
   id: text("id").primaryKey(),
@@ -146,29 +137,6 @@ export const activities = sqliteTable("activities", {
   type: text("type").notNull(), // created, updated, status_changed, priority_changed, etc.
   data: text("data"), // JSON string with details
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
-
-// Keep cards table for backward compatibility during migration
-export const cards = sqliteTable("cards", {
-  id: text("id").primaryKey(),
-  columnId: text("column_id")
-    .notNull()
-    .references(() => columns.id, { onDelete: "cascade" }),
-  title: text("title").notNull(),
-  description: text("description"),
-  position: integer("position").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
-
-// User stories - AI-generated acceptance criteria
-export const userStories = sqliteTable("user_stories", {
-  id: text("id").primaryKey(),
-  issueId: text("issue_id")
-    .notNull()
-    .references(() => issues.id, { onDelete: "cascade" }),
-  story: text("story").notNull(),
-  acceptanceCriteria: text("acceptance_criteria"),
-  position: integer("position").notNull(),
 });
 
 // Chat messages - AI chat history per issue
