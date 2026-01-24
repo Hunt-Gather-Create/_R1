@@ -1,7 +1,5 @@
 import type {
-  boards,
   columns,
-  cards,
   issues,
   labels,
   cycles,
@@ -18,9 +16,7 @@ import type { Status, Priority } from "./design-tokens";
 export type User = typeof users.$inferSelect;
 export type Workspace = typeof workspaces.$inferSelect;
 export type WorkspaceMember = typeof workspaceMembers.$inferSelect;
-export type Board = typeof boards.$inferSelect;
 export type Column = typeof columns.$inferSelect;
-export type Card = typeof cards.$inferSelect;
 export type Issue = typeof issues.$inferSelect;
 export type Label = typeof labels.$inferSelect;
 export type Cycle = typeof cycles.$inferSelect;
@@ -43,22 +39,8 @@ export type IssueWithRelations = Issue & {
   cycle?: Cycle | null;
 };
 
-export type ColumnWithCards = Column & {
-  cards: Card[];
-};
-
 export type ColumnWithIssues = Column & {
   issues: IssueWithLabels[];
-};
-
-export type BoardWithColumnsAndCards = Board & {
-  columns: ColumnWithCards[];
-};
-
-export type BoardWithColumnsAndIssues = Board & {
-  columns: ColumnWithIssues[];
-  labels: Label[];
-  cycles: Cycle[];
 };
 
 // Workspace types
@@ -71,6 +53,9 @@ export type WorkspaceWithColumnsAndIssues = Workspace & {
   labels: Label[];
   cycles: Cycle[];
 };
+
+// Legacy alias for backward compatibility
+export type BoardWithColumnsAndIssues = WorkspaceWithColumnsAndIssues;
 
 export type WorkspaceWithMembers = Workspace & {
   members: WorkspaceMemberWithUser[];

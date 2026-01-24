@@ -1,61 +1,13 @@
 "use server";
 
 import { db } from "../db";
-import { workspaces, columns, cards, issues, labels, issueLabels, cycles } from "../db/schema";
+import { workspaces, columns, issues, labels, issueLabels, cycles } from "../db/schema";
 import { eq, asc } from "drizzle-orm";
 import type {
-  BoardWithColumnsAndCards,
   WorkspaceWithColumnsAndIssues,
   Label,
-  Workspace,
 } from "../types";
 import { requireWorkspaceAccess } from "./workspace";
-
-// Legacy function for backward compatibility with existing Card-based components
-export async function getBoardWithColumnsAndCards(
-  workspaceId: string
-): Promise<BoardWithColumnsAndCards> {
-  const workspace = await db
-    .select()
-    .from(workspaces)
-    .where(eq(workspaces.id, workspaceId))
-    .get();
-
-  if (!workspace) {
-    throw new Error(`Workspace not found: ${workspaceId}`);
-  }
-
-  const workspaceColumns = await db
-    .select()
-    .from(columns)
-    .where(eq(columns.workspaceId, workspaceId))
-    .orderBy(asc(columns.position));
-
-  const columnsWithCards = await Promise.all(
-    workspaceColumns.map(async (column) => {
-      const columnCards = await db
-        .select()
-        .from(cards)
-        .where(eq(cards.columnId, column.id))
-        .orderBy(asc(cards.position));
-
-      return {
-        ...column,
-        cards: columnCards,
-      };
-    })
-  );
-
-  // Map workspace to board-like structure for compatibility
-  return {
-    id: workspace.id,
-    name: workspace.name,
-    identifier: workspace.identifier,
-    issueCounter: workspace.issueCounter,
-    createdAt: workspace.createdAt,
-    columns: columnsWithCards,
-  };
-}
 
 // Get workspace with issues (requires authentication)
 export async function getWorkspaceWithIssues(
