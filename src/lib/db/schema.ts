@@ -160,3 +160,17 @@ export const chatMessages = sqliteTable("chat_messages", {
   content: text("content").notNull(), // Message text or JSON for tool calls
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
+
+// Attachments - files attached to issues
+export const attachments = sqliteTable("attachments", {
+  id: text("id").primaryKey(),
+  issueId: text("issue_id")
+    .notNull()
+    .references(() => issues.id, { onDelete: "cascade" }),
+  userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  filename: text("filename").notNull(),
+  storageKey: text("storage_key").notNull(),
+  mimeType: text("mime_type").notNull(),
+  size: integer("size").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
