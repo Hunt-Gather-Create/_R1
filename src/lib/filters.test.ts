@@ -38,6 +38,7 @@ function createIssue(
     cycleId: null,
     parentIssueId: null,
     position: 0,
+    sentToAI: false,
     createdAt: new Date(),
     updatedAt: new Date(),
     labels: [],

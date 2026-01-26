@@ -95,6 +95,7 @@ export const issues = sqliteTable("issues", {
   // Note: Self-reference handled at database level, not inline to avoid TS circular reference
   parentIssueId: text("parent_issue_id"),
   position: integer("position").notNull(),
+  sentToAI: integer("sent_to_ai", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });

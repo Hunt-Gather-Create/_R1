@@ -7,12 +7,14 @@ import {
   Trash2,
   ExternalLink,
   Archive,
+  Sparkles,
 } from "lucide-react";
 
 interface QuickActionsProps {
   onOpen?: () => void;
   onCopy?: () => void;
   onArchive?: () => void;
+  onSendToAI?: () => void;
   onDelete?: () => void;
   className?: string;
 }
@@ -21,6 +23,7 @@ export function QuickActions({
   onOpen,
   onCopy,
   onArchive,
+  onSendToAI,
   onDelete,
   className,
 }: QuickActionsProps) {
@@ -65,6 +68,18 @@ export function QuickActions({
           title="Archive"
         >
           <Archive className="w-3.5 h-3.5" />
+        </button>
+      )}
+      {onSendToAI && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSendToAI();
+          }}
+          className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+          title="Send to AI"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
         </button>
       )}
       {onDelete && (

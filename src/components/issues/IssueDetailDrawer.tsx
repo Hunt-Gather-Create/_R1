@@ -2,8 +2,9 @@
 
 import { useState, useCallback } from "react";
 import { usePathname } from "next/navigation";
-import { Check, Copy, Trash2, X } from "lucide-react";
+import { Check, Copy, Sparkles, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSendToAI } from "@/lib/hooks";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { IssueChatPanel } from "./IssueChatPanel";
 import { IssueDetailForm } from "./IssueDetailForm";
@@ -38,6 +39,7 @@ export function IssueDetailDrawer({
   onCreateLabel,
 }: IssueDetailDrawerProps) {
   const pathname = usePathname();
+  const { sendToAI } = useSendToAI();
   const [comments, setComments] = useState<Comment[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
@@ -112,6 +114,18 @@ export function IssueDetailDrawer({
               ) : (
                 <Copy className="w-4 h-4" />
               )}
+            </button>
+            <button
+              onClick={() => sendToAI(issue.id)}
+              className={cn(
+                "p-1.5 rounded transition-colors",
+                issue.sentToAI
+                  ? "bg-blue-500/20 text-blue-500"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              )}
+              title="Send to AI"
+            >
+              <Sparkles className="w-4 h-4" />
             </button>
             <button
               onClick={handleDelete}

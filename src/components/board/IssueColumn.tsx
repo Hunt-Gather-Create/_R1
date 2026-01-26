@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useBoardContext } from "./context";
+import { useSendToAI } from "@/lib/hooks";
 import type { ColumnWithIssues, IssueWithLabels } from "@/lib/types";
 
 interface IssueColumnProps {
@@ -26,6 +27,7 @@ interface IssueColumnProps {
 
 export function IssueColumn({ column, onIssueClick }: IssueColumnProps) {
   const { addIssue, removeIssue } = useBoardContext();
+  const { sendToAI } = useSendToAI();
 
   const [mounted, setMounted] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -151,6 +153,7 @@ export function IssueColumn({ column, onIssueClick }: IssueColumnProps) {
                   issue={issue}
                   onClick={() => onIssueClick(issue)}
                   onDelete={() => handleDeleteIssue(issue.id)}
+                  onSendToAI={() => sendToAI(issue.id)}
                 />
               ))}
             </div>

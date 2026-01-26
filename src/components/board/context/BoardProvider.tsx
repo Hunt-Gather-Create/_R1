@@ -224,6 +224,7 @@ export function BoardProvider({
         parentIssueId: input.parentIssueId ?? null,
         position:
           board.columns.find((c) => c.id === columnId)?.issues.length ?? 0,
+        sentToAI: false,
         createdAt: new Date(),
         updatedAt: new Date(),
         labels: [],

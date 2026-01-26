@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { StatusDot } from "@/components/issues/StatusDot";
 import { PriorityIcon } from "@/components/issues/PriorityIcon";
+import { QuickActions } from "@/components/issues/QuickActions";
 import { Calendar, Check } from "lucide-react";
 import { format, isPast, isToday } from "date-fns";
 import type { IssueWithLabels, Label } from "@/lib/types";
@@ -14,8 +14,7 @@ interface IssueRowProps {
   isSelected?: boolean;
   onSelect?: () => void;
   onClick?: () => void;
-  onStatusChange?: (status: Status) => void;
-  onPriorityChange?: (priority: Priority) => void;
+  onSendToAI?: () => void;
 }
 
 function LabelPill({ label }: { label: Label }) {
@@ -58,20 +57,16 @@ export function IssueRow({
   isSelected = false,
   onSelect,
   onClick,
-  onStatusChange,
-  onPriorityChange,
+  onSendToAI,
 }: IssueRowProps) {
-  const [isHovered, setIsHovered] = useState(false);
-
   return (
     <div
       className={cn(
         "group flex items-center h-9 border-b border-border/50 cursor-pointer",
-        "hover:bg-accent/30 transition-colors",
-        isSelected && "bg-primary/10"
+        "transition-colors",
+        isSelected && "bg-primary/10",
+        issue.sentToAI ? "bg-blue-950" : "hover:bg-accent/30"
       )}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
       onClick={onClick}
     >
       {/* Checkbox */}
@@ -132,6 +127,11 @@ export function IssueRow({
       {/* Due Date */}
       <div className="w-24 flex-shrink-0 px-2">
         {issue.dueDate && <DueDateCell date={new Date(issue.dueDate)} />}
+      </div>
+
+      {/* Quick Actions */}
+      <div className="w-10 flex-shrink-0 flex items-center justify-center">
+        <QuickActions onSendToAI={onSendToAI} />
       </div>
 
       {/* Estimate */}

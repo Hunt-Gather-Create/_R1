@@ -138,6 +138,7 @@ export async function createIssue(
     cycleId: input.cycleId ?? null,
     parentIssueId,
     position: (maxPosition?.maxPos ?? -1) + 1,
+    sentToAI: false,
     createdAt: now,
     updatedAt: now,
   };
@@ -859,6 +860,36 @@ export async function convertToSubtask(
     },
     userId
   );
+
+  // Revalidate workspace path
+  if (workspaceId) {
+    const slug = await getWorkspaceSlug(workspaceId);
+    revalidatePath(slug ? `/w/${slug}` : "/");
+  } else {
+    revalidatePath("/");
+  }
+}
+
+// Mark issue as sent to AI
+export async function markSentToAI(issueId: string): Promise<void> {
+  const issue = await db
+    .select()
+    .from(issues)
+    .where(eq(issues.id, issueId))
+    .get();
+
+  if (!issue) throw new Error("Issue not found");
+
+  // Get workspace for auth check
+  const workspaceId = await getColumnWorkspaceId(issue.columnId);
+  if (workspaceId) {
+    await requireWorkspaceAccess(workspaceId, "member");
+  }
+
+  await db
+    .update(issues)
+    .set({ sentToAI: true, updatedAt: new Date() })
+    .where(eq(issues.id, issueId));
 
   // Revalidate workspace path
   if (workspaceId) {

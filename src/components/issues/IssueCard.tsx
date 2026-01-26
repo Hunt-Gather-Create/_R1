@@ -18,6 +18,7 @@ interface IssueCardProps {
   issue: IssueWithLabels;
   onClick: () => void;
   onDelete?: () => void;
+  onSendToAI?: () => void;
   isDragging?: boolean;
 }
 
@@ -62,6 +63,7 @@ export function IssueCard({
   issue,
   onClick,
   onDelete,
+  onSendToAI,
   isDragging: isDraggingProp,
 }: IssueCardProps) {
   const [mounted, setMounted] = useState(false);
@@ -111,9 +113,10 @@ export function IssueCard({
       {...(mounted ? listeners : {})}
       onClick={onClick}
       className={cn(
-        "group relative bg-card rounded-md border border-border p-3 cursor-pointer",
-        "hover:border-primary/50 hover:bg-accent/30 transition-all",
-        dragging && "ring-2 ring-primary shadow-lg opacity-90"
+        "group relative rounded-md border border-border p-3 cursor-pointer",
+        "hover:border-primary/50 transition-all",
+        dragging && "ring-2 ring-primary shadow-lg opacity-90",
+        issue.sentToAI ? "bg-blue-950" : "bg-card hover:bg-accent/30"
       )}
     >
       {/* Top row: Identifier + Priority + Quick Actions */}
@@ -124,7 +127,7 @@ export function IssueCard({
           </span>
           <PriorityIcon priority={issue.priority as Priority} size="sm" />
         </div>
-        <QuickActions onDelete={onDelete} className="shrink-0" />
+        <QuickActions onDelete={onDelete} onSendToAI={onSendToAI} className="shrink-0" />
       </div>
 
       {/* Title */}

@@ -8,6 +8,7 @@ import {
   useIssueContext,
 } from "@/components/board/context/IssueContext";
 import { cn } from "@/lib/utils";
+import { useSendToAI } from "@/lib/hooks";
 import type { BoardWithColumnsAndIssues, IssueWithLabels } from "@/lib/types";
 
 interface ListViewProps {
@@ -29,6 +30,7 @@ function ListViewContent({
   onIssueSelect?: (issue: IssueWithLabels) => void;
 }) {
   const { board } = useIssueContext();
+  const { sendToAI } = useSendToAI();
 
   const [sortField, setSortField] = useState<SortField>("createdAt");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -200,6 +202,7 @@ function ListViewContent({
                   setFocusedIndex(index);
                   onIssueSelect?.(issue);
                 }}
+                onSendToAI={() => sendToAI(issue.id)}
               />
             </div>
           ))

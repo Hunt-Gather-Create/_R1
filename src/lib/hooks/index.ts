@@ -49,3 +49,5 @@ export {
   useUploadAttachment,
   useDeleteAttachment,
 } from "./use-attachments";
+
+export { useSendToAI } from "./use-send-to-ai";
