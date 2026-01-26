@@ -32,6 +32,8 @@ interface AppShellContextValue {
   setSelectedIssueId: (id: string | null) => void;
   isCommandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
+  isAIPlanningOpen: boolean;
+  setAIPlanningOpen: (open: boolean) => void;
 }
 
 const AppShellContext = createContext<AppShellContextValue | null>(null);
@@ -61,6 +63,7 @@ function AppShellContent({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [isAIPlanningOpen, setAIPlanningOpen] = useState(false);
 
   // Detail panel is open when there's an issue in URL
   const detailPanelOpen = !!urlState.issue;
@@ -100,6 +103,18 @@ function AppShellContent({
         setCreate(true);
       }
 
+      // P for AI planning (only when not in input)
+      if (
+        e.key === "p" &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        document.activeElement?.tagName !== "INPUT" &&
+        document.activeElement?.tagName !== "TEXTAREA"
+      ) {
+        e.preventDefault();
+        setAIPlanningOpen(true);
+      }
+
       // [ to toggle sidebar
       if (
         e.key === "[" &&
@@ -114,6 +129,8 @@ function AppShellContent({
       if (e.key === "Escape") {
         if (isCommandPaletteOpen) {
           setCommandPaletteOpen(false);
+        } else if (isAIPlanningOpen) {
+          setAIPlanningOpen(false);
         } else if (urlState.create) {
           setCreate(false);
         } else if (detailPanelOpen) {
@@ -123,6 +140,7 @@ function AppShellContent({
     },
     [
       isCommandPaletteOpen,
+      isAIPlanningOpen,
       urlState.create,
       detailPanelOpen,
       toggleSidebar,
@@ -152,6 +170,8 @@ function AppShellContent({
     setSelectedIssueId,
     isCommandPaletteOpen,
     setCommandPaletteOpen,
+    isAIPlanningOpen,
+    setAIPlanningOpen,
   };
 
   return (

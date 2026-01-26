@@ -76,11 +76,10 @@ interface PromptInputTextareaProps {
   className?: string;
 }
 
-export function PromptInputTextarea({
-  className,
-  placeholder,
-  rows = 1,
-}: PromptInputTextareaProps) {
+export const PromptInputTextarea = React.forwardRef<
+  HTMLTextAreaElement,
+  PromptInputTextareaProps
+>(({ className, placeholder, rows = 1 }, ref) => {
   const { value, setValue, isLoading, onSubmit } = usePromptInput();
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -94,6 +93,7 @@ export function PromptInputTextarea({
 
   return (
     <TextareaAutosize
+      ref={ref}
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={handleKeyDown}
@@ -110,7 +110,9 @@ export function PromptInputTextarea({
       )}
     />
   );
-}
+});
+
+PromptInputTextarea.displayName = "PromptInputTextarea";
 
 type PromptInputSubmitProps = React.ButtonHTMLAttributes<HTMLButtonElement>;
 

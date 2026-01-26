@@ -15,6 +15,7 @@ import {
   Circle,
   Layers,
   Check,
+  Wand2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { VIEW } from "@/lib/design-tokens";
@@ -100,6 +101,7 @@ export function Sidebar() {
     setCurrentView,
     setCreateIssueOpen,
     setCommandPaletteOpen,
+    setAIPlanningOpen,
   } = useAppShell();
 
   const workspaceContext = useOptionalWorkspaceContext();
@@ -212,6 +214,24 @@ export function Sidebar() {
               <span className="flex-1 text-left">New Issue</span>
               <kbd className="text-[10px] text-muted-foreground bg-muted px-1 rounded">
                 C
+              </kbd>
+            </>
+          )}
+        </button>
+        <button
+          onClick={() => setAIPlanningOpen(true)}
+          className={cn(
+            "flex items-center w-full gap-2 px-2 py-1.5 rounded-md text-sm",
+            "hover:bg-sidebar-accent text-sidebar-foreground/70",
+            sidebarCollapsed && "justify-center"
+          )}
+        >
+          <Wand2 className="w-4 h-4 flex-shrink-0" />
+          {!sidebarCollapsed && (
+            <>
+              <span className="flex-1 text-left">AI Planning</span>
+              <kbd className="text-[10px] text-muted-foreground bg-muted px-1 rounded">
+                P
               </kbd>
             </>
           )}

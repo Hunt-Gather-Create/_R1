@@ -3,6 +3,7 @@ import {
   streamText,
   tool,
   convertToModelMessages,
+  stepCountIs,
   type UIMessage,
   type ToolSet,
 } from "ai";
@@ -51,6 +52,12 @@ interface ChatConfig {
   system: string;
   tools: ToolSet;
   model?: string;
+  /**
+   * Maximum number of steps (tool call rounds) the model can make.
+   * Set to a higher number to allow the AI to continue after tool calls.
+   * Default is 1 (stops after first tool call).
+   */
+  maxSteps?: number;
 }
 
 /**
@@ -67,6 +74,7 @@ export async function createChatResponse(
     system: config.system,
     messages: modelMessages,
     tools: config.tools,
+    stopWhen: config.maxSteps ? stepCountIs(config.maxSteps) : undefined,
   });
 
   return result.toUIMessageStreamResponse();

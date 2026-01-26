@@ -138,6 +138,7 @@ export const LABEL_COLORS = [
 export const SHORTCUTS = {
   COMMAND_PALETTE: "mod+k",
   CREATE_ISSUE: "c",
+  AI_PLANNING: "p",
   SEARCH: "/",
   GO_TO_BOARD: "g b",
   GO_TO_LIST: "g l",
