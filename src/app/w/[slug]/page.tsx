@@ -6,6 +6,7 @@ import { BoardView } from "@/components/board/BoardView";
 import { ListView } from "@/components/list";
 import { IssueDetailDrawer, CreateIssueDrawer } from "@/components/issues";
 import { CommandPalette } from "@/components/command/CommandPalette";
+import { AIPlanningSheet } from "@/components/planning";
 import { AppShell, useAppShell } from "@/components/layout";
 import { BoardProvider, useBoardContext } from "@/components/board/context";
 import { WorkspaceProvider } from "@/components/workspace";
@@ -24,6 +25,8 @@ function MainContent() {
     detailPanelOpen,
     isCreateIssueOpen,
     setCreateIssueOpen,
+    isAIPlanningOpen,
+    setAIPlanningOpen,
   } = useAppShell();
 
   const {
@@ -76,6 +79,12 @@ function MainContent() {
       <CreateIssueDrawer
         open={isCreateIssueOpen}
         onOpenChange={setCreateIssueOpen}
+      />
+
+      {/* AI Planning Sheet */}
+      <AIPlanningSheet
+        open={isAIPlanningOpen}
+        onOpenChange={setAIPlanningOpen}
       />
     </>
   );

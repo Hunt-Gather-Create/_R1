@@ -97,3 +97,25 @@ Uses @dnd-kit with custom collision detection in `src/lib/collision-detection.ts
 - `BoardWithColumnsAndIssues` - Full board with nested columns and issues
 - `IssueWithLabels` - Issue with its labels array
 - `CreateIssueInput` / `UpdateIssueInput` - Mutation input types
+
+## Plan Execution Workflow
+
+When executing a plan that involves code changes:
+
+### Before Starting
+
+1. **Create a new branch** before making any code changes:
+   - Use a descriptive branch name based on the task (e.g., `feature/add-user-auth`, `fix/login-bug`, `refactor/board-context`)
+   - Run `git checkout -b <branch-name>` from the main branch
+   - If already on a feature branch for this task, continue on that branch
+
+### After Completing the Plan
+
+1. **Run the PR readiness check** by invoking `/pr-ready` to:
+   - Remove any debug statements (console.log, debugger)
+   - Identify and fix DRY violations
+   - Check React component structure
+   - Detect prop drilling issues
+   - Clean up unused imports and dead code
+
+2. **Address any critical issues** found by the PR readiness check before considering the task complete
