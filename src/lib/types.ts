@@ -9,6 +9,7 @@ import type {
   users,
   workspaces,
   workspaceMembers,
+  attachments,
 } from "./db/schema";
 import type { Status, Priority } from "./design-tokens";
 
@@ -23,6 +24,10 @@ export type Cycle = typeof cycles.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
 export type Activity = typeof activities.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;
+export type Attachment = typeof attachments.$inferSelect;
+
+// Attachment with signed URL for display
+export type AttachmentWithUrl = Attachment & { url: string };
 
 // Workspace member role type
 export type WorkspaceRole = "admin" | "member" | "viewer";
@@ -113,7 +118,9 @@ export type ActivityType =
   | "subtask_added"
   | "subtask_removed"
   | "converted_to_subtask"
-  | "converted_to_issue";
+  | "converted_to_issue"
+  | "attachment_added"
+  | "attachment_removed";
 
 export type ActivityData = {
   field?: string;
@@ -130,4 +137,6 @@ export type ActivityData = {
   subtaskTitle?: string;
   parentIssueId?: string;
   parentIdentifier?: string;
+  attachmentId?: string;
+  attachmentFilename?: string;
 };

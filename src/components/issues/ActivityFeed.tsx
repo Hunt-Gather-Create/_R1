@@ -9,6 +9,7 @@ import {
   AlertCircle,
   MessageSquare,
   Plus,
+  Paperclip,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { STATUS_CONFIG, PRIORITY_CONFIG } from "@/lib/design-tokens";
@@ -36,6 +37,9 @@ function getActivityIcon(type: ActivityType) {
       return MessageSquare;
     case "moved":
       return ArrowRight;
+    case "attachment_added":
+    case "attachment_removed":
+      return Paperclip;
     default:
       return Circle;
   }
@@ -69,6 +73,10 @@ function getActivityDescription(activity: Activity): string {
       return "moved to another column";
     case "updated":
       return `updated ${data?.field || "issue"}`;
+    case "attachment_added":
+      return `added attachment "${data?.attachmentFilename}"`;
+    case "attachment_removed":
+      return `removed attachment "${data?.attachmentFilename}"`;
     default:
       return "made changes";
   }

@@ -13,6 +13,7 @@ import { Comments } from "./Comments";
 import { ActivityFeed } from "./ActivityFeed";
 import { SubtaskList } from "./SubtaskList";
 import { SubtaskProgress } from "./SubtaskProgress";
+import { AttachmentList } from "./AttachmentList";
 import {
   useIssueComments,
   useIssueActivities,
@@ -216,6 +217,14 @@ export function IssueDetailForm({
               onRemove={onRemoveLabel}
               onCreateLabel={onCreateLabel}
             />
+          </div>
+
+          {/* Attachments */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-2">
+              Attachments
+            </label>
+            <AttachmentList issue={issue} />
           </div>
 
           {/* Subtasks - only show for parent issues (not subtasks) */}

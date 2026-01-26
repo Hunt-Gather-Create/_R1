@@ -43,3 +43,9 @@ export {
 } from "./use-subtasks";
 
 export { useColorMode } from "./use-color-mode";
+
+export {
+  useIssueAttachments,
+  useUploadAttachment,
+  useDeleteAttachment,
+} from "./use-attachments";
