@@ -30,5 +30,7 @@ export const queryKeys = {
       ["settings", "labels", workspaceId] as const,
     columns: (workspaceId: string) =>
       ["settings", "columns", workspaceId] as const,
+    skills: (workspaceId: string) =>
+      ["settings", "skills", workspaceId] as const,
   },
 } as const;

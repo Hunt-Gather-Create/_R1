@@ -14,7 +14,12 @@ export const DEFAULT_MODEL = "claude-sonnet-4-20250514";
 export const DEFAULT_MAX_DURATION = 30;
 
 // Re-export skills module
-export { loadSkill, loadSkillsForPurpose, loadAllSkills } from "./skills";
+export {
+  loadSkill,
+  loadSkillsForPurpose,
+  loadSkillsForWorkspace,
+  loadAllSkills,
+} from "./skills";
 export type { ParsedSkill, SkillManifest } from "./skills";
 
 // Re-export tools

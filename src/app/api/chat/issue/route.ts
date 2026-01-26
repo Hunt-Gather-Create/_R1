@@ -3,6 +3,7 @@ import {
   createChatResponse,
   createIssueTools,
   loadSkillsForPurpose,
+  loadSkillsForWorkspace,
   getPriorityLabel,
 } from "@/lib/chat";
 import type { WorkspacePurpose } from "@/lib/design-tokens";
@@ -71,16 +72,20 @@ Be conversational and helpful. Ask clarifying questions when needed. When sugges
 }
 
 export async function POST(req: Request) {
-  const { messages, issueContext, workspacePurpose } = (await req.json()) as {
-    messages: UIMessage[];
-    issueContext: IssueContext;
-    workspacePurpose?: WorkspacePurpose;
-  };
+  const { messages, issueContext, workspacePurpose, workspaceId } =
+    (await req.json()) as {
+      messages: UIMessage[];
+      issueContext: IssueContext;
+      workspacePurpose?: WorkspacePurpose;
+      workspaceId?: string;
+    };
 
   const purpose = workspacePurpose ?? "software";
 
-  // Load skills based on workspace purpose
-  const skills = await loadSkillsForPurpose(purpose);
+  // Load skills - use workspace skills if workspaceId provided, otherwise just purpose-based
+  const skills = workspaceId
+    ? await loadSkillsForWorkspace(workspaceId, purpose)
+    : await loadSkillsForPurpose(purpose);
 
   // Create tools with issue context
   const tools = createIssueTools({ issueId: issueContext.id });

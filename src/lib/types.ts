@@ -10,6 +10,7 @@ import type {
   workspaces,
   workspaceMembers,
   attachments,
+  workspaceSkills,
 } from "./db/schema";
 import type { Status, Priority } from "./design-tokens";
 
@@ -25,6 +26,7 @@ export type Comment = typeof comments.$inferSelect;
 export type Activity = typeof activities.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
+export type WorkspaceSkill = typeof workspaceSkills.$inferSelect;
 
 // Attachment with signed URL for display
 export type AttachmentWithUrl = Attachment & { url: string };
@@ -102,6 +104,16 @@ export type CreateCycleInput = {
 
 export type CreateCommentInput = {
   body: string;
+};
+
+export type CreateWorkspaceSkillInput = {
+  name: string;
+  description: string;
+  content: string;
+};
+
+export type UpdateWorkspaceSkillInput = Partial<CreateWorkspaceSkillInput> & {
+  isEnabled?: boolean;
 };
 
 // Activity types for change history

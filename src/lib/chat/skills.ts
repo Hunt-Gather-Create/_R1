@@ -2,6 +2,7 @@ import { readFile, readdir } from "fs/promises";
 import { join } from "path";
 import matter from "gray-matter";
 import type { WorkspacePurpose } from "@/lib/design-tokens";
+import { getEnabledWorkspaceSkills } from "@/lib/actions/skills";
 
 /**
  * Parsed skill from SKILL.md file
@@ -115,4 +116,44 @@ export async function loadAllSkills(): Promise<ParsedSkill[]> {
   const skillNames = await discoverSkills();
   const skills = await Promise.all(skillNames.map(loadSkill));
   return skills.filter((s): s is ParsedSkill => s !== null);
+}
+
+/**
+ * Load skills for a workspace - merges file-based skills with database skills.
+ * Database skills override file-based skills with the same name.
+ */
+export async function loadSkillsForWorkspace(
+  workspaceId: string,
+  purpose: WorkspacePurpose,
+  manifest: SkillManifest = DEFAULT_SKILL_MANIFEST
+): Promise<ParsedSkill[]> {
+  // Load file-based skills for purpose
+  const fileSkills = await loadSkillsForPurpose(purpose, manifest);
+
+  // Load workspace-specific skills from database
+  const dbSkills = await getEnabledWorkspaceSkills(workspaceId);
+
+  // Convert database skills to ParsedSkill format
+  const workspaceSkills: ParsedSkill[] = dbSkills.map((skill) => ({
+    name: skill.name,
+    description: skill.description,
+    content: skill.content,
+    // Workspace skills inherit the workspace's purpose
+    purposes: [purpose],
+  }));
+
+  // Merge: DB skills override file-based skills with same name
+  const skillMap = new Map<string, ParsedSkill>();
+
+  // Add file-based skills first
+  for (const skill of fileSkills) {
+    skillMap.set(skill.name, skill);
+  }
+
+  // Add/override with workspace skills
+  for (const skill of workspaceSkills) {
+    skillMap.set(skill.name, skill);
+  }
+
+  return Array.from(skillMap.values());
 }

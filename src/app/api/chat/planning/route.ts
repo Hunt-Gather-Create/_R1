@@ -3,6 +3,7 @@ import {
   createChatResponse,
   createPlanningTools,
   loadSkillsForPurpose,
+  loadSkillsForWorkspace,
 } from "@/lib/chat";
 import type { WorkspacePurpose } from "@/lib/design-tokens";
 
@@ -93,15 +94,18 @@ function getSystemPrompt(purpose: WorkspacePurpose): string {
 }
 
 export async function POST(req: Request) {
-  const { messages, workspacePurpose } = (await req.json()) as {
+  const { messages, workspacePurpose, workspaceId } = (await req.json()) as {
     messages: UIMessage[];
     workspacePurpose?: WorkspacePurpose;
+    workspaceId?: string;
   };
 
   const purpose = workspacePurpose ?? "software";
 
-  // Load skills based on workspace purpose
-  const skills = await loadSkillsForPurpose(purpose);
+  // Load skills - use workspace skills if workspaceId provided, otherwise just purpose-based
+  const skills = workspaceId
+    ? await loadSkillsForWorkspace(workspaceId, purpose)
+    : await loadSkillsForPurpose(purpose);
 
   // Create planning tools
   const tools = createPlanningTools();

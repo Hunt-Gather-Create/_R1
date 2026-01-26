@@ -8,6 +8,7 @@ import {
 } from "@/lib/actions/workspace";
 import { getWorkspaceLabels } from "@/lib/actions/board";
 import { getAllWorkspaceColumns } from "@/lib/actions/columns";
+import { getWorkspaceSkills } from "@/lib/actions/skills";
 
 export function useWorkspace(slug: string) {
   return useQuery({
@@ -48,6 +49,16 @@ export function useWorkspaceColumns(workspaceId: string | null) {
   });
 }
 
+export function useWorkspaceSkills(workspaceId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.settings.skills(workspaceId ?? ""),
+    queryFn: () => getWorkspaceSkills(workspaceId!),
+    enabled: !!workspaceId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes
+  });
+}
+
 // Hook for invalidating settings queries
 export function useInvalidateSettings() {
   const queryClient = useQueryClient();
@@ -64,6 +75,10 @@ export function useInvalidateSettings() {
     invalidateMembers: (workspaceId: string) =>
       queryClient.invalidateQueries({
         queryKey: queryKeys.workspace.members(workspaceId),
+      }),
+    invalidateSkills: (workspaceId: string) =>
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.settings.skills(workspaceId),
       }),
   };
 }

@@ -28,7 +28,7 @@ interface PlanningChatPanelProps {
 }
 
 export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
-  const { workspacePurpose } = useBoardContext();
+  const { workspaceId, workspacePurpose } = useBoardContext();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [input, setInput] = useState("");
@@ -38,9 +38,9 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
     () =>
       new DefaultChatTransport({
         api: "/api/chat/planning",
-        body: { workspacePurpose },
+        body: { workspaceId, workspacePurpose },
       }),
-    [workspacePurpose]
+    [workspaceId, workspacePurpose]
   );
 
   const { messages, sendMessage, status } = useChat({

@@ -175,3 +175,17 @@ export const attachments = sqliteTable("attachments", {
   size: integer("size").notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
+
+// Workspace Skills - custom AI skills per workspace
+export const workspaceSkills = sqliteTable("workspace_skills", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  content: text("content").notNull(),
+  isEnabled: integer("is_enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});

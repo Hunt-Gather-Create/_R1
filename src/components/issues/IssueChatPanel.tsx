@@ -50,7 +50,7 @@ export function IssueChatPanel({
   comments,
   onUpdateDescription,
 }: IssueChatPanelProps) {
-  const { workspacePurpose } = useBoardContext();
+  const { workspaceId, workspacePurpose } = useBoardContext();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
   const lastSavedMessageRef = useRef<string | null>(null);
@@ -76,14 +76,14 @@ export function IssueChatPanel({
     [issue.id, issue.title, issue.description, issue.status, issue.priority, comments]
   );
 
-  // Custom transport that includes issue context and workspace purpose
+  // Custom transport that includes issue context, workspace ID and purpose
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
         api: "/api/chat/issue",
-        body: { issueContext, workspacePurpose },
+        body: { issueContext, workspaceId, workspacePurpose },
       }),
-    [issueContext, workspacePurpose]
+    [issueContext, workspaceId, workspacePurpose]
   );
 
   const { messages, sendMessage, status, setMessages } = useChat({

@@ -25,7 +25,7 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ onSuggestion }: ChatPanelProps) {
-  const { workspacePurpose } = useBoardContext();
+  const { workspaceId, workspacePurpose } = useBoardContext();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
 
@@ -33,9 +33,9 @@ export function ChatPanel({ onSuggestion }: ChatPanelProps) {
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
-        body: { workspacePurpose },
+        body: { workspaceId, workspacePurpose },
       }),
-    [workspacePurpose]
+    [workspaceId, workspacePurpose]
   );
 
   const { messages, sendMessage, status } = useChat({

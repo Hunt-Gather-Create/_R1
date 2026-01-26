@@ -13,6 +13,7 @@ import {
   useWorkspaceMembers,
   useWorkspaceLabels,
   useWorkspaceColumns,
+  useWorkspaceSkills,
   useInvalidateSettings,
 } from "@/lib/hooks";
 import { getCurrentUserId } from "@/lib/auth";
@@ -22,6 +23,7 @@ import type {
   WorkspaceRole,
   Label,
   Column,
+  WorkspaceSkill,
 } from "@/lib/types";
 
 interface SettingsContextValue {
@@ -30,6 +32,7 @@ interface SettingsContextValue {
   members: WorkspaceMemberWithUser[];
   labels: Label[];
   columns: Column[];
+  skills: WorkspaceSkill[];
 
   // Loading states
   isLoading: boolean;
@@ -46,6 +49,7 @@ interface SettingsContextValue {
   refreshMembers: () => Promise<void>;
   refreshLabels: () => Promise<void>;
   refreshColumns: () => Promise<void>;
+  refreshSkills: () => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -95,6 +99,12 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     refetch: refetchColumns,
   } = useWorkspaceColumns(workspace?.id ?? null);
 
+  const {
+    data: skills = [],
+    isLoading: isSkillsLoading,
+    refetch: refetchSkills,
+  } = useWorkspaceSkills(workspace?.id ?? null);
+
   // Load current user ID
   useEffect(() => {
     getCurrentUserId().then(setCurrentUserId);
@@ -105,7 +115,8 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     isWorkspaceLoading ||
     isMembersLoading ||
     isLabelsLoading ||
-    isColumnsLoading;
+    isColumnsLoading ||
+    isSkillsLoading;
   const error = workspaceError
     ? workspaceError instanceof Error
       ? workspaceError.message
@@ -146,11 +157,19 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     }
   };
 
+  const refreshSkills = async () => {
+    if (workspace) {
+      invalidate.invalidateSkills(workspace.id);
+      await refetchSkills();
+    }
+  };
+
   const value: SettingsContextValue = {
     workspace: workspace ?? null,
     members,
     labels,
     columns,
+    skills,
     isLoading,
     error,
     currentUserId,
@@ -161,6 +180,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     refreshMembers,
     refreshLabels,
     refreshColumns,
+    refreshSkills,
   };
 
   return (

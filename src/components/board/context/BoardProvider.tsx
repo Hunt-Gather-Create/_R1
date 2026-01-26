@@ -39,6 +39,7 @@ import { STATUS, type WorkspacePurpose } from "@/lib/design-tokens";
 
 interface BoardContextValue {
   board: BoardWithColumnsAndIssues;
+  workspaceId: string;
   workspacePurpose: WorkspacePurpose;
   isLoading: boolean;
   refreshBoard: () => Promise<void>;
@@ -355,6 +356,7 @@ export function BoardProvider({
 
   const value: BoardContextValue = {
     board: boardForView,
+    workspaceId: wsId,
     workspacePurpose,
     isLoading,
     refreshBoard,

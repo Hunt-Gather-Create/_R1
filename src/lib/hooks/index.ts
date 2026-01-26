@@ -18,6 +18,7 @@ export {
   useWorkspaceMembers,
   useWorkspaceLabels,
   useWorkspaceColumns,
+  useWorkspaceSkills,
   useInvalidateSettings,
 } from "./use-settings-queries";
 
