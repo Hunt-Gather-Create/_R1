@@ -93,6 +93,7 @@ async function parseZipFile(buffer: ArrayBuffer): Promise<ParsedSkill> {
   // Collect references and merge into content
   let fullContent = markdownContent.trim();
   const references: string[] = [];
+  const referenceFiles: Array<{ path: string; content: string }> = [];
 
   // Look for references directory
   for (const [path, file] of Object.entries(zip.files)) {
@@ -104,6 +105,7 @@ async function parseZipFile(buffer: ArrayBuffer): Promise<ParsedSkill> {
       const refContent = await file.async("string");
       const refName = path.replace(basePath + "references/", "");
       references.push(`\n\n---\n\n## Reference: ${refName}\n\n${refContent}`);
+      referenceFiles.push({ path: path.replace(basePath, ""), content: refContent });
     }
   }
 
@@ -111,13 +113,22 @@ async function parseZipFile(buffer: ArrayBuffer): Promise<ParsedSkill> {
     fullContent += "\n\n# Reference Materials\n" + references.join("");
   }
 
-  // Collect scripts and assets for R2 upload
+  // Collect scripts, assets, and references for R2 upload
   const assets: ParsedSkill["assets"] = [];
+
+  // Add reference files as downloadable assets
+  for (const ref of referenceFiles) {
+    assets.push({
+      filename: ref.path,
+      content: ref.content,
+      mimeType: "text/markdown",
+    });
+  }
 
   for (const [path, file] of Object.entries(zip.files)) {
     if (file.dir) continue;
     if (path === skillFile.name) continue; // Skip SKILL.md
-    if (path.startsWith(basePath + "references/")) continue; // Already merged
+    if (path.startsWith(basePath + "references/")) continue; // Already added above
 
     // Include scripts and assets
     if (
