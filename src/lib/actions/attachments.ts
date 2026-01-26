@@ -12,7 +12,12 @@ import { eq } from "drizzle-orm";
 import { getCurrentUserId } from "../auth";
 import { requireWorkspaceAccess } from "./workspace";
 import { getWorkspaceSlug } from "./helpers";
-import { generateDownloadUrl, deleteObject } from "../storage/r2-client";
+import {
+  generateDownloadUrl,
+  deleteObject,
+  generateStorageKey,
+  uploadContent,
+} from "../storage/r2-client";
 import type { Attachment, AttachmentWithUrl } from "../types";
 
 /**
@@ -98,6 +103,87 @@ export async function getAttachmentWithUrl(
 
   const url = await generateDownloadUrl(attachment.storageKey, 3600);
   return { ...attachment, url };
+}
+
+/**
+ * Attach AI-generated content to an issue
+ */
+export async function attachContentToIssue(
+  issueId: string,
+  content: string,
+  filename: string,
+  mimeType: string = "text/markdown"
+): Promise<AttachmentWithUrl> {
+  const workspaceId = await getWorkspaceIdFromIssue(issueId);
+  if (!workspaceId) {
+    throw new Error("Issue not found");
+  }
+
+  await requireWorkspaceAccess(workspaceId, "member");
+
+  const userId = await getCurrentUserId();
+  if (!userId) {
+    throw new Error("Unauthorized");
+  }
+
+  // Generate storage key and upload content
+  const storageKey = generateStorageKey(workspaceId, issueId, filename);
+  await uploadContent(storageKey, content, mimeType);
+
+  // Create attachment record
+  const attachmentId = crypto.randomUUID();
+  const now = new Date();
+  const size = Buffer.byteLength(content, "utf-8");
+
+  await db.insert(attachments).values({
+    id: attachmentId,
+    issueId,
+    userId,
+    filename,
+    storageKey,
+    mimeType,
+    size,
+    createdAt: now,
+  });
+
+  // Log activity
+  await db.insert(activities).values({
+    id: crypto.randomUUID(),
+    issueId,
+    userId,
+    type: "attachment_added",
+    data: JSON.stringify({
+      attachmentId,
+      attachmentFilename: filename,
+      source: "ai-generated",
+    }),
+    createdAt: now,
+  });
+
+  // Update issue updatedAt
+  await db
+    .update(issues)
+    .set({ updatedAt: now })
+    .where(eq(issues.id, issueId));
+
+  // Revalidate workspace path
+  const slug = await getWorkspaceSlug(workspaceId);
+  revalidatePath(slug ? `/w/${slug}` : "/");
+
+  // Generate signed URL
+  const url = await generateDownloadUrl(storageKey, 900);
+
+  return {
+    id: attachmentId,
+    issueId,
+    userId,
+    filename,
+    storageKey,
+    mimeType,
+    size,
+    createdAt: now,
+    url,
+  };
 }
 
 /**

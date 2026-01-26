@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   X,
   Download,
@@ -8,6 +8,7 @@ import {
   ZoomOut,
   RotateCw,
   File,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -22,7 +23,17 @@ import {
   isPdfType,
   formatFileSize,
 } from "@/lib/storage/file-validation";
+import ReactMarkdown from "react-markdown";
 import type { AttachmentWithUrl } from "@/lib/types";
+
+function isMarkdownType(mimeType: string, filename: string): boolean {
+  return (
+    mimeType === "text/markdown" ||
+    mimeType === "text/x-markdown" ||
+    filename.endsWith(".md") ||
+    filename.endsWith(".markdown")
+  );
+}
 
 interface AttachmentPreviewProps {
   attachment: AttachmentWithUrl | null;
@@ -37,11 +48,38 @@ export function AttachmentPreview({
 }: AttachmentPreviewProps) {
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+  const [markdownContent, setMarkdownContent] = useState<string | null>(null);
+  const [isLoadingMarkdown, setIsLoadingMarkdown] = useState(false);
+
+  const isImage = attachment ? isImageType(attachment.mimeType) : false;
+  const isPdf = attachment ? isPdfType(attachment.mimeType) : false;
+  const isMarkdown = attachment
+    ? isMarkdownType(attachment.mimeType, attachment.filename)
+    : false;
+
+  // Fetch markdown content when opening a markdown file
+  useEffect(() => {
+    if (!open || !attachment || !isMarkdown) {
+      setMarkdownContent(null);
+      return;
+    }
+
+    setIsLoadingMarkdown(true);
+    fetch(attachment.url)
+      .then((res) => res.text())
+      .then((text) => {
+        setMarkdownContent(text);
+      })
+      .catch((err) => {
+        console.error("Failed to load markdown:", err);
+        setMarkdownContent("*Failed to load markdown content*");
+      })
+      .finally(() => {
+        setIsLoadingMarkdown(false);
+      });
+  }, [open, attachment, isMarkdown]);
 
   if (!attachment) return null;
-
-  const isImage = isImageType(attachment.mimeType);
-  const isPdf = isPdfType(attachment.mimeType);
 
   const handleDownload = () => {
     window.open(attachment.url, "_blank");
@@ -161,7 +199,26 @@ export function AttachmentPreview({
             />
           )}
 
-          {!isImage && !isPdf && (
+          {isMarkdown && (
+            <div className="w-full h-full overflow-auto p-6">
+              {isLoadingMarkdown ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                    <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    <span className="text-sm">Loading markdown...</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="max-w-4xl mx-auto bg-background rounded-lg border border-border p-8">
+                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <ReactMarkdown>{markdownContent || ""}</ReactMarkdown>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!isImage && !isPdf && !isMarkdown && (
             <div className="flex flex-col items-center justify-center gap-4 text-muted-foreground">
               <File className="w-16 h-16" />
               <div className="text-center">

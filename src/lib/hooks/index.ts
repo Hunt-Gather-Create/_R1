@@ -48,6 +48,7 @@ export {
   useIssueAttachments,
   useUploadAttachment,
   useDeleteAttachment,
+  useInvalidateAttachments,
 } from "./use-attachments";
 
 export { useSendToAI } from "./use-send-to-ai";

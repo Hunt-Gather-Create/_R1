@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useChat, type UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { Bot, User, Sparkles, Trash2 } from "lucide-react";
+import { Bot, User, Sparkles, Trash2, Paperclip } from "lucide-react";
+import { ToolResultDisplay } from "@/components/ai-elements/ToolResultDisplay";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 import {
@@ -15,11 +16,13 @@ import {
   useIssueChatMessages,
   useSaveChatMessage,
   useClearChatMessages,
+  useInvalidateAttachments,
 } from "@/lib/hooks";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
 import type { IssueWithLabels, Comment, ChatMessage } from "@/lib/types";
 
 interface IssueContext {
+  id: string;
   title: string;
   description: string | null;
   status: string;
@@ -58,17 +61,19 @@ export function IssueChatPanel({
     useIssueChatMessages(issue.id);
   const saveChatMutation = useSaveChatMessage(issue.id);
   const clearChatMutation = useClearChatMessages(issue.id);
+  const invalidateAttachments = useInvalidateAttachments(issue.id);
 
   // Build issue context for the API
   const issueContext: IssueContext = useMemo(
     () => ({
+      id: issue.id,
       title: issue.title,
       description: issue.description,
       status: issue.status,
       priority: issue.priority,
       comments: comments.map((c) => ({ body: c.body })),
     }),
-    [issue.title, issue.description, issue.status, issue.priority, comments]
+    [issue.id, issue.title, issue.description, issue.status, issue.priority, comments]
   );
 
   // Custom transport that includes issue context and workspace purpose
@@ -87,6 +92,11 @@ export function IssueChatPanel({
       if (toolCall.toolName === "updateDescription") {
         const args = toolCall.input as { description: string };
         onUpdateDescription(args.description);
+      }
+      if (toolCall.toolName === "attachContent") {
+        // Refresh attachments after AI attaches content
+        // Small delay to ensure server-side processing is complete
+        setTimeout(() => invalidateAttachments(), 500);
       }
     },
   });
@@ -242,15 +252,41 @@ export function IssueChatPanel({
                   }
                   // Tool calls show a confirmation message
                   if (part.type?.startsWith("tool-")) {
-                    return (
-                      <div
-                        key={index}
-                        className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
-                      >
-                        <Sparkles className="w-3 h-3" />
-                        <span>Description updated</span>
-                      </div>
-                    );
+                    const toolPart = part as { toolName?: string; result?: unknown };
+                    // Handle custom tool (updateDescription)
+                    if (toolPart.toolName === "updateDescription") {
+                      return (
+                        <div
+                          key={index}
+                          className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
+                        >
+                          <Sparkles className="w-3 h-3" />
+                          <span>Description updated</span>
+                        </div>
+                      );
+                    }
+                    // Handle attachContent tool
+                    if (toolPart.toolName === "attachContent") {
+                      return (
+                        <div
+                          key={index}
+                          className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
+                        >
+                          <Paperclip className="w-3 h-3" />
+                          <span>Content attached to issue</span>
+                        </div>
+                      );
+                    }
+                    // Handle built-in tools
+                    if (toolPart.toolName) {
+                      return (
+                        <ToolResultDisplay
+                          key={index}
+                          toolName={toolPart.toolName}
+                          result={toolPart.result}
+                        />
+                      );
+                    }
                   }
                   return null;
                 })}

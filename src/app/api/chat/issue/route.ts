@@ -1,11 +1,16 @@
-import { z } from "zod";
 import { type UIMessage } from "ai";
-import { createTool, createChatResponse, getPriorityLabel } from "@/lib/chat";
+import {
+  createChatResponse,
+  createIssueTools,
+  loadSkillsForPurpose,
+  getPriorityLabel,
+} from "@/lib/chat";
 import type { WorkspacePurpose } from "@/lib/design-tokens";
 
 export const maxDuration = 30;
 
 interface IssueContext {
+  id: string;
   title: string;
   description: string | null;
   status: string;
@@ -30,14 +35,24 @@ function buildSystemPrompt(
 3. Add success metrics and KPIs
 4. Structure the description with timeline and milestones
 
-Focus on marketing best practices: audience targeting, messaging, channels, and measurable outcomes.`
+Focus on marketing best practices: audience targeting, messaging, channels, and measurable outcomes.
+
+**Available tools:**
+- Web search: Research competitors, trends, best practices
+- Code execution: Run calculations, analyze data
+- Web fetch: Read documentation from URLs`
       : `Your job is to help the user:
 1. Refine acceptance criteria and requirements
 2. Clarify ambiguous parts of the issue
 3. Improve the description with better structure
 4. Suggest technical approaches when asked
 
-Focus on software best practices: user stories, edge cases, testing criteria, and technical specifications.`;
+Focus on software best practices: user stories, edge cases, testing criteria, and technical specifications.
+
+**Available tools:**
+- Web search: Research related technologies, APIs, or best practices
+- Code execution: Generate example code or analyze technical approaches
+- Web fetch: Read documentation from URLs`;
 
   return `You are helping refine an existing ${purpose === "marketing" ? "marketing task" : "issue"} in a kanban board. Here's the current item:
 
@@ -55,24 +70,6 @@ When the user is happy with the refined description, use the updateDescription t
 Be conversational and helpful. Ask clarifying questions when needed. When suggesting a description update, explain what changes you're making and why.`;
 }
 
-const updateDescriptionSchema = z.object({
-  description: z
-    .string()
-    .describe(
-      "The updated description with acceptance criteria, user stories, or improved requirements"
-    ),
-});
-
-const tools = {
-  updateDescription: createTool({
-    description:
-      "Update the issue description with refined content. Use this when you have a clear, improved description ready.",
-    schema: updateDescriptionSchema,
-    resultMessage: (input) =>
-      `Description updated to: "${input.description.substring(0, 50)}..."`,
-  }),
-};
-
 export async function POST(req: Request) {
   const { messages, issueContext, workspacePurpose } = (await req.json()) as {
     messages: UIMessage[];
@@ -80,8 +77,22 @@ export async function POST(req: Request) {
     workspacePurpose?: WorkspacePurpose;
   };
 
+  const purpose = workspacePurpose ?? "software";
+
+  // Load skills based on workspace purpose
+  const skills = await loadSkillsForPurpose(purpose);
+
+  // Create tools with issue context
+  const tools = createIssueTools({ issueId: issueContext.id });
+
   return createChatResponse(messages, {
-    system: buildSystemPrompt(issueContext, workspacePurpose ?? "software"),
+    system: buildSystemPrompt(issueContext, purpose),
     tools,
+    builtInTools: {
+      webSearch: true,
+      codeExecution: true,
+      webFetch: true,
+    },
+    skills,
   });
 }

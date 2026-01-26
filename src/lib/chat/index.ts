@@ -8,9 +8,31 @@ import {
   type ToolSet,
 } from "ai";
 import { z, type ZodObject, type ZodRawShape } from "zod";
+import type { ParsedSkill } from "./skills";
 
 export const DEFAULT_MODEL = "claude-sonnet-4-20250514";
 export const DEFAULT_MAX_DURATION = 30;
+
+// Re-export skills module
+export { loadSkill, loadSkillsForPurpose, loadAllSkills } from "./skills";
+export type { ParsedSkill, SkillManifest } from "./skills";
+
+// Re-export tools
+export {
+  createIssueTools,
+  createPlanningTools,
+  createChatTools,
+  type IssueToolsContext,
+} from "./tools";
+
+/**
+ * Configuration for Anthropic built-in tools
+ */
+export interface BuiltInToolsConfig {
+  webSearch?: boolean | { maxUses?: number };
+  codeExecution?: boolean;
+  webFetch?: boolean | { maxUses?: number };
+}
 
 /**
  * Configuration for a chat tool
@@ -48,16 +70,55 @@ export function createTool<T extends ZodRawShape>(config: ToolConfig<T>) {
 /**
  * Configuration for a chat endpoint
  */
-interface ChatConfig {
+export interface ChatConfig {
   system: string;
   tools: ToolSet;
   model?: string;
   /**
    * Maximum number of steps (tool call rounds) the model can make.
-   * Set to a higher number to allow the AI to continue after tool calls.
-   * Default is 1 (stops after first tool call).
+   * Enables multi-step tool calling where the AI continues after tool results
+   * until there are no more tool calls or this limit is reached.
+   * Default is 5.
    */
   maxSteps?: number;
+  /**
+   * Anthropic built-in tools to enable (web search, code execution, web fetch)
+   */
+  builtInTools?: BuiltInToolsConfig;
+  /**
+   * Skill instructions to include in the system prompt.
+   * Use loadSkillsForPurpose() to load skills based on workspace type.
+   */
+  skills?: ParsedSkill[];
+}
+
+/**
+ * Build system prompt with skill instructions
+ */
+function buildSystemPrompt(
+  basePrompt: string,
+  skills?: ParsedSkill[]
+): string {
+  if (!skills || skills.length === 0) {
+    return basePrompt;
+  }
+
+  const skillSections = skills.map((skill) => {
+    return `### ${skill.name}
+
+**When to use:** ${skill.description}
+
+**Instructions:**
+${skill.content}`;
+  });
+
+  return `${basePrompt}
+
+# Specialized Skills
+
+You have access to the following specialized skills. When the user's request matches a skill's triggers, you MUST follow that skill's instructions.
+
+${skillSections.join("\n\n---\n\n")}`;
 }
 
 /**
@@ -69,12 +130,42 @@ export async function createChatResponse(
 ) {
   const modelMessages = await convertToModelMessages(messages);
 
+  // Merge custom tools with built-in Anthropic tools
+  const allTools: ToolSet = { ...config.tools };
+
+  if (config.builtInTools?.webSearch) {
+    const options =
+      typeof config.builtInTools.webSearch === "object"
+        ? config.builtInTools.webSearch
+        : {};
+    allTools.web_search = anthropic.tools.webSearch_20250305({
+      maxUses: options.maxUses ?? 3,
+    });
+  }
+
+  if (config.builtInTools?.codeExecution) {
+    allTools.code_execution = anthropic.tools.codeExecution_20250825();
+  }
+
+  if (config.builtInTools?.webFetch) {
+    const options =
+      typeof config.builtInTools.webFetch === "object"
+        ? config.builtInTools.webFetch
+        : {};
+    allTools.web_fetch = anthropic.tools.webFetch_20250910({
+      maxUses: options.maxUses ?? 2,
+    });
+  }
+
+  // Build system prompt with skill instructions
+  const systemPrompt = buildSystemPrompt(config.system, config.skills);
+
   const result = streamText({
     model: anthropic(config.model ?? DEFAULT_MODEL),
-    system: config.system,
+    system: systemPrompt,
     messages: modelMessages,
-    tools: config.tools,
-    stopWhen: config.maxSteps ? stepCountIs(config.maxSteps) : undefined,
+    tools: allTools,
+    stopWhen: stepCountIs(config.maxSteps ?? 5),
   });
 
   return result.toUIMessageStreamResponse();

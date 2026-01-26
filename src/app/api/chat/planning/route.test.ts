@@ -1,21 +1,5 @@
-import { z } from "zod";
-
-// Schema matching the one in route.ts
-const planIssueSchema = z.object({
-  title: z
-    .string()
-    .describe("A clear, actionable title for the issue (max 100 characters)"),
-  description: z
-    .string()
-    .describe(
-      "Detailed description with acceptance criteria in markdown checkbox format"
-    ),
-  priority: z
-    .number()
-    .min(0)
-    .max(4)
-    .describe("Priority level: 0=Urgent, 1=High, 2=Medium, 3=Low, 4=None"),
-});
+import { describe, it, expect } from "vitest";
+import { planIssueSchema } from "@/lib/chat/tools/schemas";
 
 describe("planIssue schema validation", () => {
   describe("valid inputs", () => {

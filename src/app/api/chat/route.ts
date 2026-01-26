@@ -1,6 +1,9 @@
-import { z } from "zod";
 import { type UIMessage } from "ai";
-import { createTool, createChatResponse } from "@/lib/chat";
+import {
+  createChatResponse,
+  createChatTools,
+  loadSkillsForPurpose,
+} from "@/lib/chat";
 import type { WorkspacePurpose } from "@/lib/design-tokens";
 
 export const maxDuration = 30;
@@ -20,6 +23,11 @@ Focus on:
 - Edge cases and error handling
 - Testing criteria and acceptance criteria
 - Breaking down complex features into smaller tasks
+
+**Available tools:**
+- Web search: Research related technologies, APIs, or best practices
+- Code execution: Generate example code or analyze technical approaches
+- Web fetch: Read documentation from URLs
 
 Be conversational and helpful. Ask one or two questions at a time to gather context before suggesting an issue.
 
@@ -45,6 +53,11 @@ Focus on:
 - Timeline and key milestones
 - Success metrics and how to measure results
 
+**Available tools:**
+- Web search: Research competitors, trends, best practices, audience insights
+- Code execution: Run calculations, analyze data
+- Web fetch: Read content from URLs
+
 Be conversational and helpful. Ask one or two questions at a time to gather context before suggesting an issue.
 
 Priority levels:
@@ -60,40 +73,28 @@ function getSystemPrompt(purpose: WorkspacePurpose): string {
     : SOFTWARE_SYSTEM_PROMPT;
 }
 
-const suggestIssueSchema = z.object({
-  title: z
-    .string()
-    .describe("A clear, concise title for the issue (max 100 characters)"),
-  description: z
-    .string()
-    .describe(
-      "A detailed description, ideally in user story format: As a [user], I want [goal], so that [benefit]"
-    ),
-  priority: z
-    .number()
-    .min(0)
-    .max(4)
-    .describe("Priority level: 0=Urgent, 1=High, 2=Medium, 3=Low, 4=None"),
-});
-
-const tools = {
-  suggestIssue: createTool({
-    description:
-      "Suggest issue details to populate the form. Use this when you have gathered enough information from the user.",
-    schema: suggestIssueSchema,
-    resultMessage: (input) =>
-      `Suggested issue: "${input.title}" with priority ${input.priority}`,
-  }),
-};
-
 export async function POST(req: Request) {
   const { messages, workspacePurpose } = (await req.json()) as {
     messages: UIMessage[];
     workspacePurpose?: WorkspacePurpose;
   };
 
+  const purpose = workspacePurpose ?? "software";
+
+  // Load skills based on workspace purpose
+  const skills = await loadSkillsForPurpose(purpose);
+
+  // Create tools for issue suggestion
+  const tools = createChatTools();
+
   return createChatResponse(messages, {
-    system: getSystemPrompt(workspacePurpose ?? "software"),
+    system: getSystemPrompt(purpose),
     tools,
+    builtInTools: {
+      webSearch: true,
+      codeExecution: true,
+      webFetch: true,
+    },
+    skills,
   });
 }

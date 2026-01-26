@@ -110,3 +110,24 @@ export async function deleteObject(storageKey: string): Promise<void> {
 
   await client.send(command);
 }
+
+/**
+ * Upload content directly to R2 (for AI-generated content)
+ */
+export async function uploadContent(
+  storageKey: string,
+  content: string,
+  contentType: string
+): Promise<void> {
+  const client = createS3Client();
+  const bucket = getBucketName();
+
+  const command = new PutObjectCommand({
+    Bucket: bucket,
+    Key: storageKey,
+    Body: content,
+    ContentType: contentType,
+  });
+
+  await client.send(command);
+}

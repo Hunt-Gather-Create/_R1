@@ -5,6 +5,7 @@ import {
   File,
   Image as ImageIcon,
   FileSpreadsheet,
+  FileCode,
   MoreHorizontal,
   Download,
   Trash2,
@@ -31,9 +32,14 @@ interface AttachmentItemProps {
   isDeleting?: boolean;
 }
 
+function isMarkdownType(mimeType: string): boolean {
+  return mimeType === "text/markdown" || mimeType === "text/x-markdown";
+}
+
 function getFileIcon(mimeType: string) {
   if (isImageType(mimeType)) return ImageIcon;
   if (isPdfType(mimeType)) return FileText;
+  if (isMarkdownType(mimeType)) return FileCode;
   if (
     mimeType.includes("spreadsheet") ||
     mimeType.includes("excel") ||
@@ -47,6 +53,7 @@ function getFileIcon(mimeType: string) {
 function getIconColor(mimeType: string): string {
   if (isImageType(mimeType)) return "text-blue-500";
   if (isPdfType(mimeType)) return "text-red-500";
+  if (isMarkdownType(mimeType)) return "text-purple-500";
   if (
     mimeType.includes("spreadsheet") ||
     mimeType.includes("excel") ||

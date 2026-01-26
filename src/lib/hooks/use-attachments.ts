@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import {
@@ -120,4 +121,21 @@ export function useDeleteAttachment(issueId: string) {
       });
     },
   });
+}
+
+/**
+ * Hook to get a function that invalidates attachments and activities
+ * Useful for refreshing after AI-generated attachments
+ */
+export function useInvalidateAttachments(issueId: string) {
+  const queryClient = useQueryClient();
+
+  return useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.issue.attachments(issueId),
+    });
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.issue.activities(issueId),
+    });
+  }, [queryClient, issueId]);
 }

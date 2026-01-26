@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { useChat, type UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Bot, User, Sparkles } from "lucide-react";
+import { ToolResultDisplay } from "@/components/ai-elements/ToolResultDisplay";
 import { marked } from "marked";
 import { cn } from "@/lib/utils";
 import {
@@ -166,15 +167,29 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
                     );
                   }
                   if (part.type?.startsWith("tool-")) {
-                    return (
-                      <div
-                        key={index}
-                        className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
-                      >
-                        <Sparkles className="w-3 h-3" />
-                        <span>Issue added to plan</span>
-                      </div>
-                    );
+                    const toolPart = part as { toolName?: string; result?: unknown };
+                    // Handle custom tool (planIssue)
+                    if (toolPart.toolName === "planIssue") {
+                      return (
+                        <div
+                          key={index}
+                          className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
+                        >
+                          <Sparkles className="w-3 h-3" />
+                          <span>Issue added to plan</span>
+                        </div>
+                      );
+                    }
+                    // Handle built-in tools
+                    if (toolPart.toolName) {
+                      return (
+                        <ToolResultDisplay
+                          key={index}
+                          toolName={toolPart.toolName}
+                          result={toolPart.result}
+                        />
+                      );
+                    }
                   }
                   return null;
                 })}

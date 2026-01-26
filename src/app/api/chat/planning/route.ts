@@ -1,6 +1,9 @@
-import { z } from "zod";
 import { type UIMessage } from "ai";
-import { createTool, createChatResponse } from "@/lib/chat";
+import {
+  createChatResponse,
+  createPlanningTools,
+  loadSkillsForPurpose,
+} from "@/lib/chat";
 import type { WorkspacePurpose } from "@/lib/design-tokens";
 
 export const maxDuration = 30;
@@ -12,6 +15,13 @@ Your primary goal is to decompose work into independently executable tickets. Ea
 - Be completable by one person without dependencies on unfinished work
 - Take no more than a few hours to a day of work
 - Be testable/verifiable on its own
+
+**Available research tools:**
+- Web search: Research best practices, documentation, library comparisons
+- Code execution: Generate code examples, run calculations, demonstrate patterns
+- Web fetch: Read content from URLs the user shares
+
+Use these tools when they add concrete value to planning. Don't overuse them.
 
 Communication style:
 - Ask ONE question at a time to gather requirements
@@ -45,6 +55,13 @@ Your primary goal is to decompose work into independently executable tickets. Ea
 - Take no more than a few hours to a day of work
 - Have a clear "done" state
 
+**Available research tools:**
+- Web search: Research competitors, trends, best practices, audience insights
+- Code execution: Run calculations, analyze data, generate examples
+- Web fetch: Read content from URLs the user shares
+
+Use these tools when they add concrete value to planning. Don't overuse them.
+
 Communication style:
 - Ask ONE question at a time to gather requirements
 - When there are multiple valid options, present them as numbered choices:
@@ -75,41 +92,30 @@ function getSystemPrompt(purpose: WorkspacePurpose): string {
     : SOFTWARE_SYSTEM_PROMPT;
 }
 
-const planIssueSchema = z.object({
-  title: z
-    .string()
-    .describe("A clear, actionable title for the issue (max 100 characters)"),
-  description: z
-    .string()
-    .describe(
-      "Detailed description with acceptance criteria in markdown checkbox format"
-    ),
-  priority: z
-    .number()
-    .min(0)
-    .max(4)
-    .describe("Priority level: 0=Urgent, 1=High, 2=Medium, 3=Low, 4=None"),
-});
-
-const tools = {
-  planIssue: createTool({
-    description:
-      "Add an issue to the planning list. Use this when you have gathered enough requirements for a specific piece of work.",
-    schema: planIssueSchema,
-    resultMessage: (input) => `Added "${input.title}" to the plan`,
-  }),
-};
-
 export async function POST(req: Request) {
   const { messages, workspacePurpose } = (await req.json()) as {
     messages: UIMessage[];
     workspacePurpose?: WorkspacePurpose;
   };
 
+  const purpose = workspacePurpose ?? "software";
+
+  // Load skills based on workspace purpose
+  const skills = await loadSkillsForPurpose(purpose);
+
+  // Create planning tools
+  const tools = createPlanningTools();
+
   return createChatResponse(messages, {
-    system: getSystemPrompt(workspacePurpose ?? "software"),
+    system: getSystemPrompt(purpose),
     tools,
     model: "claude-opus-4-5-20251101",
     maxSteps: 10, // Allow AI to continue after creating issues
+    builtInTools: {
+      webSearch: true,
+      codeExecution: true,
+      webFetch: true,
+    },
+    skills,
   });
 }
