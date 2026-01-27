@@ -100,5 +100,6 @@ export async function POST(req: Request) {
       webFetch: true,
     },
     skills,
+    workspaceId,
   });
 }

@@ -11,6 +11,9 @@ importers:
       '@ai-sdk/anthropic':
         specifier: ^3.0.23
         version: 3.0.23(zod@4.3.5)
+      '@ai-sdk/mcp':
+        specifier: ^1.0.13
+        version: 1.0.13(zod@4.3.5)
       '@ai-sdk/react':
         specifier: ^3.0.50
         version: 3.0.50(react@19.2.3)(zod@4.3.5)
@@ -53,6 +56,9 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.2.8
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.9))(@types/react@19.2.9)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      '@smithery/api':
+        specifier: ^0.29.0
+        version: 0.29.0
       '@tailwindcss/typography':
         specifier: ^0.5.19
         version: 0.5.19(tailwindcss@4.1.18)
@@ -209,6 +215,12 @@ packages:
 
   '@ai-sdk/gateway@3.0.22':
     resolution: {integrity: sha512-NgnlY73JNuooACHqUIz5uMOEWvqR1MMVbb2soGLMozLY1fgwEIF5iJFDAGa5/YArlzw2ATVU7zQu7HkR/FUjgA==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/mcp@1.0.13':
+    resolution: {integrity: sha512-yQEa+X5/QNmWlNwURAMlobmipvg4i/3L0iTz7pJQ/Z2Imjgp/y8gRAxkIzXL1HzlOxF4Dm/4PHpHrXaSV+EAUQ==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -1945,6 +1957,14 @@ packages:
 
   '@rtsao/scc@1.1.0':
     resolution: {integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==}
+
+  '@smithery/api@0.29.0':
+    resolution: {integrity: sha512-mcm5/hgyLdsX3nsY3h6wBw4Zq5hk7CsdkjbCG2wLo7SUUhr1WgAa0Q7781G0eKsD3ATzA9vXdmzH1EPlSrxmtw==}
+    peerDependencies:
+      '@modelcontextprotocol/sdk': '>=1.0.0'
+    peerDependenciesMeta:
+      '@modelcontextprotocol/sdk':
+        optional: true
 
   '@smithy/abort-controller@4.2.8':
     resolution: {integrity: sha512-peuVfkYHAmS5ybKxWcfraK7WBBP0J+rkfUcbHJJKQ4ir3UAUNQI+Y4Vt/PqSzGqgloJ5O1dk7+WzNL8wcCSXbw==}
@@ -4353,6 +4373,10 @@ packages:
     resolution: {integrity: sha512-5gTmgEY/sqK6gFXLIsQNH19lWb4ebPDLA4SdLP7dsWkIXHWlG66oPuVvXSGFPppYZz8ZDZq0dYYrbHfBCVUb1Q==}
     engines: {node: '>=12'}
 
+  pkce-challenge@5.0.1:
+    resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
+    engines: {node: '>=16.20.0'}
+
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
     engines: {node: '>= 0.4'}
@@ -5194,6 +5218,13 @@ snapshots:
       '@ai-sdk/provider': 3.0.5
       '@ai-sdk/provider-utils': 4.0.9(zod@4.3.5)
       '@vercel/oidc': 3.1.0
+      zod: 4.3.5
+
+  '@ai-sdk/mcp@1.0.13(zod@4.3.5)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.5
+      '@ai-sdk/provider-utils': 4.0.9(zod@4.3.5)
+      pkce-challenge: 5.0.1
       zod: 4.3.5
 
   '@ai-sdk/provider-utils@4.0.9(zod@4.3.5)':
@@ -6979,6 +7010,8 @@ snapshots:
     optional: true
 
   '@rtsao/scc@1.1.0': {}
+
+  '@smithery/api@0.29.0': {}
 
   '@smithy/abort-controller@4.2.8':
     dependencies:
@@ -9976,6 +10009,8 @@ snapshots:
   picomatch@2.3.1: {}
 
   picomatch@4.0.3: {}
+
+  pkce-challenge@5.0.1: {}
 
   possible-typed-array-names@1.1.0: {}
 

@@ -11,6 +11,7 @@ import type {
   workspaceMembers,
   attachments,
   workspaceSkills,
+  workspaceMcpServers,
 } from "./db/schema";
 import type { Status, Priority } from "./design-tokens";
 
@@ -27,6 +28,7 @@ export type Activity = typeof activities.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
 export type WorkspaceSkill = typeof workspaceSkills.$inferSelect;
+export type WorkspaceMcpServer = typeof workspaceMcpServers.$inferSelect;
 
 // Attachment with signed URL for display
 export type AttachmentWithUrl = Attachment & { url: string };

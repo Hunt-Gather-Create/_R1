@@ -32,5 +32,7 @@ export const queryKeys = {
       ["settings", "columns", workspaceId] as const,
     skills: (workspaceId: string) =>
       ["settings", "skills", workspaceId] as const,
+    mcpServers: (workspaceId: string) =>
+      ["settings", "mcpServers", workspaceId] as const,
   },
 } as const;

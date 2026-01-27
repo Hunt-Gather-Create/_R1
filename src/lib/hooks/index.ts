@@ -19,6 +19,7 @@ export {
   useWorkspaceLabels,
   useWorkspaceColumns,
   useWorkspaceSkills,
+  useWorkspaceMcpServers,
   useInvalidateSettings,
 } from "./use-settings-queries";
 

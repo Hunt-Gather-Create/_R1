@@ -9,6 +9,7 @@ import {
 } from "ai";
 import { z, type ZodObject, type ZodRawShape } from "zod";
 import type { ParsedSkill } from "./skills";
+import { getMcpToolsForWorkspace } from "@/lib/mcp";
 
 export const DEFAULT_MODEL = "claude-sonnet-4-20250514";
 export const DEFAULT_MAX_DURATION = 30;
@@ -95,6 +96,11 @@ export interface ChatConfig {
    * Use loadSkillsForPurpose() to load skills based on workspace type.
    */
   skills?: ParsedSkill[];
+  /**
+   * Workspace ID for loading MCP tools from enabled integrations.
+   * If provided, MCP tools will be fetched and merged into the tool set.
+   */
+  workspaceId?: string;
 }
 
 /**
@@ -137,6 +143,19 @@ export async function createChatResponse(
 
   // Merge custom tools with built-in Anthropic tools
   const allTools: ToolSet = { ...config.tools };
+
+  // Add MCP tools from enabled integrations
+  if (config.workspaceId) {
+    try {
+      const mcpTools = await getMcpToolsForWorkspace(config.workspaceId);
+      for (const [toolName, tool] of Object.entries(mcpTools)) {
+        allTools[toolName] = tool;
+      }
+    } catch (error) {
+      console.error("Failed to load MCP tools:", error);
+      // Continue without MCP tools
+    }
+  }
 
   if (config.builtInTools?.webSearch) {
     const options =

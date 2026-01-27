@@ -194,3 +194,15 @@ export const workspaceSkills = sqliteTable("workspace_skills", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
+
+// Workspace MCP Servers - enabled MCP integrations per workspace
+export const workspaceMcpServers = sqliteTable("workspace_mcp_servers", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  serverKey: text("server_key").notNull(), // e.g., "exa"
+  isEnabled: integer("is_enabled", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});

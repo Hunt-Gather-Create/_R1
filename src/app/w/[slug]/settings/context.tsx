@@ -14,6 +14,7 @@ import {
   useWorkspaceLabels,
   useWorkspaceColumns,
   useWorkspaceSkills,
+  useWorkspaceMcpServers,
   useInvalidateSettings,
 } from "@/lib/hooks";
 import { getCurrentUserId } from "@/lib/auth";
@@ -25,6 +26,7 @@ import type {
   Column,
   WorkspaceSkill,
 } from "@/lib/types";
+import type { McpServerWithStatus } from "@/lib/actions/integrations";
 
 interface SettingsContextValue {
   // Workspace data
@@ -33,6 +35,7 @@ interface SettingsContextValue {
   labels: Label[];
   columns: Column[];
   skills: WorkspaceSkill[];
+  mcpServers: McpServerWithStatus[];
 
   // Loading states
   isLoading: boolean;
@@ -50,6 +53,7 @@ interface SettingsContextValue {
   refreshLabels: () => Promise<void>;
   refreshColumns: () => Promise<void>;
   refreshSkills: () => Promise<void>;
+  refreshMcpServers: () => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -105,6 +109,12 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     refetch: refetchSkills,
   } = useWorkspaceSkills(workspace?.id ?? null);
 
+  const {
+    data: mcpServers = [],
+    isLoading: isMcpServersLoading,
+    refetch: refetchMcpServers,
+  } = useWorkspaceMcpServers(workspace?.id ?? null);
+
   // Load current user ID
   useEffect(() => {
     getCurrentUserId().then(setCurrentUserId);
@@ -116,7 +126,8 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     isMembersLoading ||
     isLabelsLoading ||
     isColumnsLoading ||
-    isSkillsLoading;
+    isSkillsLoading ||
+    isMcpServersLoading;
   const error = workspaceError
     ? workspaceError instanceof Error
       ? workspaceError.message
@@ -164,12 +175,20 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     }
   };
 
+  const refreshMcpServers = async () => {
+    if (workspace) {
+      invalidate.invalidateMcpServers(workspace.id);
+      await refetchMcpServers();
+    }
+  };
+
   const value: SettingsContextValue = {
     workspace: workspace ?? null,
     members,
     labels,
     columns,
     skills,
+    mcpServers,
     isLoading,
     error,
     currentUserId,
@@ -181,6 +200,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     refreshLabels,
     refreshColumns,
     refreshSkills,
+    refreshMcpServers,
   };
 
   return (
