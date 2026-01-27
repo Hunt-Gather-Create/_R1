@@ -35,7 +35,7 @@ import type {
   Label,
   Cycle,
 } from "@/lib/types";
-import { STATUS, type WorkspacePurpose } from "@/lib/design-tokens";
+import { STATUS, type WorkspacePurpose, type Status } from "@/lib/design-tokens";
 
 interface BoardContextValue {
   board: BoardWithColumnsAndIssues;
@@ -69,6 +69,7 @@ interface BoardContextValue {
 
   updateSelectedIssue: (data: UpdateIssueInput) => void;
   deleteSelectedIssue: () => void;
+  moveSelectedIssueToColumn: (columnId: string) => void;
   addLabelToSelectedIssue: (labelId: string) => void;
   removeLabelFromSelectedIssue: (labelId: string) => void;
 }
@@ -239,14 +240,57 @@ export function BoardProvider({
     [board.columns, addOptimistic, createIssueMutation]
   );
 
+  // Find the column that matches a status based on the column's status field
+  const findColumnForStatus = useCallback(
+    (status: Status): ColumnWithIssues | undefined => {
+      // Find column with matching status field
+      return board.columns.find((col) => col.status === status);
+    },
+    [board.columns]
+  );
+
   const updateIssue = useCallback(
     (issueId: string, data: UpdateIssueInput) => {
       startTransition(async () => {
+        // Check if status is changing and we need to move the issue
+        // (only for non-subtasks - subtasks stay with their parent)
+        if (data.status) {
+          const currentIssue = findIssue(issueId);
+          const isSubtask = !!currentIssue?.parentIssueId;
+
+          if (!isSubtask) {
+            const currentColumn = findColumn(issueId);
+            const targetColumn = findColumnForStatus(data.status as Status);
+
+            // If we found a target column that's different from current, move the issue
+            if (
+              currentIssue &&
+              targetColumn &&
+              currentColumn &&
+              targetColumn.id !== currentColumn.id
+            ) {
+              // Move to end of target column
+              const targetPosition = targetColumn.issues.length;
+              addOptimistic({
+                type: "moveIssue",
+                issueId,
+                targetColumnId: targetColumn.id,
+                targetPosition,
+              });
+              // Also apply the status update optimistically
+              addOptimistic({ type: "updateIssue", issueId, data });
+              await updateIssueMutation.mutateAsync({ issueId, data });
+              return;
+            }
+          }
+        }
+
+        // Default: just update the issue without moving
         addOptimistic({ type: "updateIssue", issueId, data });
         await updateIssueMutation.mutateAsync({ issueId, data });
       });
     },
-    [addOptimistic, updateIssueMutation]
+    [addOptimistic, updateIssueMutation, findIssue, findColumn, findColumnForStatus]
   );
 
   const removeIssue = useCallback(
@@ -334,6 +378,18 @@ export function BoardProvider({
     }
   }, [selectedIssueId, removeIssue, closeDetailPanel]);
 
+  const moveSelectedIssueToColumn = useCallback(
+    (columnId: string) => {
+      if (!selectedIssueId) return;
+      const targetColumn = board.columns.find((c) => c.id === columnId);
+      if (!targetColumn) return;
+      // Move to end of target column
+      const targetPosition = targetColumn.issues.length;
+      moveIssueToColumn(selectedIssueId, columnId, targetPosition);
+    },
+    [selectedIssueId, board.columns, moveIssueToColumn]
+  );
+
   const addLabelToSelectedIssue = useCallback(
     (labelId: string) => {
       if (selectedIssueId) addLabelToIssue(selectedIssueId, labelId);
@@ -378,6 +434,7 @@ export function BoardProvider({
     closeDetailPanel,
     updateSelectedIssue,
     deleteSelectedIssue,
+    moveSelectedIssueToColumn,
     addLabelToSelectedIssue,
     removeLabelFromSelectedIssue,
   };

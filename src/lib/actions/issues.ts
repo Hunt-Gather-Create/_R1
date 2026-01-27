@@ -25,7 +25,7 @@ import type {
   ActivityData,
   SubtaskCount,
 } from "../types";
-import { STATUS } from "../design-tokens";
+import { STATUS, type Status } from "../design-tokens";
 import { requireWorkspaceAccess } from "./workspace";
 import { getWorkspaceSlug } from "./helpers";
 
@@ -77,6 +77,21 @@ async function getColumnWorkspaceId(columnId: string): Promise<string | null> {
     .where(eq(columns.id, columnId))
     .get();
   return column?.workspaceId ?? null;
+}
+
+// Find column by status within a workspace
+async function findColumnForStatus(
+  workspaceId: string,
+  status: Status
+): Promise<{ id: string; name: string } | null> {
+  // Find column with matching status field
+  const column = await db
+    .select({ id: columns.id, name: columns.name })
+    .from(columns)
+    .where(and(eq(columns.workspaceId, workspaceId), eq(columns.status, status)))
+    .get();
+
+  return column ?? null;
 }
 
 export async function createIssue(
@@ -242,6 +257,32 @@ export async function updateIssue(
 
   if (input.status !== undefined && input.status !== existingIssue.status) {
     updates.status = input.status;
+
+    // When status changes, also move the issue to the corresponding column
+    // (only for non-subtasks - subtasks stay with their parent)
+    if (!existingIssue.parentIssueId && workspaceId) {
+      const targetColumn = await findColumnForStatus(
+        workspaceId,
+        input.status as Status
+      );
+      if (targetColumn && targetColumn.id !== existingIssue.columnId) {
+        // Get max position in target column
+        const maxPosition = await db
+          .select({ maxPos: sql<number>`COALESCE(MAX(position), -1)` })
+          .from(issues)
+          .where(
+            and(
+              eq(issues.columnId, targetColumn.id),
+              sql`parent_issue_id IS NULL`
+            )
+          )
+          .get();
+
+        updates.columnId = targetColumn.id;
+        updates.position = (maxPosition?.maxPos ?? -1) + 1;
+      }
+    }
+
     await logActivity(
       issueId,
       "status_changed",

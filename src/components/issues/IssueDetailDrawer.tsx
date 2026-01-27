@@ -5,39 +5,22 @@ import { usePathname } from "next/navigation";
 import { Check, Copy, Sparkles, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSendToAI } from "@/lib/hooks";
+import { useBoardContext } from "@/components/board/context/BoardProvider";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { IssueChatPanel } from "./IssueChatPanel";
 import { IssueDetailForm } from "./IssueDetailForm";
-import type {
-  IssueWithLabels,
-  Label,
-  Comment,
-  UpdateIssueInput,
-} from "@/lib/types";
+import type { Comment } from "@/lib/types";
 
 interface IssueDetailDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  issue: IssueWithLabels | null;
-  allLabels: Label[];
-  onUpdate: (data: UpdateIssueInput) => void;
-  onDelete: () => void;
-  onAddLabel: (labelId: string) => void;
-  onRemoveLabel: (labelId: string) => void;
-  onCreateLabel?: (name: string, color: string) => Promise<Label | undefined>;
 }
 
 export function IssueDetailDrawer({
   open,
   onOpenChange,
-  issue,
-  allLabels,
-  onUpdate,
-  onDelete,
-  onAddLabel,
-  onRemoveLabel,
-  onCreateLabel,
 }: IssueDetailDrawerProps) {
+  const { selectedIssue: issue, deleteSelectedIssue } = useBoardContext();
   const pathname = usePathname();
   const { sendToAI } = useSendToAI();
   const [comments, setComments] = useState<Comment[]>([]);
@@ -70,7 +53,7 @@ export function IssueDetailDrawer({
 
   const handleDelete = () => {
     if (isDeleting) {
-      onDelete();
+      deleteSelectedIssue();
       onOpenChange(false);
     } else {
       setIsDeleting(true);
@@ -164,11 +147,6 @@ export function IssueDetailDrawer({
           <div className="w-[45%]">
             <IssueDetailForm
               issue={issue}
-              allLabels={allLabels}
-              onUpdate={onUpdate}
-              onAddLabel={onAddLabel}
-              onRemoveLabel={onRemoveLabel}
-              onCreateLabel={onCreateLabel}
               externalDescription={externalDescription}
               highlightDescription={highlightDescription}
               onCommentsLoad={handleCommentsLoad}

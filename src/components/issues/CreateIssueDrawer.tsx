@@ -6,38 +6,45 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
 import { ChatPanel } from "./ChatPanel";
 import { IssueFormPanel, type IssueFormState } from "./IssueFormPanel";
-import { STATUS, PRIORITY, type Priority } from "@/lib/design-tokens";
+import { PRIORITY, type Priority, type Status } from "@/lib/design-tokens";
 
 interface CreateIssueDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-const initialFormState: IssueFormState = {
-  title: "",
-  description: "",
-  status: STATUS.TODO,
-  priority: PRIORITY.NONE,
-  labelIds: [],
-  dueDate: null,
-  estimate: null,
-};
+// Get initial form state with default column
+function getInitialFormState(defaultColumnId: string): IssueFormState {
+  return {
+    title: "",
+    description: "",
+    columnId: defaultColumnId,
+    priority: PRIORITY.NONE,
+    labelIds: [],
+    dueDate: null,
+    estimate: null,
+  };
+}
 
 export function CreateIssueDrawer({
   open,
   onOpenChange,
 }: CreateIssueDrawerProps) {
   const { board, addIssue, labels, createLabel } = useBoardContext();
-  const [formState, setFormState] = useState<IssueFormState>(initialFormState);
+
+  // Find the default column (prefer "todo" status, then first non-system column)
+  const defaultColumn =
+    board.columns.find((col) => col.status === "todo") ||
+    board.columns.find((col) => !col.isSystem) ||
+    board.columns[0];
+
+  const [formState, setFormState] = useState<IssueFormState>(() =>
+    getInitialFormState(defaultColumn?.id ?? "")
+  );
   const [highlightedFields, setHighlightedFields] = useState<
     Set<keyof IssueFormState>
   >(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Find the "Todo" column to add issues to
-  const todoColumn =
-    board.columns.find((col) => col.name.toLowerCase() === "todo") ||
-    board.columns[0];
 
   const handleFormChange = useCallback((updates: Partial<IssueFormState>) => {
     setFormState((prev) => ({ ...prev, ...updates }));
@@ -79,14 +86,18 @@ export function CreateIssueDrawer({
   );
 
   const handleSubmit = useCallback(() => {
-    if (!formState.title.trim() || !todoColumn) return;
+    if (!formState.title.trim() || !formState.columnId) return;
 
     setIsSubmitting(true);
 
-    addIssue(todoColumn.id, {
+    // Get the selected column to derive status
+    const selectedColumn = board.columns.find((c) => c.id === formState.columnId);
+    const status = (selectedColumn?.status as Status) || "todo";
+
+    addIssue(formState.columnId, {
       title: formState.title.trim(),
       description: formState.description.trim() || undefined,
-      status: formState.status,
+      status,
       priority: formState.priority,
       labelIds: formState.labelIds,
       dueDate: formState.dueDate ?? undefined,
@@ -94,26 +105,26 @@ export function CreateIssueDrawer({
     });
 
     // Reset form and close drawer
-    setFormState(initialFormState);
+    setFormState(getInitialFormState(defaultColumn?.id ?? ""));
     setIsSubmitting(false);
     onOpenChange(false);
-  }, [formState, todoColumn, addIssue, onOpenChange]);
+  }, [formState, board.columns, defaultColumn, addIssue, onOpenChange]);
 
   const handleCancel = useCallback(() => {
-    setFormState(initialFormState);
+    setFormState(getInitialFormState(defaultColumn?.id ?? ""));
     onOpenChange(false);
-  }, [onOpenChange]);
+  }, [defaultColumn, onOpenChange]);
 
   // Reset form when drawer opens
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
       if (!isOpen) {
-        setFormState(initialFormState);
+        setFormState(getInitialFormState(defaultColumn?.id ?? ""));
         setHighlightedFields(new Set());
       }
       onOpenChange(isOpen);
     },
-    [onOpenChange]
+    [defaultColumn, onOpenChange]
   );
 
   return (
@@ -142,6 +153,7 @@ export function CreateIssueDrawer({
               formState={formState}
               onFormChange={handleFormChange}
               availableLabels={labels}
+              columns={board.columns}
               onSubmit={handleSubmit}
               onCancel={handleCancel}
               isSubmitting={isSubmitting}

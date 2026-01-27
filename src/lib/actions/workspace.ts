@@ -166,11 +166,13 @@ export async function createWorkspace(
 
   // Create default columns based on purpose
   for (let i = 0; i < config.defaultColumns.length; i++) {
+    const col = config.defaultColumns[i];
     await db.insert(columns).values({
       id: crypto.randomUUID(),
       workspaceId,
-      name: config.defaultColumns[i],
+      name: col.name,
       position: i,
+      status: col.status,
     });
   }
 

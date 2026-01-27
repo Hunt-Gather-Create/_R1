@@ -71,6 +71,7 @@ export async function createColumn(
     name,
     position: finalPosition,
     isSystem: false,
+    status: null, // User-created columns don't auto-map to a status
   };
 
   await db.insert(columns).values(column);
@@ -166,6 +167,7 @@ export async function getOrCreateOrphanedColumn(
     name: ORPHANED_COLUMN_NAME,
     position: (result?.maxPos ?? -1) + 1,
     isSystem: true,
+    status: null, // Orphaned column has no status mapping
   };
 
   await db.insert(columns).values(column);

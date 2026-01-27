@@ -58,6 +58,9 @@ export const columns = sqliteTable("columns", {
   name: text("name").notNull(),
   position: integer("position").notNull(),
   isSystem: integer("is_system", { mode: "boolean" }).notNull().default(false),
+  // Maps this column to a workflow status (backlog, todo, in_progress, done, canceled)
+  // Used to auto-move issues when their status changes
+  status: text("status"),
 });
 
 // Cycles - time-boxed iterations (sprints)
