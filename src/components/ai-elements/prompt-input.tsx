@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import TextareaAutosize from "react-textarea-autosize";
-import { ArrowUp, Loader2 } from "lucide-react";
+import { ArrowUp, Loader2, Paperclip, X, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface PromptInputContextValue {
@@ -10,6 +10,8 @@ interface PromptInputContextValue {
   setValue: (value: string) => void;
   isLoading: boolean;
   onSubmit: () => void;
+  files: File[];
+  setFiles: (files: File[]) => void;
 }
 
 const PromptInputContext = React.createContext<PromptInputContextValue | null>(
@@ -29,6 +31,8 @@ interface PromptInputProps extends React.FormHTMLAttributes<HTMLFormElement> {
   onValueChange: (value: string) => void;
   isLoading?: boolean;
   onSubmit: () => void;
+  files?: File[];
+  onFilesChange?: (files: File[]) => void;
 }
 
 export function PromptInput({
@@ -36,16 +40,25 @@ export function PromptInput({
   onValueChange,
   isLoading = false,
   onSubmit,
+  files = [],
+  onFilesChange,
   className,
   children,
   ...props
 }: PromptInputProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (value.trim() && !isLoading) {
+    if ((value.trim() || files.length > 0) && !isLoading) {
       onSubmit();
     }
   };
+
+  const handleSetFiles = React.useCallback(
+    (newFiles: File[]) => {
+      onFilesChange?.(newFiles);
+    },
+    [onFilesChange]
+  );
 
   return (
     <PromptInputContext.Provider
@@ -54,12 +67,14 @@ export function PromptInput({
         setValue: onValueChange,
         isLoading,
         onSubmit,
+        files,
+        setFiles: handleSetFiles,
       }}
     >
       <form
         onSubmit={handleSubmit}
         className={cn(
-          "flex items-end gap-2 rounded-lg border border-border bg-muted/50 p-2",
+          "flex flex-col gap-2 rounded-lg border border-border bg-muted/50 p-2",
           className
         )}
         {...props}
@@ -121,8 +136,8 @@ export function PromptInputSubmit({
   children,
   ...props
 }: PromptInputSubmitProps) {
-  const { value, isLoading } = usePromptInput();
-  const canSubmit = value.trim() && !isLoading;
+  const { value, isLoading, files } = usePromptInput();
+  const canSubmit = (value.trim() || files.length > 0) && !isLoading;
 
   return (
     <button
@@ -145,5 +160,128 @@ export function PromptInputSubmit({
         children || <ArrowUp className="h-4 w-4" />
       )}
     </button>
+  );
+}
+
+interface PromptInputAttachmentButtonProps {
+  className?: string;
+  accept?: string;
+}
+
+export function PromptInputAttachmentButton({
+  className,
+  accept = "image/*,text/*,.pdf,.md,.json,.csv",
+}: PromptInputAttachmentButtonProps) {
+  const { files, setFiles, isLoading } = usePromptInput();
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = e.target.files;
+    if (selectedFiles) {
+      setFiles([...files, ...Array.from(selectedFiles)]);
+    }
+    // Reset input so the same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  return (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={accept}
+        multiple
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={isLoading}
+        className={cn(
+          "flex items-center justify-center",
+          "h-8 w-8 rounded-md",
+          "text-muted-foreground hover:text-foreground hover:bg-muted",
+          "disabled:opacity-50 disabled:cursor-not-allowed",
+          "transition-colors",
+          files.length > 0 && "text-primary",
+          className
+        )}
+        title="Attach files"
+      >
+        <Paperclip className="h-4 w-4" />
+      </button>
+    </>
+  );
+}
+
+export function PromptInputFilePreviews({ className }: { className?: string }) {
+  const { files, setFiles } = usePromptInput();
+
+  const removeFile = (index: number) => {
+    setFiles(files.filter((_, i) => i !== index));
+  };
+
+  const getFilePreview = (file: File) => {
+    if (file.type.startsWith("image/")) {
+      return URL.createObjectURL(file);
+    }
+    return null;
+  };
+
+  if (files.length === 0) return null;
+
+  return (
+    <div className={cn("flex flex-wrap gap-2", className)}>
+      {files.map((file, index) => {
+        const imagePreview = getFilePreview(file);
+        const isImage = file.type.startsWith("image/");
+
+        return (
+          <div
+            key={`${file.name}-${index}`}
+            className="relative group flex items-center gap-2 px-2 py-1.5 rounded-md bg-background border border-border"
+          >
+            {isImage && imagePreview ? (
+              <img
+                src={imagePreview}
+                alt={file.name}
+                className="w-10 h-10 object-cover rounded"
+                onLoad={() => URL.revokeObjectURL(imagePreview)}
+              />
+            ) : (
+              <div className="flex items-center justify-center w-10 h-10 rounded bg-muted">
+                <FileText className="w-5 h-5 text-muted-foreground" />
+              </div>
+            )}
+            <span className="text-xs text-muted-foreground max-w-[100px] truncate">
+              {file.name}
+            </span>
+            <button
+              type="button"
+              onClick={() => removeFile(index)}
+              className="p-0.5 rounded-full bg-muted hover:bg-destructive hover:text-destructive-foreground transition-colors"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+interface PromptInputActionsProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export function PromptInputActions({ children, className }: PromptInputActionsProps) {
+  return (
+    <div className={cn("flex items-center justify-between", className)}>
+      {children}
+    </div>
   );
 }

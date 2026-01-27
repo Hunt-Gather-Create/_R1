@@ -11,6 +11,9 @@ import {
   PromptInput,
   PromptInputTextarea,
   PromptInputSubmit,
+  PromptInputAttachmentButton,
+  PromptInputFilePreviews,
+  PromptInputActions,
 } from "@/components/ai-elements/prompt-input";
 import {
   useChatMessages,
@@ -18,12 +21,14 @@ import {
   useClearWorkspaceChatMessages,
   useUpdateChatTitle,
 } from "@/lib/hooks";
+import { prepareFilesForSubmission } from "@/lib/chat/file-utils";
 
 export function ChatPanel() {
   const { selectedChatId, workspace, workspacePurpose, viewAttachment } = useChatContext();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   const lastSavedMessageRef = useRef<string | null>(null);
   const hasInitializedRef = useRef(false);
   const hasGeneratedTitleRef = useRef(false);
@@ -186,10 +191,16 @@ export function ChatPanel() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSubmit = () => {
-    if (input.trim()) {
-      sendMessage({ text: input });
+  const handleSubmit = async () => {
+    if (input.trim() || files.length > 0) {
+      const { messageText, fileAttachments } = await prepareFilesForSubmission(files, input);
+
+      sendMessage({
+        text: messageText,
+        files: fileAttachments.length > 0 ? fileAttachments : undefined,
+      });
       setInput("");
+      setFiles([]);
     }
   };
 
@@ -229,9 +240,20 @@ export function ChatPanel() {
 
       {/* Input */}
       <div className="p-4 border-t border-border shrink-0">
-        <PromptInput value={input} onValueChange={setInput} isLoading={isLoading} onSubmit={handleSubmit}>
+        <PromptInput
+          value={input}
+          onValueChange={setInput}
+          files={files}
+          onFilesChange={setFiles}
+          isLoading={isLoading}
+          onSubmit={handleSubmit}
+        >
+          <PromptInputFilePreviews />
           <PromptInputTextarea placeholder="Ask me anything..." rows={1} />
-          <PromptInputSubmit />
+          <PromptInputActions>
+            <PromptInputAttachmentButton />
+            <PromptInputSubmit />
+          </PromptInputActions>
         </PromptInput>
       </div>
     </div>

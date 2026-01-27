@@ -4,6 +4,13 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { useChat, type UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Bot, User, Sparkles } from "lucide-react";
+import {
+  CollapsibleFileContent,
+  parseTextWithFileAttachments,
+} from "@/components/ai-elements/CollapsibleFileContent";
+import { ChatLoadingIndicator } from "@/components/ai-elements/ChatMessageBubble";
+import { UserFileAttachment } from "@/components/ai-elements/UserFileAttachment";
+import { prepareFilesForSubmission } from "@/lib/chat/file-utils";
 import { ToolResultDisplay } from "@/components/ai-elements/ToolResultDisplay";
 import { marked } from "marked";
 import { cn } from "@/lib/utils";
@@ -11,6 +18,9 @@ import {
   PromptInput,
   PromptInputTextarea,
   PromptInputSubmit,
+  PromptInputAttachmentButton,
+  PromptInputFilePreviews,
+  PromptInputActions,
 } from "@/components/ai-elements/prompt-input";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
 import type { Priority } from "@/lib/design-tokens";
@@ -32,6 +42,7 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [input, setInput] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   const prevStatusRef = useRef<string | null>(null);
 
   const transport = useMemo(
@@ -102,10 +113,16 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSubmit = () => {
-    if (input.trim()) {
-      sendMessage({ text: input });
+  const handleSubmit = async () => {
+    if (input.trim() || files.length > 0) {
+      const { messageText, fileAttachments } = await prepareFilesForSubmission(files, input);
+
+      sendMessage({
+        text: messageText,
+        files: fileAttachments.length > 0 ? fileAttachments : undefined,
+      });
       setInput("");
+      setFiles([]);
     }
   };
 
@@ -156,6 +173,29 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
               >
                 {message.parts.map((part, index) => {
                   if (part.type === "text") {
+                    // Check if this is a user message with embedded file content
+                    if (message.role === "user" && part.text.includes("\n\n--- ")) {
+                      const { mainText, filesSections } = parseTextWithFileAttachments(part.text);
+                      return (
+                        <div key={index}>
+                          {mainText && (
+                            <div
+                              className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-headings:my-2"
+                              dangerouslySetInnerHTML={{
+                                __html: marked.parse(mainText, { async: false }),
+                              }}
+                            />
+                          )}
+                          {filesSections.map((file, fileIndex) => (
+                            <CollapsibleFileContent
+                              key={`file-${fileIndex}`}
+                              filename={file.filename}
+                              content={file.content}
+                            />
+                          ))}
+                        </div>
+                      );
+                    }
                     return (
                       <div
                         key={index}
@@ -165,6 +205,16 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
                         }}
                       />
                     );
+                  }
+                  // Handle user-attached files
+                  if (part.type === "file") {
+                    const filePart = part as unknown as {
+                      type: "file";
+                      mediaType: string;
+                      url: string;
+                      filename?: string;
+                    };
+                    return <UserFileAttachment key={index} part={filePart} />;
                   }
                   if (part.type?.startsWith("tool-")) {
                     const toolPart = part as { toolName?: string; result?: unknown };
@@ -197,24 +247,7 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
             </div>
           </div>
         ))}
-        {isLoading && (
-          <div className="flex gap-3">
-            <div className="flex items-center justify-center w-7 h-7 rounded-full bg-muted shrink-0">
-              <Bot className="w-4 h-4" />
-            </div>
-            <div className="flex items-center gap-1 px-3 py-2 rounded-lg bg-muted">
-              <span className="w-2 h-2 rounded-full bg-foreground/30 animate-bounce" />
-              <span
-                className="w-2 h-2 rounded-full bg-foreground/30 animate-bounce"
-                style={{ animationDelay: "0.1s" }}
-              />
-              <span
-                className="w-2 h-2 rounded-full bg-foreground/30 animate-bounce"
-                style={{ animationDelay: "0.2s" }}
-              />
-            </div>
-          </div>
-        )}
+        {isLoading && <ChatLoadingIndicator />}
         <div ref={messagesEndRef} />
       </div>
 
@@ -223,15 +256,21 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
         <PromptInput
           value={input}
           onValueChange={setInput}
+          files={files}
+          onFilesChange={setFiles}
           isLoading={isLoading}
           onSubmit={handleSubmit}
         >
+          <PromptInputFilePreviews />
           <PromptInputTextarea
             ref={inputRef}
             placeholder="Describe what you want to build..."
             rows={1}
           />
-          <PromptInputSubmit />
+          <PromptInputActions>
+            <PromptInputAttachmentButton />
+            <PromptInputSubmit />
+          </PromptInputActions>
         </PromptInput>
       </div>
     </div>

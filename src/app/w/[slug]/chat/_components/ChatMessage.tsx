@@ -3,6 +3,14 @@
 import { Bot, User, FileText } from "lucide-react";
 import { MarkdownContent } from "@/components/ai-elements/MarkdownContent";
 import { ToolResultDisplay } from "@/components/ai-elements/ToolResultDisplay";
+import {
+  CollapsibleFileContent,
+  parseTextWithFileAttachments,
+} from "@/components/ai-elements/CollapsibleFileContent";
+import {
+  UserFileAttachment,
+  type UserFilePart,
+} from "@/components/ai-elements/UserFileAttachment";
 import { useChatContext } from "./ChatContext";
 import { formatFileSize } from "./chat-utils";
 import { cn } from "@/lib/utils";
@@ -99,7 +107,29 @@ export function ChatMessage({ message }: ChatMessageProps) {
         >
           {message.parts.map((part, index) => {
             if (part.type === "text") {
+              // Check if this is a user message with embedded file content
+              if (isUser && part.text.includes("\n\n--- ")) {
+                const { mainText, filesSections } = parseTextWithFileAttachments(part.text);
+                return (
+                  <div key={index}>
+                    {mainText && <MarkdownContent content={mainText} />}
+                    {filesSections.map((file, fileIndex) => (
+                      <CollapsibleFileContent
+                        key={`file-${fileIndex}`}
+                        filename={file.filename}
+                        content={file.content}
+                      />
+                    ))}
+                  </div>
+                );
+              }
               return <MarkdownContent key={index} content={part.text} />;
+            }
+
+            // Handle user-attached files (from sendMessage with files)
+            if (part.type === "file") {
+              const filePart = part as unknown as UserFilePart;
+              return <UserFileAttachment key={index} part={filePart} />;
             }
 
             // Handle persisted file attachments (loaded from database)

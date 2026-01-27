@@ -4,6 +4,13 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useChat, type UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Bot, User, Sparkles, Trash2, Paperclip } from "lucide-react";
+import {
+  CollapsibleFileContent,
+  parseTextWithFileAttachments,
+} from "@/components/ai-elements/CollapsibleFileContent";
+import { ChatLoadingIndicator } from "@/components/ai-elements/ChatMessageBubble";
+import { UserFileAttachment } from "@/components/ai-elements/UserFileAttachment";
+import { prepareFilesForSubmission } from "@/lib/chat/file-utils";
 import { ToolResultDisplay } from "@/components/ai-elements/ToolResultDisplay";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
@@ -11,6 +18,9 @@ import {
   PromptInput,
   PromptInputTextarea,
   PromptInputSubmit,
+  PromptInputAttachmentButton,
+  PromptInputFilePreviews,
+  PromptInputActions,
 } from "@/components/ai-elements/prompt-input";
 import {
   useIssueChatMessages,
@@ -53,6 +63,7 @@ export function IssueChatPanel({
   const { workspaceId, workspacePurpose } = useBoardContext();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   const lastSavedMessageRef = useRef<string | null>(null);
   const hasInitializedRef = useRef(false);
 
@@ -169,10 +180,16 @@ export function IssueChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSubmit = () => {
-    if (input.trim()) {
-      sendMessage({ text: input });
+  const handleSubmit = async () => {
+    if (input.trim() || files.length > 0) {
+      const { messageText, fileAttachments } = await prepareFilesForSubmission(files, input);
+
+      sendMessage({
+        text: messageText,
+        files: fileAttachments.length > 0 ? fileAttachments : undefined,
+      });
       setInput("");
+      setFiles([]);
     }
   };
 
@@ -241,6 +258,26 @@ export function IssueChatPanel({
               >
                 {message.parts.map((part, index) => {
                   if (part.type === "text") {
+                    // Check if this is a user message with embedded file content
+                    if (message.role === "user" && part.text.includes("\n\n--- ")) {
+                      const { mainText, filesSections } = parseTextWithFileAttachments(part.text);
+                      return (
+                        <div key={index}>
+                          {mainText && (
+                            <div className="prose prose-sm dark:prose-invert max-w-none">
+                              <ReactMarkdown>{mainText}</ReactMarkdown>
+                            </div>
+                          )}
+                          {filesSections.map((file, fileIndex) => (
+                            <CollapsibleFileContent
+                              key={`file-${fileIndex}`}
+                              filename={file.filename}
+                              content={file.content}
+                            />
+                          ))}
+                        </div>
+                      );
+                    }
                     return (
                       <div
                         key={index}
@@ -249,6 +286,16 @@ export function IssueChatPanel({
                         <ReactMarkdown>{part.text}</ReactMarkdown>
                       </div>
                     );
+                  }
+                  // Handle user-attached files
+                  if (part.type === "file") {
+                    const filePart = part as unknown as {
+                      type: "file";
+                      mediaType: string;
+                      url: string;
+                      filename?: string;
+                    };
+                    return <UserFileAttachment key={index} part={filePart} />;
                   }
                   // Tool calls show a confirmation message
                   if (part.type?.startsWith("tool-")) {
@@ -294,24 +341,7 @@ export function IssueChatPanel({
             </div>
           </div>
         ))}
-        {isLoading && (
-          <div className="flex gap-3">
-            <div className="flex items-center justify-center w-7 h-7 rounded-full bg-muted shrink-0">
-              <Bot className="w-4 h-4" />
-            </div>
-            <div className="flex items-center gap-1 px-3 py-2 rounded-lg bg-muted">
-              <span className="w-2 h-2 rounded-full bg-foreground/30 animate-bounce" />
-              <span
-                className="w-2 h-2 rounded-full bg-foreground/30 animate-bounce"
-                style={{ animationDelay: "0.1s" }}
-              />
-              <span
-                className="w-2 h-2 rounded-full bg-foreground/30 animate-bounce"
-                style={{ animationDelay: "0.2s" }}
-              />
-            </div>
-          </div>
-        )}
+        {isLoading && <ChatLoadingIndicator />}
         <div ref={messagesEndRef} />
       </div>
 
@@ -320,14 +350,20 @@ export function IssueChatPanel({
         <PromptInput
           value={input}
           onValueChange={setInput}
+          files={files}
+          onFilesChange={setFiles}
           isLoading={isLoading}
           onSubmit={handleSubmit}
         >
+          <PromptInputFilePreviews />
           <PromptInputTextarea
             placeholder="Ask to refine requirements, add acceptance criteria..."
             rows={1}
           />
-          <PromptInputSubmit />
+          <PromptInputActions>
+            <PromptInputAttachmentButton />
+            <PromptInputSubmit />
+          </PromptInputActions>
         </PromptInput>
       </div>
     </div>
