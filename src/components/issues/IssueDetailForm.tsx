@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import TextareaAutosize from "react-textarea-autosize";
 import { cn } from "@/lib/utils";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
+import { useBoardContext } from "@/components/board/context/BoardProvider";
 import { StatusSelect } from "./properties/StatusSelect";
 import { PrioritySelect } from "./properties/PrioritySelect";
 import { LabelSelect } from "./properties/LabelSelect";
@@ -22,21 +23,11 @@ import {
   useDeleteComment,
   useSubtaskCount,
 } from "@/lib/hooks";
-import type {
-  IssueWithLabels,
-  Label,
-  Comment,
-  UpdateIssueInput,
-} from "@/lib/types";
-import type { Status, Priority } from "@/lib/design-tokens";
+import type { IssueWithLabels, Comment } from "@/lib/types";
+import type { Priority } from "@/lib/design-tokens";
 
 interface IssueDetailFormProps {
   issue: IssueWithLabels;
-  allLabels: Label[];
-  onUpdate: (data: UpdateIssueInput) => void;
-  onAddLabel: (labelId: string) => void;
-  onRemoveLabel: (labelId: string) => void;
-  onCreateLabel?: (name: string, color: string) => Promise<Label | undefined>;
   // For syncing with external description changes (e.g., from AI)
   externalDescription?: string;
   highlightDescription?: boolean;
@@ -45,15 +36,19 @@ interface IssueDetailFormProps {
 
 export function IssueDetailForm({
   issue,
-  allLabels,
-  onUpdate,
-  onAddLabel,
-  onRemoveLabel,
-  onCreateLabel,
   externalDescription,
   highlightDescription = false,
   onCommentsLoad,
 }: IssueDetailFormProps) {
+  const {
+    board,
+    labels,
+    updateSelectedIssue,
+    moveSelectedIssueToColumn,
+    addLabelToSelectedIssue,
+    removeLabelFromSelectedIssue,
+    createLabel,
+  } = useBoardContext();
   const [title, setTitle] = useState(issue.title);
   const [description, setDescription] = useState(issue.description || "");
   const [activeTab, setActiveTab] = useState<"comments" | "activity">(
@@ -94,7 +89,7 @@ export function IssueDetailForm({
       setDescription(externalDescription);
       setDescriptionHighlight(true);
       // Persist the update
-      onUpdate({ description: externalDescription || undefined });
+      updateSelectedIssue({ description: externalDescription || undefined });
       // Clear highlight after animation
       setTimeout(() => setDescriptionHighlight(false), 2000);
     }
@@ -110,13 +105,13 @@ export function IssueDetailForm({
 
   const handleTitleBlur = () => {
     if (title.trim() && title !== issue.title) {
-      onUpdate({ title: title.trim() });
+      updateSelectedIssue({ title: title.trim() });
     }
   };
 
   const handleDescriptionBlur = () => {
     if (description !== (issue.description || "")) {
-      onUpdate({ description: description || undefined });
+      updateSelectedIssue({ description: description || undefined });
     }
   };
 
@@ -168,8 +163,9 @@ export function IssueDetailForm({
                 Status
               </label>
               <StatusSelect
-                value={issue.status as Status}
-                onChange={(status) => onUpdate({ status })}
+                value={issue.columnId}
+                columns={board.columns}
+                onColumnChange={moveSelectedIssueToColumn}
               />
             </div>
             <div>
@@ -178,7 +174,7 @@ export function IssueDetailForm({
               </label>
               <PrioritySelect
                 value={issue.priority as Priority}
-                onChange={(priority) => onUpdate({ priority })}
+                onChange={(priority) => updateSelectedIssue({ priority })}
               />
             </div>
             <div>
@@ -188,7 +184,7 @@ export function IssueDetailForm({
               <DatePicker
                 value={issue.dueDate}
                 onChange={(dueDate) =>
-                  onUpdate({ dueDate: dueDate ?? undefined })
+                  updateSelectedIssue({ dueDate: dueDate ?? undefined })
                 }
               />
             </div>
@@ -199,7 +195,7 @@ export function IssueDetailForm({
               <EstimateInput
                 value={issue.estimate}
                 onChange={(estimate) =>
-                  onUpdate({ estimate: estimate ?? undefined })
+                  updateSelectedIssue({ estimate: estimate ?? undefined })
                 }
               />
             </div>
@@ -212,10 +208,10 @@ export function IssueDetailForm({
             </label>
             <LabelSelect
               selectedLabels={issue.labels}
-              availableLabels={allLabels}
-              onAdd={onAddLabel}
-              onRemove={onRemoveLabel}
-              onCreateLabel={onCreateLabel}
+              availableLabels={labels}
+              onAdd={addLabelToSelectedIssue}
+              onRemove={removeLabelFromSelectedIssue}
+              onCreateLabel={createLabel}
             />
           </div>
 

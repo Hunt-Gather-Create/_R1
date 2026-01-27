@@ -31,15 +31,9 @@ function MainContent() {
 
   const {
     board,
-    labels,
     selectedIssue,
     selectIssue,
     closeDetailPanel,
-    updateSelectedIssue,
-    deleteSelectedIssue,
-    addLabelToSelectedIssue,
-    removeLabelFromSelectedIssue,
-    createLabel,
   } = useBoardContext();
 
   return (
@@ -63,13 +57,6 @@ function MainContent() {
       <IssueDetailDrawer
         open={detailPanelOpen && !!selectedIssue}
         onOpenChange={(open) => !open && closeDetailPanel()}
-        issue={selectedIssue}
-        allLabels={labels}
-        onUpdate={updateSelectedIssue}
-        onDelete={deleteSelectedIssue}
-        onAddLabel={addLabelToSelectedIssue}
-        onRemoveLabel={removeLabelFromSelectedIssue}
-        onCreateLabel={createLabel}
       />
 
       {/* Command Palette */}

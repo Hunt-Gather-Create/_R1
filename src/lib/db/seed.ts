@@ -49,24 +49,28 @@ async function seed() {
       workspaceId: "default-workspace",
       name: "Backlog",
       position: 0,
+      status: "backlog",
     },
     {
       id: "col-todo",
       workspaceId: "default-workspace",
       name: "Todo",
       position: 1,
+      status: "todo",
     },
     {
       id: "col-in-progress",
       workspaceId: "default-workspace",
       name: "In Progress",
       position: 2,
+      status: "in_progress",
     },
     {
       id: "col-done",
       workspaceId: "default-workspace",
       name: "Done",
       position: 3,
+      status: "done",
     },
   ]);
 

@@ -180,14 +180,19 @@ export const PURPOSE_CONFIG: Record<
   {
     label: string;
     description: string;
-    defaultColumns: string[];
+    defaultColumns: Array<{ name: string; status: Status | null }>;
     defaultLabels: Array<{ name: string; color: string }>;
   }
 > = {
   software: {
     label: "Software Development",
     description: "Track bugs, features, and technical tasks",
-    defaultColumns: ["Backlog", "Todo", "In Progress", "Done"],
+    defaultColumns: [
+      { name: "Backlog", status: STATUS.BACKLOG },
+      { name: "Todo", status: STATUS.TODO },
+      { name: "In Progress", status: STATUS.IN_PROGRESS },
+      { name: "Done", status: STATUS.DONE },
+    ],
     defaultLabels: [
       { name: "Bug", color: "#ef4444" },
       { name: "Feature", color: "#3b82f6" },
@@ -198,7 +203,13 @@ export const PURPOSE_CONFIG: Record<
   marketing: {
     label: "Marketing",
     description: "Manage campaigns, content, and creative projects",
-    defaultColumns: ["Ideas", "Planning", "In Progress", "Review", "Published"],
+    defaultColumns: [
+      { name: "Ideas", status: STATUS.BACKLOG },
+      { name: "Planning", status: STATUS.TODO },
+      { name: "In Progress", status: STATUS.IN_PROGRESS },
+      { name: "Review", status: null }, // Manual-only column, no auto-move
+      { name: "Published", status: STATUS.DONE },
+    ],
     defaultLabels: [
       { name: "Campaign", color: "#3b82f6" },
       { name: "Content", color: "#a855f7" },

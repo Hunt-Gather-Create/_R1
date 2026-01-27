@@ -10,13 +10,13 @@ import { PrioritySelect } from "./properties/PrioritySelect";
 import { LabelSelect } from "./properties/LabelSelect";
 import { DatePicker } from "./properties/DatePicker";
 import { EstimateInput } from "./properties/EstimateInput";
-import { STATUS, type Status, type Priority } from "@/lib/design-tokens";
-import type { Label, CreateIssueInput } from "@/lib/types";
+import type { Priority } from "@/lib/design-tokens";
+import type { Label, Column } from "@/lib/types";
 
 export interface IssueFormState {
   title: string;
   description: string;
-  status: Status;
+  columnId: string;
   priority: Priority;
   labelIds: string[];
   dueDate: Date | null;
@@ -27,6 +27,7 @@ interface IssueFormPanelProps {
   formState: IssueFormState;
   onFormChange: (state: Partial<IssueFormState>) => void;
   availableLabels: Label[];
+  columns: Column[];
   onSubmit: () => void;
   onCancel: () => void;
   isSubmitting?: boolean;
@@ -38,6 +39,7 @@ export function IssueFormPanel({
   formState,
   onFormChange,
   availableLabels,
+  columns,
   onSubmit,
   onCancel,
   isSubmitting = false,
@@ -139,7 +141,7 @@ export function IssueFormPanel({
           <div
             className={cn(
               "transition-all duration-500 rounded-md p-2 -m-2",
-              localHighlights.has("status") &&
+              localHighlights.has("columnId") &&
                 "ring-2 ring-primary ring-offset-2 ring-offset-background"
             )}
           >
@@ -147,8 +149,9 @@ export function IssueFormPanel({
               Status
             </label>
             <StatusSelect
-              value={formState.status}
-              onChange={(status) => onFormChange({ status })}
+              value={formState.columnId}
+              columns={columns}
+              onColumnChange={(columnId) => onFormChange({ columnId })}
             />
           </div>
           <div
