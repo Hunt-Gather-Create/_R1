@@ -7,6 +7,11 @@ import {
   getPriorityLabel,
 } from "@/lib/chat";
 import type { WorkspacePurpose } from "@/lib/design-tokens";
+import type { WorkspaceSoul } from "@/lib/types";
+import { buildSoulSystemPrompt } from "@/lib/soul-utils";
+import { db } from "@/lib/db";
+import { workspaces } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 
 export const maxDuration = 30;
 
@@ -21,7 +26,8 @@ interface IssueContext {
 
 function buildSystemPrompt(
   issueContext: IssueContext,
-  purpose: WorkspacePurpose
+  purpose: WorkspacePurpose,
+  soul: WorkspaceSoul | null
 ): string {
   const commentsText =
     issueContext.comments.length > 0
@@ -55,7 +61,7 @@ Focus on software best practices: user stories, edge cases, testing criteria, an
 - Code execution: Generate example code or analyze technical approaches
 - Web fetch: Read documentation from URLs`;
 
-  return `You are helping refine an existing ${purpose === "marketing" ? "marketing task" : "issue"} in a kanban board. Here's the current item:
+  const basePrompt = `You are helping refine an existing ${purpose === "marketing" ? "marketing task" : "issue"} in a kanban board. Here's the current item:
 
 Title: ${issueContext.title}
 Description: ${issueContext.description || "(No description yet)"}
@@ -69,6 +75,14 @@ ${purposeGuidance}
 When the user is happy with the refined description, use the updateDescription tool to update the ${purpose === "marketing" ? "task" : "issue"}.
 
 Be conversational and helpful. Ask clarifying questions when needed. When suggesting a description update, explain what changes you're making and why.`;
+
+  // If a soul/persona is configured, prepend it to the system prompt
+  if (soul && soul.name) {
+    const soulPrompt = buildSoulSystemPrompt(soul);
+    return `${soulPrompt}\n\n---\n\n${basePrompt}`;
+  }
+
+  return basePrompt;
 }
 
 export async function POST(req: Request) {
@@ -82,6 +96,24 @@ export async function POST(req: Request) {
 
   const purpose = workspacePurpose ?? "software";
 
+  // Load workspace soul/persona if workspaceId is provided
+  let soul: WorkspaceSoul | null = null;
+  if (workspaceId) {
+    const workspace = await db
+      .select({ soul: workspaces.soul })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .get();
+
+    if (workspace?.soul) {
+      try {
+        soul = JSON.parse(workspace.soul) as WorkspaceSoul;
+      } catch {
+        // Invalid JSON, ignore
+      }
+    }
+  }
+
   // Load skills - use workspace skills if workspaceId provided, otherwise just purpose-based
   const skills = workspaceId
     ? await loadSkillsForWorkspace(workspaceId, purpose)
@@ -91,7 +123,7 @@ export async function POST(req: Request) {
   const tools = createIssueTools({ issueId: issueContext.id });
 
   return createChatResponse(messages, {
-    system: buildSystemPrompt(issueContext, purpose),
+    system: buildSystemPrompt(issueContext, purpose, soul),
     tools,
     builtInTools: {
       webSearch: true,
