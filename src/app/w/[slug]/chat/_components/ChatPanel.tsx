@@ -20,6 +20,7 @@ import {
   useSaveWorkspaceChatMessage,
   useClearWorkspaceChatMessages,
   useUpdateChatTitle,
+  useAutoFocusOnComplete,
 } from "@/lib/hooks";
 import { prepareFilesForSubmission } from "@/lib/chat/file-utils";
 
@@ -27,6 +28,7 @@ export function ChatPanel() {
   const { selectedChatId, workspace, workspacePurpose, viewAttachment } = useChatContext();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [input, setInput] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const lastSavedMessageRef = useRef<string | null>(null);
@@ -191,6 +193,9 @@ export function ChatPanel() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Auto-focus input when AI finishes responding
+  useAutoFocusOnComplete(isLoading, textareaRef);
+
   const handleSubmit = async () => {
     if (input.trim() || files.length > 0) {
       const { messageText, fileAttachments } = await prepareFilesForSubmission(files, input);
@@ -249,7 +254,7 @@ export function ChatPanel() {
           onSubmit={handleSubmit}
         >
           <PromptInputFilePreviews />
-          <PromptInputTextarea placeholder="Ask me anything..." rows={1} />
+          <PromptInputTextarea ref={textareaRef} placeholder="Ask me anything..." rows={1} />
           <PromptInputActions>
             <PromptInputAttachmentButton />
             <PromptInputSubmit />

@@ -11,7 +11,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useSettingsContext } from "./context";
-import { PURPOSE_CONFIG, type WorkspacePurpose } from "@/lib/design-tokens";
+import {
+  PURPOSE_CONFIG,
+  type WorkspacePurpose,
+  type TemplateWorkspacePurpose,
+} from "@/lib/design-tokens";
 
 function SettingsRow({
   label,
@@ -199,8 +203,14 @@ export default function WorkspaceSettingsPage() {
             disabled={!isAdmin}
             className="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <option value="software">{PURPOSE_CONFIG.software.label}</option>
-            <option value="marketing">{PURPOSE_CONFIG.marketing.label}</option>
+            {(Object.keys(PURPOSE_CONFIG) as TemplateWorkspacePurpose[]).map(
+              (key) => (
+                <option key={key} value={key}>
+                  {PURPOSE_CONFIG[key].label}
+                </option>
+              )
+            )}
+            <option value="custom">Custom</option>
           </select>
         </SettingsRow>
       </div>

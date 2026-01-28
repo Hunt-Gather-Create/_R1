@@ -69,3 +69,5 @@ export {
   useChatAttachments,
   useInvalidateChatAttachments,
 } from "./use-workspace-chat";
+
+export { useAutoFocusOnComplete } from "./use-auto-focus";

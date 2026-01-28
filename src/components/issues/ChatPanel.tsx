@@ -22,6 +22,7 @@ import {
   PromptInputActions,
 } from "@/components/ai-elements/prompt-input";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
+import { useAutoFocusOnComplete } from "@/lib/hooks";
 import type { Priority } from "@/lib/design-tokens";
 
 interface SuggestedIssue {
@@ -37,6 +38,7 @@ interface ChatPanelProps {
 export function ChatPanel({ onSuggestion }: ChatPanelProps) {
   const { workspaceId, workspacePurpose } = useBoardContext();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [input, setInput] = useState("");
   const [files, setFiles] = useState<File[]>([]);
 
@@ -86,6 +88,9 @@ export function ChatPanel({ onSuggestion }: ChatPanelProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Auto-focus input when AI finishes responding
+  useAutoFocusOnComplete(isLoading, textareaRef);
 
   const handleSubmit = async () => {
     if (input.trim() || files.length > 0) {
@@ -228,6 +233,7 @@ export function ChatPanel({ onSuggestion }: ChatPanelProps) {
         >
           <PromptInputFilePreviews />
           <PromptInputTextarea
+            ref={textareaRef}
             placeholder="Describe what you'd like to build..."
             rows={1}
           />
