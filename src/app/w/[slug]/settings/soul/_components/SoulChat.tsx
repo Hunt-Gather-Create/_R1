@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import { useChat } from "@ai-sdk/react";
+import { useChat, type UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { Bot, User } from "lucide-react";
+import { Bot, User, Trash2 } from "lucide-react";
 import { MarkdownContent } from "@/components/ai-elements/MarkdownContent";
 import {
   PromptInput,
@@ -14,8 +14,15 @@ import {
 import { cn } from "@/lib/utils";
 import { useAutoFocusOnComplete } from "@/lib/hooks";
 import type { WorkspaceSoul } from "@/lib/types";
+import {
+  getSoulChatMessages,
+  saveSoulChatMessage,
+  deleteSoulChatMessages,
+  type SoulChatMessage,
+} from "@/lib/actions/soul";
 
 interface SoulChatProps {
+  workspaceId: string;
   currentSoul: WorkspaceSoul;
   initialPrompt?: string;
   onSoulChange: (soul: WorkspaceSoul) => void;
@@ -36,7 +43,28 @@ interface ToolOutput {
   greeting?: string;
 }
 
+// Convert stored messages to UIMessage format
+function storedToUIMessages(stored: SoulChatMessage[]): UIMessage[] {
+  return stored.map((m) => {
+    try {
+      const parts = JSON.parse(m.content);
+      return {
+        id: m.id,
+        role: m.role,
+        parts,
+      };
+    } catch {
+      return {
+        id: m.id,
+        role: m.role,
+        parts: [{ type: "text" as const, text: m.content }],
+      };
+    }
+  });
+}
+
 export function SoulChat({
+  workspaceId,
   currentSoul,
   initialPrompt,
   onSoulChange,
@@ -45,7 +73,31 @@ export function SoulChat({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const processedToolCallsRef = useRef<Set<string>>(new Set());
   const initialPromptSentRef = useRef(false);
+  const savedMessageIdsRef = useRef<Set<string>>(new Set());
   const [input, setInput] = useState("");
+  const [loadedMessages, setLoadedMessages] = useState<UIMessage[] | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Load existing messages on mount
+  useEffect(() => {
+    async function loadMessages() {
+      try {
+        const stored = await getSoulChatMessages(workspaceId);
+        if (stored.length > 0) {
+          const uiMessages = storedToUIMessages(stored);
+          setLoadedMessages(uiMessages);
+          // Mark these as already saved
+          stored.forEach((m) => savedMessageIdsRef.current.add(m.id));
+        } else {
+          setLoadedMessages([]);
+        }
+      } catch (error) {
+        console.error("Failed to load chat messages:", error);
+        setLoadedMessages([]);
+      }
+    }
+    loadMessages();
+  }, [workspaceId]);
 
   const transport = new DefaultChatTransport({
     api: "/api/workspace/soul",
@@ -54,17 +106,59 @@ export function SoulChat({
     },
   });
 
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status, setMessages } = useChat({
     transport,
   });
 
-  // Send initial prompt on mount
+  // Set messages when loaded from storage
   useEffect(() => {
-    if (initialPrompt && !initialPromptSentRef.current) {
+    if (loadedMessages && loadedMessages.length > 0 && messages.length === 0) {
+      setMessages(loadedMessages);
+    }
+  }, [loadedMessages, setMessages, messages.length]);
+
+  // Send initial prompt if no existing conversation
+  useEffect(() => {
+    if (
+      initialPrompt &&
+      !initialPromptSentRef.current &&
+      loadedMessages !== null &&
+      loadedMessages.length === 0
+    ) {
       initialPromptSentRef.current = true;
       sendMessage({ text: initialPrompt });
     }
-  }, [initialPrompt, sendMessage]);
+  }, [initialPrompt, sendMessage, loadedMessages]);
+
+  // Save new messages to database
+  useEffect(() => {
+    async function saveMessages() {
+      for (const message of messages) {
+        if (savedMessageIdsRef.current.has(message.id)) continue;
+
+        // Only save complete messages (not streaming)
+        if (status === "streaming" && message === messages[messages.length - 1] && message.role === "assistant") {
+          continue;
+        }
+
+        savedMessageIdsRef.current.add(message.id);
+        try {
+          await saveSoulChatMessage(workspaceId, {
+            id: message.id,
+            role: message.role as "user" | "assistant",
+            content: JSON.stringify(message.parts),
+          });
+        } catch (error) {
+          console.error("Failed to save message:", error);
+          savedMessageIdsRef.current.delete(message.id);
+        }
+      }
+    }
+
+    if (status === "ready" && messages.length > 0) {
+      saveMessages();
+    }
+  }, [messages, status, workspaceId]);
 
   // Process tool calls to update soul configuration
   const processToolCalls = useCallback(() => {
@@ -179,10 +273,70 @@ export function SoulChat({
     }
   };
 
+  const handleDeleteConversation = async () => {
+    if (!confirm("Delete this conversation? The AI will start fresh but will know the current soul configuration.")) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await deleteSoulChatMessages(workspaceId);
+      setMessages([]);
+      savedMessageIdsRef.current.clear();
+      processedToolCallsRef.current.clear();
+      initialPromptSentRef.current = false;
+    } catch (error) {
+      console.error("Failed to delete conversation:", error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Show loading while fetching initial messages
+  if (loadedMessages === null) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center">
+        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-muted-foreground mt-2">Loading conversation...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="p-4 border-b border-border flex items-center justify-between shrink-0">
+        <div>
+          <h3 className="text-sm font-medium text-foreground">Soul Configuration Chat</h3>
+          <p className="text-xs text-muted-foreground">
+            {messages.length === 0
+              ? "Start a conversation to configure your AI"
+              : `${messages.length} message${messages.length === 1 ? "" : "s"}`}
+          </p>
+        </div>
+        {messages.length > 0 && (
+          <button
+            onClick={handleDeleteConversation}
+            disabled={isDeleting || isLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50"
+            title="Delete conversation"
+          >
+            <Trash2 className="w-4 h-4" />
+            Clear
+          </button>
+        )}
+      </div>
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+        {messages.length === 0 && (
+          <div className="text-center py-8">
+            <Bot className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
+            <p className="text-sm text-muted-foreground">
+              Tell me how you'd like to adjust your AI assistant's personality.
+            </p>
+          </div>
+        )}
         {messages.map((message) => (
           <ChatMessage key={message.id} message={message} />
         ))}

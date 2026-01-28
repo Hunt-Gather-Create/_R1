@@ -150,6 +150,7 @@ export default function SoulSettingsPage() {
       {/* Left: Chat */}
       <div className="flex-1 border-r border-border overflow-hidden">
         <SoulChat
+          workspaceId={workspace.id}
           currentSoul={soul}
           initialPrompt={initialPrompt}
           onSoulChange={handleSoulChange}
