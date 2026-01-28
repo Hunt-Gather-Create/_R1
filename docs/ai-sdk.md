@@ -226,6 +226,27 @@ export async function POST(req: Request) {
 }
 ```
 
+## Utility Hooks
+
+### `useAutoFocusOnComplete`
+
+Auto-focuses an input element when a loading state transitions from true to false. Useful for chat interfaces to focus the input after the AI finishes responding.
+
+```typescript
+import { useAutoFocusOnComplete } from "@/lib/hooks";
+
+function ChatComponent() {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { status } = useChat({ api: "/api/chat" });
+  const isLoading = status === "streaming" || status === "submitted";
+
+  // Focus input when AI finishes responding
+  useAutoFocusOnComplete(isLoading, textareaRef);
+
+  return <textarea ref={textareaRef} />;
+}
+```
+
 ## Key Files
 
 | File | Purpose |
@@ -233,6 +254,7 @@ export async function POST(req: Request) {
 | `/src/lib/chat/index.ts` | Core chat helpers, `createChatResponse`, `createTool` |
 | `/src/lib/chat/skills.ts` | Skill loading and manifest |
 | `/src/lib/chat/tools.ts` | Issue and planning tool definitions |
+| `/src/lib/hooks/use-auto-focus.ts` | `useAutoFocusOnComplete` hook |
 | `/src/app/api/chat/*/route.ts` | API route handlers |
 
 ## Related Documentation

@@ -9,6 +9,7 @@ import {
   columns,
   labels,
   users,
+  issues,
 } from "../db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import type {
@@ -20,7 +21,12 @@ import type {
 } from "../types";
 import { getCurrentUser } from "../auth";
 import { syncUserFromWorkOS } from "./users";
-import { PURPOSE_CONFIG, type WorkspacePurpose } from "../design-tokens";
+import {
+  PURPOSE_CONFIG,
+  type WorkspacePurpose,
+  type TemplateWorkspacePurpose,
+  type Status,
+} from "../design-tokens";
 
 /**
  * Get the current authenticated user or redirect to auth
@@ -108,11 +114,11 @@ function generateSlug(name: string): string {
 }
 
 /**
- * Create a new workspace
+ * Create a new workspace with template-based columns
  */
 export async function createWorkspace(
   name: string,
-  purpose: WorkspacePurpose = "software"
+  purpose: TemplateWorkspacePurpose = "software"
 ): Promise<Workspace> {
   const user = await requireAuth();
   const now = new Date();
@@ -185,6 +191,136 @@ export async function createWorkspace(
       color: label.color,
       createdAt: now,
     });
+  }
+
+  revalidatePath("/");
+
+  return newWorkspace;
+}
+
+/**
+ * Create a custom workspace with user-defined columns, labels, and starter issues
+ */
+export async function createCustomWorkspace(
+  name: string,
+  customColumns: Array<{ name: string; status: Status | null }>,
+  customLabels: Array<{ name: string; color: string }>,
+  suggestedIssues?: Array<{ title: string; description?: string }>
+): Promise<Workspace> {
+  const user = await requireAuth();
+  const now = new Date();
+
+  // Validate columns
+  if (customColumns.length < 2 || customColumns.length > 8) {
+    throw new Error("Workspace must have between 2 and 8 columns");
+  }
+
+  // Generate unique slug
+  let slug = generateSlug(name);
+  let slugSuffix = 0;
+  let existingSlug = await db
+    .select()
+    .from(workspaces)
+    .where(eq(workspaces.slug, slug))
+    .get();
+
+  while (existingSlug) {
+    slugSuffix++;
+    slug = `${generateSlug(name)}-${slugSuffix}`;
+    existingSlug = await db
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.slug, slug))
+      .get();
+  }
+
+  const workspaceId = crypto.randomUUID();
+  const identifier = name
+    .toUpperCase()
+    .slice(0, 4)
+    .replace(/[^A-Z]/g, "A");
+
+  const newWorkspace: Workspace = {
+    id: workspaceId,
+    name,
+    slug,
+    identifier,
+    issueCounter: 0,
+    purpose: "custom",
+    ownerId: user.id,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await db.insert(workspaces).values(newWorkspace);
+
+  // Add creator as admin member
+  await db.insert(workspaceMembers).values({
+    workspaceId,
+    userId: user.id,
+    role: "admin",
+    createdAt: now,
+  });
+
+  // Create custom columns and track their IDs
+  const columnIds: Array<{ id: string; status: Status | null }> = [];
+  for (let i = 0; i < customColumns.length; i++) {
+    const col = customColumns[i];
+    const columnId = crypto.randomUUID();
+    await db.insert(columns).values({
+      id: columnId,
+      workspaceId,
+      name: col.name,
+      position: i,
+      status: col.status,
+    });
+    columnIds.push({ id: columnId, status: col.status });
+  }
+
+  // Create custom labels
+  for (const label of customLabels) {
+    await db.insert(labels).values({
+      id: crypto.randomUUID(),
+      workspaceId,
+      name: label.name,
+      color: label.color,
+      createdAt: now,
+    });
+  }
+
+  // Create suggested issues if provided
+  if (suggestedIssues && suggestedIssues.length > 0) {
+    // Find the first column with "backlog" or "todo" status, or use the first column
+    const targetColumn =
+      columnIds.find((c) => c.status === "backlog") ||
+      columnIds.find((c) => c.status === "todo") ||
+      columnIds[0];
+
+    let issueCounter = 0;
+    for (let i = 0; i < suggestedIssues.length; i++) {
+      const issue = suggestedIssues[i];
+      issueCounter++;
+      await db.insert(issues).values({
+        id: crypto.randomUUID(),
+        columnId: targetColumn.id,
+        identifier: `${identifier}-${issueCounter}`,
+        title: issue.title,
+        description: issue.description || null,
+        status: targetColumn.status || "backlog",
+        priority: 4, // none
+        position: i,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    // Update workspace issue counter
+    await db
+      .update(workspaces)
+      .set({ issueCounter })
+      .where(eq(workspaces.id, workspaceId));
+
+    newWorkspace.issueCounter = issueCounter;
   }
 
   revalidatePath("/");

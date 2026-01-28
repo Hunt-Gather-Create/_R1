@@ -171,13 +171,17 @@ export const WORKSPACE_PURPOSE = {
   SOFTWARE: "software",
   MARKETING: "marketing",
   SALES: "sales",
+  CUSTOM: "custom",
 } as const;
 
 export type WorkspacePurpose =
   (typeof WORKSPACE_PURPOSE)[keyof typeof WORKSPACE_PURPOSE];
 
+// Template workspace purposes (excludes custom since it doesn't use static templates)
+export type TemplateWorkspacePurpose = Exclude<WorkspacePurpose, "custom">;
+
 export const PURPOSE_CONFIG: Record<
-  WorkspacePurpose,
+  TemplateWorkspacePurpose,
   {
     label: string;
     description: string;

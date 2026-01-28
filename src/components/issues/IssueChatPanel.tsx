@@ -27,6 +27,7 @@ import {
   useSaveChatMessage,
   useClearChatMessages,
   useInvalidateAttachments,
+  useAutoFocusOnComplete,
 } from "@/lib/hooks";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
 import type { IssueWithLabels, Comment, ChatMessage } from "@/lib/types";
@@ -62,6 +63,7 @@ export function IssueChatPanel({
 }: IssueChatPanelProps) {
   const { workspaceId, workspacePurpose } = useBoardContext();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [input, setInput] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const lastSavedMessageRef = useRef<string | null>(null);
@@ -179,6 +181,9 @@ export function IssueChatPanel({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Auto-focus input when AI finishes responding
+  useAutoFocusOnComplete(isLoading, textareaRef);
 
   const handleSubmit = async () => {
     if (input.trim() || files.length > 0) {
@@ -357,6 +362,7 @@ export function IssueChatPanel({
         >
           <PromptInputFilePreviews />
           <PromptInputTextarea
+            ref={textareaRef}
             placeholder="Ask to refine requirements, add acceptance criteria..."
             rows={1}
           />
