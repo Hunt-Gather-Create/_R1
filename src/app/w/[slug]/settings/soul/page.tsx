@@ -115,9 +115,9 @@ export default function SoulSettingsPage() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-screen overflow-hidden">
       {/* Left: Chat */}
-      <div className="flex-1 border-r border-border">
+      <div className="flex-1 border-r border-border overflow-hidden">
         <SoulChat
           currentSoul={soul}
           initialPrompt={initialPrompt}
@@ -126,7 +126,7 @@ export default function SoulSettingsPage() {
       </div>
 
       {/* Right: Preview */}
-      <div className="w-96">
+      <div className="w-96 overflow-hidden">
         <SoulPreview
           soul={soul}
           onSoulChange={handleSoulChange}
