@@ -288,3 +288,7 @@ To see which skills are loaded, check the server logs or add logging to `loadSki
 4. **Tool awareness** - Reference available tools when relevant
 5. **Examples help** - Include examples of expected input/output
 6. **Test thoroughly** - Verify the skill works as expected before relying on it
+
+## Related Documentation
+
+- [AI SDK Integration](./ai-sdk.md) - How skills integrate with the chat system

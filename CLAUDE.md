@@ -111,11 +111,16 @@ When executing a plan that involves code changes:
 
 ### After Completing the Plan
 
-1. **Run the PR readiness check** by invoking `/pr-ready` to:
+1. **Update documentation** by invoking `/update-docs` to:
+   - Check if code changes affect documented patterns
+   - Update `/docs` knowledge base (AI SDK, UI components, MCP, skills)
+   - Keep package versions and code examples in sync
+
+2. **Run the PR readiness check** by invoking `/pr-ready` to:
    - Remove any debug statements (console.log, debugger)
    - Identify and fix DRY violations
    - Check React component structure
    - Detect prop drilling issues
    - Clean up unused imports and dead code
 
-2. **Address any critical issues** found by the PR readiness check before considering the task complete
+3. **Address any critical issues** found by the checks before considering the task complete
