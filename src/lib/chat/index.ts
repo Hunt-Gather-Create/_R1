@@ -10,8 +10,10 @@ import {
 import { z, type ZodObject, type ZodRawShape } from "zod";
 import type { ParsedSkill } from "./skills";
 import { getMcpToolsForWorkspace } from "@/lib/mcp";
+import { recordTokenUsage } from "@/lib/token-usage";
 
-export const DEFAULT_MODEL = "claude-sonnet-4-20250514";
+// export const DEFAULT_MODEL = "claude-sonnet-4.5";
+export const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 export const DEFAULT_MAX_DURATION = 30;
 
 // Re-export skills module
@@ -101,15 +103,17 @@ export interface ChatConfig {
    * If provided, MCP tools will be fetched and merged into the tool set.
    */
   workspaceId?: string;
+  /**
+   * Source identifier for token usage tracking.
+   * Examples: "chat", "planning", "issue", "soul"
+   */
+  usageSource?: string;
 }
 
 /**
  * Build system prompt with skill instructions
  */
-function buildSystemPrompt(
-  basePrompt: string,
-  skills?: ParsedSkill[]
-): string {
+function buildSystemPrompt(basePrompt: string, skills?: ParsedSkill[]): string {
   if (!skills || skills.length === 0) {
     return basePrompt;
   }
@@ -184,13 +188,32 @@ export async function createChatResponse(
   // Build system prompt with skill instructions
   const systemPrompt = buildSystemPrompt(config.system, config.skills);
 
+  const modelId = config.model ?? DEFAULT_MODEL;
+
   const result = streamText({
-    model: anthropic(config.model ?? DEFAULT_MODEL),
+    model: anthropic(modelId),
     system: systemPrompt,
     messages: modelMessages,
     tools: allTools,
     stopWhen: stepCountIs(config.maxSteps ?? 5),
   });
+
+  // Track token usage asynchronously (don't block the response)
+  if (config.workspaceId) {
+    Promise.resolve(result.totalUsage).then((usage) => {
+      recordTokenUsage({
+        workspaceId: config.workspaceId!,
+        model: modelId,
+        inputTokens: usage.inputTokens ?? 0,
+        outputTokens: usage.outputTokens ?? 0,
+        source: config.usageSource ?? "chat",
+      }).catch((error) => {
+        console.error("Failed to record token usage:", error);
+      });
+    }).catch((error) => {
+      console.error("Failed to get token usage:", error);
+    });
+  }
 
   return result.toUIMessageStreamResponse();
 }

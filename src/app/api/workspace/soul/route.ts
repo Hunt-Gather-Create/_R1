@@ -184,9 +184,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { messages, currentSoul } = (await req.json()) as {
+  const { messages, currentSoul, workspaceId } = (await req.json()) as {
     messages: UIMessage[];
     currentSoul?: WorkspaceSoul;
+    workspaceId?: string;
   };
 
   // Build context about current soul configuration
@@ -239,5 +240,7 @@ export async function POST(req: Request) {
     system: SYSTEM_PROMPT + soulContext,
     tools,
     maxSteps: 10,
+    workspaceId,
+    usageSource: "soul",
   });
 }

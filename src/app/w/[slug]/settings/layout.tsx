@@ -2,7 +2,7 @@
 
 import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Building2, Columns3, Tag, Users, Sparkles, Plug, Heart } from "lucide-react";
+import { ArrowLeft, Building2, Columns3, Tag, Users, Sparkles, Plug, Heart, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SettingsProvider, useSettingsContext } from "./context";
 
@@ -96,6 +96,12 @@ function SettingsSidebar() {
               icon={<Plug className="w-4 h-4" />}
               label="Integrations"
               isActive={pathname === `${baseSettingsPath}/integrations`}
+            />
+            <NavItem
+              href={`${baseSettingsPath}/usage`}
+              icon={<BarChart3 className="w-4 h-4" />}
+              label="Usage"
+              isActive={pathname === `${baseSettingsPath}/usage`}
             />
           </div>
         </div>

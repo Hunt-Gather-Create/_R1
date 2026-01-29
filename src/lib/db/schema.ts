@@ -254,3 +254,20 @@ export const soulChatMessages = sqliteTable("soul_chat_messages", {
   content: text("content").notNull(), // JSON-serialized message parts
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
+
+// Token Usage - tracks AI token consumption per workspace
+export const tokenUsage = sqliteTable("token_usage", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  model: text("model").notNull(), // e.g., "claude-haiku-4-5-20251001"
+  inputTokens: integer("input_tokens").notNull(),
+  outputTokens: integer("output_tokens").notNull(),
+  totalTokens: integer("total_tokens").notNull(),
+  // Cost in USD cents (to avoid floating point issues)
+  costCents: integer("cost_cents").notNull(),
+  // Source of the usage (chat, planning, skill-generation, etc.)
+  source: text("source").notNull().default("chat"),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});

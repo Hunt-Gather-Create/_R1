@@ -101,5 +101,6 @@ export async function POST(req: Request) {
     },
     skills,
     workspaceId,
+    usageSource: "chat",
   });
 }

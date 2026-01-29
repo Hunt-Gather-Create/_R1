@@ -102,6 +102,7 @@ export function SoulChat({
     api: "/api/workspace/soul",
     body: {
       currentSoul,
+      workspaceId,
     },
   });
 
