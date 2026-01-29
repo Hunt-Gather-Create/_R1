@@ -25,7 +25,9 @@ export const brands = sqliteTable("brands", {
   name: text("name").notNull(),
   tagline: text("tagline"),
   description: text("description"),
-  logoUrl: text("logo_url"),
+  logoUrl: text("logo_url"), // Original URL (kept for reference)
+  logoStorageKey: text("logo_storage_key"), // R2 storage key for persisted logo
+  logoBackground: text("logo_background"), // "light" | "dark" - recommended background
   websiteUrl: text("website_url"),
   primaryColor: text("primary_color"),
   secondaryColor: text("secondary_color"),

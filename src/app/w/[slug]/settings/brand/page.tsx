@@ -11,6 +11,7 @@ import {
   createBrand,
   setWorkspaceBrand as linkWorkspaceBrand,
   unlinkWorkspaceBrand,
+  type BrandWithLogoUrl,
 } from "@/lib/actions/brand";
 import type { Brand, BrandSearchResult, CreateBrandInput } from "@/lib/types";
 import { Globe, Pencil, Trash2 } from "lucide-react";
@@ -30,7 +31,7 @@ type PageState =
 export default function BrandSettingsPage() {
   const { workspace, currentUserId } = useSettingsContext();
   const [state, setState] = useState<PageState>("loading");
-  const [workspaceBrand, setWorkspaceBrandState] = useState<Brand | null>(null);
+  const [workspaceBrand, setWorkspaceBrandState] = useState<BrandWithLogoUrl | null>(null);
   const [disambiguationResults, setDisambiguationResults] = useState<BrandSearchResult[]>([]);
   const [previewBrand, setPreviewBrand] = useState<Partial<Brand> | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
@@ -149,7 +150,9 @@ export default function BrandSettingsPage() {
       const newBrand = await createBrand(data);
       await linkWorkspaceBrand(workspace.id, newBrand.id);
 
-      setWorkspaceBrandState(newBrand);
+      // Reload the brand to get resolved logo URL
+      const linkedBrand = await getWorkspaceBrand(workspace.id);
+      setWorkspaceBrandState(linkedBrand);
       setState("linked");
     } catch (err) {
       console.error("Save error:", err);
@@ -240,10 +243,16 @@ export default function BrandSettingsPage() {
 
           {/* Logo and description */}
           <div className="flex gap-6 mt-6">
-            {workspaceBrand.logoUrl ? (
-              <div className="w-32 h-32 rounded-lg bg-white flex items-center justify-center p-2 shrink-0">
+            {workspaceBrand.resolvedLogoUrl ? (
+              <div
+                className="w-32 h-32 rounded-lg flex items-center justify-center p-2 shrink-0"
+                style={{
+                  // Use dark background for light logos, light background for dark logos
+                  backgroundColor: workspaceBrand.logoBackground === "dark" ? "#1f2937" : "#ffffff",
+                }}
+              >
                 <img
-                  src={workspaceBrand.logoUrl}
+                  src={workspaceBrand.resolvedLogoUrl}
                   alt={workspaceBrand.name}
                   className="max-w-full max-h-full object-contain"
                 />

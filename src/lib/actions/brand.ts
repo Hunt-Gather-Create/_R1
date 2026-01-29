@@ -7,6 +7,8 @@ import { eq, and } from "drizzle-orm";
 import type { Brand, CreateBrandInput, UpdateBrandInput } from "../types";
 import { getCurrentUserId } from "../auth";
 import { requireWorkspaceAccess } from "./workspace";
+import { processLogo, isR2Configured } from "../storage/logo-processor";
+import { generateDownloadUrl, deleteObject } from "../storage/r2-client";
 
 /**
  * Get all brands for the current user
@@ -52,13 +54,31 @@ export async function createBrand(input: CreateBrandInput): Promise<Brand> {
     throw new Error("Not authenticated");
   }
 
+  // Generate a brand ID first (needed for logo storage key)
+  const brandId = crypto.randomUUID();
+
+  // Process logo if URL provided and R2 is configured
+  let logoStorageKey: string | null = null;
+  let logoBackground: string | null = null;
+
+  if (input.logoUrl && isR2Configured()) {
+    const processed = await processLogo(input.logoUrl, userId, brandId);
+    if (processed) {
+      logoStorageKey = processed.storageKey;
+      logoBackground = processed.background;
+    }
+  }
+
   const now = new Date();
   const newBrand = {
+    id: brandId,
     userId,
     name: input.name,
     tagline: input.tagline ?? null,
     description: input.description ?? null,
     logoUrl: input.logoUrl ?? null,
+    logoStorageKey,
+    logoBackground,
     websiteUrl: input.websiteUrl ?? null,
     primaryColor: input.primaryColor ?? null,
     secondaryColor: input.secondaryColor ?? null,
@@ -101,11 +121,48 @@ export async function updateBrand(
   if (input.name !== undefined) updateData.name = input.name;
   if (input.tagline !== undefined) updateData.tagline = input.tagline;
   if (input.description !== undefined) updateData.description = input.description;
-  if (input.logoUrl !== undefined) updateData.logoUrl = input.logoUrl;
   if (input.websiteUrl !== undefined) updateData.websiteUrl = input.websiteUrl;
   if (input.primaryColor !== undefined) updateData.primaryColor = input.primaryColor;
   if (input.secondaryColor !== undefined) updateData.secondaryColor = input.secondaryColor;
   if (input.industry !== undefined) updateData.industry = input.industry;
+
+  // Handle logo URL changes - reprocess if URL changed
+  if (input.logoUrl !== undefined && input.logoUrl !== existing.logoUrl) {
+    updateData.logoUrl = input.logoUrl;
+
+    if (input.logoUrl && isR2Configured()) {
+      // Delete old logo from R2 if exists
+      if (existing.logoStorageKey) {
+        try {
+          await deleteObject(existing.logoStorageKey);
+        } catch (error) {
+          console.error("Failed to delete old logo:", error);
+        }
+      }
+
+      // Process new logo
+      const processed = await processLogo(input.logoUrl, userId, brandId);
+      if (processed) {
+        updateData.logoStorageKey = processed.storageKey;
+        updateData.logoBackground = processed.background;
+      } else {
+        // Clear storage fields if processing failed
+        updateData.logoStorageKey = null;
+        updateData.logoBackground = null;
+      }
+    } else if (!input.logoUrl) {
+      // Logo URL cleared - clean up storage
+      if (existing.logoStorageKey) {
+        try {
+          await deleteObject(existing.logoStorageKey);
+        } catch (error) {
+          console.error("Failed to delete logo:", error);
+        }
+      }
+      updateData.logoStorageKey = null;
+      updateData.logoBackground = null;
+    }
+  }
 
   const result = await db
     .update(brands)
@@ -138,17 +195,52 @@ export async function deleteBrand(brandId: string): Promise<void> {
     throw new Error("Brand not found or access denied");
   }
 
+  // Delete logo from R2 if exists
+  if (existing.logoStorageKey) {
+    try {
+      await deleteObject(existing.logoStorageKey);
+    } catch (error) {
+      console.error("Failed to delete brand logo from R2:", error);
+      // Continue with deletion even if R2 cleanup fails
+    }
+  }
+
   await db.delete(brands).where(eq(brands.id, brandId));
 
   revalidatePath("/w");
 }
 
 /**
- * Get the brand linked to a workspace
+ * Brand with resolved logo URL (from R2 or original)
+ */
+export type BrandWithLogoUrl = Brand & {
+  resolvedLogoUrl: string | null;
+};
+
+/**
+ * Get a signed URL for a brand's stored logo
+ */
+async function getLogoUrl(brand: Brand): Promise<string | null> {
+  // Prefer R2-stored logo if available
+  if (brand.logoStorageKey) {
+    try {
+      return await generateDownloadUrl(brand.logoStorageKey, 3600); // 1 hour expiry
+    } catch (error) {
+      console.error("Failed to generate logo URL:", error);
+      // Fall back to original URL
+    }
+  }
+
+  // Fall back to original URL
+  return brand.logoUrl;
+}
+
+/**
+ * Get the brand linked to a workspace with resolved logo URL
  */
 export async function getWorkspaceBrand(
   workspaceId: string
-): Promise<Brand | null> {
+): Promise<BrandWithLogoUrl | null> {
   await requireWorkspaceAccess(workspaceId);
 
   const workspace = await db
@@ -167,7 +259,16 @@ export async function getWorkspaceBrand(
     .where(eq(brands.id, workspace.brandId))
     .get();
 
-  return brand ?? null;
+  if (!brand) {
+    return null;
+  }
+
+  const resolvedLogoUrl = await getLogoUrl(brand);
+
+  return {
+    ...brand,
+    resolvedLogoUrl,
+  };
 }
 
 /**
