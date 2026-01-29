@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { Globe, Palette, Building2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import type { Brand, CreateBrandInput } from "@/lib/types";
 
 interface BrandPreviewProps {
@@ -72,30 +75,28 @@ export function BrandPreview({
 
         {/* Logo URL */}
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1.5">
             Logo URL
           </label>
-          <input
+          <Input
             type="url"
             value={formData.logoUrl}
             onChange={(e) => handleChange("logoUrl", e.target.value)}
             placeholder="https://example.com/logo.png"
-            className="w-full px-3 py-2 bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground placeholder:text-muted-foreground"
             disabled={isLoading}
           />
         </div>
 
         {/* Name */}
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1.5">
             Brand Name <span className="text-destructive">*</span>
           </label>
-          <input
+          <Input
             type="text"
             value={formData.name}
             onChange={(e) => handleChange("name", e.target.value)}
             placeholder="Acme Inc."
-            className="w-full px-3 py-2 bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground placeholder:text-muted-foreground"
             disabled={isLoading}
             required
           />
@@ -103,45 +104,42 @@ export function BrandPreview({
 
         {/* Tagline */}
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1.5">
             Tagline
           </label>
-          <input
+          <Input
             type="text"
             value={formData.tagline}
             onChange={(e) => handleChange("tagline", e.target.value)}
             placeholder="Making the world a better place"
-            className="w-full px-3 py-2 bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground placeholder:text-muted-foreground"
             disabled={isLoading}
           />
         </div>
 
         {/* Description */}
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1.5">
             Description
           </label>
-          <textarea
+          <Textarea
             value={formData.description}
             onChange={(e) => handleChange("description", e.target.value)}
             placeholder="A brief description of the brand..."
             rows={3}
-            className="w-full px-3 py-2 bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground placeholder:text-muted-foreground resize-none"
             disabled={isLoading}
           />
         </div>
 
         {/* Website URL */}
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1.5">
             Website URL
           </label>
-          <input
+          <Input
             type="url"
             value={formData.websiteUrl}
             onChange={(e) => handleChange("websiteUrl", e.target.value)}
             placeholder="https://example.com"
-            className="w-full px-3 py-2 bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground placeholder:text-muted-foreground"
             disabled={isLoading}
           />
         </div>
@@ -149,51 +147,51 @@ export function BrandPreview({
         {/* Colors */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              <div className="flex items-center gap-2">
+            <label className="block text-sm font-medium text-foreground mb-1.5">
+              <span className="flex items-center gap-2">
                 <Palette className="w-4 h-4" />
                 Primary Color
-              </div>
+              </span>
             </label>
             <div className="flex gap-2">
               <input
                 type="color"
                 value={formData.primaryColor}
                 onChange={(e) => handleChange("primaryColor", e.target.value)}
-                className="w-10 h-10 rounded border border-input cursor-pointer"
+                className="w-9 h-9 rounded-md border border-input cursor-pointer bg-transparent"
                 disabled={isLoading}
               />
-              <input
+              <Input
                 type="text"
                 value={formData.primaryColor}
                 onChange={(e) => handleChange("primaryColor", e.target.value)}
                 placeholder="#3b82f6"
-                className="flex-1 px-3 py-2 bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground placeholder:text-muted-foreground"
+                className="flex-1 font-mono"
                 disabled={isLoading}
               />
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              <div className="flex items-center gap-2">
+            <label className="block text-sm font-medium text-foreground mb-1.5">
+              <span className="flex items-center gap-2">
                 <Palette className="w-4 h-4" />
                 Secondary Color
-              </div>
+              </span>
             </label>
             <div className="flex gap-2">
               <input
                 type="color"
                 value={formData.secondaryColor}
                 onChange={(e) => handleChange("secondaryColor", e.target.value)}
-                className="w-10 h-10 rounded border border-input cursor-pointer"
+                className="w-9 h-9 rounded-md border border-input cursor-pointer bg-transparent"
                 disabled={isLoading}
               />
-              <input
+              <Input
                 type="text"
                 value={formData.secondaryColor}
                 onChange={(e) => handleChange("secondaryColor", e.target.value)}
                 placeholder="#10b981"
-                className="flex-1 px-3 py-2 bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground placeholder:text-muted-foreground"
+                className="flex-1 font-mono"
                 disabled={isLoading}
               />
             </div>
@@ -202,39 +200,37 @@ export function BrandPreview({
 
         {/* Industry */}
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            <div className="flex items-center gap-2">
+          <label className="block text-sm font-medium text-foreground mb-1.5">
+            <span className="flex items-center gap-2">
               <Building2 className="w-4 h-4" />
               Industry
-            </div>
+            </span>
           </label>
-          <input
+          <Input
             type="text"
             value={formData.industry}
             onChange={(e) => handleChange("industry", e.target.value)}
             placeholder="Technology, Healthcare, Retail, etc."
-            className="w-full px-3 py-2 bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground placeholder:text-muted-foreground"
             disabled={isLoading}
           />
         </div>
 
         {/* Actions */}
         <div className="flex justify-center gap-3 pt-4">
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={onCancel}
             disabled={isLoading}
-            className="px-6 py-2 border border-border rounded-lg hover:bg-accent/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-foreground"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
             disabled={!formData.name.trim() || isLoading}
-            className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isLoading ? "Saving..." : "Save Brand"}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

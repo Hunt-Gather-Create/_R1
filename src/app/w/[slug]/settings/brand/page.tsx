@@ -14,6 +14,7 @@ import {
 } from "@/lib/actions/brand";
 import type { Brand, BrandSearchResult, CreateBrandInput } from "@/lib/types";
 import { Globe, Pencil, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type PageState =
@@ -202,22 +203,26 @@ export default function BrandSettingsPage() {
         >
           {/* Actions */}
           <div className="absolute top-4 right-4 flex gap-2">
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={handleEditBrand}
               disabled={isActionLoading}
-              className="p-2 rounded-lg bg-background/50 hover:bg-background/80 transition-colors text-foreground"
+              className="bg-background/50 hover:bg-background/80"
               title="Edit brand"
             >
               <Pencil className="w-4 h-4" />
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={handleRemoveBrand}
               disabled={isActionLoading}
-              className="p-2 rounded-lg bg-background/50 hover:bg-destructive/80 transition-colors text-foreground hover:text-destructive-foreground"
+              className="bg-background/50 hover:bg-destructive/80 hover:text-destructive-foreground"
               title="Remove brand"
             >
               <Trash2 className="w-4 h-4" />
-            </button>
+            </Button>
           </div>
 
           {/* Brand header */}
@@ -383,12 +388,9 @@ export default function BrandSettingsPage() {
       <p className="text-muted-foreground text-center max-w-md mb-6">
         Add a brand to this workspace to maintain consistent messaging and styling across your content.
       </p>
-      <button
-        onClick={() => setState("search")}
-        className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-      >
+      <Button onClick={() => setState("search")}>
         Add Brand
-      </button>
+      </Button>
     </div>
   );
 
@@ -424,12 +426,13 @@ export default function BrandSettingsPage() {
           </div>
           <BrandSearchForm onSearch={handleSearch} isLoading={false} />
           <div className="mt-4 text-center">
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setState("empty")}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -449,12 +452,13 @@ export default function BrandSettingsPage() {
             isLoading={false}
           />
           <div className="mt-4 text-center">
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setState("search")}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               Back to search
-            </button>
+            </Button>
           </div>
         </div>
       )}

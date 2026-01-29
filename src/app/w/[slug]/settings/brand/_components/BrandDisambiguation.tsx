@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Globe, Plus, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import type { BrandSearchResult } from "@/lib/types";
 
 interface BrandDisambiguationProps {
@@ -108,13 +109,12 @@ export function BrandDisambiguation({
       </div>
 
       <div className="mt-6 flex justify-center">
-        <button
+        <Button
           onClick={handleContinue}
           disabled={selectedIndex === null || isLoading}
-          className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {isLoading ? "Loading..." : "Continue"}
-        </button>
+        </Button>
       </div>
     </div>
   );
