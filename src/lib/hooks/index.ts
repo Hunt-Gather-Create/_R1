@@ -71,3 +71,5 @@ export {
 } from "./use-workspace-chat";
 
 export { useAutoFocusOnComplete } from "./use-auto-focus";
+
+export { useChatAutoScroll } from "./use-chat-auto-scroll";

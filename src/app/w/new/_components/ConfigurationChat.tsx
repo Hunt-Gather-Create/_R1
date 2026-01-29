@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useRef, useCallback, useState, useEffect } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Bot, User } from "lucide-react";
@@ -12,7 +12,7 @@ import {
   PromptInputActions,
 } from "@/components/ai-elements/prompt-input";
 import { cn } from "@/lib/utils";
-import { useAutoFocusOnComplete } from "@/lib/hooks";
+import { useAutoFocusOnComplete, useChatAutoScroll } from "@/lib/hooks";
 import type { Status } from "@/lib/design-tokens";
 
 export interface WorkspaceColumn {
@@ -62,7 +62,7 @@ export function ConfigurationChat({
   onLabelsChange,
   onIssuesChange,
 }: ConfigurationChatProps) {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const processedToolCallsRef = useRef<Set<string>>(new Set());
   const [input, setInput] = useState("");
@@ -229,12 +229,10 @@ export function ConfigurationChat({
     processToolCalls();
   }, [processToolCalls]);
 
-  // Auto-scroll
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
   const isLoading = status === "streaming" || status === "submitted";
+
+  // Scroll to bottom on load, scroll user's message to top when they submit
+  const { spacerHeight } = useChatAutoScroll(containerRef, messages.length, status);
 
   // Auto-focus input when AI finishes responding
   useAutoFocusOnComplete(isLoading, textareaRef);
@@ -249,12 +247,20 @@ export function ConfigurationChat({
   return (
     <div className="flex flex-col h-full">
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+      <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
         {displayMessages.map((message) => (
-          <ChatMessage key={message.id} message={message} />
+          <div key={message.id} data-message-role={message.role}>
+            <ChatMessage message={message} />
+          </div>
         ))}
         {isLoading && <LoadingMessage />}
-        <div ref={messagesEndRef} />
+        {spacerHeight > 0 && (
+          <div
+            data-chat-spacer
+            style={{ height: spacerHeight }}
+            aria-hidden="true"
+          />
+        )}
       </div>
 
       {/* Input */}

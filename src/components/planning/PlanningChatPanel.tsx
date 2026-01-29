@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useRef, useState, useMemo } from "react";
 import { useChat, type UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Bot, User, Sparkles } from "lucide-react";
@@ -23,6 +23,7 @@ import {
   PromptInputActions,
 } from "@/components/ai-elements/prompt-input";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
+import { useChatAutoScroll } from "@/lib/hooks";
 import type { Priority } from "@/lib/design-tokens";
 
 export interface PlannedIssue {
@@ -39,11 +40,10 @@ interface PlanningChatPanelProps {
 
 export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
   const { workspaceId, workspacePurpose } = useBoardContext();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [input, setInput] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const prevStatusRef = useRef<string | null>(null);
 
   const transport = useMemo(
     () =>
@@ -95,23 +95,8 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
 
   const isLoading = status === "streaming" || status === "submitted";
 
-  // Auto-focus input when AI finishes responding
-  useEffect(() => {
-    const wasLoading =
-      prevStatusRef.current === "streaming" ||
-      prevStatusRef.current === "submitted";
-    const isNowReady = status === "ready";
-
-    if (wasLoading && isNowReady) {
-      inputRef.current?.focus();
-    }
-
-    prevStatusRef.current = status;
-  }, [status]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  // Scroll to bottom on load, scroll user's message to top when they submit
+  const { spacerHeight } = useChatAutoScroll(containerRef, messages.length, status);
 
   const handleSubmit = async () => {
     if (input.trim() || files.length > 0) {
@@ -134,10 +119,11 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+      <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
         {displayMessages.map((message) => (
           <div
             key={message.id}
+            data-message-role={message.role}
             className={cn(
               "flex gap-3",
               message.role === "user" ? "flex-row-reverse" : "flex-row"
@@ -248,7 +234,13 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
           </div>
         ))}
         {isLoading && <ChatLoadingIndicator />}
-        <div ref={messagesEndRef} />
+        {spacerHeight > 0 && (
+          <div
+            data-chat-spacer
+            style={{ height: spacerHeight }}
+            aria-hidden="true"
+          />
+        )}
       </div>
 
       {/* Input */}

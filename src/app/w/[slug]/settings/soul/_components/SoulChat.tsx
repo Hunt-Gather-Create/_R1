@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useRef, useCallback, useState, useEffect } from "react";
 import { useChat, type UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Bot, User, Trash2 } from "lucide-react";
@@ -12,7 +12,7 @@ import {
   PromptInputActions,
 } from "@/components/ai-elements/prompt-input";
 import { cn } from "@/lib/utils";
-import { useAutoFocusOnComplete } from "@/lib/hooks";
+import { useAutoFocusOnComplete, useChatAutoScroll } from "@/lib/hooks";
 import type { WorkspaceSoul } from "@/lib/types";
 import {
   getSoulChatMessages,
@@ -69,7 +69,7 @@ export function SoulChat({
   initialPrompt,
   onSoulChange,
 }: SoulChatProps) {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const processedToolCallsRef = useRef<Set<string>>(new Set());
   const initialPromptSentRef = useRef(false);
@@ -255,12 +255,10 @@ export function SoulChat({
     processToolCalls();
   }, [processToolCalls]);
 
-  // Auto-scroll
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
   const isLoading = status === "streaming" || status === "submitted";
+
+  // Scroll to bottom on load, scroll user's message to top when they submit
+  const { spacerHeight } = useChatAutoScroll(containerRef, messages.length, status);
 
   // Auto-focus input when AI finishes responding
   useAutoFocusOnComplete(isLoading, textareaRef);
@@ -327,7 +325,7 @@ export function SoulChat({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+      <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
         {messages.length === 0 && (
           <div className="text-center py-8">
             <Bot className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
@@ -337,10 +335,18 @@ export function SoulChat({
           </div>
         )}
         {messages.map((message) => (
-          <ChatMessage key={message.id} message={message} />
+          <div key={message.id} data-message-role={message.role}>
+            <ChatMessage message={message} />
+          </div>
         ))}
         {isLoading && <LoadingMessage />}
-        <div ref={messagesEndRef} />
+        {spacerHeight > 0 && (
+          <div
+            data-chat-spacer
+            style={{ height: spacerHeight }}
+            aria-hidden="true"
+          />
+        )}
       </div>
 
       {/* Input */}

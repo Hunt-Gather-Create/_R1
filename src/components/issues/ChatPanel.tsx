@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useRef, useState, useMemo } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Sparkles } from "lucide-react";
@@ -16,7 +16,7 @@ import {
   PromptInputActions,
 } from "@/components/ai-elements/prompt-input";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
-import { useAutoFocusOnComplete } from "@/lib/hooks";
+import { useAutoFocusOnComplete, useChatAutoScroll } from "@/lib/hooks";
 import type { Priority } from "@/lib/design-tokens";
 
 interface SuggestedIssue {
@@ -31,7 +31,7 @@ interface ChatPanelProps {
 
 export function ChatPanel({ onSuggestion }: ChatPanelProps) {
   const { workspaceId, workspacePurpose } = useBoardContext();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [input, setInput] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -78,10 +78,8 @@ export function ChatPanel({ onSuggestion }: ChatPanelProps) {
 
   const isLoading = status === "streaming" || status === "submitted";
 
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  // Scroll to bottom on load, scroll user's message to top when they submit
+  const { spacerHeight } = useChatAutoScroll(containerRef, messages.length, status);
 
   // Auto-focus input when AI finishes responding
   useAutoFocusOnComplete(isLoading, textareaRef);
@@ -115,24 +113,31 @@ export function ChatPanel({ onSuggestion }: ChatPanelProps) {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+      <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
         {displayMessages.map((message) => (
-          <ChatMessageItem
-            key={message.id}
-            message={message}
-            renderToolCall={(part, index) => (
-              <div
-                key={index}
-                className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
-              >
-                <Sparkles className="w-3 h-3" />
-                <span>Form populated with suggestion</span>
-              </div>
-            )}
-          />
+          <div key={message.id} data-message-role={message.role}>
+            <ChatMessageItem
+              message={message}
+              renderToolCall={(part, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>Form populated with suggestion</span>
+                </div>
+              )}
+            />
+          </div>
         ))}
         {isLoading && <ChatLoadingIndicator />}
-        <div ref={messagesEndRef} />
+        {spacerHeight > 0 && (
+          <div
+            data-chat-spacer
+            style={{ height: spacerHeight }}
+            aria-hidden="true"
+          />
+        )}
       </div>
 
       {/* Input */}

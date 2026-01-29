@@ -22,6 +22,7 @@ import {
   useClearChatMessages,
   useInvalidateAttachments,
   useAutoFocusOnComplete,
+  useChatAutoScroll,
 } from "@/lib/hooks";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
 import type { IssueWithLabels, Comment, ChatMessage } from "@/lib/types";
@@ -56,7 +57,7 @@ export function IssueChatPanel({
   onUpdateDescription,
 }: IssueChatPanelProps) {
   const { workspaceId, workspacePurpose } = useBoardContext();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [input, setInput] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -171,10 +172,8 @@ export function IssueChatPanel({
 
   const isLoading = status === "streaming" || status === "submitted";
 
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  // Scroll to bottom on load, scroll user's message to top when they submit
+  const { spacerHeight } = useChatAutoScroll(containerRef, messages.length, status);
 
   // Auto-focus input when AI finishes responding
   useAutoFocusOnComplete(isLoading, textareaRef);
@@ -218,53 +217,60 @@ export function IssueChatPanel({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+      <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
         {displayMessages.map((message) => (
-          <ChatMessageItem
-            key={message.id}
-            message={message}
-            renderToolCall={(part, index) => {
-              const toolPart = part as { toolName?: string; result?: unknown };
-              // Handle custom tool (updateDescription)
-              if (toolPart.toolName === "updateDescription") {
-                return (
-                  <div
-                    key={index}
-                    className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
-                  >
-                    <Sparkles className="w-3 h-3" />
-                    <span>Description updated</span>
-                  </div>
-                );
-              }
-              // Handle attachContent tool
-              if (toolPart.toolName === "attachContent") {
-                return (
-                  <div
-                    key={index}
-                    className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
-                  >
-                    <Paperclip className="w-3 h-3" />
-                    <span>Content attached to issue</span>
-                  </div>
-                );
-              }
-              // Handle built-in tools
-              if (toolPart.toolName) {
-                return (
-                  <ToolResultDisplay
-                    key={index}
-                    toolName={toolPart.toolName}
-                    result={toolPart.result}
-                  />
-                );
-              }
-              return null;
-            }}
-          />
+          <div key={message.id} data-message-role={message.role}>
+            <ChatMessageItem
+              message={message}
+              renderToolCall={(part, index) => {
+                const toolPart = part as { toolName?: string; result?: unknown };
+                // Handle custom tool (updateDescription)
+                if (toolPart.toolName === "updateDescription") {
+                  return (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>Description updated</span>
+                    </div>
+                  );
+                }
+                // Handle attachContent tool
+                if (toolPart.toolName === "attachContent") {
+                  return (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
+                    >
+                      <Paperclip className="w-3 h-3" />
+                      <span>Content attached to issue</span>
+                    </div>
+                  );
+                }
+                // Handle built-in tools
+                if (toolPart.toolName) {
+                  return (
+                    <ToolResultDisplay
+                      key={index}
+                      toolName={toolPart.toolName}
+                      result={toolPart.result}
+                    />
+                  );
+                }
+                return null;
+              }}
+            />
+          </div>
         ))}
         {isLoading && <ChatLoadingIndicator />}
-        <div ref={messagesEndRef} />
+        {spacerHeight > 0 && (
+          <div
+            data-chat-spacer
+            style={{ height: spacerHeight }}
+            aria-hidden="true"
+          />
+        )}
       </div>
 
       {/* Input */}
