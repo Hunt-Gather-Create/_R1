@@ -103,7 +103,8 @@ export async function captureScreenshot(
 
 /**
  * Capture a screenshot optimized for brand color extraction
- * Uses a smaller viewport and waits for full render
+ * Uses "load" wait strategy which is faster than "networkidle2"
+ * but still waits for images/stylesheets to load
  */
 export async function captureScreenshotForBrandColors(
   url: string
@@ -116,8 +117,10 @@ export async function captureScreenshotForBrandColors(
       deviceScaleFactor: 1,
     },
     gotoOptions: {
-      waitUntil: "networkidle2",
-      timeout: 30000,
+      // "load" waits for page + resources, but not all network activity
+      // Much faster than "networkidle2" for sites with analytics/ads
+      waitUntil: "load",
+      timeout: 45000,
     },
     screenshotOptions: {
       type: "jpeg",

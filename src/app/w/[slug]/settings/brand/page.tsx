@@ -54,42 +54,7 @@ export default function BrandSettingsPage() {
     loadData();
   }, [currentUserId, workspace?.id]);
 
-  // Handle search (name or URL)
-  const handleSearch = useCallback(async (query: string, type: "name" | "url") => {
-    setState("searching");
-    setError(null);
-
-    try {
-      const response = await fetch("/api/brand/research", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, type }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Research failed");
-      }
-
-      const data = await response.json();
-
-      if (data.needsDisambiguation) {
-        setDisambiguationResults(data.results);
-        setState("disambiguation");
-      } else if (data.brand) {
-        setPreviewBrand(data.brand);
-        setState("preview");
-      } else {
-        setError("No results found");
-        setState("search");
-      }
-    } catch (err) {
-      console.error("Search error:", err);
-      setError("Failed to research brand. Please try again.");
-      setState("search");
-    }
-  }, []);
-
-  // Handle disambiguation selection
+  // Handle disambiguation selection (defined first since handleSearch uses it)
   const handleDisambiguationSelect = useCallback(async (result: BrandSearchResult) => {
     setState("researching");
     setError(null);
@@ -120,6 +85,51 @@ export default function BrandSettingsPage() {
       setState("disambiguation");
     }
   }, []);
+
+  // Handle search (name or URL)
+  const handleSearch = useCallback(async (query: string, type: "name" | "url") => {
+    setState("searching");
+    setError(null);
+
+    try {
+      const response = await fetch("/api/brand/research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, type }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Research failed");
+      }
+
+      const data = await response.json();
+
+      if (data.needsDisambiguation && data.results?.length > 1) {
+        // Multiple results - let user choose
+        setDisambiguationResults(data.results);
+        setState("disambiguation");
+      } else if (data.brand) {
+        // URL or selection search returned full brand details
+        setPreviewBrand(data.brand);
+        setState("preview");
+      } else if (data.results?.length === 1) {
+        // Name search found exactly one result - auto-research it for full details
+        const result = data.results[0];
+        handleDisambiguationSelect(result);
+      } else if (data.results?.length > 0) {
+        // Multiple results without disambiguation flag - show selection UI
+        setDisambiguationResults(data.results);
+        setState("disambiguation");
+      } else {
+        setError("No results found");
+        setState("search");
+      }
+    } catch (err) {
+      console.error("Search error:", err);
+      setError("Failed to research brand. Please try again.");
+      setState("search");
+    }
+  }, [handleDisambiguationSelect]);
 
   // Handle create from scratch
   const handleCreateFromScratch = useCallback(() => {

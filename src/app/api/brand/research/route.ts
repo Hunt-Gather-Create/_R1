@@ -4,7 +4,8 @@ import { z } from "zod";
 import { getCurrentUserId } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import type { BrandSearchResult } from "@/lib/types";
-import { DEFAULT_MODEL } from "@/lib/chat";
+// Use Sonnet for brand research - needs better reasoning for web search + tool calling
+const RESEARCH_MODEL = "claude-sonnet-4-5";
 import {
   captureScreenshotForBrandColors,
   isCloudflareConfigured,
@@ -195,7 +196,7 @@ export async function POST(req: Request) {
 
 async function handleNameSearch(query: string) {
   const result = await generateText({
-    model: anthropic(DEFAULT_MODEL),
+    model: anthropic(RESEARCH_MODEL),
     system: NAME_SEARCH_PROMPT,
     prompt: `Find information about the brand: "${query}"`,
     tools: {
@@ -232,39 +233,25 @@ async function handleUrlResearch(url: string) {
   // Try to capture a screenshot for visual color extraction
   let screenshotBase64: string | null = null;
 
-  console.log("=== URL Research ===");
-  console.log("URL:", url);
-  console.log("Cloudflare configured:", isCloudflareConfigured());
-
   if (isCloudflareConfigured()) {
     try {
-      console.log("Attempting screenshot capture...");
       const screenshot = await captureScreenshotForBrandColors(url);
       screenshotBase64 = screenshot.base64;
-      console.log("Screenshot captured successfully! Size:", screenshotBase64.length, "bytes");
     } catch (error) {
       console.error("Failed to capture screenshot:", error);
       // Continue without screenshot
     }
-  } else {
-    console.log("Skipping screenshot - Cloudflare not configured");
   }
 
-  // Use different call patterns based on whether we have a screenshot
   const tools = {
     web_fetch: anthropic.tools.webFetch_20250910({ maxUses: 2 }),
     web_search: anthropic.tools.webSearch_20250305({ maxUses: 2 }),
     report_brand: reportBrandTool,
   };
 
-  console.log("Using screenshot:", screenshotBase64 !== null);
-
-  // Use Sonnet for screenshot analysis (better at vision), Haiku for text-only
-  const VISION_MODEL = "claude-sonnet-4-20250514";
-
   const result = screenshotBase64
     ? await generateText({
-        model: anthropic(VISION_MODEL),
+        model: anthropic(RESEARCH_MODEL),
         system: URL_RESEARCH_WITH_SCREENSHOT_PROMPT,
         messages: [
           {
@@ -284,20 +271,11 @@ async function handleUrlResearch(url: string) {
         tools,
       })
     : await generateText({
-        model: anthropic(DEFAULT_MODEL),
+        model: anthropic(RESEARCH_MODEL),
         system: URL_RESEARCH_PROMPT,
         prompt: `Extract brand information from this website: ${url}`,
         tools,
       });
-
-  console.log("AI response steps:", result.steps.length);
-  for (const step of result.steps) {
-    for (const toolResult of step.toolResults) {
-      if (toolResult.toolName === "report_brand" && "output" in toolResult) {
-        console.log("Brand result:", JSON.stringify((toolResult as { output: unknown }).output, null, 2));
-      }
-    }
-  }
 
   // Extract the tool result
   for (const step of result.steps) {
@@ -338,12 +316,19 @@ async function handleUrlResearch(url: string) {
 }
 
 async function handleSelectionResearch(selection: BrandSearchResult) {
+  // If we have a website URL, use the URL research flow (with screenshot support)
+  // This gives us better color extraction
+  if (selection.websiteUrl) {
+    return handleUrlResearch(selection.websiteUrl);
+  }
+
+  // Fallback for selections without a URL
   const prompt = SELECTION_RESEARCH_PROMPT
     .replace("{{BRAND_NAME}}", selection.name)
-    .replace("{{BRAND_URL}}", selection.websiteUrl);
+    .replace("{{BRAND_URL}}", selection.websiteUrl || "unknown");
 
   const result = await generateText({
-    model: anthropic(DEFAULT_MODEL),
+    model: anthropic(RESEARCH_MODEL),
     system: prompt,
     prompt: `Research and extract detailed brand information for ${selection.name}`,
     tools: {
