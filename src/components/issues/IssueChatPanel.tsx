@@ -6,6 +6,7 @@ import { DefaultChatTransport } from "ai";
 import { Sparkles, Trash2, Paperclip } from "lucide-react";
 import { ChatLoadingIndicator } from "@/components/ai-elements/ChatMessageBubble";
 import { ChatMessageItem } from "@/components/ai-elements/ChatMessageItem";
+import { ChatSpacer } from "@/components/ai-elements/ChatSpacer";
 import { ToolResultDisplay } from "@/components/ai-elements/ToolResultDisplay";
 import { prepareFilesForSubmission } from "@/lib/chat/file-utils";
 import {
@@ -264,13 +265,7 @@ export function IssueChatPanel({
           </div>
         ))}
         {isLoading && <ChatLoadingIndicator />}
-        {spacerHeight > 0 && (
-          <div
-            data-chat-spacer
-            style={{ height: spacerHeight }}
-            aria-hidden="true"
-          />
-        )}
+        <ChatSpacer height={spacerHeight} />
       </div>
 
       {/* Input */}

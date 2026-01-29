@@ -12,6 +12,7 @@ import {
   PromptInputActions,
 } from "@/components/ai-elements/prompt-input";
 import { cn } from "@/lib/utils";
+import { ChatSpacer } from "@/components/ai-elements/ChatSpacer";
 import { useAutoFocusOnComplete, useChatAutoScroll } from "@/lib/hooks";
 import type { Status } from "@/lib/design-tokens";
 
@@ -254,13 +255,7 @@ export function ConfigurationChat({
           </div>
         ))}
         {isLoading && <LoadingMessage />}
-        {spacerHeight > 0 && (
-          <div
-            data-chat-spacer
-            style={{ height: spacerHeight }}
-            aria-hidden="true"
-          />
-        )}
+        <ChatSpacer height={spacerHeight} />
       </div>
 
       {/* Input */}

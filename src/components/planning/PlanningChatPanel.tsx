@@ -23,7 +23,8 @@ import {
   PromptInputActions,
 } from "@/components/ai-elements/prompt-input";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
-import { useChatAutoScroll } from "@/lib/hooks";
+import { ChatSpacer } from "@/components/ai-elements/ChatSpacer";
+import { useAutoFocusOnComplete, useChatAutoScroll } from "@/lib/hooks";
 import type { Priority } from "@/lib/design-tokens";
 
 export interface PlannedIssue {
@@ -97,6 +98,9 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
 
   // Scroll to bottom on load, scroll user's message to top when they submit
   const { spacerHeight } = useChatAutoScroll(containerRef, messages.length, status);
+
+  // Auto-focus input when AI finishes responding
+  useAutoFocusOnComplete(isLoading, inputRef);
 
   const handleSubmit = async () => {
     if (input.trim() || files.length > 0) {
@@ -234,13 +238,7 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
           </div>
         ))}
         {isLoading && <ChatLoadingIndicator />}
-        {spacerHeight > 0 && (
-          <div
-            data-chat-spacer
-            style={{ height: spacerHeight }}
-            aria-hidden="true"
-          />
-        )}
+        <ChatSpacer height={spacerHeight} />
       </div>
 
       {/* Input */}

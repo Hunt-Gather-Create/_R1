@@ -5,6 +5,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Trash2 } from "lucide-react";
 import { ChatMessage, LoadingMessage } from "./ChatMessage";
+import { ChatSpacer } from "@/components/ai-elements/ChatSpacer";
 import { useChatContext } from "./ChatContext";
 import { persistedToUIMessages } from "./chat-utils";
 import {
@@ -255,13 +256,7 @@ export function ChatPanel() {
           </div>
         ))}
         {isLoading && <LoadingMessage />}
-        {spacerHeight > 0 && (
-          <div
-            data-chat-spacer
-            style={{ height: spacerHeight }}
-            aria-hidden="true"
-          />
-        )}
+        <ChatSpacer height={spacerHeight} />
       </div>
 
       {/* Input */}
