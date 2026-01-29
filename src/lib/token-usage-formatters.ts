@@ -6,17 +6,28 @@
 /**
  * Anthropic model pricing (per million tokens in USD)
  * Updated: January 2025
+ * Source: https://www.anthropic.com/pricing
  */
 export const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  // Haiku 4.5 (default for most chat)
+  // Haiku 4.5: $1 input, $5 output
   "claude-haiku-4-5-20251001": { input: 1, output: 5 },
-  // Sonnet 4 / 4.5
+  "claude-4-5-haiku": { input: 1, output: 5 },
+
+  // Sonnet 4.5: $3 input, $15 output
+  "claude-sonnet-4-5-20250514": { input: 3, output: 15 },
+  "claude-4-5-sonnet": { input: 3, output: 15 },
+
+  // Sonnet 4: $3 input, $15 output
   "claude-sonnet-4-20250514": { input: 3, output: 15 },
-  "claude-sonnet-4-5-20251104": { input: 3, output: 15 },
-  "anthropic/claude-sonnet-4-5": { input: 3, output: 15 },
-  // Opus 4 / 4.5
+  "claude-4-sonnet": { input: 3, output: 15 },
+
+  // Opus 4.5: $5 input, $25 output
   "claude-opus-4-5-20251101": { input: 5, output: 25 },
-  "claude-opus-4-20251205": { input: 15, output: 75 },
+  "claude-4-5-opus": { input: 5, output: 25 },
+
+  // Opus 4: $15 input, $75 output
+  "claude-opus-4-20250514": { input: 15, output: 75 },
+  "claude-4-opus": { input: 15, output: 75 },
 };
 
 /**
