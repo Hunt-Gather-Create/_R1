@@ -24,12 +24,28 @@ export async function recordTokenUsage(params: {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
   source?: string;
 }): Promise<void> {
-  const { workspaceId, model, inputTokens, outputTokens, source = "chat" } = params;
+  const {
+    workspaceId,
+    model,
+    inputTokens,
+    outputTokens,
+    cacheCreationInputTokens = 0,
+    cacheReadInputTokens = 0,
+    source = "chat",
+  } = params;
 
   const totalTokens = inputTokens + outputTokens;
-  const costCents = calculateCostCents(model, inputTokens, outputTokens);
+  const costCents = calculateCostCents(
+    model,
+    inputTokens,
+    outputTokens,
+    cacheCreationInputTokens,
+    cacheReadInputTokens
+  );
 
   await db.insert(tokenUsage).values({
     workspaceId,
@@ -37,6 +53,8 @@ export async function recordTokenUsage(params: {
     inputTokens,
     outputTokens,
     totalTokens,
+    cacheCreationInputTokens,
+    cacheReadInputTokens,
     costCents,
     source,
   });

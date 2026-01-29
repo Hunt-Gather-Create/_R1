@@ -9,6 +9,9 @@ export interface UsageSummary {
   totalOutputTokens: number;
   totalTokens: number;
   totalCostCents: number;
+  // Cache token stats
+  totalCacheCreationTokens: number;
+  totalCacheReadTokens: number;
   byModel: Record<string, {
     inputTokens: number;
     outputTokens: number;
@@ -50,6 +53,8 @@ export async function getUsageSummary(workspaceId: string): Promise<UsageSummary
     totalOutputTokens: 0,
     totalTokens: 0,
     totalCostCents: 0,
+    totalCacheCreationTokens: 0,
+    totalCacheReadTokens: 0,
     byModel: {},
     bySource: {},
   };
@@ -59,6 +64,8 @@ export async function getUsageSummary(workspaceId: string): Promise<UsageSummary
     summary.totalOutputTokens += record.outputTokens;
     summary.totalTokens += record.totalTokens;
     summary.totalCostCents += record.costCents;
+    summary.totalCacheCreationTokens += record.cacheCreationInputTokens ?? 0;
+    summary.totalCacheReadTokens += record.cacheReadInputTokens ?? 0;
 
     // Aggregate by model
     if (!summary.byModel[record.model]) {

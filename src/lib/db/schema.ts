@@ -265,6 +265,9 @@ export const tokenUsage = sqliteTable("token_usage", {
   inputTokens: integer("input_tokens").notNull(),
   outputTokens: integer("output_tokens").notNull(),
   totalTokens: integer("total_tokens").notNull(),
+  // Cache tokens for prompt caching (Anthropic)
+  cacheCreationInputTokens: integer("cache_creation_input_tokens").default(0),
+  cacheReadInputTokens: integer("cache_read_input_tokens").default(0),
   // Cost in USD cents (to avoid floating point issues)
   costCents: integer("cost_cents").notNull(),
   // Source of the usage (chat, planning, skill-generation, etc.)
