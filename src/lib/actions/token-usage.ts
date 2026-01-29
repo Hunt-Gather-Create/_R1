@@ -105,22 +105,32 @@ export async function getDailyUsage(
   startDate.setDate(startDate.getDate() - days);
   startDate.setHours(0, 0, 0, 0);
 
+  // Get all records for this workspace (not filtering by date for now to debug)
   const records = await db
     .select()
     .from(tokenUsage)
-    .where(
-      and(
-        eq(tokenUsage.workspaceId, workspaceId),
-        gte(tokenUsage.createdAt, startDate)
-      )
-    )
+    .where(eq(tokenUsage.workspaceId, workspaceId))
     .orderBy(desc(tokenUsage.createdAt));
+
+  console.log("getDailyUsage: Found", records.length, "records for workspace", workspaceId);
+  if (records.length > 0) {
+    console.log("First record:", records[0]);
+  }
 
   // Group by date
   const dailyMap = new Map<string, DailyUsage>();
 
   for (const record of records) {
-    const date = record.createdAt!.toISOString().split("T")[0];
+    // Handle both Date objects and timestamps
+    let createdAt: Date;
+    if (record.createdAt instanceof Date) {
+      createdAt = record.createdAt;
+    } else if (typeof record.createdAt === "number") {
+      createdAt = new Date(record.createdAt);
+    } else {
+      createdAt = new Date();
+    }
+    const date = createdAt.toISOString().split("T")[0];
 
     if (!dailyMap.has(date)) {
       dailyMap.set(date, {
@@ -141,30 +151,10 @@ export async function getDailyUsage(
     daily.requestCount += 1;
   }
 
-  // Fill in missing days with zeros
-  const result: DailyUsage[] = [];
-  const current = new Date(startDate);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  console.log("getDailyUsage: Grouped into", dailyMap.size, "days");
 
-  while (current <= today) {
-    const dateStr = current.toISOString().split("T")[0];
-    if (dailyMap.has(dateStr)) {
-      result.push(dailyMap.get(dateStr)!);
-    } else {
-      result.push({
-        date: dateStr,
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
-        costCents: 0,
-        requestCount: 0,
-      });
-    }
-    current.setDate(current.getDate() + 1);
-  }
-
-  return result;
+  // Return only days with data (don't fill in zeros for now)
+  return Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**

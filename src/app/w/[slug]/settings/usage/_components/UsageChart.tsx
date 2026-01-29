@@ -1,12 +1,10 @@
 "use client";
 
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, XAxis } from "recharts";
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-  ChartLegend,
-  ChartLegendContent,
   type ChartConfig,
 } from "@/components/ui/chart";
 import type { DailyUsage } from "@/lib/actions/token-usage";
@@ -18,24 +16,33 @@ interface UsageChartProps {
 const chartConfig = {
   inputTokens: {
     label: "Input Tokens",
-    color: "hsl(262, 83%, 58%)", // Purple
+    color: "var(--chart-1)",
   },
   outputTokens: {
     label: "Output Tokens",
-    color: "hsl(24, 95%, 53%)", // Orange
+    color: "var(--chart-2)",
   },
 } satisfies ChartConfig;
 
 export function UsageChart({ data }: UsageChartProps) {
-  // Filter to only days with data for better visualization
-  const daysWithData = data.filter((d) => d.totalTokens > 0);
+  // Debug: log received data
+  console.log("UsageChart received data:", data);
+  console.log("Days with tokens:", data.filter((d) => d.totalTokens > 0));
 
-  // Check if there's any data
-  const hasData = daysWithData.length > 0;
+  // Filter to only days with data
+  const chartData = data
+    .filter((d) => d.totalTokens > 0)
+    .map((d) => ({
+      date: d.date,
+      inputTokens: d.inputTokens,
+      outputTokens: d.outputTokens,
+    }));
 
-  if (!hasData) {
+  console.log("Filtered chartData:", chartData);
+
+  if (chartData.length === 0) {
     return (
-      <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+      <div className="h-[250px] flex items-center justify-center text-muted-foreground">
         <div className="text-center">
           <p className="text-sm">No usage data yet</p>
           <p className="text-xs mt-1">
@@ -46,55 +53,47 @@ export function UsageChart({ data }: UsageChartProps) {
     );
   }
 
-  // Format data for the chart - show only days with data or last 14 days if there's sparse data
-  const chartData = (daysWithData.length < 5 ? daysWithData : data.slice(-14)).map((d) => ({
-    date: new Date(d.date).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    }),
-    inputTokens: d.inputTokens,
-    outputTokens: d.outputTokens,
-  }));
-
   return (
-    <ChartContainer config={chartConfig} className="h-[300px] w-full">
+    <ChartContainer
+      config={chartConfig}
+      className="aspect-auto h-[250px] w-full"
+    >
       <BarChart
         accessibilityLayer
         data={chartData}
-        margin={{ left: 12, right: 12, top: 12 }}
+        margin={{ left: 12, right: 12 }}
       >
-        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+        <CartesianGrid vertical={false} />
         <XAxis
           dataKey="date"
           tickLine={false}
           axisLine={false}
           tickMargin={8}
-        />
-        <YAxis
-          tickLine={false}
-          axisLine={false}
-          tickMargin={8}
+          minTickGap={32}
           tickFormatter={(value) => {
-            if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
-            if (value >= 1000) return `${(value / 1000).toFixed(0)}K`;
-            return value.toString();
+            const date = new Date(value);
+            return date.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+            });
           }}
         />
         <ChartTooltip
-          cursor={false}
-          content={<ChartTooltipContent indicator="dot" />}
+          content={
+            <ChartTooltipContent
+              className="w-[180px]"
+              labelFormatter={(value) => {
+                return new Date(String(value)).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                });
+              }}
+            />
+          }
         />
-        <ChartLegend content={<ChartLegendContent />} />
-        <Bar
-          dataKey="inputTokens"
-          fill="var(--color-inputTokens)"
-          radius={[4, 4, 0, 0]}
-        />
-        <Bar
-          dataKey="outputTokens"
-          fill="var(--color-outputTokens)"
-          radius={[4, 4, 0, 0]}
-        />
+        <Bar dataKey="inputTokens" fill="var(--color-inputTokens)" radius={4} />
+        <Bar dataKey="outputTokens" fill="var(--color-outputTokens)" radius={4} />
       </BarChart>
     </ChartContainer>
   );
