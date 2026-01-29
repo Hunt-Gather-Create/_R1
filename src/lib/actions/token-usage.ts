@@ -112,11 +112,6 @@ export async function getDailyUsage(
     .where(eq(tokenUsage.workspaceId, workspaceId))
     .orderBy(desc(tokenUsage.createdAt));
 
-  console.log("getDailyUsage: Found", records.length, "records for workspace", workspaceId);
-  if (records.length > 0) {
-    console.log("First record:", records[0]);
-  }
-
   // Group by date
   const dailyMap = new Map<string, DailyUsage>();
 
@@ -151,10 +146,30 @@ export async function getDailyUsage(
     daily.requestCount += 1;
   }
 
-  console.log("getDailyUsage: Grouped into", dailyMap.size, "days");
+  // Fill in missing days with zeros
+  const result: DailyUsage[] = [];
+  const current = new Date(startDate);
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
 
-  // Return only days with data (don't fill in zeros for now)
-  return Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+  while (current <= today) {
+    const dateStr = current.toISOString().split("T")[0];
+    if (dailyMap.has(dateStr)) {
+      result.push(dailyMap.get(dateStr)!);
+    } else {
+      result.push({
+        date: dateStr,
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        costCents: 0,
+        requestCount: 0,
+      });
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  return result;
 }
 
 /**
