@@ -2,8 +2,10 @@
 
 import { useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import { Check, Copy } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, transformCiteTags } from "@/lib/utils";
 
 interface MarkdownContentProps {
   content: string;
@@ -74,10 +76,30 @@ function CodeBlock({ children, className, language }: CodeBlockProps) {
 
 export function MarkdownContent({ content, className }: MarkdownContentProps) {
   return (
-    <div className={cn("prose prose-sm dark:prose-invert max-w-none overflow-x-auto", className)}>
+    <div className={cn("prose prose-sm dark:prose-invert max-w-none overflow-x-auto [&_li>p]:inline [&_li>p]:m-0", className)}>
       <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw]}
         components={{
-          // Handle fenced code blocks (```code```)
+          // Style citation links from web search results
+          a: ({ href, className, children, ...props }) => {
+            const isCitation = className === "citation-link";
+            return (
+              <a
+                href={href}
+                className={cn(
+                  "inline",
+                  isCitation
+                    ? "text-primary/80 hover:text-primary underline decoration-dotted underline-offset-2 hover:decoration-solid transition-colors"
+                    : "text-primary hover:underline"
+                )}
+                {...props}
+              >
+                {children}
+              </a>
+            );
+          },
+                    // Handle fenced code blocks (```code```)
           code: ({ children, className, ...props }) => {
             const match = /language-(\w+)/.exec(className || "");
             const isInline = !match && !className;
@@ -105,7 +127,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
           pre: ({ children }) => <>{children}</>,
         }}
       >
-        {content}
+        {transformCiteTags(content)}
       </ReactMarkdown>
     </div>
   );

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { exportSoulAsMarkdown, createDefaultSoul, buildSoulSystemPrompt } from "./soul-utils";
+import { exportSoulAsMarkdown, createDefaultSoul, buildSoulSystemPrompt } from "./soul-formatters";
 import type { WorkspaceSoul } from "./types";
 
 function createTestSoul(overrides: Partial<WorkspaceSoul> = {}): WorkspaceSoul {

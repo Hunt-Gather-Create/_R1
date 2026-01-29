@@ -4,7 +4,7 @@ import { Plus, Trash2, Pencil, Check, X, Sparkles, Eye, Download } from "lucide-
 import { useState, useEffect } from "react";
 import type { WorkspaceSoul } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { exportSoulAsMarkdown } from "@/lib/soul-utils";
+import { exportSoulAsMarkdown } from "@/lib/soul-formatters";
 
 interface SoulPreviewProps {
   soul: WorkspaceSoul;

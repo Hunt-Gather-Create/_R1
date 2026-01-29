@@ -3,16 +3,10 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { Bot, User, Sparkles } from "lucide-react";
-import {
-  CollapsibleFileContent,
-  parseTextWithFileAttachments,
-} from "@/components/ai-elements/CollapsibleFileContent";
+import { Sparkles } from "lucide-react";
 import { ChatLoadingIndicator } from "@/components/ai-elements/ChatMessageBubble";
-import { UserFileAttachment } from "@/components/ai-elements/UserFileAttachment";
+import { ChatMessageItem } from "@/components/ai-elements/ChatMessageItem";
 import { prepareFilesForSubmission } from "@/lib/chat/file-utils";
-import ReactMarkdown from "react-markdown";
-import { cn } from "@/lib/utils";
 import {
   PromptInput,
   PromptInputTextarea,
@@ -123,99 +117,19 @@ export function ChatPanel({ onSuggestion }: ChatPanelProps) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
         {displayMessages.map((message) => (
-          <div
+          <ChatMessageItem
             key={message.id}
-            className={cn(
-              "flex gap-3",
-              message.role === "user" ? "flex-row-reverse" : "flex-row"
-            )}
-          >
-            <div
-              className={cn(
-                "flex items-center justify-center w-7 h-7 rounded-full shrink-0",
-                message.role === "user"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted"
-              )}
-            >
-              {message.role === "user" ? (
-                <User className="w-4 h-4" />
-              ) : (
-                <Bot className="w-4 h-4" />
-              )}
-            </div>
-            <div
-              className={cn(
-                "flex flex-col gap-1 max-w-[85%]",
-                message.role === "user" ? "items-end" : "items-start"
-              )}
-            >
+            message={message}
+            renderToolCall={(part, index) => (
               <div
-                className={cn(
-                  "rounded-lg px-3 py-2 text-sm",
-                  message.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted"
-                )}
+                key={index}
+                className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
               >
-                {message.parts.map((part, index) => {
-                  if (part.type === "text") {
-                    // Check if this is a user message with embedded file content
-                    if (message.role === "user" && part.text.includes("\n\n--- ")) {
-                      const { mainText, filesSections } = parseTextWithFileAttachments(part.text);
-                      return (
-                        <div key={index}>
-                          {mainText && (
-                            <div className="prose prose-sm dark:prose-invert max-w-none">
-                              <ReactMarkdown>{mainText}</ReactMarkdown>
-                            </div>
-                          )}
-                          {filesSections.map((file, fileIndex) => (
-                            <CollapsibleFileContent
-                              key={`file-${fileIndex}`}
-                              filename={file.filename}
-                              content={file.content}
-                            />
-                          ))}
-                        </div>
-                      );
-                    }
-                    return (
-                      <div
-                        key={index}
-                        className="prose prose-sm dark:prose-invert max-w-none"
-                      >
-                        <ReactMarkdown>{part.text}</ReactMarkdown>
-                      </div>
-                    );
-                  }
-                  // Handle user-attached files
-                  if (part.type === "file") {
-                    const filePart = part as unknown as {
-                      type: "file";
-                      mediaType: string;
-                      url: string;
-                      filename?: string;
-                    };
-                    return <UserFileAttachment key={index} part={filePart} />;
-                  }
-                  // Tool calls show a confirmation message
-                  if (part.type?.startsWith("tool-")) {
-                    return (
-                      <div
-                        key={index}
-                        className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
-                      >
-                        <Sparkles className="w-3 h-3" />
-                        <span>Form populated with suggestion</span>
-                      </div>
-                    );
-                  }
-                  return null;
-                })}
+                <Sparkles className="w-3 h-3" />
+                <span>Form populated with suggestion</span>
               </div>
-            </div>
-          </div>
+            )}
+          />
         ))}
         {isLoading && <ChatLoadingIndicator />}
         <div ref={messagesEndRef} />

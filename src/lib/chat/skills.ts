@@ -37,7 +37,11 @@ export interface SkillManifest {
 const DEFAULT_SKILL_MANIFEST: SkillManifest = {
   common: ["attach-content"],
   software: [],
-  marketing: ["aio-geo-optimizer"],
+  marketing: [
+    "aio-geo-optimizer",
+    "marketing/video-content-strategy",
+    "marketing/earned-media-strategy",
+  ],
 };
 
 /**

@@ -8,9 +8,8 @@ import {
   ZoomOut,
   RotateCw,
   File,
-  FileText,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, stripCiteTags } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +23,7 @@ import {
   formatFileSize,
 } from "@/lib/storage/file-validation";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { AttachmentWithUrl } from "@/lib/types";
 
 function isMarkdownType(mimeType: string, filename: string): boolean {
@@ -211,7 +211,9 @@ export function AttachmentPreview({
               ) : (
                 <div className="max-w-4xl mx-auto bg-background rounded-lg border border-border p-8">
                   <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <ReactMarkdown>{markdownContent || ""}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {stripCiteTags(markdownContent || "")}
+                    </ReactMarkdown>
                   </div>
                 </div>
               )}

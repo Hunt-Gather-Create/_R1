@@ -6,7 +6,7 @@ import { SoulEmptyState } from "./_components/SoulEmptyState";
 import { SoulChat } from "./_components/SoulChat";
 import { SoulPreview } from "./_components/SoulPreview";
 import { getSoul, updateSoul } from "@/lib/actions/soul";
-import { createDefaultSoul } from "@/lib/soul-utils";
+import { createDefaultSoul } from "@/lib/soul-formatters";
 import type { WorkspaceSoul } from "@/lib/types";
 
 type ViewMode = "view" | "edit";
