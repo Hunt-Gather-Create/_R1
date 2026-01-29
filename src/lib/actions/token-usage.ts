@@ -97,6 +97,14 @@ export async function getUsageSummary(workspaceId: string): Promise<UsageSummary
 /**
  * Get daily usage for a workspace over the last N days
  */
+// Helper to format date as YYYY-MM-DD in local timezone
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export async function getDailyUsage(
   workspaceId: string,
   days: number = 30
@@ -105,14 +113,14 @@ export async function getDailyUsage(
   startDate.setDate(startDate.getDate() - days);
   startDate.setHours(0, 0, 0, 0);
 
-  // Get all records for this workspace (not filtering by date for now to debug)
+  // Get all records for this workspace
   const records = await db
     .select()
     .from(tokenUsage)
     .where(eq(tokenUsage.workspaceId, workspaceId))
     .orderBy(desc(tokenUsage.createdAt));
 
-  // Group by date
+  // Group by date (using local timezone)
   const dailyMap = new Map<string, DailyUsage>();
 
   for (const record of records) {
@@ -125,7 +133,7 @@ export async function getDailyUsage(
     } else {
       createdAt = new Date();
     }
-    const date = createdAt.toISOString().split("T")[0];
+    const date = formatLocalDate(createdAt);
 
     if (!dailyMap.has(date)) {
       dailyMap.set(date, {
@@ -146,14 +154,14 @@ export async function getDailyUsage(
     daily.requestCount += 1;
   }
 
-  // Fill in missing days with zeros
+  // Fill in missing days with zeros (using local timezone)
   const result: DailyUsage[] = [];
   const current = new Date(startDate);
   const today = new Date();
   today.setHours(23, 59, 59, 999);
 
   while (current <= today) {
-    const dateStr = current.toISOString().split("T")[0];
+    const dateStr = formatLocalDate(current);
     if (dailyMap.has(dateStr)) {
       result.push(dailyMap.get(dateStr)!);
     } else {
