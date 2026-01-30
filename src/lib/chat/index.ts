@@ -198,7 +198,7 @@ function addCacheControlToMessage(
           providerOptions: { anthropic: cacheControl },
         },
       ],
-    };
+    } as ModelMessage;
   }
 
   // If content is an array, add cache control to the last part
@@ -316,7 +316,7 @@ export async function createChatResponse(
 
   // Track token usage asynchronously (don't block the response)
   if (config.workspaceId) {
-    result.totalUsage
+    Promise.resolve(result.totalUsage)
       .then((usage) => {
         // Cache info is in inputTokenDetails
         const details = (usage as typeof usage & {

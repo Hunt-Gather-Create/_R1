@@ -15,6 +15,7 @@ import type {
   workspaceChats,
   workspaceChatMessages,
   workspaceChatAttachments,
+  brands,
 } from "./db/schema";
 import type { Status, Priority } from "./design-tokens";
 
@@ -35,6 +36,7 @@ export type WorkspaceMcpServer = typeof workspaceMcpServers.$inferSelect;
 export type WorkspaceChat = typeof workspaceChats.$inferSelect;
 export type WorkspaceChatMessage = typeof workspaceChatMessages.$inferSelect;
 export type WorkspaceChatAttachment = typeof workspaceChatAttachments.$inferSelect;
+export type Brand = typeof brands.$inferSelect;
 
 // Attachment with signed URL for display
 export type AttachmentWithUrl = Attachment & { url: string };
@@ -187,3 +189,25 @@ export interface WorkspaceSoul {
   createdAt: string;
   updatedAt: string;
 }
+
+// Brand search result - for disambiguation during brand research
+export interface BrandSearchResult {
+  name: string;
+  description: string;
+  websiteUrl: string;
+  logoUrl?: string;
+}
+
+// Input type for creating/updating brands
+export type CreateBrandInput = {
+  name: string;
+  tagline?: string;
+  description?: string;
+  logoUrl?: string;
+  websiteUrl?: string;
+  primaryColor?: string;
+  secondaryColor?: string;
+  industry?: string;
+};
+
+export type UpdateBrandInput = Partial<CreateBrandInput>;

@@ -16,6 +16,26 @@ export const users = sqliteTable("users", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
 
+// Brands - user-owned brand identities (reusable across workspaces)
+export const brands = sqliteTable("brands", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  tagline: text("tagline"),
+  description: text("description"),
+  logoUrl: text("logo_url"), // Original URL (kept for reference)
+  logoStorageKey: text("logo_storage_key"), // R2 storage key for persisted logo
+  logoBackground: text("logo_background"), // "light" | "dark" - recommended background
+  websiteUrl: text("website_url"),
+  primaryColor: text("primary_color"),
+  secondaryColor: text("secondary_color"),
+  industry: text("industry"),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
 // Workspaces - renamed from boards, adds owner
 export const workspaces = sqliteTable("workspaces", {
   id: text("id").primaryKey(),
@@ -25,6 +45,8 @@ export const workspaces = sqliteTable("workspaces", {
   issueCounter: integer("issue_counter").notNull().default(0),
   purpose: text("purpose").notNull().default("software"), // "software" | "marketing"
   soul: text("soul"), // JSON-serialized WorkspaceSoul
+  brandId: text("brand_id").references(() => brands.id, { onDelete: "set null" }),
+  primaryColor: text("primary_color"), // Copied from brand for UI theming
   ownerId: text("owner_id")
     .notNull()
     .references(() => users.id),

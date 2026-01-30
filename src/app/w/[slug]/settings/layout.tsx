@@ -2,7 +2,7 @@
 
 import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Building2, Columns3, Tag, Users, Sparkles, Plug, Heart, BarChart3 } from "lucide-react";
+import { ArrowLeft, Building2, Columns3, Tag, Users, Sparkles, Plug, Heart, BarChart3, Palette } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SettingsProvider, useSettingsContext } from "./context";
 
@@ -34,8 +34,10 @@ function SettingsSidebar() {
   const params = useParams<{ slug: string }>();
   const pathname = usePathname();
   const router = useRouter();
+  const { workspace } = useSettingsContext();
 
   const baseSettingsPath = `/w/${params.slug}/settings`;
+  const isMarketingWorkspace = workspace?.purpose === "marketing";
 
   return (
     <aside className="w-60 border-r border-border bg-sidebar flex flex-col">
@@ -49,16 +51,17 @@ function SettingsSidebar() {
         </button>
       </div>
 
-      <nav className="flex-1 p-4">
-        <div className="mb-4">
+      <nav className="flex-1 p-4 space-y-6">
+        {/* Workspace Section */}
+        <div>
           <h3 className="px-3 mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            Administration
+            Workspace
           </h3>
           <div className="space-y-1">
             <NavItem
               href={baseSettingsPath}
               icon={<Building2 className="w-4 h-4" />}
-              label="Workspace"
+              label="General"
               isActive={pathname === baseSettingsPath}
             />
             <NavItem
@@ -73,6 +76,15 @@ function SettingsSidebar() {
               label="Columns"
               isActive={pathname === `${baseSettingsPath}/columns`}
             />
+          </div>
+        </div>
+
+        {/* Administration Section */}
+        <div>
+          <h3 className="px-3 mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            Administration
+          </h3>
+          <div className="space-y-1">
             <NavItem
               href={`${baseSettingsPath}/members`}
               icon={<Users className="w-4 h-4" />}
@@ -91,6 +103,14 @@ function SettingsSidebar() {
               label="Persona"
               isActive={pathname === `${baseSettingsPath}/soul`}
             />
+            {isMarketingWorkspace && (
+              <NavItem
+                href={`${baseSettingsPath}/brand`}
+                icon={<Palette className="w-4 h-4" />}
+                label="Brand"
+                isActive={pathname === `${baseSettingsPath}/brand`}
+              />
+            )}
             <NavItem
               href={`${baseSettingsPath}/integrations`}
               icon={<Plug className="w-4 h-4" />}

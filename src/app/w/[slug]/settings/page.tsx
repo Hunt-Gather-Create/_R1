@@ -28,7 +28,7 @@ function SettingsRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-8 px-6 py-4 border-b border-border last:border-b-0">
-      <div className="flex-shrink-0 min-w-[140px]">
+      <div className="shrink-0 min-w-35">
         <div className="text-sm font-medium text-foreground">{label}</div>
         {description && (
           <div className="text-xs text-muted-foreground mt-0.5">
