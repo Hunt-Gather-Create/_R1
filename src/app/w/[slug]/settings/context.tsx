@@ -15,6 +15,7 @@ import {
   useWorkspaceColumns,
   useWorkspaceSkills,
   useWorkspaceMcpServers,
+  useWorkspaceBrand,
   useInvalidateSettings,
 } from "@/lib/hooks";
 import { getCurrentUserId } from "@/lib/auth";
@@ -27,6 +28,7 @@ import type {
   WorkspaceSkill,
 } from "@/lib/types";
 import type { McpServerWithStatus } from "@/lib/actions/integrations";
+import type { BrandWithLogoUrl } from "@/lib/actions/brand";
 
 interface SettingsContextValue {
   // Workspace data
@@ -36,6 +38,7 @@ interface SettingsContextValue {
   columns: Column[];
   skills: WorkspaceSkill[];
   mcpServers: McpServerWithStatus[];
+  brand: BrandWithLogoUrl | null;
 
   // Loading states
   isLoading: boolean;
@@ -54,6 +57,7 @@ interface SettingsContextValue {
   refreshColumns: () => Promise<void>;
   refreshSkills: () => Promise<void>;
   refreshMcpServers: () => Promise<void>;
+  refreshBrand: () => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -115,6 +119,12 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     refetch: refetchMcpServers,
   } = useWorkspaceMcpServers(workspace?.id ?? null);
 
+  const {
+    data: brand,
+    isLoading: isBrandLoading,
+    refetch: refetchBrand,
+  } = useWorkspaceBrand(workspace?.id ?? null);
+
   // Load current user ID
   useEffect(() => {
     getCurrentUserId().then(setCurrentUserId);
@@ -127,7 +137,8 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     isLabelsLoading ||
     isColumnsLoading ||
     isSkillsLoading ||
-    isMcpServersLoading;
+    isMcpServersLoading ||
+    isBrandLoading;
   const error = workspaceError
     ? workspaceError instanceof Error
       ? workspaceError.message
@@ -182,6 +193,13 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     }
   };
 
+  const refreshBrand = async () => {
+    if (workspace) {
+      invalidate.invalidateBrand(workspace.id);
+      await refetchBrand();
+    }
+  };
+
   const value: SettingsContextValue = {
     workspace: workspace ?? null,
     members,
@@ -189,6 +207,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     columns,
     skills,
     mcpServers,
+    brand: brand ?? null,
     isLoading,
     error,
     currentUserId,
@@ -201,6 +220,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     refreshColumns,
     refreshSkills,
     refreshMcpServers,
+    refreshBrand,
   };
 
   return (

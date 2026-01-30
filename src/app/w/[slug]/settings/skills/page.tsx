@@ -653,7 +653,7 @@ Your markdown content here...`}
 }
 
 export default function SkillsSettingsPage() {
-  const { workspace, skills, isAdmin, refreshSkills } = useSettingsContext();
+  const { workspace, skills, isAdmin, refreshSkills, brand } = useSettingsContext();
 
   const handleEdit = async (
     skill: WorkspaceSkill,
@@ -689,7 +689,7 @@ export default function SkillsSettingsPage() {
   };
 
   return (
-    <GradientPage>
+    <GradientPage color={brand?.primaryColor ?? undefined}>
       <PageHeader
         label="Settings"
         title="AI Skills"

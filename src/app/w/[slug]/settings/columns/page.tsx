@@ -31,7 +31,7 @@ import { AddColumnForm } from "./AddColumnForm";
 import type { Column } from "@/lib/types";
 
 export default function ColumnsSettingsPage() {
-  const { workspace, columns, isAdmin, refreshColumns } = useSettingsContext();
+  const { workspace, columns, isAdmin, refreshColumns, brand } = useSettingsContext();
   const [issueCounts, setIssueCounts] = useState<Record<string, number>>({});
 
   const regularColumns = columns.filter((c) => !c.isSystem);
@@ -95,7 +95,7 @@ export default function ColumnsSettingsPage() {
   };
 
   return (
-    <GradientPage>
+    <GradientPage color={brand?.primaryColor ?? undefined}>
       <PageHeader
         label="Settings"
         title="Columns"

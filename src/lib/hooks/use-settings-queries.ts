@@ -10,6 +10,7 @@ import { getWorkspaceLabels } from "@/lib/actions/board";
 import { getAllWorkspaceColumns } from "@/lib/actions/columns";
 import { getWorkspaceSkills } from "@/lib/actions/skills";
 import { getWorkspaceMcpServers } from "@/lib/actions/integrations";
+import { getWorkspaceBrand } from "@/lib/actions/brand";
 
 export function useWorkspace(slug: string) {
   return useQuery({
@@ -70,6 +71,16 @@ export function useWorkspaceMcpServers(workspaceId: string | null) {
   });
 }
 
+export function useWorkspaceBrand(workspaceId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.settings.brand(workspaceId ?? ""),
+    queryFn: () => getWorkspaceBrand(workspaceId!),
+    enabled: !!workspaceId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes
+  });
+}
+
 // Hook for invalidating settings queries
 export function useInvalidateSettings() {
   const queryClient = useQueryClient();
@@ -94,6 +105,10 @@ export function useInvalidateSettings() {
     invalidateMcpServers: (workspaceId: string) =>
       queryClient.invalidateQueries({
         queryKey: queryKeys.settings.mcpServers(workspaceId),
+      }),
+    invalidateBrand: (workspaceId: string) =>
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.settings.brand(workspaceId),
       }),
   };
 }

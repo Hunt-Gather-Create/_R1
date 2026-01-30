@@ -25,7 +25,7 @@ const ROLE_OPTIONS: {
 ];
 
 export default function MembersPage() {
-  const { workspace, members, currentUserId, isAdmin, refreshMembers } =
+  const { workspace, members, currentUserId, isAdmin, refreshMembers, brand } =
     useSettingsContext();
 
   // Invite form state
@@ -93,7 +93,7 @@ export default function MembersPage() {
   };
 
   return (
-    <GradientPage>
+    <GradientPage color={brand?.primaryColor ?? undefined}>
       <PageHeader
         label="Settings"
         title="Members"

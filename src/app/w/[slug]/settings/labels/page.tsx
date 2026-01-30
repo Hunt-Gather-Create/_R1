@@ -215,7 +215,7 @@ function AddLabelForm({
 }
 
 export default function LabelsSettingsPage() {
-  const { workspace, labels, isAdmin, refreshLabels } = useSettingsContext();
+  const { workspace, labels, isAdmin, refreshLabels, brand } = useSettingsContext();
 
   const handleEdit = async (label: Label, name: string, color: string) => {
     await updateLabel(label.id, { name, color });
@@ -237,7 +237,7 @@ export default function LabelsSettingsPage() {
   };
 
   return (
-    <GradientPage>
+    <GradientPage color={brand?.primaryColor ?? undefined}>
       <PageHeader
         label="Settings"
         title="Labels"

@@ -46,7 +46,7 @@ function SettingsRow({
 export default function WorkspaceSettingsPage() {
   const params = useParams<{ slug: string }>();
   const router = useRouter();
-  const { workspace, isAdmin, isOwner, refreshWorkspace } =
+  const { workspace, isAdmin, isOwner, refreshWorkspace, brand } =
     useSettingsContext();
 
   // Form state - initialized from workspace
@@ -149,7 +149,7 @@ export default function WorkspaceSettingsPage() {
   };
 
   return (
-    <GradientPage>
+    <GradientPage color={brand?.primaryColor ?? undefined}>
       <PageHeader
         label="Settings"
         title={workspace?.name ?? "Workspace"}

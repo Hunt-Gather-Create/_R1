@@ -14,7 +14,7 @@ import type { WorkspaceSoul } from "@/lib/types";
 type ViewMode = "view" | "edit";
 
 export default function SoulSettingsPage() {
-  const { workspace, isAdmin } = useSettingsContext();
+  const { workspace, isAdmin, brand } = useSettingsContext();
   const [soul, setSoul] = useState<WorkspaceSoul | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -80,7 +80,7 @@ export default function SoulSettingsPage() {
 
   if (!workspace || isLoading) {
     return (
-      <GradientPage>
+      <GradientPage color={brand?.primaryColor ?? undefined}>
         <PageHeader
           label="Settings"
           title="Persona"
@@ -100,7 +100,7 @@ export default function SoulSettingsPage() {
 
   if (!isAdmin) {
     return (
-      <GradientPage>
+      <GradientPage color={brand?.primaryColor ?? undefined}>
         <PageHeader
           label="Settings"
           title="Persona"
@@ -127,7 +127,7 @@ export default function SoulSettingsPage() {
   // View mode: show form centered
   if (viewMode === "view") {
     return (
-      <GradientPage>
+      <GradientPage color={brand?.primaryColor ?? undefined}>
         <PageHeader
           label="Settings"
           title="Persona"

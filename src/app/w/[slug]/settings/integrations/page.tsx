@@ -7,10 +7,10 @@ import { GradientPage } from "@/components/ui/gradient-page";
 import { PageHeader } from "@/components/ui/page-header";
 
 export default function IntegrationsSettingsPage() {
-  const { mcpServers } = useSettingsContext();
+  const { mcpServers, brand } = useSettingsContext();
 
   return (
-    <GradientPage>
+    <GradientPage color={brand?.primaryColor ?? undefined}>
       <PageHeader
         label="Settings"
         title="Integrations"

@@ -15,7 +15,7 @@ import {
 } from "@/lib/actions/token-usage";
 
 export default function UsageSettingsPage() {
-  const { workspace } = useSettingsContext();
+  const { workspace, brand } = useSettingsContext();
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [dailyUsage, setDailyUsage] = useState<DailyUsage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -57,7 +57,7 @@ export default function UsageSettingsPage() {
 
   if (isLoading) {
     return (
-      <GradientPage actions={timeRangeSelect}>
+      <GradientPage color={brand?.primaryColor ?? undefined} actions={timeRangeSelect}>
         <PageHeader
           label="Settings"
           title="Usage"
@@ -76,7 +76,7 @@ export default function UsageSettingsPage() {
   }
 
   return (
-    <GradientPage actions={timeRangeSelect}>
+    <GradientPage color={brand?.primaryColor ?? undefined} actions={timeRangeSelect}>
       <PageHeader
         label="Settings"
         title="Usage"
