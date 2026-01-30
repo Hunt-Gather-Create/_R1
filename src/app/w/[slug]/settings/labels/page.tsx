@@ -5,6 +5,8 @@ import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
 import { createLabel, updateLabel, deleteLabel } from "@/lib/actions/board";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { GradientPage } from "@/components/ui/gradient-page";
+import { PageHeader } from "@/components/ui/page-header";
 import { useSettingsContext } from "../context";
 import { LABEL_COLORS } from "@/lib/design-tokens";
 import type { Label } from "@/lib/types";
@@ -235,42 +237,44 @@ export default function LabelsSettingsPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-foreground">Labels</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage labels for categorizing issues in this workspace
-        </p>
-      </div>
+    <GradientPage>
+      <PageHeader
+        label="Settings"
+        title="Labels"
+        subtitle="Manage labels for categorizing issues in this workspace"
+      />
 
-      {/* Add Label Button/Form */}
-      {isAdmin && workspace && (
-        <div className="mb-6">
-          <AddLabelForm workspaceId={workspace.id} onCreated={refreshLabels} />
-        </div>
-      )}
+      <section className="container">
+        <div className="max-w-2xl">
+          {/* Add Label Button/Form */}
+          {isAdmin && workspace && (
+            <div className="mb-6">
+              <AddLabelForm workspaceId={workspace.id} onCreated={refreshLabels} />
+            </div>
+          )}
 
-      {/* Labels List */}
-      <div className="rounded-lg border border-border bg-card">
-        {labels.length === 0 ? (
-          <div className="px-6 py-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              No labels yet. {isAdmin ? "Create one to get started." : ""}
-            </p>
+          {/* Labels List */}
+          <div className="rounded-lg border border-border bg-card">
+            {labels.length === 0 ? (
+              <div className="px-6 py-8 text-center">
+                <p className="text-sm text-muted-foreground">
+                  No labels yet. {isAdmin ? "Create one to get started." : ""}
+                </p>
+              </div>
+            ) : (
+              labels.map((label) => (
+                <LabelRow
+                  key={label.id}
+                  label={label}
+                  isAdmin={isAdmin}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                />
+              ))
+            )}
           </div>
-        ) : (
-          labels.map((label) => (
-            <LabelRow
-              key={label.id}
-              label={label}
-              isAdmin={isAdmin}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-            />
-          ))
-        )}
-      </div>
-    </div>
+        </div>
+      </section>
+    </GradientPage>
   );
 }

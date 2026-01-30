@@ -23,6 +23,8 @@ import {
 } from "@/lib/actions/skills";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { GradientPage } from "@/components/ui/gradient-page";
+import { PageHeader } from "@/components/ui/page-header";
 import { useSettingsContext } from "../context";
 import type { WorkspaceSkill, SkillAsset } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -687,17 +689,17 @@ export default function SkillsSettingsPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-foreground">AI Skills</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Import custom skills to extend AI assistant capabilities
-        </p>
-      </div>
+    <GradientPage>
+      <PageHeader
+        label="Settings"
+        title="AI Skills"
+        subtitle="Import custom skills to extend AI assistant capabilities"
+      />
 
-      {/* Help Section */}
-      <div className="mb-6 p-4 bg-muted/50 rounded-lg border border-border">
+      <section className="container">
+        <div className="max-w-2xl">
+          {/* Help Section */}
+          <div className="mb-6 p-4 bg-muted/50 rounded-lg border border-border">
         <div className="flex gap-2">
           <Info className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
           <div className="text-sm text-muted-foreground">
@@ -751,6 +753,8 @@ export default function SkillsSettingsPage() {
           ))
         )}
       </div>
-    </div>
+        </div>
+      </section>
+    </GradientPage>
   );
 }

@@ -5,6 +5,8 @@ import { useSettingsContext } from "../context";
 import { SoulEmptyState } from "./_components/SoulEmptyState";
 import { SoulChat } from "./_components/SoulChat";
 import { SoulPreview } from "./_components/SoulPreview";
+import { GradientPage } from "@/components/ui/gradient-page";
+import { PageHeader } from "@/components/ui/page-header";
 import { getSoul, updateSoul } from "@/lib/actions/soul";
 import { createDefaultSoul } from "@/lib/soul-formatters";
 import type { WorkspaceSoul } from "@/lib/types";
@@ -78,25 +80,40 @@ export default function SoulSettingsPage() {
 
   if (!workspace || isLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="flex flex-col items-center gap-2">
-          <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        </div>
-      </div>
+      <GradientPage>
+        <PageHeader
+          label="Settings"
+          title="Persona"
+          subtitle="Configure the AI assistant's personality and behavior"
+        />
+        <section className="container">
+          <div className="flex items-center justify-center h-64">
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-muted-foreground">Loading...</p>
+            </div>
+          </div>
+        </section>
+      </GradientPage>
     );
   }
 
   if (!isAdmin) {
     return (
-      <div className="p-8">
-        <div className="max-w-2xl">
-          <h1 className="text-2xl font-semibold text-foreground mb-2">Persona</h1>
-          <p className="text-muted-foreground">
-            You need admin access to configure the workspace AI persona.
-          </p>
-        </div>
-      </div>
+      <GradientPage>
+        <PageHeader
+          label="Settings"
+          title="Persona"
+          subtitle="Configure the AI assistant's personality and behavior"
+        />
+        <section className="container">
+          <div className="max-w-2xl">
+            <p className="text-muted-foreground">
+              You need admin access to configure the workspace AI persona.
+            </p>
+          </div>
+        </section>
+      </GradientPage>
     );
   }
 
@@ -112,18 +129,25 @@ export default function SoulSettingsPage() {
   // View mode: show form centered
   if (viewMode === "view") {
     return (
-      <div className="h-screen overflow-auto flex justify-center p-8">
-        <div className="w-full max-w-2xl">
-          <SoulPreview
-            soul={soul}
-            onSoulChange={handleSoulChange}
-            onSave={handleSave}
-            isSaving={isSaving}
-            mode="view"
-            onEditWithAI={handleEditWithAI}
-          />
-        </div>
-      </div>
+      <GradientPage>
+        <PageHeader
+          label="Settings"
+          title="Persona"
+          subtitle="Configure the AI assistant's personality and behavior"
+        />
+        <section className="container">
+          <div className="max-w-2xl">
+            <SoulPreview
+              soul={soul}
+              onSoulChange={handleSoulChange}
+              onSave={handleSave}
+              isSaving={isSaving}
+              mode="view"
+              onEditWithAI={handleEditWithAI}
+            />
+          </div>
+        </section>
+      </GradientPage>
     );
   }
 

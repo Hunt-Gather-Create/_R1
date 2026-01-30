@@ -9,6 +9,8 @@ import {
 } from "@/lib/actions/workspace";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { GradientPage } from "@/components/ui/gradient-page";
+import { PageHeader } from "@/components/ui/page-header";
 import { useSettingsContext } from "../context";
 import type { WorkspaceRole } from "@/lib/types";
 
@@ -91,17 +93,17 @@ export default function MembersPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto p-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-foreground">Members</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage who has access to {workspace?.name}
-        </p>
-      </div>
+    <GradientPage>
+      <PageHeader
+        label="Settings"
+        title="Members"
+        subtitle={`Manage who has access to ${workspace?.name ?? "this workspace"}`}
+      />
 
-      {/* Invite Form (admin only) */}
-      {isAdmin && (
+      <section className="container">
+        <div className="max-w-3xl">
+          {/* Invite Form (admin only) */}
+          {isAdmin && (
         <div className="mb-8 p-6 bg-card rounded-lg border border-border">
           <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
             <UserPlus className="w-5 h-5" />
@@ -249,6 +251,8 @@ export default function MembersPage() {
           })}
         </div>
       </div>
-    </div>
+        </div>
+      </section>
+    </GradientPage>
   );
 }

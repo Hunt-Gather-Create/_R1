@@ -10,6 +10,8 @@ import {
 } from "@/lib/actions/workspace";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { GradientPage } from "@/components/ui/gradient-page";
+import { PageHeader } from "@/components/ui/page-header";
 import { useSettingsContext } from "./context";
 import {
   PURPOSE_CONFIG,
@@ -147,17 +149,17 @@ export default function WorkspaceSettingsPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-foreground">Workspace</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage your workspace settings
-        </p>
-      </div>
+    <GradientPage>
+      <PageHeader
+        label="Settings"
+        title={workspace?.name ?? "Workspace"}
+        subtitle="Manage your workspace settings"
+      />
 
-      {/* Main Settings Card */}
-      <div className="rounded-lg border border-border bg-card mb-8">
+      <section className="container">
+        {/* Main Settings Card */}
+        <div className="max-w-2xl">
+          <div className="rounded-lg border border-border bg-card mb-8">
         <SettingsRow label="Icon">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-primary rounded flex items-center justify-center">
@@ -270,6 +272,8 @@ export default function WorkspaceSettingsPage() {
           </div>
         </>
       )}
-    </div>
+        </div>
+      </section>
+    </GradientPage>
   );
 }
