@@ -84,23 +84,21 @@ export default function UsageSettingsPage() {
       />
 
       <section className="container">
-        <div className="max-w-4xl mx-auto">
-          {/* Summary Cards */}
-          {summary && <UsageSummaryCards summary={summary} />}
+        {/* Summary Cards */}
+        {summary && <UsageSummaryCards summary={summary} />}
 
-          {/* Usage Chart */}
-          <div className="mb-8">
-            <div className="rounded-lg border border-border bg-card p-6">
-              <h2 className="text-lg font-semibold text-foreground mb-4">
-                Token Usage Over Time
-              </h2>
-              <UsageChart data={dailyUsage} />
-            </div>
+        {/* Usage Chart */}
+        <div className="mb-8">
+          <div className="rounded-lg border border-border bg-card p-6">
+            <h2 className="text-lg font-semibold text-foreground mb-4">
+              Token Usage Over Time
+            </h2>
+            <UsageChart data={dailyUsage} />
           </div>
-
-          {/* Breakdown Tables */}
-          {summary && <UsageBreakdown summary={summary} />}
         </div>
+
+        {/* Breakdown Tables */}
+        {summary && <UsageBreakdown summary={summary} />}
       </section>
     </GradientPage>
   );

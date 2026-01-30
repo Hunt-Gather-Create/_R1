@@ -17,25 +17,23 @@ export default function IntegrationsSettingsPage() {
         subtitle="Connect external tools to enhance AI assistant capabilities"
       />
 
-      <section className="container">
-        <div className="max-w-2xl mx-auto space-y-8">
-          {/* Enabled Integrations */}
-          {mcpServers.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold text-foreground mb-4">
-                Enabled Integrations
-              </h2>
-              <div className="rounded-lg border border-border bg-card">
-                {mcpServers.map((server) => (
-                  <IntegrationRow key={server.key} server={server} />
-                ))}
-              </div>
+      <section className="container space-y-8">
+        {/* Enabled Integrations */}
+        {mcpServers.length > 0 && (
+          <div>
+            <h2 className="text-lg font-semibold text-foreground mb-4">
+              Enabled Integrations
+            </h2>
+            <div className="rounded-lg border border-border bg-card">
+              {mcpServers.map((server) => (
+                <IntegrationRow key={server.key} server={server} />
+              ))}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Server Search */}
-          <ServerSearch />
-        </div>
+        {/* Server Search */}
+        <ServerSearch />
       </section>
     </GradientPage>
   );

@@ -107,11 +107,9 @@ export default function SoulSettingsPage() {
           subtitle="Configure the AI assistant's personality and behavior"
         />
         <section className="container">
-          <div className="max-w-2xl mx-auto">
-            <p className="text-muted-foreground">
-              You need admin access to configure the workspace AI persona.
-            </p>
-          </div>
+          <p className="text-muted-foreground">
+            You need admin access to configure the workspace AI persona.
+          </p>
         </section>
       </GradientPage>
     );
@@ -136,16 +134,14 @@ export default function SoulSettingsPage() {
           subtitle="Configure the AI assistant's personality and behavior"
         />
         <section className="container">
-          <div className="max-w-2xl mx-auto">
-            <SoulPreview
-              soul={soul}
-              onSoulChange={handleSoulChange}
-              onSave={handleSave}
-              isSaving={isSaving}
-              mode="view"
-              onEditWithAI={handleEditWithAI}
-            />
-          </div>
+          <SoulPreview
+            soul={soul}
+            onSoulChange={handleSoulChange}
+            onSave={handleSave}
+            isSaving={isSaving}
+            mode="view"
+            onEditWithAI={handleEditWithAI}
+          />
         </section>
       </GradientPage>
     );

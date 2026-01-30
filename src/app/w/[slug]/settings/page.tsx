@@ -158,9 +158,8 @@ export default function WorkspaceSettingsPage() {
 
       <section className="container">
         {/* Main Settings Card */}
-        <div className="max-w-2xl mx-auto">
-          <div className="rounded-lg border border-border bg-card mb-8">
-        <SettingsRow label="Icon">
+        <div className="rounded-lg border border-border bg-card mb-8">
+          <SettingsRow label="Icon">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-primary rounded flex items-center justify-center">
               <Layers className="w-5 h-5 text-primary-foreground" />
@@ -272,7 +271,6 @@ export default function WorkspaceSettingsPage() {
           </div>
         </>
       )}
-        </div>
       </section>
     </GradientPage>
   );

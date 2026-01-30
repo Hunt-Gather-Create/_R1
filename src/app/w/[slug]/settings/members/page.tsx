@@ -101,60 +101,59 @@ export default function MembersPage() {
       />
 
       <section className="container">
-        <div className="max-w-3xl mx-auto">
-          {/* Invite Form (admin only) */}
-          {isAdmin && (
-        <div className="mb-8 p-6 bg-card rounded-lg border border-border">
-          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-            <UserPlus className="w-5 h-5" />
-            Invite Member
-          </h2>
-          <form onSubmit={handleInvite} className="space-y-4">
-            <div className="flex gap-4">
-              <Input
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="Email address"
-                disabled={isInviting}
-                className="flex-1"
-              />
-              <select
-                value={inviteRole}
-                onChange={(e) => setInviteRole(e.target.value as WorkspaceRole)}
-                className="px-3 py-2 bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                disabled={isInviting}
-              >
-                {ROLE_OPTIONS.map((role) => (
-                  <option key={role.value} value={role.value}>
-                    {role.label}
-                  </option>
-                ))}
-              </select>
-              <Button
-                type="submit"
-                disabled={!inviteEmail.trim() || isInviting}
-              >
-                {isInviting ? "Inviting..." : "Invite"}
-              </Button>
-            </div>
-            {inviteMessage && (
-              <div
-                className={`text-sm px-3 py-2 rounded-md ${
-                  inviteMessage.type === "success"
-                    ? "text-green-600 bg-green-500/10"
-                    : "text-destructive bg-destructive/10"
-                }`}
-              >
-                {inviteMessage.text}
+        {/* Invite Form (admin only) */}
+        {isAdmin && (
+          <div className="mb-8 p-6 bg-card rounded-lg border border-border">
+            <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+              <UserPlus className="w-5 h-5" />
+              Invite Member
+            </h2>
+            <form onSubmit={handleInvite} className="space-y-4">
+              <div className="flex gap-4">
+                <Input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="Email address"
+                  disabled={isInviting}
+                  className="flex-1"
+                />
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value as WorkspaceRole)}
+                  className="px-3 py-2 bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  disabled={isInviting}
+                >
+                  {ROLE_OPTIONS.map((role) => (
+                    <option key={role.value} value={role.value}>
+                      {role.label}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  type="submit"
+                  disabled={!inviteEmail.trim() || isInviting}
+                >
+                  {isInviting ? "Inviting..." : "Invite"}
+                </Button>
               </div>
-            )}
-          </form>
-        </div>
-      )}
+              {inviteMessage && (
+                <div
+                  className={`text-sm px-3 py-2 rounded-md ${
+                    inviteMessage.type === "success"
+                      ? "text-green-600 bg-green-500/10"
+                      : "text-destructive bg-destructive/10"
+                  }`}
+                >
+                  {inviteMessage.text}
+                </div>
+              )}
+            </form>
+          </div>
+        )}
 
-      {/* Members List */}
-      <div className="bg-card rounded-lg border border-border overflow-hidden">
+        {/* Members List */}
+        <div className="bg-card rounded-lg border border-border overflow-hidden">
         <div className="px-6 py-4 border-b border-border">
           <h2 className="text-lg font-semibold text-foreground">
             {members.length} member{members.length !== 1 ? "s" : ""}
@@ -251,7 +250,6 @@ export default function MembersPage() {
           })}
         </div>
       </div>
-        </div>
       </section>
     </GradientPage>
   );

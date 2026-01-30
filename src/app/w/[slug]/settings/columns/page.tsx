@@ -22,6 +22,8 @@ import {
   reorderColumns,
   getColumnIssueCounts,
 } from "@/lib/actions/columns";
+import { GradientPage } from "@/components/ui/gradient-page";
+import { PageHeader } from "@/components/ui/page-header";
 import { useSettingsContext } from "../context";
 import { SortableColumnRow } from "./SortableColumnRow";
 import { SystemColumnRow } from "./SystemColumnRow";
@@ -93,71 +95,72 @@ export default function ColumnsSettingsPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-foreground">Columns</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage columns for organizing issues on the board
-        </p>
-      </div>
+    <GradientPage>
+      <PageHeader
+        label="Settings"
+        title="Columns"
+        subtitle="Manage columns for organizing issues on the board"
+      />
 
-      {isAdmin && workspace && (
-        <div className="mb-6">
-          <AddColumnForm
-            workspaceId={workspace.id}
-            onCreated={refreshColumns}
-          />
-        </div>
-      )}
-
-      <div className="rounded-lg border border-border bg-card mb-6">
-        {regularColumns.length === 0 ? (
-          <div className="px-6 py-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              No columns yet. {isAdmin ? "Create one to get started." : ""}
-            </p>
+      <section className="container">
+        {isAdmin && workspace && (
+          <div className="mb-6">
+            <AddColumnForm
+              workspaceId={workspace.id}
+              onCreated={refreshColumns}
+            />
           </div>
-        ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={regularColumns.map((c) => c.id)}
-              strategy={verticalListSortingStrategy}
+        )}
+
+        <div className="rounded-lg border border-border bg-card mb-6">
+          {regularColumns.length === 0 ? (
+            <div className="px-6 py-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                No columns yet. {isAdmin ? "Create one to get started." : ""}
+              </p>
+            </div>
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
             >
-              {regularColumns.map((column) => (
-                <SortableColumnRow
+              <SortableContext
+                items={regularColumns.map((c) => c.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                {regularColumns.map((column) => (
+                  <SortableColumnRow
+                    key={column.id}
+                    column={column}
+                    isAdmin={isAdmin}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    issueCount={issueCounts[column.id]}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+          )}
+        </div>
+
+        {systemColumns.length > 0 && (
+          <>
+            <h2 className="text-sm font-medium text-muted-foreground mb-3">
+              System Columns (auto-managed)
+            </h2>
+            <div className="rounded-lg border border-border overflow-hidden">
+              {systemColumns.map((column) => (
+                <SystemColumnRow
                   key={column.id}
                   column={column}
-                  isAdmin={isAdmin}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
                   issueCount={issueCounts[column.id]}
                 />
               ))}
-            </SortableContext>
-          </DndContext>
+            </div>
+          </>
         )}
-      </div>
-
-      {systemColumns.length > 0 && (
-        <>
-          <h2 className="text-sm font-medium text-muted-foreground mb-3">
-            System Columns (auto-managed)
-          </h2>
-          <div className="rounded-lg border border-border overflow-hidden">
-            {systemColumns.map((column) => (
-              <SystemColumnRow
-                key={column.id}
-                column={column}
-                issueCount={issueCounts[column.id]}
-              />
-            ))}
-          </div>
-        </>
-      )}
-    </div>
+      </section>
+    </GradientPage>
   );
 }

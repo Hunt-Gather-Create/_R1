@@ -245,34 +245,32 @@ export default function LabelsSettingsPage() {
       />
 
       <section className="container">
-        <div className="max-w-2xl mx-auto">
-          {/* Add Label Button/Form */}
-          {isAdmin && workspace && (
-            <div className="mb-6">
-              <AddLabelForm workspaceId={workspace.id} onCreated={refreshLabels} />
-            </div>
-          )}
-
-          {/* Labels List */}
-          <div className="rounded-lg border border-border bg-card">
-            {labels.length === 0 ? (
-              <div className="px-6 py-8 text-center">
-                <p className="text-sm text-muted-foreground">
-                  No labels yet. {isAdmin ? "Create one to get started." : ""}
-                </p>
-              </div>
-            ) : (
-              labels.map((label) => (
-                <LabelRow
-                  key={label.id}
-                  label={label}
-                  isAdmin={isAdmin}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                />
-              ))
-            )}
+        {/* Add Label Button/Form */}
+        {isAdmin && workspace && (
+          <div className="mb-6">
+            <AddLabelForm workspaceId={workspace.id} onCreated={refreshLabels} />
           </div>
+        )}
+
+        {/* Labels List */}
+        <div className="rounded-lg border border-border bg-card">
+          {labels.length === 0 ? (
+            <div className="px-6 py-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                No labels yet. {isAdmin ? "Create one to get started." : ""}
+              </p>
+            </div>
+          ) : (
+            labels.map((label) => (
+              <LabelRow
+                key={label.id}
+                label={label}
+                isAdmin={isAdmin}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+              />
+            ))
+          )}
         </div>
       </section>
     </GradientPage>
