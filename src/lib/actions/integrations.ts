@@ -11,6 +11,7 @@ import {
   getAllMcpServers,
   testServerConnection,
 } from "@/lib/mcp";
+import { requireWorkspaceAccess } from "./workspace";
 
 // Initialize Smithery client for registry search
 const smithery = new Smithery({
@@ -37,6 +38,8 @@ export type McpServerWithStatus = {
 export async function getWorkspaceMcpServers(
   workspaceId: string
 ): Promise<McpServerWithStatus[]> {
+  await requireWorkspaceAccess(workspaceId);
+
   // Get all available servers
   const availableServers = getAllMcpServers();
 
@@ -50,31 +53,35 @@ export async function getWorkspaceMcpServers(
     enabledRecords.map((r) => [r.serverKey, r.isEnabled])
   );
 
-  // Build response with status info
-  const result: McpServerWithStatus[] = [];
+  // Build response with status info - test all enabled servers in parallel
+  const result = await Promise.all(
+    availableServers.map(async (server) => {
+      const isEnabled = enabledMap.get(server.key) ?? false;
 
-  for (const server of availableServers) {
-    const isEnabled = enabledMap.get(server.key) ?? false;
+      const serverWithStatus: McpServerWithStatus = {
+        key: server.key,
+        name: server.name,
+        description: server.description,
+        icon: server.icon,
+        isEnabled,
+      };
 
-    const serverWithStatus: McpServerWithStatus = {
-      key: server.key,
-      name: server.name,
-      description: server.description,
-      icon: server.icon,
-      isEnabled,
-    };
-
-    // Test connection if enabled
-    if (isEnabled) {
-      const connectionTest = await testServerConnection(server.key as McpServerKey);
-      serverWithStatus.status = connectionTest.connected ? "connected" : "error";
-      if (!connectionTest.connected) {
-        serverWithStatus.errorMessage = connectionTest.error;
+      // Test connection if enabled (runs in parallel)
+      if (isEnabled) {
+        const connectionTest = await testServerConnection(
+          server.key as McpServerKey
+        );
+        serverWithStatus.status = connectionTest.connected
+          ? "connected"
+          : "error";
+        if (!connectionTest.connected) {
+          serverWithStatus.errorMessage = connectionTest.error;
+        }
       }
-    }
 
-    result.push(serverWithStatus);
-  }
+      return serverWithStatus;
+    })
+  );
 
   return result;
 }
@@ -90,6 +97,8 @@ export async function enableMcpServer(
   status?: "connected" | "error";
   error?: string;
 }> {
+  await requireWorkspaceAccess(workspaceId, "admin");
+
   // Validate server key
   if (!(serverKey in MCP_SERVERS)) {
     return { success: false, error: "Invalid server key" };
@@ -154,6 +163,8 @@ export async function disableMcpServer(
   workspaceId: string,
   serverKey: string
 ): Promise<{ success: boolean; error?: string }> {
+  await requireWorkspaceAccess(workspaceId, "admin");
+
   // Validate server key
   if (!(serverKey in MCP_SERVERS)) {
     return { success: false, error: "Invalid server key" };
@@ -206,6 +217,8 @@ export async function toggleMcpServer(
   status?: "connected" | "error";
   error?: string;
 }> {
+  await requireWorkspaceAccess(workspaceId, "admin");
+
   // Get current state
   const [existing] = await db
     .select()

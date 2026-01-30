@@ -45,11 +45,35 @@ export async function updateCycle(
     status?: "upcoming" | "active" | "completed";
   }
 ): Promise<void> {
+  const cycle = await db
+    .select()
+    .from(cycles)
+    .where(eq(cycles.id, cycleId))
+    .get();
+
+  if (!cycle) {
+    throw new Error("Cycle not found");
+  }
+
+  await requireWorkspaceAccess(cycle.workspaceId, "member");
+
   await db.update(cycles).set(data).where(eq(cycles.id, cycleId));
   revalidatePath("/");
 }
 
 export async function deleteCycle(cycleId: string): Promise<void> {
+  const cycle = await db
+    .select()
+    .from(cycles)
+    .where(eq(cycles.id, cycleId))
+    .get();
+
+  if (!cycle) {
+    throw new Error("Cycle not found");
+  }
+
+  await requireWorkspaceAccess(cycle.workspaceId, "member");
+
   await db.delete(cycles).where(eq(cycles.id, cycleId));
   revalidatePath("/");
 }
@@ -67,6 +91,18 @@ export async function getWorkspaceCycles(
 }
 
 export async function activateCycle(cycleId: string): Promise<void> {
+  const cycle = await db
+    .select()
+    .from(cycles)
+    .where(eq(cycles.id, cycleId))
+    .get();
+
+  if (!cycle) {
+    throw new Error("Cycle not found");
+  }
+
+  await requireWorkspaceAccess(cycle.workspaceId, "member");
+
   await db
     .update(cycles)
     .set({ status: "active" })
@@ -75,6 +111,18 @@ export async function activateCycle(cycleId: string): Promise<void> {
 }
 
 export async function completeCycle(cycleId: string): Promise<void> {
+  const cycle = await db
+    .select()
+    .from(cycles)
+    .where(eq(cycles.id, cycleId))
+    .get();
+
+  if (!cycle) {
+    throw new Error("Cycle not found");
+  }
+
+  await requireWorkspaceAccess(cycle.workspaceId, "member");
+
   await db
     .update(cycles)
     .set({ status: "completed" })

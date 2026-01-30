@@ -1,5 +1,6 @@
 "use server";
 
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { unsealData } from "iron-session";
 
@@ -51,17 +52,19 @@ async function getSessionFromCookie(): Promise<Session | null> {
 /**
  * Get the current authenticated user.
  * Returns null if not authenticated.
+ * Wrapped with React.cache() to deduplicate calls within a single request.
  */
-export async function getCurrentUser(): Promise<WorkOSUser | null> {
+export const getCurrentUser = cache(async (): Promise<WorkOSUser | null> => {
   const session = await getSessionFromCookie();
   return session?.user ?? null;
-}
+});
 
 /**
  * Get the current authenticated user's ID.
  * Returns null if not authenticated.
+ * Wrapped with React.cache() to deduplicate calls within a single request.
  */
-export async function getCurrentUserId(): Promise<string | null> {
+export const getCurrentUserId = cache(async (): Promise<string | null> => {
   const user = await getCurrentUser();
   return user?.id ?? null;
-}
+});

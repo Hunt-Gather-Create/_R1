@@ -1,11 +1,30 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState, useEffect, useCallback } from "react";
 import { useSettingsContext } from "../context";
-import { BrandSearchForm } from "./_components/BrandSearchForm";
-import { BrandDisambiguation } from "./_components/BrandDisambiguation";
-import { BrandPreview } from "./_components/BrandPreview";
 import { BrandLoadingState } from "./_components/BrandLoadingState";
+
+// Dynamic imports for heavy components - only loaded based on page state
+const BrandSearchForm = dynamic(
+  () =>
+    import("./_components/BrandSearchForm").then((mod) => mod.BrandSearchForm),
+  { ssr: false }
+);
+
+const BrandDisambiguation = dynamic(
+  () =>
+    import("./_components/BrandDisambiguation").then(
+      (mod) => mod.BrandDisambiguation
+    ),
+  { ssr: false }
+);
+
+const BrandPreview = dynamic(
+  () => import("./_components/BrandPreview").then((mod) => mod.BrandPreview),
+  { ssr: false }
+);
+
 import {
   getWorkspaceBrand,
   createBrand,

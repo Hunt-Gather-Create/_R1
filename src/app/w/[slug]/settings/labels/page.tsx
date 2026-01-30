@@ -105,7 +105,7 @@ function LabelRow({
   }
 
   return (
-    <div className="flex items-center justify-between px-6 py-4 border-b border-border last:border-b-0">
+    <div className="settings-list-item flex items-center justify-between px-6 py-4 border-b border-border last:border-b-0">
       <div className="flex items-center gap-3">
         <div
           className="w-4 h-4 rounded-full"

@@ -113,7 +113,7 @@ export function IssueCard({
       {...(mounted ? listeners : {})}
       onClick={onClick}
       className={cn(
-        "group relative rounded-md border border-border p-3 cursor-pointer",
+        "issue-item group relative rounded-md border border-border p-3 cursor-pointer",
         "hover:border-primary/50 transition-all",
         dragging && "ring-2 ring-primary shadow-lg opacity-90",
         issue.sentToAI ? "bg-blue-950" : "bg-card hover:bg-accent/30"
@@ -187,7 +187,7 @@ export function IssueCardCompact({
   return (
     <div
       onClick={onClick}
-      className="group flex items-center gap-3 px-3 py-2 hover:bg-accent/30 cursor-pointer transition-colors"
+      className="issue-item-compact group flex items-center gap-3 px-3 py-2 hover:bg-accent/30 cursor-pointer transition-colors"
     >
       <StatusDot status={issue.status as Status} size="sm" />
       <span className="text-[10px] font-medium text-muted-foreground w-16 shrink-0">

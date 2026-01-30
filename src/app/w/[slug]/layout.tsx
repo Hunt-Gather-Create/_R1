@@ -14,14 +14,14 @@ export default async function WorkspaceLayout({
   children,
   params,
 }: WorkspaceLayoutProps) {
-  // Check authentication
-  const user = await getCurrentUser();
+  // Parallelize auth check and params resolution
+  const [user, { slug }] = await Promise.all([getCurrentUser(), params]);
+
   if (!user) {
     redirect("/login");
   }
 
   // Get workspace by slug
-  const { slug } = await params;
   const workspace = await getWorkspaceBySlug(slug);
 
   if (!workspace) {

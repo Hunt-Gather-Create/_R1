@@ -1,11 +1,26 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState, useEffect, useCallback } from "react";
 import { useSettingsContext } from "../context";
-import { SoulEmptyState } from "./_components/SoulEmptyState";
-import { SoulChat } from "./_components/SoulChat";
-import { SoulPreview } from "./_components/SoulPreview";
 import { GradientPage } from "@/components/ui/gradient-page";
+
+// Dynamic imports for heavy components - only loaded based on page state
+const SoulEmptyState = dynamic(
+  () =>
+    import("./_components/SoulEmptyState").then((mod) => mod.SoulEmptyState),
+  { ssr: false }
+);
+
+const SoulChat = dynamic(
+  () => import("./_components/SoulChat").then((mod) => mod.SoulChat),
+  { ssr: false }
+);
+
+const SoulPreview = dynamic(
+  () => import("./_components/SoulPreview").then((mod) => mod.SoulPreview),
+  { ssr: false }
+);
 import { PageHeader } from "@/components/ui/page-header";
 import { getSoul, updateSoul } from "@/lib/actions/soul";
 import { createDefaultSoul } from "@/lib/soul-formatters";

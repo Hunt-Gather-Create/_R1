@@ -12,10 +12,48 @@ import type {
   WorkspaceChatMessage,
   WorkspaceChatAttachment,
 } from "../types";
+import { requireWorkspaceAccess } from "./workspace";
+
+/**
+ * Get workspace ID from a chat and verify access
+ */
+async function requireChatAccess(chatId: string): Promise<string> {
+  const chat = await db
+    .select({ workspaceId: workspaceChats.workspaceId })
+    .from(workspaceChats)
+    .where(eq(workspaceChats.id, chatId))
+    .get();
+
+  if (!chat) {
+    throw new Error("Chat not found");
+  }
+
+  await requireWorkspaceAccess(chat.workspaceId, "member");
+  return chat.workspaceId;
+}
+
+/**
+ * Get workspace ID from an attachment via its chat and verify access
+ */
+async function requireAttachmentAccess(attachmentId: string): Promise<string> {
+  const attachment = await db
+    .select({ chatId: workspaceChatAttachments.chatId })
+    .from(workspaceChatAttachments)
+    .where(eq(workspaceChatAttachments.id, attachmentId))
+    .get();
+
+  if (!attachment) {
+    throw new Error("Attachment not found");
+  }
+
+  return requireChatAccess(attachment.chatId);
+}
 
 export async function getWorkspaceChats(
   workspaceId: string
 ): Promise<WorkspaceChat[]> {
+  await requireWorkspaceAccess(workspaceId);
+
   return db
     .select()
     .from(workspaceChats)
@@ -32,13 +70,19 @@ export async function getWorkspaceChat(
     .where(eq(workspaceChats.id, chatId))
     .limit(1);
 
-  return chat ?? null;
+  if (!chat) return null;
+
+  await requireWorkspaceAccess(chat.workspaceId);
+
+  return chat;
 }
 
 export async function createWorkspaceChat(
   workspaceId: string,
   title?: string
 ): Promise<WorkspaceChat> {
+  await requireWorkspaceAccess(workspaceId, "member");
+
   const now = new Date();
   const chat: WorkspaceChat = {
     id: crypto.randomUUID(),
@@ -57,6 +101,8 @@ export async function updateChatTitle(
   chatId: string,
   title: string
 ): Promise<void> {
+  await requireChatAccess(chatId);
+
   await db
     .update(workspaceChats)
     .set({ title, updatedAt: new Date() })
@@ -64,12 +110,16 @@ export async function updateChatTitle(
 }
 
 export async function deleteWorkspaceChat(chatId: string): Promise<void> {
+  await requireChatAccess(chatId);
+
   await db.delete(workspaceChats).where(eq(workspaceChats.id, chatId));
 }
 
 export async function getChatMessages(
   chatId: string
 ): Promise<WorkspaceChatMessage[]> {
+  await requireChatAccess(chatId);
+
   return db
     .select()
     .from(workspaceChatMessages)
@@ -82,6 +132,8 @@ export async function saveChatMessage(
   role: string,
   content: string
 ): Promise<WorkspaceChatMessage> {
+  await requireChatAccess(chatId);
+
   const message: WorkspaceChatMessage = {
     id: crypto.randomUUID(),
     chatId,
@@ -102,6 +154,8 @@ export async function saveChatMessage(
 }
 
 export async function clearChatMessages(chatId: string): Promise<void> {
+  await requireChatAccess(chatId);
+
   await db
     .delete(workspaceChatMessages)
     .where(eq(workspaceChatMessages.chatId, chatId));
@@ -112,6 +166,8 @@ export async function clearChatMessages(chatId: string): Promise<void> {
 export async function getChatAttachments(
   chatId: string
 ): Promise<WorkspaceChatAttachment[]> {
+  await requireChatAccess(chatId);
+
   return db
     .select()
     .from(workspaceChatAttachments)
@@ -128,7 +184,11 @@ export async function getChatAttachment(
     .where(eq(workspaceChatAttachments.id, attachmentId))
     .limit(1);
 
-  return attachment ?? null;
+  if (!attachment) return null;
+
+  await requireChatAccess(attachment.chatId);
+
+  return attachment;
 }
 
 export async function createChatAttachment(
@@ -137,6 +197,8 @@ export async function createChatAttachment(
   content: string,
   mimeType: string = "text/markdown"
 ): Promise<WorkspaceChatAttachment> {
+  await requireChatAccess(chatId);
+
   const attachment: WorkspaceChatAttachment = {
     id: crypto.randomUUID(),
     chatId,
@@ -154,6 +216,8 @@ export async function createChatAttachment(
 }
 
 export async function deleteChatAttachment(attachmentId: string): Promise<void> {
+  await requireAttachmentAccess(attachmentId);
+
   await db
     .delete(workspaceChatAttachments)
     .where(eq(workspaceChatAttachments.id, attachmentId));
@@ -163,6 +227,8 @@ export async function linkAttachmentToMessage(
   attachmentId: string,
   messageId: string
 ): Promise<void> {
+  await requireAttachmentAccess(attachmentId);
+
   await db
     .update(workspaceChatAttachments)
     .set({ messageId })
@@ -183,8 +249,21 @@ export async function getAttachmentsByMessageId(
 export async function getChatMessagesWithAttachments(
   chatId: string
 ): Promise<(WorkspaceChatMessage & { attachments: WorkspaceChatAttachment[] })[]> {
-  const messages = await getChatMessages(chatId);
-  const attachments = await getChatAttachments(chatId);
+  await requireChatAccess(chatId);
+
+  // Note: getChatMessages and getChatAttachments also check auth but we check once here
+  // to avoid duplicate checks. Could refactor to use internal versions without auth.
+  const messages = await db
+    .select()
+    .from(workspaceChatMessages)
+    .where(eq(workspaceChatMessages.chatId, chatId))
+    .orderBy(asc(workspaceChatMessages.createdAt));
+
+  const attachments = await db
+    .select()
+    .from(workspaceChatAttachments)
+    .where(eq(workspaceChatAttachments.chatId, chatId))
+    .orderBy(asc(workspaceChatAttachments.createdAt));
 
   // Group attachments by messageId
   const attachmentsByMessage = new Map<string, WorkspaceChatAttachment[]>();

@@ -1,12 +1,10 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { BoardView } from "@/components/board/BoardView";
 import { ListView } from "@/components/list";
-import { IssueDetailDrawer, CreateIssueDrawer } from "@/components/issues";
-import { CommandPalette } from "@/components/command/CommandPalette";
-import { AIPlanningSheet } from "@/components/planning";
 import { AppShell, useAppShell } from "@/components/layout";
 import { BoardProvider, useBoardContext } from "@/components/board/context";
 import { WorkspaceProvider } from "@/components/workspace";
@@ -14,6 +12,39 @@ import { VIEW } from "@/lib/design-tokens";
 import { getWorkspaceBySlugWithIssues } from "@/lib/actions/board";
 import { getCurrentUser } from "@/lib/auth";
 import type { WorkspaceWithColumnsAndIssues } from "@/lib/types";
+
+// Dynamic imports for heavy components - only loaded when needed
+const IssueDetailDrawer = dynamic(
+  () =>
+    import("@/components/issues/IssueDetailDrawer").then(
+      (mod) => mod.IssueDetailDrawer
+    ),
+  { ssr: false }
+);
+
+const CreateIssueDrawer = dynamic(
+  () =>
+    import("@/components/issues/CreateIssueDrawer").then(
+      (mod) => mod.CreateIssueDrawer
+    ),
+  { ssr: false }
+);
+
+const CommandPalette = dynamic(
+  () =>
+    import("@/components/command/CommandPalette").then(
+      (mod) => mod.CommandPalette
+    ),
+  { ssr: false }
+);
+
+const AIPlanningSheet = dynamic(
+  () =>
+    import("@/components/planning/AIPlanningSheet").then(
+      (mod) => mod.AIPlanningSheet
+    ),
+  { ssr: false }
+);
 
 /**
  * Main content area that renders the board/list view and detail panel.

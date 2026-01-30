@@ -1,13 +1,43 @@
 "use server";
 
 import { db } from "../db";
-import { chatMessages } from "../db/schema";
+import { chatMessages, issues, columns } from "../db/schema";
 import { eq, asc } from "drizzle-orm";
 import type { ChatMessage } from "../types";
+import { requireWorkspaceAccess } from "./workspace";
+
+/**
+ * Get workspace ID from an issue and verify access
+ */
+async function requireIssueAccess(issueId: string): Promise<void> {
+  const issue = await db
+    .select({ columnId: issues.columnId })
+    .from(issues)
+    .where(eq(issues.id, issueId))
+    .get();
+
+  if (!issue) {
+    throw new Error("Issue not found");
+  }
+
+  const column = await db
+    .select({ workspaceId: columns.workspaceId })
+    .from(columns)
+    .where(eq(columns.id, issue.columnId))
+    .get();
+
+  if (!column) {
+    throw new Error("Column not found");
+  }
+
+  await requireWorkspaceAccess(column.workspaceId, "member");
+}
 
 export async function getIssueChatMessages(
   issueId: string
 ): Promise<ChatMessage[]> {
+  await requireIssueAccess(issueId);
+
   return db
     .select()
     .from(chatMessages)
@@ -20,6 +50,8 @@ export async function saveChatMessage(
   role: string,
   content: string
 ): Promise<ChatMessage> {
+  await requireIssueAccess(issueId);
+
   const message: ChatMessage = {
     id: crypto.randomUUID(),
     issueId,
@@ -34,5 +66,7 @@ export async function saveChatMessage(
 }
 
 export async function clearIssueChatMessages(issueId: string): Promise<void> {
+  await requireIssueAccess(issueId);
+
   await db.delete(chatMessages).where(eq(chatMessages.issueId, issueId));
 }

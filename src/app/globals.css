@@ -366,3 +366,19 @@
   gap: 0.5rem;
   z-index: 10;
 }
+
+/* Performance: content-visibility for long lists */
+.issue-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 80px;
+}
+
+.issue-item-compact {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 48px;
+}
+
+.settings-list-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 56px;
+}

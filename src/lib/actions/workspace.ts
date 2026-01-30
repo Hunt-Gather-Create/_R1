@@ -1,5 +1,6 @@
 "use server";
 
+import { cache } from "react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "../db";
@@ -11,7 +12,7 @@ import {
   users,
   issues,
 } from "../db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, inArray } from "drizzle-orm";
 import type {
   Workspace,
   WorkspaceMember,
@@ -51,56 +52,61 @@ export async function requireAuth(): Promise<User> {
 }
 
 /**
- * Check if user has access to workspace with optional minimum role
+ * Check if user has access to workspace with optional minimum role.
+ * Wrapped with React.cache() to deduplicate within a single request.
  */
-export async function requireWorkspaceAccess(
-  workspaceId: string,
-  minimumRole?: WorkspaceRole
-): Promise<{ user: User; member: WorkspaceMember; workspace: Workspace }> {
-  const user = await requireAuth();
+export const requireWorkspaceAccess = cache(
+  async (
+    workspaceId: string,
+    minimumRole?: WorkspaceRole
+  ): Promise<{ user: User; member: WorkspaceMember; workspace: Workspace }> => {
+    const user = await requireAuth();
 
-  const member = await db
-    .select()
-    .from(workspaceMembers)
-    .where(
-      and(
-        eq(workspaceMembers.workspaceId, workspaceId),
-        eq(workspaceMembers.userId, user.id)
+    const member = await db
+      .select()
+      .from(workspaceMembers)
+      .where(
+        and(
+          eq(workspaceMembers.workspaceId, workspaceId),
+          eq(workspaceMembers.userId, user.id)
+        )
       )
-    )
-    .get();
+      .get();
 
-  if (!member) {
-    throw new Error("Access denied: You are not a member of this workspace");
-  }
-
-  const workspace = await db
-    .select()
-    .from(workspaces)
-    .where(eq(workspaces.id, workspaceId))
-    .get();
-
-  if (!workspace) {
-    throw new Error("Workspace not found");
-  }
-
-  // Check role hierarchy if minimum role specified
-  if (minimumRole) {
-    const roleHierarchy: Record<WorkspaceRole, number> = {
-      viewer: 0,
-      member: 1,
-      admin: 2,
-    };
-
-    if (
-      roleHierarchy[member.role as WorkspaceRole] < roleHierarchy[minimumRole]
-    ) {
-      throw new Error(`Access denied: Requires ${minimumRole} role or higher`);
+    if (!member) {
+      throw new Error("Access denied: You are not a member of this workspace");
     }
-  }
 
-  return { user, member, workspace };
-}
+    const workspace = await db
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .get();
+
+    if (!workspace) {
+      throw new Error("Workspace not found");
+    }
+
+    // Check role hierarchy if minimum role specified
+    if (minimumRole) {
+      const roleHierarchy: Record<WorkspaceRole, number> = {
+        viewer: 0,
+        member: 1,
+        admin: 2,
+      };
+
+      if (
+        roleHierarchy[member.role as WorkspaceRole] < roleHierarchy[minimumRole]
+      ) {
+        throw new Error(
+          `Access denied: Requires ${minimumRole} role or higher`
+        );
+      }
+    }
+
+    return { user, member, workspace };
+  }
+);
 
 /**
  * Generate a URL-friendly slug from a name
@@ -351,17 +357,11 @@ export async function getUserWorkspaces(): Promise<Workspace[]> {
 
   const workspaceIds = userMemberships.map((m) => m.workspaceId);
 
-  const userWorkspaces: Workspace[] = [];
-  for (const id of workspaceIds) {
-    const workspace = await db
-      .select()
-      .from(workspaces)
-      .where(eq(workspaces.id, id))
-      .get();
-    if (workspace) {
-      userWorkspaces.push(workspace);
-    }
-  }
+  // Fetch all workspaces in a single query using inArray
+  const userWorkspaces = await db
+    .select()
+    .from(workspaces)
+    .where(inArray(workspaces.id, workspaceIds));
 
   return userWorkspaces.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -418,24 +418,28 @@ export async function getWorkspaceMembers(
     .where(eq(workspaceMembers.workspaceId, workspaceId))
     .orderBy(asc(workspaceMembers.createdAt));
 
-  const membersWithUsers: WorkspaceMemberWithUser[] = [];
-
-  for (const member of members) {
-    const user = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, member.userId))
-      .get();
-
-    if (user) {
-      membersWithUsers.push({
-        ...member,
-        user,
-      });
-    }
+  if (members.length === 0) {
+    return [];
   }
 
-  return membersWithUsers;
+  // Fetch all users in a single query using inArray
+  const userIds = members.map((m) => m.userId);
+  const userList = await db
+    .select()
+    .from(users)
+    .where(inArray(users.id, userIds));
+
+  // Build a map for O(1) lookup
+  const userMap = new Map(userList.map((u) => [u.id, u]));
+
+  // Combine members with their users
+  return members
+    .map((member) => {
+      const user = userMap.get(member.userId);
+      if (!user) return null;
+      return { ...member, user };
+    })
+    .filter((m): m is WorkspaceMemberWithUser => m !== null);
 }
 
 /**
