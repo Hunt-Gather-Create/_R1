@@ -101,7 +101,7 @@ export default function MembersPage() {
       />
 
       <section className="container">
-        <div className="max-w-3xl">
+        <div className="max-w-3xl mx-auto">
           {/* Invite Form (admin only) */}
           {isAdmin && (
         <div className="mb-8 p-6 bg-card rounded-lg border border-border">

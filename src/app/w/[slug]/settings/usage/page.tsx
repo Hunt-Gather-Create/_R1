@@ -84,7 +84,7 @@ export default function UsageSettingsPage() {
       />
 
       <section className="container">
-        <div className="max-w-4xl">
+        <div className="max-w-4xl mx-auto">
           {/* Summary Cards */}
           {summary && <UsageSummaryCards summary={summary} />}
 

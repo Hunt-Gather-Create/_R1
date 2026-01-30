@@ -18,7 +18,7 @@ export default function IntegrationsSettingsPage() {
       />
 
       <section className="container">
-        <div className="max-w-2xl space-y-8">
+        <div className="max-w-2xl mx-auto space-y-8">
           {/* Enabled Integrations */}
           {mcpServers.length > 0 && (
             <div>

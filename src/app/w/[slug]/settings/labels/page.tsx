@@ -245,7 +245,7 @@ export default function LabelsSettingsPage() {
       />
 
       <section className="container">
-        <div className="max-w-2xl">
+        <div className="max-w-2xl mx-auto">
           {/* Add Label Button/Form */}
           {isAdmin && workspace && (
             <div className="mb-6">

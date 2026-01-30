@@ -107,7 +107,7 @@ export default function SoulSettingsPage() {
           subtitle="Configure the AI assistant's personality and behavior"
         />
         <section className="container">
-          <div className="max-w-2xl">
+          <div className="max-w-2xl mx-auto">
             <p className="text-muted-foreground">
               You need admin access to configure the workspace AI persona.
             </p>
@@ -136,7 +136,7 @@ export default function SoulSettingsPage() {
           subtitle="Configure the AI assistant's personality and behavior"
         />
         <section className="container">
-          <div className="max-w-2xl">
+          <div className="max-w-2xl mx-auto">
             <SoulPreview
               soul={soul}
               onSoulChange={handleSoulChange}

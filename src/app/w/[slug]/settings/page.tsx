@@ -158,7 +158,7 @@ export default function WorkspaceSettingsPage() {
 
       <section className="container">
         {/* Main Settings Card */}
-        <div className="max-w-2xl">
+        <div className="max-w-2xl mx-auto">
           <div className="rounded-lg border border-border bg-card mb-8">
         <SettingsRow label="Icon">
           <div className="flex items-center gap-3">

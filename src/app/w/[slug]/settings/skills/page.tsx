@@ -697,7 +697,7 @@ export default function SkillsSettingsPage() {
       />
 
       <section className="container">
-        <div className="max-w-2xl">
+        <div className="max-w-2xl mx-auto">
           {/* Help Section */}
           <div className="mb-6 p-4 bg-muted/50 rounded-lg border border-border">
         <div className="flex gap-2">
