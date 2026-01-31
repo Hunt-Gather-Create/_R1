@@ -36,6 +36,8 @@ export const queryKeys = {
       ["settings", "mcpServers", workspaceId] as const,
     brand: (workspaceId: string) =>
       ["settings", "brand", workspaceId] as const,
+    jobs: (workspaceId: string) =>
+      ["settings", "jobs", workspaceId] as const,
   },
   smithery: {
     servers: (query: string, page: number, verifiedOnly: boolean) =>

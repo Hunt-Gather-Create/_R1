@@ -1,8 +1,18 @@
 import { serve } from "inngest/next";
 import { inngest } from "@/lib/inngest/client";
-import { helloWorld } from "@/lib/inngest/functions";
+import {
+  helloWorld,
+  trackFunctionInvoked,
+  trackFunctionFinished,
+  trackFunctionFailed,
+} from "@/lib/inngest/functions";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [helloWorld],
+  functions: [
+    helloWorld,
+    trackFunctionInvoked,
+    trackFunctionFinished,
+    trackFunctionFailed,
+  ],
 });

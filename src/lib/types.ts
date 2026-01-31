@@ -16,6 +16,7 @@ import type {
   workspaceChatMessages,
   workspaceChatAttachments,
   brands,
+  backgroundJobs,
 } from "./db/schema";
 import type { Status, Priority } from "./design-tokens";
 
@@ -211,3 +212,21 @@ export type CreateBrandInput = {
 };
 
 export type UpdateBrandInput = Partial<CreateBrandInput>;
+
+// Background Jobs - Inngest job tracking
+export type BackgroundJob = typeof backgroundJobs.$inferSelect;
+
+export type JobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+export interface JobMetadata {
+  description?: string;
+  issueId?: string;
+  issueIdentifier?: string;
+  [key: string]: unknown;
+}
+
+export interface JobsQueryOptions {
+  status?: JobStatus | JobStatus[];
+  limit?: number;
+  offset?: number;
+}

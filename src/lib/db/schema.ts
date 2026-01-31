@@ -296,3 +296,24 @@ export const tokenUsage = sqliteTable("token_usage", {
   source: text("source").notNull().default("chat"),
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
+
+// Background Jobs - tracks Inngest job execution status per workspace
+export const backgroundJobs = sqliteTable("background_jobs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  functionId: text("function_id").notNull(), // Inngest function ID (e.g., "hello-world")
+  functionName: text("function_name").notNull(), // Human-readable name
+  runId: text("run_id").notNull().unique(), // Inngest run ID (unique per execution)
+  correlationId: text("correlation_id"), // Optional: for grouping related jobs
+  status: text("status").notNull().default("pending"), // pending | running | completed | failed | cancelled
+  startedAt: integer("started_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+  metadata: text("metadata"), // JSON: { description, issueId, etc. }
+  result: text("result"), // JSON: function return value
+  error: text("error"), // Error message if failed
+  attempt: integer("attempt").notNull().default(1),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
