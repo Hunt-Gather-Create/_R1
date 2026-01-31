@@ -6,11 +6,12 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 // Mock anthropic - we don't want to make real API calls in tests
-const mockAnthropicFn = vi.fn(() => "mocked-model");
-mockAnthropicFn.tools = {
-  webSearch_20250305: vi.fn(() => ({ type: "webSearch" })),
-  webFetch_20250910: vi.fn(() => ({ type: "webFetch" })),
-};
+const mockAnthropicFn = Object.assign(vi.fn(() => "mocked-model"), {
+  tools: {
+    webSearch_20250305: vi.fn(() => ({ type: "webSearch" })),
+    webFetch_20250910: vi.fn(() => ({ type: "webFetch" })),
+  },
+});
 
 vi.mock("@ai-sdk/anthropic", () => ({
   anthropic: mockAnthropicFn,
@@ -180,7 +181,7 @@ describe("POST /api/brand/research", () => {
             selection: {
               name: "Nike, Inc.",
               description: "Athletic footwear",
-              websiteUrl: "https://nike.com",
+              websiteUrl: "", // Empty to use selection flow directly (non-empty redirects to URL research)
             },
           }),
         })

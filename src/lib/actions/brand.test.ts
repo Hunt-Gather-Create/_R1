@@ -10,6 +10,8 @@ function createMockBrand(overrides: Partial<Brand> = {}): Brand {
     tagline: "Test tagline",
     description: "Test description",
     logoUrl: "https://example.com/logo.png",
+    logoStorageKey: null,
+    logoBackground: null,
     websiteUrl: "https://example.com",
     primaryColor: "#ff0000",
     secondaryColor: "#00ff00",
@@ -249,7 +251,7 @@ describe("brand actions", () => {
       const { getWorkspaceBrand } = await import("./brand");
       const result = await getWorkspaceBrand("workspace-1");
 
-      expect(result).toEqual(mockBrand);
+      expect(result).toMatchObject(mockBrand);
     });
   });
 

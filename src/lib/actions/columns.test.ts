@@ -37,6 +37,7 @@ function createColumn(overrides: Partial<Column> = {}): Column {
     name: "Test Column",
     position: 0,
     isSystem: false,
+    status: null,
     ...overrides,
   };
 }
