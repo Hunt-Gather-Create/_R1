@@ -1,5 +1,6 @@
 "use client";
 
+import { createElement } from "react";
 import {
   FileText,
   File,
@@ -10,6 +11,7 @@ import {
   Download,
   Trash2,
   Eye,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -36,7 +38,8 @@ function isMarkdownType(mimeType: string): boolean {
   return mimeType === "text/markdown" || mimeType === "text/x-markdown";
 }
 
-function getFileIcon(mimeType: string) {
+// Get icon component for file type (returns component, not element)
+function getFileIcon(mimeType: string): LucideIcon {
   if (isImageType(mimeType)) return ImageIcon;
   if (isPdfType(mimeType)) return FileText;
   if (isMarkdownType(mimeType)) return FileCode;
@@ -71,7 +74,7 @@ export function AttachmentItem({
   isDeleting = false,
 }: AttachmentItemProps) {
   const isImage = isImageType(attachment.mimeType);
-  const Icon = getFileIcon(attachment.mimeType);
+  const IconComponent = getFileIcon(attachment.mimeType);
   const iconColor = getIconColor(attachment.mimeType);
 
   const handleDownload = (e: React.MouseEvent) => {
@@ -98,7 +101,8 @@ export function AttachmentItem({
             className="w-full h-full object-cover"
           />
         ) : (
-          <Icon className={cn("w-10 h-10", iconColor)} />
+          // Use createElement to render icon (avoids "component created during render" lint error)
+          createElement(IconComponent, { className: cn("w-10 h-10", iconColor) })
         )}
       </div>
 

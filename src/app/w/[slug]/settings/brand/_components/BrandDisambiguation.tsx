@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { Globe, Plus, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { BrandSearchResult } from "@/lib/types";
@@ -51,10 +52,13 @@ export function BrandDisambiguation({
           >
             <div className="flex items-start gap-4">
               {result.logoUrl ? (
-                <img
+                <Image
                   src={result.logoUrl}
                   alt={result.name}
+                  width={48}
+                  height={48}
                   className="w-12 h-12 rounded object-contain bg-white"
+                  unoptimized
                 />
               ) : (
                 <div className="w-12 h-12 rounded bg-muted flex items-center justify-center">

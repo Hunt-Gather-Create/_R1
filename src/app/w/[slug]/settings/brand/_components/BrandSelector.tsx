@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { Globe, Plus, Check } from "lucide-react";
 import type { Brand } from "@/lib/types";
 
@@ -38,10 +39,13 @@ export function BrandSelector({
           >
             <div className="flex flex-col items-center text-center">
               {brand.logoUrl ? (
-                <img
+                <Image
                   src={brand.logoUrl}
                   alt={brand.name}
+                  width={64}
+                  height={64}
                   className="w-16 h-16 rounded object-contain bg-white mb-3"
+                  unoptimized
                 />
               ) : (
                 <div className="w-16 h-16 rounded bg-muted flex items-center justify-center mb-3">

@@ -331,7 +331,7 @@ export function SoulChat({
           <div className="text-center py-8">
             <Bot className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
             <p className="text-sm text-muted-foreground">
-              Tell me how you'd like to adjust your AI assistant's personality.
+              Tell me how you&apos;d like to adjust your AI assistant&apos;s personality.
             </p>
           </div>
         )}

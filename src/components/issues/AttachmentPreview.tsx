@@ -9,7 +9,7 @@ import {
   RotateCw,
   File,
 } from "lucide-react";
-import { cn, stripCiteTags } from "@/lib/utils";
+import { stripCiteTags } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -49,7 +49,6 @@ export function AttachmentPreview({
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [markdownContent, setMarkdownContent] = useState<string | null>(null);
-  const [isLoadingMarkdown, setIsLoadingMarkdown] = useState(false);
 
   const isImage = attachment ? isImageType(attachment.mimeType) : false;
   const isPdf = attachment ? isPdfType(attachment.mimeType) : false;
@@ -57,14 +56,21 @@ export function AttachmentPreview({
     ? isMarkdownType(attachment.mimeType, attachment.filename)
     : false;
 
+  // Derive loading state: we're loading if we should show markdown but don't have content yet
+  const isLoadingMarkdown = open && isMarkdown && markdownContent === null;
+
   // Fetch markdown content when opening a markdown file
   useEffect(() => {
+    // Only fetch when dialog is open with a markdown file
     if (!open || !attachment || !isMarkdown) {
-      setMarkdownContent(null);
       return;
     }
 
-    setIsLoadingMarkdown(true);
+    // Skip if we already have content for this attachment
+    if (markdownContent !== null) {
+      return;
+    }
+
     fetch(attachment.url)
       .then((res) => res.text())
       .then((text) => {
@@ -73,11 +79,8 @@ export function AttachmentPreview({
       .catch((err) => {
         console.error("Failed to load markdown:", err);
         setMarkdownContent("*Failed to load markdown content*");
-      })
-      .finally(() => {
-        setIsLoadingMarkdown(false);
       });
-  }, [open, attachment, isMarkdown]);
+  }, [open, attachment, isMarkdown, markdownContent]);
 
   if (!attachment) return null;
 
@@ -100,6 +103,7 @@ export function AttachmentPreview({
   const handleClose = () => {
     setZoom(1);
     setRotation(0);
+    setMarkdownContent(null);
     onOpenChange(false);
   };
 

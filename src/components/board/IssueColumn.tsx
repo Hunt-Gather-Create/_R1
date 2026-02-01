@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useSyncExternalStore } from "react";
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -25,11 +25,17 @@ interface IssueColumnProps {
   onIssueClick: (issue: IssueWithLabels) => void;
 }
 
+// Hydration-safe mount detection without triggering cascading renders
+const emptySubscribe = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
 export function IssueColumn({ column, onIssueClick }: IssueColumnProps) {
   const { addIssue, removeIssue } = useBoardContext();
   const { sendToAI } = useSendToAI();
 
-  const [mounted, setMounted] = useState(false);
+  // Use useSyncExternalStore for SSR-safe mounted state (rerender-derived-state-no-effect rule)
+  const mounted = useSyncExternalStore(emptySubscribe, getClientSnapshot, getServerSnapshot);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
 
@@ -42,10 +48,6 @@ export function IssueColumn({ column, onIssueClick }: IssueColumnProps) {
       column,
     },
   });
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const handleAddIssue = (title: string) => {
     addIssue(column.id, { title });

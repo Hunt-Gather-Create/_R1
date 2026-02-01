@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   Command,
   CommandEmpty,
@@ -11,7 +11,7 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { StatusDot } from "@/components/issues/StatusDot";
 import { PriorityIcon } from "@/components/issues/PriorityIcon";
 import { LayoutGrid, List, Plus, Search, SidebarClose } from "lucide-react";
@@ -47,12 +47,13 @@ export function CommandPalette() {
 
   const [query, setQuery] = useState("");
 
-  // Reset query when closed
-  useEffect(() => {
-    if (!isCommandPaletteOpen) {
+  // Reset query when dialog closes (handled in onOpenChange, not effect)
+  const handleOpenChange = (open: boolean) => {
+    if (!open) {
       setQuery("");
     }
-  }, [isCommandPaletteOpen]);
+    setCommandPaletteOpen(open);
+  };
 
   // Build navigation commands
   const navigationCommands = useMemo(
@@ -107,8 +108,9 @@ export function CommandPalette() {
   const showStaticCommands = !query;
 
   return (
-    <Dialog open={isCommandPaletteOpen} onOpenChange={setCommandPaletteOpen}>
+    <Dialog open={isCommandPaletteOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="overflow-hidden p-0 shadow-lg max-w-[640px]">
+        <DialogTitle className="sr-only">Command Palette</DialogTitle>
         <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground">
           <CommandInput
             placeholder="Search issues or type a command..."

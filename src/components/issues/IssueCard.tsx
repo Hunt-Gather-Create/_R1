@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useSyncExternalStore } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
@@ -59,6 +59,11 @@ function DueDateBadge({ date }: { date: Date }) {
   );
 }
 
+// Hydration-safe mount detection without triggering cascading renders
+const emptySubscribe = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
 export function IssueCard({
   issue,
   onClick,
@@ -66,7 +71,8 @@ export function IssueCard({
   onSendToAI,
   isDragging: isDraggingProp,
 }: IssueCardProps) {
-  const [mounted, setMounted] = useState(false);
+  // Use useSyncExternalStore for SSR-safe mounted state (rerender-derived-state-no-effect rule)
+  const mounted = useSyncExternalStore(emptySubscribe, getClientSnapshot, getServerSnapshot);
 
   const {
     attributes,
@@ -87,10 +93,6 @@ export function IssueCard({
   const { data: subtaskCount } = useSubtaskCount(
     issue.parentIssueId ? null : issue.id
   );
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const style = mounted
     ? {

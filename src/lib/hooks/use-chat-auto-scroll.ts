@@ -119,8 +119,8 @@ export function useChatAutoScroll(
     // On initial load with persisted messages, scroll to the bottom
     if (isInitialLoad) {
       hasScrolledInitialRef.current = true;
-      setSpacerHeight(0);
       requestAnimationFrame(() => {
+        setSpacerHeight(0);
         container.scrollTop = container.scrollHeight;
       });
       return;
@@ -134,10 +134,9 @@ export function useChatAutoScroll(
 
     if (shouldScrollToUserMessage) {
       hasScrolledForSubmitRef.current = true;
-      // Set large spacer to allow scrolling
-      setSpacerHeight(9999);
-      // Wait for spacer to render, then scroll
+      // Set large spacer to allow scrolling, then scroll after render
       requestAnimationFrame(() => {
+        setSpacerHeight(9999);
         requestAnimationFrame(() => {
           scrollToLastUserMessage();
         });

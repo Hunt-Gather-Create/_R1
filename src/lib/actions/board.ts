@@ -9,7 +9,7 @@ import {
   issueLabels,
   cycles,
 } from "../db/schema";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, inArray } from "drizzle-orm";
 import type { WorkspaceWithColumnsAndIssues, Label } from "../types";
 import { requireWorkspaceAccess } from "./workspace";
 
@@ -20,77 +20,99 @@ export async function getWorkspaceWithIssues(
   // Verify user has access
   await requireWorkspaceAccess(workspaceId);
 
-  const workspace = await db
-    .select()
-    .from(workspaces)
-    .where(eq(workspaces.id, workspaceId))
-    .get();
+  // Parallelize independent queries (async-parallel rule)
+  const [workspace, workspaceColumns, workspaceLabels, workspaceCycles] =
+    await Promise.all([
+      db
+        .select()
+        .from(workspaces)
+        .where(eq(workspaces.id, workspaceId))
+        .get(),
+      db
+        .select()
+        .from(columns)
+        .where(eq(columns.workspaceId, workspaceId))
+        .orderBy(asc(columns.position)),
+      db
+        .select()
+        .from(labels)
+        .where(eq(labels.workspaceId, workspaceId))
+        .orderBy(asc(labels.name)),
+      db
+        .select()
+        .from(cycles)
+        .where(eq(cycles.workspaceId, workspaceId))
+        .orderBy(asc(cycles.startDate)),
+    ]);
 
   if (!workspace) {
     throw new Error(`Workspace not found: ${workspaceId}`);
   }
 
-  const workspaceColumns = await db
-    .select()
-    .from(columns)
-    .where(eq(columns.workspaceId, workspaceId))
-    .orderBy(asc(columns.position));
+  // Get column IDs for batch query
+  const columnIds = workspaceColumns.map((c) => c.id);
 
-  // Get all labels for this workspace
-  const workspaceLabels = await db
-    .select()
-    .from(labels)
-    .where(eq(labels.workspaceId, workspaceId))
-    .orderBy(asc(labels.name));
+  // Batch fetch all issues for all columns in one query
+  const allIssues =
+    columnIds.length > 0
+      ? await db
+          .select()
+          .from(issues)
+          .where(inArray(issues.columnId, columnIds))
+          .orderBy(asc(issues.position))
+      : [];
 
-  // Get all cycles for this workspace
-  const workspaceCycles = await db
-    .select()
-    .from(cycles)
-    .where(eq(cycles.workspaceId, workspaceId))
-    .orderBy(asc(cycles.startDate));
+  // Batch fetch all labels for all issues in one query (fixes N+1)
+  const issueIds = allIssues.map((i) => i.id);
+  const allIssueLabelRows =
+    issueIds.length > 0
+      ? await db
+          .select({
+            issueId: issueLabels.issueId,
+            label: labels,
+          })
+          .from(issueLabels)
+          .innerJoin(labels, eq(issueLabels.labelId, labels.id))
+          .where(inArray(issueLabels.issueId, issueIds))
+      : [];
 
-  const columnsWithIssues = await Promise.all(
-    workspaceColumns.map(async (column) => {
-      const columnIssues = await db
-        .select()
-        .from(issues)
-        .where(eq(issues.columnId, column.id))
-        .orderBy(asc(issues.position));
+  // Build a map of issueId -> labels for O(1) lookup (js-index-maps rule)
+  const labelsByIssueId = new Map<string, typeof workspaceLabels>();
+  for (const row of allIssueLabelRows) {
+    const existing = labelsByIssueId.get(row.issueId);
+    if (existing) {
+      // Deduplicate by label id
+      if (!existing.some((l) => l.id === row.label.id)) {
+        existing.push(row.label);
+      }
+    } else {
+      labelsByIssueId.set(row.issueId, [row.label]);
+    }
+  }
 
-      // Get labels for each issue
-      const issuesWithLabels = await Promise.all(
-        columnIssues.map(async (issue) => {
-          const issueLabelRows = await db
-            .select({ label: labels })
-            .from(issueLabels)
-            .innerJoin(labels, eq(issueLabels.labelId, labels.id))
-            .where(eq(issueLabels.issueId, issue.id));
+  // Build a map of columnId -> issues for O(1) lookup
+  const issuesByColumnId = new Map<
+    string,
+    Array<(typeof allIssues)[number] & { labels: typeof workspaceLabels }>
+  >();
+  for (const issue of allIssues) {
+    const issueWithLabels = {
+      ...issue,
+      labels: labelsByIssueId.get(issue.id) ?? [],
+    };
+    const existing = issuesByColumnId.get(issue.columnId);
+    if (existing) {
+      existing.push(issueWithLabels);
+    } else {
+      issuesByColumnId.set(issue.columnId, [issueWithLabels]);
+    }
+  }
 
-          // Deduplicate labels by id (defensive against bad data)
-          const uniqueLabels = issueLabelRows.reduce(
-            (acc, row) => {
-              if (!acc.some((l) => l.id === row.label.id)) {
-                acc.push(row.label);
-              }
-              return acc;
-            },
-            [] as (typeof issueLabelRows)[number]["label"][]
-          );
-
-          return {
-            ...issue,
-            labels: uniqueLabels,
-          };
-        })
-      );
-
-      return {
-        ...column,
-        issues: issuesWithLabels,
-      };
-    })
-  );
+  // Assemble columns with their issues
+  const columnsWithIssues = workspaceColumns.map((column) => ({
+    ...column,
+    issues: issuesByColumnId.get(column.id) ?? [],
+  }));
 
   // Filter out empty system columns (e.g., orphaned column with no issues)
   const visibleColumns = columnsWithIssues.filter(

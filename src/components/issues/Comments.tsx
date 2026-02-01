@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import TextareaAutosize from "react-textarea-autosize";
-import { MoreHorizontal, Trash2, Pencil } from "lucide-react";
+import { Trash2, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { Comment } from "@/lib/types";

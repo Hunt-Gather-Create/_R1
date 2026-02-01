@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { X } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
 import { ChatPanel } from "./ChatPanel";

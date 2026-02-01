@@ -293,7 +293,7 @@ export function Sidebar() {
             label="Chat"
             isCollapsed={sidebarCollapsed}
             href={workspace ? `/w/${workspace.slug}/chat` : undefined}
-            shortcut="G C"
+            shortcut="G A"
           />
         </NavSection>
       </nav>

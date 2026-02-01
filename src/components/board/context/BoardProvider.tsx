@@ -410,34 +410,71 @@ export function BoardProvider({
       ? board.purpose
       : "software";
 
-  const value: BoardContextValue = {
-    board: boardForView,
-    workspaceId: wsId,
-    workspacePurpose,
-    isLoading,
-    refreshBoard,
-    findColumn,
-    findIssue,
-    findIssueByIdentifier,
-    allIssues: allIssues.filter((issue) => !issue.parentIssueId),
-    labels: board.labels,
-    cycles: board.cycles,
-    addIssue,
-    updateIssue,
-    removeIssue,
-    moveIssueToColumn,
-    addLabelToIssue,
-    removeLabelFromIssue,
-    createLabel,
-    selectedIssue,
-    selectIssue,
-    closeDetailPanel,
-    updateSelectedIssue,
-    deleteSelectedIssue,
-    moveSelectedIssueToColumn,
-    addLabelToSelectedIssue,
-    removeLabelFromSelectedIssue,
-  };
+  // Filter allIssues once, memoized
+  const filteredAllIssues = useMemo(
+    () => allIssues.filter((issue) => !issue.parentIssueId),
+    [allIssues]
+  );
+
+  // Memoize context value to prevent unnecessary re-renders (rerender-memo rule)
+  const value: BoardContextValue = useMemo(
+    () => ({
+      board: boardForView,
+      workspaceId: wsId,
+      workspacePurpose,
+      isLoading,
+      refreshBoard,
+      findColumn,
+      findIssue,
+      findIssueByIdentifier,
+      allIssues: filteredAllIssues,
+      labels: board.labels,
+      cycles: board.cycles,
+      addIssue,
+      updateIssue,
+      removeIssue,
+      moveIssueToColumn,
+      addLabelToIssue,
+      removeLabelFromIssue,
+      createLabel,
+      selectedIssue,
+      selectIssue,
+      closeDetailPanel,
+      updateSelectedIssue,
+      deleteSelectedIssue,
+      moveSelectedIssueToColumn,
+      addLabelToSelectedIssue,
+      removeLabelFromSelectedIssue,
+    }),
+    [
+      boardForView,
+      wsId,
+      workspacePurpose,
+      isLoading,
+      refreshBoard,
+      findColumn,
+      findIssue,
+      findIssueByIdentifier,
+      filteredAllIssues,
+      board.labels,
+      board.cycles,
+      addIssue,
+      updateIssue,
+      removeIssue,
+      moveIssueToColumn,
+      addLabelToIssue,
+      removeLabelFromIssue,
+      createLabel,
+      selectedIssue,
+      selectIssue,
+      closeDetailPanel,
+      updateSelectedIssue,
+      deleteSelectedIssue,
+      moveSelectedIssueToColumn,
+      addLabelToSelectedIssue,
+      removeLabelFromSelectedIssue,
+    ]
+  );
 
   return (
     <BoardContext.Provider value={value}>{children}</BoardContext.Provider>

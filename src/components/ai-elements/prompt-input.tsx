@@ -245,6 +245,8 @@ export function PromptInputFilePreviews({ className }: { className?: string }) {
             className="relative group flex items-center gap-2 px-2 py-1.5 rounded-md bg-background border border-border"
           >
             {isImage && imagePreview ? (
+              // Using img for blob URLs - next/image doesn't support blob URLs
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={imagePreview}
                 alt={file.name}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { Globe, Palette, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,10 +69,13 @@ export function BrandPreview({
                 backgroundColor: brand?.logoBackground === "dark" ? "#1f2937" : "#ffffff",
               }}
             >
-              <img
+              <Image
                 src={formData.logoUrl}
                 alt={formData.name}
+                width={80}
+                height={80}
                 className="max-w-full max-h-full object-contain"
+                unoptimized
               />
             </div>
           ) : (

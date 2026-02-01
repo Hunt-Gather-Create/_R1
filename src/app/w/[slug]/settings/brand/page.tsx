@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { useState, useEffect, useCallback } from "react";
 import { useSettingsContext } from "../context";
 import { BrandLoadingState } from "./_components/BrandLoadingState";
@@ -364,10 +365,13 @@ export default function BrandSettingsPage() {
                       : "#ffffff",
                 }}
               >
-                <img
+                <Image
                   src={workspaceBrand.resolvedLogoUrl}
                   alt={workspaceBrand.name}
+                  width={112}
+                  height={112}
                   className="max-w-full max-h-full object-contain"
+                  unoptimized
                 />
               </div>
             ) : (

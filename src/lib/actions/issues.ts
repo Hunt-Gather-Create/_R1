@@ -778,23 +778,37 @@ export async function getIssueSubtasks(
     .where(eq(issues.parentIssueId, issueId))
     .orderBy(issues.position);
 
-  // Fetch labels for each subtask
-  const subtasksWithLabels = await Promise.all(
-    subtasks.map(async (subtask) => {
-      const subtaskLabels = await db
-        .select({ label: labels })
-        .from(issueLabels)
-        .innerJoin(labels, eq(issueLabels.labelId, labels.id))
-        .where(eq(issueLabels.issueId, subtask.id));
+  if (subtasks.length === 0) {
+    return [];
+  }
 
-      return {
-        ...subtask,
-        labels: subtaskLabels.map((sl) => sl.label),
-      };
+  // Batch fetch all labels for all subtasks in one query (fixes N+1)
+  const subtaskIds = subtasks.map((s) => s.id);
+  const allSubtaskLabels = await db
+    .select({
+      issueId: issueLabels.issueId,
+      label: labels,
     })
-  );
+    .from(issueLabels)
+    .innerJoin(labels, eq(issueLabels.labelId, labels.id))
+    .where(inArray(issueLabels.issueId, subtaskIds));
 
-  return subtasksWithLabels;
+  // Build a map of subtaskId -> labels for O(1) lookup
+  const labelsBySubtaskId = new Map<string, Label[]>();
+  for (const row of allSubtaskLabels) {
+    const existing = labelsBySubtaskId.get(row.issueId);
+    if (existing) {
+      existing.push(row.label);
+    } else {
+      labelsBySubtaskId.set(row.issueId, [row.label]);
+    }
+  }
+
+  // Map subtasks with their labels
+  return subtasks.map((subtask) => ({
+    ...subtask,
+    labels: labelsBySubtaskId.get(subtask.id) ?? [],
+  }));
 }
 
 // Get subtask count for progress tracking

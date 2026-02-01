@@ -18,7 +18,9 @@ export function UserFileAttachment({ part }: UserFileAttachmentProps) {
   const filename = part.filename || "Attachment";
 
   if (isImage) {
+    // Using img for dynamic URLs (blob/data URLs) - next/image doesn't support these
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={part.url}
         alt={filename}

@@ -1,13 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import { Filter, X, ChevronDown, Check } from "lucide-react";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/issues/StatusDot";
 import { PriorityIcon } from "@/components/issues/PriorityIcon";
 import { cn } from "@/lib/utils";
@@ -16,8 +14,6 @@ import {
   STATUS_CONFIG,
   PRIORITY,
   PRIORITY_CONFIG,
-  type Status,
-  type Priority,
 } from "@/lib/design-tokens";
 import {
   type FilterState,

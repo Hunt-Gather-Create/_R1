@@ -56,6 +56,45 @@ export function IssueDetailForm({
   );
   const [descriptionHighlight, setDescriptionHighlight] = useState(false);
 
+  // Track previous values to detect changes during render (rerender-derived-state-no-effect rule)
+  const [prevIssueId, setPrevIssueId] = useState(issue.id);
+  const [prevExternalDescription, setPrevExternalDescription] = useState(externalDescription);
+  const [prevHighlightDescription, setPrevHighlightDescription] = useState(highlightDescription);
+
+  // Reset state during render when issue changes (not in effect)
+  if (prevIssueId !== issue.id) {
+    setPrevIssueId(issue.id);
+    setTitle(issue.title);
+    setDescription(issue.description || "");
+  }
+
+  // Handle external description updates during render (from AI)
+  if (
+    externalDescription !== undefined &&
+    externalDescription !== prevExternalDescription
+  ) {
+    setPrevExternalDescription(externalDescription);
+    if (externalDescription !== description) {
+      setDescription(externalDescription);
+      setDescriptionHighlight(true);
+      // Persist the update - schedule for after render
+      setTimeout(() => {
+        updateSelectedIssue({ description: externalDescription || undefined });
+      }, 0);
+      // Clear highlight after animation
+      setTimeout(() => setDescriptionHighlight(false), 2000);
+    }
+  }
+
+  // Handle highlight prop changes during render
+  if (highlightDescription && highlightDescription !== prevHighlightDescription) {
+    setPrevHighlightDescription(highlightDescription);
+    setDescriptionHighlight(true);
+    setTimeout(() => setDescriptionHighlight(false), 2000);
+  } else if (!highlightDescription && prevHighlightDescription) {
+    setPrevHighlightDescription(highlightDescription);
+  }
+
   // Use TanStack Query hooks for comments and activities
   const { data: comments = [] } = useIssueComments(issue.id);
   const { data: activities = [] } = useIssueActivities(issue.id);
@@ -67,41 +106,12 @@ export function IssueDetailForm({
   const updateCommentMutation = useUpdateComment(issue.id);
   const deleteCommentMutation = useDeleteComment(issue.id);
 
-  // Notify parent when comments load
+  // Notify parent when comments load (this effect is ok - it's calling a callback, not updating local state)
   useEffect(() => {
     if (comments.length > 0) {
       onCommentsLoad?.(comments);
     }
   }, [comments, onCommentsLoad]);
-
-  // Reset state when issue changes
-  useEffect(() => {
-    setTitle(issue.title);
-    setDescription(issue.description || "");
-  }, [issue.id, issue.title, issue.description]);
-
-  // Handle external description updates (from AI)
-  useEffect(() => {
-    if (
-      externalDescription !== undefined &&
-      externalDescription !== description
-    ) {
-      setDescription(externalDescription);
-      setDescriptionHighlight(true);
-      // Persist the update
-      updateSelectedIssue({ description: externalDescription || undefined });
-      // Clear highlight after animation
-      setTimeout(() => setDescriptionHighlight(false), 2000);
-    }
-  }, [externalDescription]);
-
-  // Also highlight when prop changes
-  useEffect(() => {
-    if (highlightDescription) {
-      setDescriptionHighlight(true);
-      setTimeout(() => setDescriptionHighlight(false), 2000);
-    }
-  }, [highlightDescription]);
 
   const handleTitleBlur = () => {
     if (title.trim() && title !== issue.title) {

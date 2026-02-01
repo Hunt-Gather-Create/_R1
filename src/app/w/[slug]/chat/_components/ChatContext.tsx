@@ -74,20 +74,34 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [isLoadingAttachment, setIsLoadingAttachment] = useState(false);
   const hasLoadedAttachmentFromUrl = useRef(false);
 
-  // Load workspace data and soul
+  // Load workspace data and soul on mount
   useEffect(() => {
-    if (params.slug) {
-      getWorkspaceBySlug(params.slug)
-        .then(async (ws) => {
-          if (ws) {
-            setWorkspace(ws);
-            // Load soul configuration
-            const workspaceSoul = await getSoul(ws.id);
+    if (!params.slug) return;
+
+    let cancelled = false;
+    setIsLoading(true);
+
+    getWorkspaceBySlug(params.slug)
+      .then(async (ws) => {
+        if (cancelled) return;
+        if (ws) {
+          setWorkspace(ws);
+          // Load soul configuration
+          const workspaceSoul = await getSoul(ws.id);
+          if (!cancelled) {
             setSoul(workspaceSoul);
           }
-        })
-        .finally(() => setIsLoading(false));
-    }
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [params.slug]);
 
   // Fetch chats

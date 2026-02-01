@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db";
 import { tokenUsage } from "@/lib/db/schema";
-import { eq, sql, and, gte, desc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 
 export interface UsageSummary {
   totalInputTokens: number;

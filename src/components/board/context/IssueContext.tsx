@@ -24,7 +24,6 @@ import type {
   Label,
   Cycle,
 } from "@/lib/types";
-import type { Status, Priority } from "@/lib/design-tokens";
 import { STATUS } from "@/lib/design-tokens";
 
 export type OptimisticAction =

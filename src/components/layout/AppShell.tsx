@@ -6,8 +6,10 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   Suspense,
 } from "react";
+import { usePathname } from "next/navigation";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import type { ViewType, GroupBy } from "@/lib/design-tokens";
@@ -58,6 +60,10 @@ function AppShellContent({
   issueCount,
 }: AppShellProps) {
   const { urlState, setView, setGroupBy, setCreate, setIssue } = useURLState();
+  const pathname = usePathname();
+
+  // Extract workspace slug from pathname (e.g., /w/my-workspace/... -> my-workspace)
+  const workspaceSlug = pathname.match(/^\/w\/([^/]+)/)?.[1];
 
   // Local UI state (not in URL)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -82,51 +88,37 @@ function AppShellContent({
     setSidebarCollapsed((prev) => !prev);
   }, []);
 
+  // Chord shortcut state (for sequences like "g b", "g l")
+  const chordKeyRef = useRef<string | null>(null);
+  const chordTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearChord = useCallback(() => {
+    chordKeyRef.current = null;
+    if (chordTimeoutRef.current) {
+      clearTimeout(chordTimeoutRef.current);
+      chordTimeoutRef.current = null;
+    }
+  }, []);
+
   // Global keyboard shortcuts
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      const isInInput =
+        document.activeElement?.tagName === "INPUT" ||
+        document.activeElement?.tagName === "TEXTAREA" ||
+        (document.activeElement as HTMLElement)?.isContentEditable;
+
       // Command/Ctrl + K for command palette
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
+        clearChord();
         setCommandPaletteOpen(true);
-      }
-
-      // C for create issue (only when not in input)
-      if (
-        e.key === "c" &&
-        !e.metaKey &&
-        !e.ctrlKey &&
-        document.activeElement?.tagName !== "INPUT" &&
-        document.activeElement?.tagName !== "TEXTAREA"
-      ) {
-        e.preventDefault();
-        setCreate(true);
-      }
-
-      // P for AI planning (only when not in input)
-      if (
-        e.key === "p" &&
-        !e.metaKey &&
-        !e.ctrlKey &&
-        document.activeElement?.tagName !== "INPUT" &&
-        document.activeElement?.tagName !== "TEXTAREA"
-      ) {
-        e.preventDefault();
-        setAIPlanningOpen(true);
-      }
-
-      // [ to toggle sidebar
-      if (
-        e.key === "[" &&
-        document.activeElement?.tagName !== "INPUT" &&
-        document.activeElement?.tagName !== "TEXTAREA"
-      ) {
-        e.preventDefault();
-        toggleSidebar();
+        return;
       }
 
       // Escape to close panels
       if (e.key === "Escape") {
+        clearChord();
         if (isCommandPaletteOpen) {
           setCommandPaletteOpen(false);
         } else if (isAIPlanningOpen) {
@@ -136,6 +128,74 @@ function AppShellContent({
         } else if (detailPanelOpen) {
           setDetailPanelOpen(false);
         }
+        return;
+      }
+
+      // Skip other shortcuts when in input fields
+      if (isInInput) {
+        clearChord();
+        return;
+      }
+
+      // Skip if modifier keys are pressed (except for specific combos handled above)
+      if (e.metaKey || e.ctrlKey || e.altKey) {
+        clearChord();
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+
+      // Handle chord sequences (e.g., "g b" for go to board, "g a" for go to AI chat)
+      if (chordKeyRef.current === "g") {
+        clearChord();
+        if (key === "b") {
+          e.preventDefault();
+          setView("board");
+          return;
+        } else if (key === "l") {
+          e.preventDefault();
+          setView("list");
+          return;
+        } else if (key === "a" && workspaceSlug) {
+          e.preventDefault();
+          // Use full page navigation for chat to ensure proper data loading
+          window.location.href = `/w/${workspaceSlug}/chat`;
+          return;
+        }
+        // If not a valid second key, fall through to check single-key shortcuts
+      }
+
+      // Start a chord sequence with "g"
+      if (key === "g") {
+        e.preventDefault();
+        chordKeyRef.current = "g";
+        // Clear chord after 1 second if no follow-up key
+        chordTimeoutRef.current = setTimeout(clearChord, 1000);
+        return;
+      }
+
+      // Single-key shortcuts (clear any pending chord)
+      clearChord();
+
+      // C for create issue
+      if (key === "c") {
+        e.preventDefault();
+        setCreate(true);
+        return;
+      }
+
+      // P for AI planning
+      if (key === "p") {
+        e.preventDefault();
+        setAIPlanningOpen(true);
+        return;
+      }
+
+      // [ to toggle sidebar
+      if (key === "[") {
+        e.preventDefault();
+        toggleSidebar();
+        return;
       }
     },
     [
@@ -146,6 +206,9 @@ function AppShellContent({
       toggleSidebar,
       setCreate,
       setDetailPanelOpen,
+      setView,
+      clearChord,
+      workspaceSlug,
     ]
   );
 

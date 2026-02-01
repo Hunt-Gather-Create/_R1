@@ -1,5 +1,6 @@
 "use client";
 
+import { createElement } from "react";
 import { format } from "date-fns";
 import {
   Circle,
@@ -10,6 +11,7 @@ import {
   MessageSquare,
   Plus,
   Paperclip,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { STATUS_CONFIG, PRIORITY_CONFIG } from "@/lib/design-tokens";
@@ -20,30 +22,24 @@ interface ActivityFeedProps {
   className?: string;
 }
 
-function getActivityIcon(type: ActivityType) {
-  switch (type) {
-    case "created":
-      return Plus;
-    case "status_changed":
-      return Circle;
-    case "priority_changed":
-      return AlertCircle;
-    case "label_added":
-    case "label_removed":
-      return Tag;
-    case "cycle_changed":
-      return Clock;
-    case "comment_added":
-      return MessageSquare;
-    case "moved":
-      return ArrowRight;
-    case "attachment_added":
-    case "attachment_removed":
-      return Paperclip;
-    default:
-      return Circle;
-  }
-}
+// Map activity types to icons (declared outside component to avoid recreation)
+const ACTIVITY_ICON_MAP: Record<ActivityType, LucideIcon> = {
+  created: Plus,
+  status_changed: Circle,
+  priority_changed: AlertCircle,
+  label_added: Tag,
+  label_removed: Tag,
+  cycle_changed: Clock,
+  comment_added: MessageSquare,
+  moved: ArrowRight,
+  attachment_added: Paperclip,
+  attachment_removed: Paperclip,
+  updated: Circle,
+  converted_to_subtask: Circle,
+  converted_to_issue: Circle,
+  subtask_added: Plus,
+  subtask_removed: Circle,
+};
 
 function getActivityDescription(activity: Activity): string {
   const data: ActivityData | null = activity.data
@@ -83,13 +79,14 @@ function getActivityDescription(activity: Activity): string {
 }
 
 function ActivityItem({ activity }: { activity: Activity }) {
-  const Icon = getActivityIcon(activity.type as ActivityType);
   const description = getActivityDescription(activity);
+  // Use createElement to render icon from map (avoids "component created during render" lint error)
+  const IconComponent = ACTIVITY_ICON_MAP[activity.type as ActivityType] ?? Circle;
 
   return (
     <div className="flex items-start gap-3 py-2">
       <div className="flex-shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center mt-0.5">
-        <Icon className="w-3 h-3 text-muted-foreground" />
+        {createElement(IconComponent, { className: "w-3 h-3 text-muted-foreground" })}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm">
