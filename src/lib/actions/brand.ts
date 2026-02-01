@@ -4,11 +4,12 @@ import { revalidatePath } from "next/cache";
 import { db } from "../db";
 import { brands, workspaces } from "../db/schema";
 import { eq, and } from "drizzle-orm";
-import type { Brand, CreateBrandInput, UpdateBrandInput } from "../types";
+import type { Brand, CreateBrandInput, UpdateBrandInput, BrandGuidelines } from "../types";
 import { getCurrentUserId } from "../auth";
 import { requireWorkspaceAccess } from "./workspace";
 import { processLogo, isR2Configured } from "../storage/logo-processor";
 import { generateDownloadUrl, deleteObject } from "../storage/r2-client";
+import { inngest } from "../inngest/client";
 
 /**
  * Get all brands for the current user
@@ -305,6 +306,20 @@ export async function setWorkspaceBrand(
     })
     .where(eq(workspaces.id, workspaceId));
 
+  // Trigger brand guidelines research if not already done/in-progress
+  if (!brand.guidelines && brand.guidelinesStatus !== "processing") {
+    await inngest.send({
+      name: "brand/guidelines.research",
+      data: {
+        brandId: brand.id,
+        brandName: brand.name,
+        websiteUrl: brand.websiteUrl ?? undefined,
+        workspaceId,
+        metadata: { description: `Researching brand guidelines for ${brand.name}` },
+      },
+    });
+  }
+
   revalidatePath("/w");
 }
 
@@ -322,6 +337,47 @@ export async function unlinkWorkspaceBrand(workspaceId: string): Promise<void> {
       updatedAt: new Date(),
     })
     .where(eq(workspaces.id, workspaceId));
+
+  revalidatePath("/w");
+}
+
+/**
+ * Update brand guidelines
+ */
+export async function updateBrandGuidelines(
+  brandId: string,
+  guidelines: BrandGuidelines
+): Promise<void> {
+  const userId = await getCurrentUserId();
+  if (!userId) {
+    throw new Error("Not authenticated");
+  }
+
+  // Verify ownership
+  const existing = await db
+    .select()
+    .from(brands)
+    .where(and(eq(brands.id, brandId), eq(brands.userId, userId)))
+    .get();
+
+  if (!existing) {
+    throw new Error("Brand not found or access denied");
+  }
+
+  // Update lastUpdated timestamp in guidelines
+  const updatedGuidelines: BrandGuidelines = {
+    ...guidelines,
+    lastUpdated: new Date().toISOString(),
+  };
+
+  await db
+    .update(brands)
+    .set({
+      guidelines: JSON.stringify(updatedGuidelines),
+      guidelinesUpdatedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(brands.id, brandId));
 
   revalidatePath("/w");
 }

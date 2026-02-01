@@ -32,6 +32,10 @@ export const brands = sqliteTable("brands", {
   primaryColor: text("primary_color"),
   secondaryColor: text("secondary_color"),
   industry: text("industry"),
+  // Brand guidelines (researched via AI)
+  guidelines: text("guidelines"), // JSON: BrandGuidelines
+  guidelinesStatus: text("guidelines_status"), // pending | processing | completed | failed | not_found
+  guidelinesUpdatedAt: integer("guidelines_updated_at", { mode: "timestamp" }),
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });

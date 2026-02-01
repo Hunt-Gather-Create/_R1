@@ -16,6 +16,9 @@ function createMockBrand(overrides: Partial<Brand> = {}): Brand {
     primaryColor: "#ff0000",
     secondaryColor: "#00ff00",
     industry: "Technology",
+    guidelines: null,
+    guidelinesStatus: null,
+    guidelinesUpdatedAt: null,
     createdAt: new Date("2024-01-01"),
     updatedAt: new Date("2024-01-01"),
     ...overrides,
@@ -79,6 +82,12 @@ vi.mock("../auth", () => ({
 
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
+}));
+
+vi.mock("../inngest/client", () => ({
+  inngest: {
+    send: vi.fn().mockResolvedValue({ ids: ["event-1"] }),
+  },
 }));
 
 describe("brand actions", () => {

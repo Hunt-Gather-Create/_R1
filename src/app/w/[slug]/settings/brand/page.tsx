@@ -25,16 +25,23 @@ const BrandPreview = dynamic(
   { ssr: false }
 );
 
+const GuidelinesPreview = dynamic(
+  () => import("./_components/GuidelinesPreview").then((mod) => mod.GuidelinesPreview),
+  { ssr: false }
+);
+
 import {
   getWorkspaceBrand,
   createBrand,
   setWorkspaceBrand as linkWorkspaceBrand,
   unlinkWorkspaceBrand,
+  updateBrandGuidelines,
   type BrandWithLogoUrl,
 } from "@/lib/actions/brand";
-import type { Brand, BrandSearchResult, CreateBrandInput } from "@/lib/types";
-import { Globe, Pencil, Trash2 } from "lucide-react";
+import type { Brand, BrandSearchResult, CreateBrandInput, BrandGuidelines, GuidelinesStatus } from "@/lib/types";
+import { Globe, Pencil, Trash2, Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GradientPage } from "@/components/ui/gradient-page";
 import { PageHeader } from "@/components/ui/page-header";
@@ -60,6 +67,19 @@ export default function BrandSettingsPage() {
   const [previewBrand, setPreviewBrand] = useState<Partial<Brand> | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("overview");
+  const [editedGuidelines, setEditedGuidelines] = useState<BrandGuidelines | null>(null);
+  const [isSavingGuidelines, setIsSavingGuidelines] = useState(false);
+
+  // Parse guidelines from brand
+  const parseGuidelines = useCallback((brand: BrandWithLogoUrl): BrandGuidelines | null => {
+    if (!brand.guidelines) return null;
+    try {
+      return JSON.parse(brand.guidelines) as BrandGuidelines;
+    } catch {
+      return null;
+    }
+  }, []);
 
   // Load initial data
   useEffect(() => {
@@ -79,6 +99,53 @@ export default function BrandSettingsPage() {
 
     loadData();
   }, [currentUserId, workspace?.id]);
+
+  // Initialize editedGuidelines when guidelines change or tab switches
+  useEffect(() => {
+    if (activeTab === "guidelines" && workspaceBrand) {
+      const guidelines = parseGuidelines(workspaceBrand);
+      if (guidelines) {
+        setEditedGuidelines(guidelines);
+      } else {
+        // Initialize with empty guidelines structure
+        setEditedGuidelines({
+          lastUpdated: new Date().toISOString(),
+          confidence: "low",
+        });
+      }
+    }
+  }, [activeTab, workspaceBrand, parseGuidelines]);
+
+  // Poll for guidelines updates when on the guidelines tab and status is pending/processing
+  useEffect(() => {
+    if (activeTab !== "guidelines" || !workspace?.id || !workspaceBrand) return;
+
+    const guidelinesStatus = workspaceBrand.guidelinesStatus as GuidelinesStatus | null;
+
+    // Only poll if status is null, pending, or processing
+    if (guidelinesStatus && guidelinesStatus !== "pending" && guidelinesStatus !== "processing") {
+      return;
+    }
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const updatedBrand = await getWorkspaceBrand(workspace.id);
+        if (updatedBrand) {
+          setWorkspaceBrandState(updatedBrand);
+
+          // Stop polling if status changed to completed, failed, or not_found
+          const newStatus = updatedBrand.guidelinesStatus as GuidelinesStatus | null;
+          if (newStatus && newStatus !== "pending" && newStatus !== "processing") {
+            clearInterval(pollInterval);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to poll brand data:", err);
+      }
+    }, 3000); // Poll every 3 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [activeTab, workspace?.id, workspaceBrand]);
 
   // Handle disambiguation selection (defined first since handleSearch uses it)
   const handleDisambiguationSelect = useCallback(
@@ -222,11 +289,35 @@ export default function BrandSettingsPage() {
     }
   }, [workspaceBrand]);
 
+  // Handle save guidelines
+  const handleSaveGuidelines = useCallback(async () => {
+    if (!workspaceBrand || !editedGuidelines) return;
+
+    setIsSavingGuidelines(true);
+    setError(null);
+
+    try {
+      await updateBrandGuidelines(workspaceBrand.id, editedGuidelines);
+
+      // Reload the brand to get updated data
+      if (workspace?.id) {
+        const updatedBrand = await getWorkspaceBrand(workspace.id);
+        setWorkspaceBrandState(updatedBrand);
+      }
+    } catch (err) {
+      console.error("Save guidelines error:", err);
+      setError("Failed to save guidelines. Please try again.");
+    } finally {
+      setIsSavingGuidelines(false);
+    }
+  }, [workspaceBrand, editedGuidelines, workspace?.id]);
+
   // Render the brand detail view (linked state)
   const renderBrandDetail = () => {
     if (!workspaceBrand) return null;
 
     const primaryColor = workspaceBrand.primaryColor || "#3b82f6";
+    const guidelinesStatus = workspaceBrand.guidelinesStatus as GuidelinesStatus | null;
 
     return (
       <GradientPage
@@ -298,11 +389,14 @@ export default function BrandSettingsPage() {
 
         {/* Tabs */}
         <section id="brand-tabs" className="container">
-          <Tabs defaultValue="overview" className="w-full">
-            <TabsList variant="line" className="border-b border-border">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="guidelines" disabled>
+              <TabsTrigger value="guidelines">
                 Brand Guidelines
+                {(!guidelinesStatus || guidelinesStatus === "processing" || guidelinesStatus === "pending") && (
+                  <Loader2 className="ml-1.5 h-3 w-3 animate-spin" />
+                )}
               </TabsTrigger>
               <TabsTrigger value="audience" disabled>
                 Audience
@@ -318,102 +412,185 @@ export default function BrandSettingsPage() {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="overview" className="py-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {/* Website */}
-                {workspaceBrand.websiteUrl && (
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-1">
-                      Website
-                    </h3>
-                    <a
-                      href={workspaceBrand.websiteUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      {workspaceBrand.websiteUrl}
-                    </a>
-                  </div>
-                )}
-
-                {/* Industry */}
-                {workspaceBrand.industry && (
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-1">
-                      Industry
-                    </h3>
-                    <p className="text-foreground">{workspaceBrand.industry}</p>
-                  </div>
-                )}
-
-                {/* Colors */}
-                <div>
-                  <h3 className="text-sm font-medium text-muted-foreground mb-2">
-                    Brand Colors
-                  </h3>
-                  <div className="flex gap-3">
-                    {workspaceBrand.primaryColor && (
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-8 h-8 rounded-lg border border-border"
-                          style={{
-                            backgroundColor: workspaceBrand.primaryColor,
-                          }}
-                          title={`Primary: ${workspaceBrand.primaryColor}`}
-                        />
-                        <span className="text-sm text-muted-foreground font-mono">
-                          {workspaceBrand.primaryColor}
-                        </span>
+            <TabsContent value="overview">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {/* Website */}
+                    {workspaceBrand.websiteUrl && (
+                      <div>
+                        <h3 className="text-sm font-medium text-muted-foreground mb-1">
+                          Website
+                        </h3>
+                        <a
+                          href={workspaceBrand.websiteUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          {workspaceBrand.websiteUrl}
+                        </a>
                       </div>
                     )}
-                    {workspaceBrand.secondaryColor && (
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-8 h-8 rounded-lg border border-border"
-                          style={{
-                            backgroundColor: workspaceBrand.secondaryColor,
-                          }}
-                          title={`Secondary: ${workspaceBrand.secondaryColor}`}
-                        />
-                        <span className="text-sm text-muted-foreground font-mono">
-                          {workspaceBrand.secondaryColor}
-                        </span>
+
+                    {/* Industry */}
+                    {workspaceBrand.industry && (
+                      <div>
+                        <h3 className="text-sm font-medium text-muted-foreground mb-1">
+                          Industry
+                        </h3>
+                        <p className="text-foreground">{workspaceBrand.industry}</p>
                       </div>
                     )}
+
+                    {/* Colors */}
+                    <div>
+                      <h3 className="text-sm font-medium text-muted-foreground mb-2">
+                        Brand Colors
+                      </h3>
+                      <div className="flex gap-3">
+                        {workspaceBrand.primaryColor && (
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-8 h-8 rounded-lg border border-border"
+                              style={{
+                                backgroundColor: workspaceBrand.primaryColor,
+                              }}
+                              title={`Primary: ${workspaceBrand.primaryColor}`}
+                            />
+                            <span className="text-sm text-muted-foreground font-mono">
+                              {workspaceBrand.primaryColor}
+                            </span>
+                          </div>
+                        )}
+                        {workspaceBrand.secondaryColor && (
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-8 h-8 rounded-lg border border-border"
+                              style={{
+                                backgroundColor: workspaceBrand.secondaryColor,
+                              }}
+                              title={`Secondary: ${workspaceBrand.secondaryColor}`}
+                            />
+                            <span className="text-sm text-muted-foreground font-mono">
+                              {workspaceBrand.secondaryColor}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="guidelines">
+              {(!guidelinesStatus || guidelinesStatus === "pending") && (
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                      <Loader2 className="h-8 w-8 animate-spin mb-4" />
+                      <p>Waiting for brand guidelines research to start...</p>
+                      <p className="text-sm mt-1">This will begin automatically</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {guidelinesStatus === "processing" && (
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                      <Loader2 className="h-8 w-8 animate-spin mb-4" />
+                      <p>Researching brand guidelines...</p>
+                      <p className="text-sm mt-1">This may take a minute</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {guidelinesStatus === "failed" && editedGuidelines && (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm">
+                    <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+                    <p className="text-destructive">
+                      Failed to research brand guidelines automatically. You can add them manually below.
+                    </p>
+                  </div>
+                  <GuidelinesPreview
+                    guidelines={editedGuidelines}
+                    onGuidelinesChange={setEditedGuidelines}
+                    onSave={handleSaveGuidelines}
+                    isSaving={isSavingGuidelines}
+                  />
                 </div>
-              </div>
+              )}
+
+              {guidelinesStatus === "not_found" && editedGuidelines && (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-2 p-3 bg-muted border border-border rounded-lg text-sm">
+                    <AlertCircle className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <p className="text-muted-foreground">
+                      No brand guidelines found online. You can add them manually below.
+                    </p>
+                  </div>
+                  <GuidelinesPreview
+                    guidelines={editedGuidelines}
+                    onGuidelinesChange={setEditedGuidelines}
+                    onSave={handleSaveGuidelines}
+                    isSaving={isSavingGuidelines}
+                  />
+                </div>
+              )}
+
+              {guidelinesStatus === "completed" && editedGuidelines && (
+                <GuidelinesPreview
+                  guidelines={editedGuidelines}
+                  onGuidelinesChange={setEditedGuidelines}
+                  onSave={handleSaveGuidelines}
+                  isSaving={isSavingGuidelines}
+                />
+              )}
             </TabsContent>
 
-            <TabsContent value="guidelines" className="py-6">
-              <div className="text-center py-12 text-muted-foreground">
-                Brand guidelines coming soon
-              </div>
+            <TabsContent value="audience">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center py-12 text-muted-foreground">
+                    Audience insights coming soon
+                  </div>
+                </CardContent>
+              </Card>
             </TabsContent>
 
-            <TabsContent value="audience" className="py-6">
-              <div className="text-center py-12 text-muted-foreground">
-                Audience insights coming soon
-              </div>
+            <TabsContent value="tone">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center py-12 text-muted-foreground">
+                    Tone & style guidelines coming soon
+                  </div>
+                </CardContent>
+              </Card>
             </TabsContent>
 
-            <TabsContent value="tone" className="py-6">
-              <div className="text-center py-12 text-muted-foreground">
-                Tone & style guidelines coming soon
-              </div>
+            <TabsContent value="competitors">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center py-12 text-muted-foreground">
+                    Competitor analysis coming soon
+                  </div>
+                </CardContent>
+              </Card>
             </TabsContent>
 
-            <TabsContent value="competitors" className="py-6">
-              <div className="text-center py-12 text-muted-foreground">
-                Competitor analysis coming soon
-              </div>
-            </TabsContent>
-
-            <TabsContent value="files" className="py-6">
-              <div className="text-center py-12 text-muted-foreground">
-                Brand files coming soon
-              </div>
+            <TabsContent value="files">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center py-12 text-muted-foreground">
+                    Brand files coming soon
+                  </div>
+                </CardContent>
+              </Card>
             </TabsContent>
           </Tabs>
         </section>

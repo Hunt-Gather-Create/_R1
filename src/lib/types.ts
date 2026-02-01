@@ -230,3 +230,40 @@ export interface JobsQueryOptions {
   limit?: number;
   offset?: number;
 }
+
+// Brand Guidelines - extracted from online brand resources
+export interface BrandGuidelines {
+  logo?: {
+    rules?: string[];
+    clearSpace?: string;
+    minimumSize?: string;
+    incorrectUsage?: string[];
+  };
+  colors?: {
+    primary?: { name?: string; hex: string; usage?: string };
+    secondary?: { name?: string; hex: string; usage?: string };
+    palette?: Array<{ name?: string; hex: string; usage?: string }>;
+  };
+  typography?: {
+    primaryFont?: string;
+    secondaryFont?: string;
+    headingFont?: string;
+    bodyFont?: string;
+    rules?: string[];
+  };
+  voiceAndTone?: {
+    characteristics?: string[];
+    doUse?: string[];
+    dontUse?: string[];
+  };
+  imagery?: {
+    style?: string;
+    guidelines?: string[];
+  };
+  sources?: Array<{ url: string; title?: string; fetchedAt: string }>;
+  lastUpdated: string;
+  confidence: "high" | "medium" | "low";
+  summary?: string;
+}
+
+export type GuidelinesStatus = "pending" | "processing" | "completed" | "failed" | "not_found";

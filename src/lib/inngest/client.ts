@@ -8,6 +8,15 @@ export type Events = {
       userId?: string;
     };
   };
+  "brand/guidelines.research": {
+    data: {
+      brandId: string;
+      brandName: string;
+      websiteUrl?: string;
+      workspaceId: string;
+      metadata?: { description?: string };
+    };
+  };
 };
 
 export const inngest = new Inngest({
