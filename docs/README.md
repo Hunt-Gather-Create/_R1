@@ -7,9 +7,10 @@ Quick reference for working with this codebase. For commands and architecture ov
 | Document | Description |
 |----------|-------------|
 | [AI SDK Integration](./ai-sdk.md) | Server/client patterns, built-in tools, custom tools |
-| [UI Components](./ui-components.md) | shadcn/ui primitives, styling patterns, AI components |
+| [Brand Settings](./brand-settings.md) | Brand identity, guidelines, and research workflow |
 | [MCP Integration](./mcp-integration.md) | Model Context Protocol server setup |
 | [Skills System](./skills.md) | Creating reusable AI instruction sets |
+| [UI Components](./ui-components.md) | shadcn/ui primitives, styling patterns, AI components |
 
 ## External Resources
 

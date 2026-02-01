@@ -4,3 +4,4 @@ export {
   trackFunctionFinished,
   trackFunctionFailed,
 } from "./job-tracker";
+export { researchBrandGuidelines } from "./brand-guidelines-research";

@@ -5,6 +5,7 @@ import {
   trackFunctionInvoked,
   trackFunctionFinished,
   trackFunctionFailed,
+  researchBrandGuidelines,
 } from "@/lib/inngest/functions";
 
 export const { GET, POST, PUT } = serve({
@@ -14,5 +15,6 @@ export const { GET, POST, PUT } = serve({
     trackFunctionInvoked,
     trackFunctionFinished,
     trackFunctionFailed,
+    researchBrandGuidelines,
   ],
 });
