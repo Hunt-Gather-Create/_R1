@@ -22,6 +22,7 @@ import {
   useSaveChatMessage,
   useClearChatMessages,
   useInvalidateAttachments,
+  useInvalidateAISuggestions,
   useAutoFocusOnComplete,
   useChatAutoScroll,
 } from "@/lib/hooks";
@@ -71,6 +72,7 @@ export function IssueChatPanel({
   const saveChatMutation = useSaveChatMessage(issue.id);
   const clearChatMutation = useClearChatMessages(issue.id);
   const invalidateAttachments = useInvalidateAttachments(issue.id);
+  const invalidateAISuggestions = useInvalidateAISuggestions(issue.id);
 
   // Build issue context for the API
   const issueContext: IssueContext = useMemo(
@@ -106,6 +108,11 @@ export function IssueChatPanel({
         // Refresh attachments after AI attaches content
         // Small delay to ensure server-side processing is complete
         setTimeout(() => invalidateAttachments(), 500);
+      }
+      if (toolCall.toolName === "suggestAITasks") {
+        // Refresh AI suggestions after AI creates new suggestions
+        // Small delay to ensure server-side processing is complete
+        setTimeout(() => invalidateAISuggestions(), 500);
       }
     },
   });
@@ -246,6 +253,18 @@ export function IssueChatPanel({
                     >
                       <Paperclip className="w-3 h-3" />
                       <span>Content attached to issue</span>
+                    </div>
+                  );
+                }
+                // Handle suggestAITasks tool
+                if (toolPart.toolName === "suggestAITasks") {
+                  return (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 text-xs text-purple-500 mt-2 pt-2 border-t border-border/50"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>AI tasks suggested - see subtasks section</span>
                     </div>
                   );
                 }

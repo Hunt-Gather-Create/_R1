@@ -390,66 +390,68 @@
   --card-border-radius: 0.75rem;
 }
 
-.project-card-wrapper {
-  position: relative;
-  overflow: hidden;
-  border-radius: var(--card-border-radius);
-  background: linear-gradient(to bottom left, oklch(0.25 0.01 270), oklch(0.2 0.01 270));
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-  min-height: 180px;
-}
+@layer components {
+  .project-card-wrapper {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--card-border-radius);
+    background: linear-gradient(to bottom left, oklch(0.25 0.01 270), oklch(0.2 0.01 270));
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    min-height: 180px;
+  }
 
-.project-card-wrapper:hover {
-  transform: scale(1.02);
-  box-shadow:
-    0 10px 40px -10px rgba(var(--sky-blue-rgb), 0.3),
-    inset 0 0 0 1px rgba(var(--sky-blue-rgb), 0.3);
-}
+  .project-card-wrapper:hover {
+    transform: scale(1.02);
+    box-shadow:
+      0 10px 40px -10px rgba(var(--sky-blue-rgb), 0.3),
+      inset 0 0 0 1px rgba(var(--sky-blue-rgb), 0.3);
+  }
 
-/* Spinning gradient border effect */
-.project-card-wrapper::before {
-  content: '';
-  position: absolute;
-  left: -50%;
-  top: -50%;
-  width: 200%;
-  height: 200%;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    transparent 330deg,
-    rgba(244, 244, 244, 0.05) 360deg
-  );
-  transition: opacity 0.3s ease-in-out;
-  opacity: 0;
-  z-index: 0;
-  animation: border-spin 3s linear infinite;
-}
+  /* Spinning gradient border effect */
+  .project-card-wrapper::before {
+    content: '';
+    position: absolute;
+    left: -50%;
+    top: -50%;
+    width: 200%;
+    height: 200%;
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      transparent 330deg,
+      rgba(244, 244, 244, 0.05) 360deg
+    );
+    transition: opacity 0.3s ease-in-out;
+    opacity: 0;
+    z-index: 0;
+    animation: border-spin 3s linear infinite;
+  }
 
-.project-card-wrapper:hover::before {
-  background: conic-gradient(
-    from 0deg,
-    rgba(var(--sky-blue-rgb), 0.15) 0deg,
-    rgba(var(--sky-blue-rgb), 0.6) 80deg,
-    rgba(var(--sky-blue-rgb), 1) 90deg,
-    rgba(var(--sky-blue-rgb), 0.6) 100deg,
-    rgba(var(--sky-blue-rgb), 0.15) 180deg,
-    transparent 180deg,
-    transparent 360deg
-  );
-  opacity: 1;
-}
+  .project-card-wrapper:hover::before {
+    background: conic-gradient(
+      from 0deg,
+      rgba(var(--sky-blue-rgb), 0.15) 0deg,
+      rgba(var(--sky-blue-rgb), 0.6) 80deg,
+      rgba(var(--sky-blue-rgb), 1) 90deg,
+      rgba(var(--sky-blue-rgb), 0.6) 100deg,
+      rgba(var(--sky-blue-rgb), 0.15) 180deg,
+      transparent 180deg,
+      transparent 360deg
+    );
+    opacity: 1;
+  }
 
-/* Card content layer sits above the gradient */
-.project-card-content {
-  position: absolute;
-  left: 1px;
-  top: 1px;
-  width: calc(100% - 2px);
-  height: calc(100% - 2px);
-  z-index: 1;
-  border-radius: calc(var(--card-border-radius) - 1px);
-  background: linear-gradient(to bottom, oklch(0.14 0.01 270), oklch(0.12 0.01 270 / 0.95));
+  /* Card content layer sits above the gradient */
+  .project-card-content {
+    position: absolute;
+    left: 1px;
+    top: 1px;
+    width: calc(100% - 2px);
+    height: calc(100% - 2px);
+    z-index: 1;
+    border-radius: calc(var(--card-border-radius) - 1px);
+    background: linear-gradient(to bottom, oklch(0.14 0.01 270), oklch(0.12 0.01 270 / 0.95));
+  }
 }
 
 @keyframes border-spin {

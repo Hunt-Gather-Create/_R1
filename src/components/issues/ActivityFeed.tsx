@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Plus,
   Paperclip,
+  User,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,7 @@ const ACTIVITY_ICON_MAP: Record<ActivityType, LucideIcon> = {
   created: Plus,
   status_changed: Circle,
   priority_changed: AlertCircle,
+  assignee_changed: User,
   label_added: Tag,
   label_removed: Tag,
   cycle_changed: Clock,
@@ -57,6 +59,8 @@ function getActivityDescription(activity: Activity): string {
       const oldPriority = data?.oldValue as number;
       const newPriority = data?.newValue as number;
       return `changed priority from ${PRIORITY_CONFIG[oldPriority as keyof typeof PRIORITY_CONFIG]?.label || oldPriority} to ${PRIORITY_CONFIG[newPriority as keyof typeof PRIORITY_CONFIG]?.label || newPriority}`;
+    case "assignee_changed":
+      return data?.newValue ? `assigned to a team member` : `unassigned`;
     case "label_added":
       return `added label "${data?.labelName}"`;
     case "label_removed":

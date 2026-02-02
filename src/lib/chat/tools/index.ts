@@ -10,8 +10,10 @@ export {
   attachContentSchema,
   planIssueSchema,
   suggestIssueSchema,
+  suggestAITasksSchema,
   type UpdateDescriptionInput,
   type AttachContentInput,
   type PlanIssueInput,
   type SuggestIssueInput,
+  type SuggestAITasksInput,
 } from "./schemas";

@@ -24,6 +24,8 @@ export const queryKeys = {
       [...queryKeys.issue.all, issueId, "subtaskCount"] as const,
     attachments: (issueId: string) =>
       [...queryKeys.issue.all, issueId, "attachments"] as const,
+    aiSuggestions: (issueId: string) =>
+      [...queryKeys.issue.all, issueId, "aiSuggestions"] as const,
   },
   settings: {
     labels: (workspaceId: string) =>

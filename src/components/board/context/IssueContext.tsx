@@ -220,6 +220,13 @@ export function IssueProvider({
       position:
         board.columns.find((c) => c.id === columnId)?.issues.length ?? 0,
       sentToAI: false,
+      assigneeId: null,
+      aiAssignable: false,
+      aiInstructions: null,
+      aiTools: null,
+      aiExecutionStatus: null,
+      aiJobId: null,
+      aiExecutionResult: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       labels: [],

@@ -17,6 +17,7 @@ import type {
   workspaceChatAttachments,
   brands,
   backgroundJobs,
+  aiSuggestions,
 } from "./db/schema";
 import type { Status, Priority } from "./design-tokens";
 
@@ -97,6 +98,7 @@ export type CreateIssueInput = {
   cycleId?: string;
   labelIds?: string[];
   parentIssueId?: string; // For creating subtasks
+  assigneeId?: string | null; // Workspace member assigned to this issue
 };
 
 export type UpdateIssueInput = Partial<CreateIssueInput>;
@@ -143,6 +145,7 @@ export type ActivityType =
   | "updated"
   | "status_changed"
   | "priority_changed"
+  | "assignee_changed"
   | "label_added"
   | "label_removed"
   | "cycle_changed"
@@ -267,3 +270,25 @@ export interface BrandGuidelines {
 }
 
 export type GuidelinesStatus = "pending" | "processing" | "completed" | "failed" | "not_found";
+
+// AI Suggestions - ghost subtasks suggested by AI
+export type AISuggestion = typeof aiSuggestions.$inferSelect;
+
+// AI execution status for AI-assignable subtasks
+export type AIExecutionStatus = "pending" | "running" | "completed" | "failed" | null;
+
+// Parsed AI suggestion with tools array instead of JSON string
+export interface AISuggestionWithTools extends Omit<AISuggestion, "toolsRequired"> {
+  toolsRequired: string[] | null;
+  priority: number; // 0=urgent, 1=high, 2=medium, 3=low, 4=none
+}
+
+// Extended issue type for AI subtasks with parsed JSON fields
+export type IssueWithAI = Issue & {
+  aiAssignable: boolean;
+  aiInstructions: string | null;
+  aiTools: string[] | null; // Parsed from JSON
+  aiExecutionStatus: AIExecutionStatus;
+  aiJobId: string | null;
+  aiExecutionResult: unknown | null; // Parsed from JSON
+};
