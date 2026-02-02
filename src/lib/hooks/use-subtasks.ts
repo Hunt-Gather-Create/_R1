@@ -14,11 +14,16 @@ import {
 import type { UpdateIssueInput } from "@/lib/types";
 
 // Query hook for fetching subtasks of an issue
-export function useIssueSubtasks(issueId: string | null) {
+export function useIssueSubtasks(
+  issueId: string | null,
+  options?: { refetchInterval?: number | false }
+) {
   return useQuery({
     queryKey: issueId ? queryKeys.issue.subtasks(issueId) : ["disabled"],
     queryFn: () => (issueId ? getIssueSubtasks(issueId) : Promise.resolve([])),
     enabled: !!issueId,
+    refetchInterval: options?.refetchInterval,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -142,4 +147,18 @@ export function useConvertToSubtask(workspaceId: string) {
       });
     },
   });
+}
+
+// Hook to get a function that invalidates subtask queries
+export function useInvalidateSubtasks(issueId: string) {
+  const queryClient = useQueryClient();
+
+  return () => {
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.issue.subtasks(issueId),
+    });
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.issue.subtaskCount(issueId),
+    });
+  };
 }

@@ -1,12 +1,27 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import TextareaAutosize from "react-textarea-autosize";
+import { Minimize2, Pencil } from "lucide-react";
+import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
-import { MarkdownEditor } from "@/components/ui/markdown-editor";
+import { MarkdownPreview } from "@/components/ui/markdown-editor";
+import { useColorMode } from "@/lib/hooks";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
+
+// Dynamically import markdown editor to avoid SSR issues
+const MDEditor = dynamic(() => import("@uiw/react-md-editor"), { ssr: false });
+import "@uiw/react-md-editor/markdown-editor.css";
+
 import { StatusSelect } from "./properties/StatusSelect";
 import { PrioritySelect } from "./properties/PrioritySelect";
+import { AssigneeSelect } from "./properties/AssigneeSelect";
 import { LabelSelect } from "./properties/LabelSelect";
 import { DatePicker } from "./properties/DatePicker";
 import { EstimateInput } from "./properties/EstimateInput";
@@ -22,6 +37,7 @@ import {
   useUpdateComment,
   useDeleteComment,
   useSubtaskCount,
+  useWorkspaceMembers,
 } from "@/lib/hooks";
 import type { IssueWithLabels, Comment } from "@/lib/types";
 import type { Priority } from "@/lib/design-tokens";
@@ -42,6 +58,7 @@ export function IssueDetailForm({
 }: IssueDetailFormProps) {
   const {
     board,
+    workspaceId,
     labels,
     updateSelectedIssue,
     moveSelectedIssueToColumn,
@@ -49,8 +66,12 @@ export function IssueDetailForm({
     removeLabelFromSelectedIssue,
     createLabel,
   } = useBoardContext();
+
+  const { data: members = [] } = useWorkspaceMembers(workspaceId);
+  const colorMode = useColorMode();
   const [title, setTitle] = useState(issue.title);
   const [description, setDescription] = useState(issue.description || "");
+  const [isDescriptionDialogOpen, setIsDescriptionDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"comments" | "activity">(
     "comments"
   );
@@ -66,6 +87,7 @@ export function IssueDetailForm({
     setPrevIssueId(issue.id);
     setTitle(issue.title);
     setDescription(issue.description || "");
+    setIsDescriptionDialogOpen(false);
   }
 
   // Handle external description updates during render (from AI)
@@ -119,11 +141,16 @@ export function IssueDetailForm({
     }
   };
 
-  const handleDescriptionBlur = () => {
+  const handleDescriptionDialogClose = useCallback(() => {
     if (description !== (issue.description || "")) {
       updateSelectedIssue({ description: description || undefined });
     }
-  };
+    setIsDescriptionDialogOpen(false);
+  }, [description, issue.description, updateSelectedIssue]);
+
+  const handleDescriptionChange = useCallback((val: string | undefined) => {
+    setDescription(val || "");
+  }, []);
 
   const handleAddComment = async (body: string) => {
     await addCommentMutation.mutateAsync(body);
@@ -209,6 +236,18 @@ export function IssueDetailForm({
                 }
               />
             </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">
+                Assignee
+              </label>
+              <AssigneeSelect
+                value={issue.assigneeId ?? null}
+                members={members}
+                onChange={(assigneeId) =>
+                  updateSelectedIssue({ assigneeId })
+                }
+              />
+            </div>
           </div>
 
           {/* Labels */}
@@ -225,13 +264,79 @@ export function IssueDetailForm({
             />
           </div>
 
-          {/* Attachments */}
-          <div>
+          {/* Description */}
+          <div
+            className={cn(
+              "transition-all duration-500 rounded-md",
+              descriptionHighlight &&
+                "ring-2 ring-primary ring-offset-2 ring-offset-background"
+            )}
+          >
             <label className="text-xs font-medium text-muted-foreground block mb-2">
-              Attachments
+              Description
             </label>
-            <AttachmentList issue={issue} />
+            <div
+              onClick={() => setIsDescriptionDialogOpen(true)}
+              className={cn(
+                "min-h-[120px] max-h-[300px] overflow-y-auto rounded-md border border-border bg-muted/30 cursor-text group relative",
+                "hover:border-muted-foreground/50 transition-colors scrollbar-thin"
+              )}
+            >
+              {description ? (
+                <div className="p-3">
+                  <MarkdownPreview content={description} />
+                </div>
+              ) : (
+                <div className="p-3 text-muted-foreground text-sm">
+                  Click to add a description...
+                </div>
+              )}
+              <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="p-1.5 bg-muted rounded-md">
+                  <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                </div>
+              </div>
+            </div>
           </div>
+
+          {/* Description Editor Dialog */}
+          <Dialog open={isDescriptionDialogOpen} onOpenChange={(open) => {
+            if (!open) handleDescriptionDialogClose();
+            else setIsDescriptionDialogOpen(true);
+          }}>
+            <DialogContent
+              className="min-w-[90vw] w-[90vw] h-[90vh] flex flex-col p-0 gap-0"
+              showCloseButton={false}
+            >
+              <DialogHeader className="px-4 py-3 border-b border-border shrink-0">
+                <div className="flex items-center justify-between">
+                  <DialogTitle className="text-sm font-medium">
+                    Edit Description
+                  </DialogTitle>
+                  <button
+                    onClick={handleDescriptionDialogClose}
+                    className="p-1.5 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground transition-colors"
+                    aria-label="Close"
+                  >
+                    <Minimize2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </DialogHeader>
+              <div
+                data-color-mode={colorMode}
+                className="markdown-editor-wrapper markdown-editor-fullscreen flex-1 min-h-0"
+              >
+                <MDEditor
+                  value={description}
+                  onChange={handleDescriptionChange}
+                  preview="live"
+                  textareaProps={{ placeholder: "Add a description...", autoFocus: true }}
+                  height="100%"
+                  visibleDragbar={false}
+                />
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {/* Subtasks - only show for parent issues (not subtasks) */}
           {!isSubtask && (
@@ -248,24 +353,12 @@ export function IssueDetailForm({
             </div>
           )}
 
-          {/* Description */}
-          <div
-            className={cn(
-              "transition-all duration-500 rounded-md",
-              descriptionHighlight &&
-                "ring-2 ring-primary ring-offset-2 ring-offset-background"
-            )}
-          >
+          {/* Attachments */}
+          <div>
             <label className="text-xs font-medium text-muted-foreground block mb-2">
-              Description
+              Attachments
             </label>
-            <MarkdownEditor
-              value={description}
-              onChange={setDescription}
-              onBlur={handleDescriptionBlur}
-              placeholder="Add a description..."
-              minHeight={120}
-            />
+            <AttachmentList issue={issue} />
           </div>
 
           {/* Tabs: Comments / Activity */}

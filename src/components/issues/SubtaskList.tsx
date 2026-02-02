@@ -1,227 +1,32 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import {
-  ChevronRight,
-  ChevronDown,
-  Plus,
-  MoreHorizontal,
-  Trash2,
-  ExternalLink,
-} from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { Plus, Sparkles, Play, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { StatusSelect } from "./properties/StatusSelect";
-import { PrioritySelect } from "./properties/PrioritySelect";
-import { PriorityIcon } from "./PriorityIcon";
+import { SubtaskItem } from "./SubtaskItem";
+import { SuggestedSubtaskItem } from "./SuggestedSubtaskItem";
 import { useBoardContext } from "@/components/board/context";
-import { useIssueSubtasks, useSubtaskOperations } from "@/lib/hooks";
-import { STATUS, type Status, type Priority } from "@/lib/design-tokens";
-import type { IssueWithLabels, UpdateIssueInput } from "@/lib/types";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
+import {
+  useIssueSubtasks,
+  useSubtaskOperations,
+  useAISuggestions,
+  useAddSuggestionAsSubtask,
+  useAddAllSuggestionsAsSubtasks,
+  useDismissSuggestion,
+  useUpdateAITaskDetails,
+  useExecuteAITask,
+  useExecuteAllAITasks,
+} from "@/lib/hooks";
+import { toggleAIAssignable } from "@/lib/actions/issues";
+import type { IssueWithLabels, AIExecutionStatus } from "@/lib/types";
+import { toast } from "sonner";
 
 interface SubtaskListProps {
   issue: IssueWithLabels;
   className?: string;
-}
-
-interface SubtaskItemProps {
-  subtask: IssueWithLabels;
-  onUpdate: (data: UpdateIssueInput) => void;
-  onDelete: () => void;
-  onConvertToIssue: () => void;
-}
-
-function SubtaskItem({
-  subtask,
-  onUpdate,
-  onDelete,
-  onConvertToIssue,
-}: SubtaskItemProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [title, setTitle] = useState(subtask.title);
-  const [description, setDescription] = useState(subtask.description || "");
-
-  const isDone =
-    subtask.status === STATUS.DONE || subtask.status === STATUS.CANCELED;
-
-  const handleToggleStatus = () => {
-    onUpdate({
-      status: isDone ? STATUS.TODO : STATUS.DONE,
-    });
-  };
-
-  const handleTitleBlur = () => {
-    if (title.trim() && title !== subtask.title) {
-      onUpdate({ title: title.trim() });
-    }
-    setIsEditing(false);
-  };
-
-  const handleDescriptionBlur = () => {
-    if (description !== (subtask.description || "")) {
-      onUpdate({ description: description || undefined });
-    }
-  };
-
-  return (
-    <div
-      className={cn(
-        "group border border-border/50 rounded-md",
-        isExpanded && "bg-muted/30"
-      )}
-    >
-      {/* Main row */}
-      <div className="flex items-center gap-2 px-3 py-2">
-        {/* Expand/collapse toggle */}
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="p-0.5 hover:bg-accent rounded text-muted-foreground"
-        >
-          {isExpanded ? (
-            <ChevronDown className="w-3.5 h-3.5" />
-          ) : (
-            <ChevronRight className="w-3.5 h-3.5" />
-          )}
-        </button>
-
-        {/* Status checkbox */}
-        <button
-          onClick={handleToggleStatus}
-          className={cn(
-            "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
-            isDone
-              ? "bg-status-done border-status-done"
-              : "border-muted-foreground hover:border-primary"
-          )}
-        >
-          {isDone && (
-            <svg
-              className="w-2.5 h-2.5 text-white"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={3}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M5 13l4 4L19 7"
-              />
-            </svg>
-          )}
-        </button>
-
-        {/* Identifier */}
-        <span className="text-[10px] font-medium text-muted-foreground shrink-0">
-          {subtask.identifier}
-        </span>
-
-        {/* Priority icon */}
-        <PriorityIcon priority={subtask.priority as Priority} size="sm" />
-
-        {/* Title */}
-        {isEditing ? (
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={handleTitleBlur}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                handleTitleBlur();
-              } else if (e.key === "Escape") {
-                setTitle(subtask.title);
-                setIsEditing(false);
-              }
-            }}
-            className={cn(
-              "flex-1 text-sm bg-transparent border-none outline-none",
-              "focus:ring-0"
-            )}
-            autoFocus
-          />
-        ) : (
-          <span
-            onClick={() => setIsEditing(true)}
-            className={cn(
-              "flex-1 text-sm truncate cursor-text",
-              isDone && "line-through text-muted-foreground"
-            )}
-          >
-            {subtask.title}
-          </span>
-        )}
-
-        {/* Actions dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="p-1 hover:bg-accent rounded text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem onClick={onConvertToIssue}>
-              <ExternalLink className="w-4 h-4 mr-2" />
-              Convert to issue
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={onDelete}
-              className="text-destructive focus:text-destructive"
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Delete subtask
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      {/* Expanded details */}
-      {isExpanded && (
-        <div className="px-3 pb-3 pt-1 space-y-3 border-t border-border/50">
-          {/* Properties row */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-muted-foreground">Status</span>
-              <StatusSelect
-                value={subtask.status as Status}
-                onChange={(status) => onUpdate({ status })}
-                className="w-[140px] h-7"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-muted-foreground">
-                Priority
-              </span>
-              <PrioritySelect
-                value={subtask.priority as Priority}
-                onChange={(priority) => onUpdate({ priority })}
-                className="w-[140px] h-7"
-              />
-            </div>
-          </div>
-
-          {/* Description */}
-          <div>
-            <MarkdownEditor
-              value={description}
-              onChange={setDescription}
-              onBlur={handleDescriptionBlur}
-              placeholder="Add description..."
-              minHeight={60}
-              compact
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  );
 }
 
 export function SubtaskList({ issue, className }: SubtaskListProps) {
@@ -232,10 +37,79 @@ export function SubtaskList({ issue, className }: SubtaskListProps) {
   // Get workspaceId from context instead of props
   const { board } = useBoardContext();
   const workspaceId = board.id;
+  const queryClient = useQueryClient();
 
-  const { data: subtasks = [], isLoading } = useIssueSubtasks(issue.id);
+  // Check if there are running AI tasks to enable polling
+  const [hasRunningTasks, setHasRunningTasks] = useState(false);
+
+  const { data: subtasks = [], isLoading } = useIssueSubtasks(issue.id, {
+    // Poll every 3 seconds while tasks are running
+    refetchInterval: hasRunningTasks ? 3000 : false,
+  });
   const { createSubtask, updateSubtask, removeSubtask, promoteToIssue } =
     useSubtaskOperations(issue.id, workspaceId);
+
+  // AI suggestions
+  const { data: suggestions = [] } = useAISuggestions(issue.id);
+  const addSuggestion = useAddSuggestionAsSubtask(issue.id, workspaceId);
+  const addAllSuggestions = useAddAllSuggestionsAsSubtasks(issue.id, workspaceId);
+  const dismissSuggestion = useDismissSuggestion(issue.id);
+  const updateAITaskDetails = useUpdateAITaskDetails(issue.id, workspaceId);
+
+  // AI task execution
+  const executeAITask = useExecuteAITask(issue.id, workspaceId);
+  const executeAllAITasks = useExecuteAllAITasks(issue.id, workspaceId);
+  const [runningTaskIds, setRunningTaskIds] = useState<Set<string>>(new Set());
+
+  // Check if there are any runnable AI subtasks (pending or null status)
+  const runnableAISubtasks = useMemo(() => {
+    return subtasks.filter((s) => {
+      if (!s.aiAssignable) return false;
+      const status = s.aiExecutionStatus as AIExecutionStatus;
+      return status === null || status === "pending" || status === "failed";
+    });
+  }, [subtasks]);
+
+  const hasRunnableAITasks = runnableAISubtasks.length > 0;
+
+  // Track running tasks for polling and completion detection
+  const runningAITasks = useMemo(() => {
+    return subtasks.filter((s) => {
+      if (!s.aiAssignable) return false;
+      const status = s.aiExecutionStatus as AIExecutionStatus;
+      return status === "pending" || status === "running";
+    });
+  }, [subtasks]);
+
+  // Track previous running task IDs to detect completions
+  const previousRunningIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const currentRunningIds = new Set(runningAITasks.map((t) => t.id));
+    const previousRunningIds = previousRunningIdsRef.current;
+
+    // Check for tasks that just completed (were running, now aren't)
+    const completedTaskIds = [...previousRunningIds].filter(
+      (id) => !currentRunningIds.has(id)
+    );
+
+    if (completedTaskIds.length > 0) {
+      // Invalidate attachments for the parent issue when tasks complete
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.issue.attachments(issue.id),
+      });
+      // Also refresh activities
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.issue.activities(issue.id),
+      });
+    }
+
+    // Update previous running IDs
+    previousRunningIdsRef.current = currentRunningIds;
+
+    // Update polling state
+    setHasRunningTasks(currentRunningIds.size > 0);
+  }, [runningAITasks, queryClient, issue.id]);
 
   useEffect(() => {
     if (isAddingSubtask && inputRef.current) {
@@ -264,8 +138,72 @@ export function SubtaskList({ issue, className }: SubtaskListProps) {
     }
   };
 
+  const handleToggleAI = async (subtaskId: string, aiAssignable: boolean) => {
+    await toggleAIAssignable(subtaskId, aiAssignable);
+  };
+
+  const handleRunAITask = async (subtaskId: string) => {
+    setRunningTaskIds((prev) => new Set(prev).add(subtaskId));
+    try {
+      await executeAITask.mutateAsync(subtaskId);
+      toast.success("AI task started", {
+        description: "The task is running in the background.",
+      });
+    } catch (error) {
+      toast.error("Failed to start AI task", {
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    } finally {
+      setRunningTaskIds((prev) => {
+        const next = new Set(prev);
+        next.delete(subtaskId);
+        return next;
+      });
+    }
+  };
+
+  const handleRunAllAITasks = async () => {
+    try {
+      const result = await executeAllAITasks.mutateAsync();
+      if (result.runIds.length === 0) {
+        toast.info("No tasks to run", {
+          description: "All AI tasks are already completed or running.",
+        });
+      } else {
+        toast.success(`Started ${result.runIds.length} AI task(s)`, {
+          description: "Tasks are running in the background.",
+        });
+      }
+    } catch (error) {
+      toast.error("Failed to start AI tasks", {
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  };
+
   return (
     <div className={cn("space-y-2", className)}>
+      {/* Subtask list header with Run All button */}
+      {subtasks.length > 0 && hasRunnableAITasks && (
+        <div className="flex items-center justify-between pb-1">
+          <span className="text-xs text-muted-foreground">Subtasks</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleRunAllAITasks}
+            disabled={executeAllAITasks.isPending}
+            className="h-6 px-2 text-xs gap-1"
+          >
+            {executeAllAITasks.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Play className="w-3 h-3" />
+            )}
+            Run All AI Tasks
+          </Button>
+        </div>
+      )}
+
       {/* Subtask list */}
       {subtasks.length > 0 && (
         <div className="space-y-2">
@@ -283,8 +221,56 @@ export function SubtaskList({ issue, className }: SubtaskListProps) {
                   columnId: issue.columnId,
                 })
               }
+              onToggleAI={(aiAssignable) =>
+                handleToggleAI(subtask.id, aiAssignable)
+              }
+              onUpdateAIInstructions={(instructions) =>
+                updateAITaskDetails.mutate({
+                  issueId: subtask.id,
+                  data: { aiInstructions: instructions },
+                })
+              }
+              onRunAITask={
+                subtask.aiAssignable
+                  ? () => handleRunAITask(subtask.id)
+                  : undefined
+              }
+              isRunning={runningTaskIds.has(subtask.id)}
             />
           ))}
+        </div>
+      )}
+
+      {/* AI Suggestions (ghost subtasks) */}
+      {suggestions.length > 0 && (
+        <div className="space-y-2 pt-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+              AI Suggestions
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => addAllSuggestions.mutate()}
+              disabled={addAllSuggestions.isPending}
+              className="h-6 px-2 text-xs"
+            >
+              <Plus className="w-3 h-3 mr-1" />
+              Add All
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {suggestions.map((suggestion) => (
+              <SuggestedSubtaskItem
+                key={suggestion.id}
+                suggestion={suggestion}
+                onAdd={() => addSuggestion.mutate(suggestion.id)}
+                onDismiss={() => dismissSuggestion.mutate(suggestion.id)}
+                isAdding={addSuggestion.isPending}
+              />
+            ))}
+          </div>
         </div>
       )}
 

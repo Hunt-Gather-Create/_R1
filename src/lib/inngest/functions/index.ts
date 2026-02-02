@@ -5,3 +5,4 @@ export {
   trackFunctionFailed,
 } from "./job-tracker";
 export { researchBrandGuidelines } from "./brand-guidelines-research";
+export { executeAITask } from "./ai-task-execution";

@@ -124,8 +124,18 @@ export const issues = sqliteTable("issues", {
   // Subtask support: references parent issue (1 level only - subtasks cannot have subtasks)
   // Note: Self-reference handled at database level, not inline to avoid TS circular reference
   parentIssueId: text("parent_issue_id"),
+  // Assignee - workspace member assigned to this issue
+  assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
   position: integer("position").notNull(),
   sentToAI: integer("sent_to_ai", { mode: "boolean" }).notNull().default(false),
+  // AI task fields - indicates AI can perform this task
+  aiAssignable: integer("ai_assignable", { mode: "boolean" }).notNull().default(false),
+  aiInstructions: text("ai_instructions"), // How AI should approach this task
+  aiTools: text("ai_tools"), // JSON array of tool names AI should use
+  aiExecutionStatus: text("ai_execution_status"), // null | "pending" | "running" | "completed" | "failed"
+  aiJobId: text("ai_job_id"), // Reference to background job tracking execution
+  aiExecutionResult: text("ai_execution_result"), // JSON result/output
+  aiExecutionSummary: text("ai_execution_summary"), // Summary of what AI did and how it decided
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
@@ -319,5 +329,18 @@ export const backgroundJobs = sqliteTable("background_jobs", {
   error: text("error"), // Error message if failed
   attempt: integer("attempt").notNull().default(1),
   maxAttempts: integer("max_attempts").notNull().default(3),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
+// AI Suggestions - ghost subtasks suggested by AI for issues
+export const aiSuggestions = sqliteTable("ai_suggestions", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  issueId: text("issue_id")
+    .notNull()
+    .references(() => issues.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  priority: integer("priority").notNull().default(4), // 0=urgent, 1=high, 2=medium, 3=low, 4=none
+  toolsRequired: text("tools_required"), // JSON array - hint for which tools
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });

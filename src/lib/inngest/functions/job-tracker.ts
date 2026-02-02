@@ -22,6 +22,11 @@ export const trackFunctionInvoked = inngest.createFunction(
       return { skipped: true, reason: "tracker function" };
     }
 
+    // Skip AI task execution - it handles its own job tracking
+    if (function_id === "ai-task-execution") {
+      return { skipped: true, reason: "self-tracked function" };
+    }
+
     // Extract workspaceId from the original event data
     const workspaceId = originalEvent?.data?.workspaceId;
     if (!workspaceId) {
@@ -35,8 +40,12 @@ export const trackFunctionInvoked = inngest.createFunction(
       .join(" ");
 
     // Extract metadata from original event
-    const metadata = originalEvent?.data?.metadata ?? {
-      description: originalEvent?.data?.description,
+    // Support both explicit metadata and common fields like issueId, parentIssueId
+    const eventData = originalEvent?.data ?? {};
+    const metadata = eventData.metadata ?? {
+      description: eventData.description,
+      issueId: eventData.issueId,
+      parentIssueId: eventData.parentIssueId,
     };
 
     await db.insert(backgroundJobs).values({
@@ -46,6 +55,7 @@ export const trackFunctionInvoked = inngest.createFunction(
       runId: run_id,
       correlationId: originalEvent?.data?.correlationId,
       status: "running",
+      startedAt: new Date(),
       metadata: metadata ? JSON.stringify(metadata) : null,
       attempt: 1,
       maxAttempts: 3, // Default, could be extracted from function config
@@ -71,9 +81,9 @@ export const trackFunctionFinished = inngest.createFunction(
     // Result is only present on success, need to check union type
     const result = "result" in event.data ? event.data.result : null;
 
-    // Skip tracker functions
-    if (function_id.startsWith("job-tracker")) {
-      return { skipped: true, reason: "tracker function" };
+    // Skip tracker functions and self-tracked functions
+    if (function_id.startsWith("job-tracker") || function_id === "ai-task-execution") {
+      return { skipped: true, reason: "tracker or self-tracked function" };
     }
 
     await db
@@ -105,9 +115,9 @@ export const trackFunctionFailed = inngest.createFunction(
     // Error is only present on failure, need to check union type
     const error = "error" in event.data ? event.data.error : null;
 
-    // Skip tracker functions
-    if (function_id.startsWith("job-tracker")) {
-      return { skipped: true, reason: "tracker function" };
+    // Skip tracker functions and self-tracked functions
+    if (function_id.startsWith("job-tracker") || function_id === "ai-task-execution") {
+      return { skipped: true, reason: "tracker or self-tracked function" };
     }
 
     const errorMessage =

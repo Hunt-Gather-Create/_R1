@@ -154,6 +154,14 @@ export async function createIssue(
     parentIssueId,
     position: (maxPosition?.maxPos ?? -1) + 1,
     sentToAI: false,
+    assigneeId: input.assigneeId ?? null,
+    aiAssignable: false,
+    aiInstructions: null,
+    aiTools: null,
+    aiExecutionStatus: null,
+    aiJobId: null,
+    aiExecutionResult: null,
+    aiExecutionSummary: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -326,6 +334,19 @@ export async function updateIssue(
       {
         oldValue: existingIssue.cycleId,
         newValue: input.cycleId ?? null,
+      },
+      userId
+    );
+  }
+
+  if (input.assigneeId !== undefined && input.assigneeId !== existingIssue.assigneeId) {
+    updates.assigneeId = input.assigneeId ?? null;
+    await logActivity(
+      issueId,
+      "assignee_changed",
+      {
+        oldValue: existingIssue.assigneeId,
+        newValue: input.assigneeId ?? null,
       },
       userId
     );
@@ -947,6 +968,88 @@ export async function markSentToAI(issueId: string): Promise<void> {
     .where(eq(issues.id, issueId));
 
   // Revalidate workspace path
+  if (workspaceId) {
+    const slug = await getWorkspaceSlug(workspaceId);
+    revalidatePath(slug ? `/w/${slug}` : "/");
+  } else {
+    revalidatePath("/");
+  }
+}
+
+// Toggle AI assignable flag on an issue (subtask)
+export async function toggleAIAssignable(
+  issueId: string,
+  aiAssignable: boolean
+): Promise<void> {
+  const issue = await db
+    .select()
+    .from(issues)
+    .where(eq(issues.id, issueId))
+    .get();
+
+  if (!issue) throw new Error("Issue not found");
+
+  const workspaceId = await getColumnWorkspaceId(issue.columnId);
+  if (workspaceId) {
+    await requireWorkspaceAccess(workspaceId, "member");
+  }
+
+  await db
+    .update(issues)
+    .set({
+      aiAssignable,
+      // Clear AI fields if removing flag
+      ...(aiAssignable ? {} : {
+        aiInstructions: null,
+        aiTools: null,
+        aiExecutionStatus: null,
+        aiJobId: null,
+        aiExecutionResult: null,
+      }),
+      updatedAt: new Date(),
+    })
+    .where(eq(issues.id, issueId));
+
+  if (workspaceId) {
+    const slug = await getWorkspaceSlug(workspaceId);
+    revalidatePath(slug ? `/w/${slug}` : "/");
+  } else {
+    revalidatePath("/");
+  }
+}
+
+// Update AI instructions and tools for an AI subtask
+export async function updateAITaskDetails(
+  issueId: string,
+  data: {
+    aiInstructions?: string | null;
+    aiTools?: string[] | null;
+  }
+): Promise<void> {
+  const issue = await db
+    .select()
+    .from(issues)
+    .where(eq(issues.id, issueId))
+    .get();
+
+  if (!issue) throw new Error("Issue not found");
+
+  const workspaceId = await getColumnWorkspaceId(issue.columnId);
+  if (workspaceId) {
+    await requireWorkspaceAccess(workspaceId, "member");
+  }
+
+  await db
+    .update(issues)
+    .set({
+      ...(data.aiInstructions !== undefined && { aiInstructions: data.aiInstructions }),
+      ...(data.aiTools !== undefined && {
+        aiTools: data.aiTools ? JSON.stringify(data.aiTools) : null,
+      }),
+      updatedAt: new Date(),
+    })
+    .where(eq(issues.id, issueId));
+
   if (workspaceId) {
     const slug = await getWorkspaceSlug(workspaceId);
     revalidatePath(slug ? `/w/${slug}` : "/");

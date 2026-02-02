@@ -98,6 +98,28 @@ Uses @dnd-kit with custom collision detection in `src/lib/collision-detection.ts
 - `IssueWithLabels` - Issue with its labels array
 - `CreateIssueInput` / `UpdateIssueInput` - Mutation input types
 
+## AI Model Selection (CRITICAL)
+
+**Always use Claude Haiku by default.** Only use more expensive models when explicitly requested by the user.
+
+| Use Case | Model | Model ID |
+|----------|-------|----------|
+| Background tasks | Haiku | `claude-haiku-4-5-20251001` |
+| AI task execution | Haiku | `claude-haiku-4-5-20251001` |
+| Chat (default) | Haiku | `claude-haiku-4-5-20251001` |
+| Complex reasoning (user requested) | Sonnet | `claude-sonnet-4-5-20251001` |
+
+**Cost comparison (per 1M tokens):**
+- Haiku: $0.25 input / $1.25 output
+- Sonnet: $3.00 input / $15.00 output (12× more expensive)
+
+**Rules:**
+1. Default to Haiku for all AI features unless the user explicitly requests a different model
+2. When implementing new AI features, use `claude-haiku-4-5-20251001`
+3. Always implement prompt caching to reduce costs (see `src/lib/chat/index.ts` for patterns)
+4. Limit tool usage with `maxUses` to prevent runaway agentic loops
+5. Track token usage via `recordTokenUsage()` for cost monitoring
+
 ## React & Next.js Best Practices
 
 **Always follow the Vercel React best practices** documented in `.claude/skills/vercel-react-best-practices/`. Reference `AGENTS.md` for detailed explanations and code examples.

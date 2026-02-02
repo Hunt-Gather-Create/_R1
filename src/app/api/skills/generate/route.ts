@@ -7,7 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { getCurrentUserId } from "@/lib/auth";
 import { loadSkill } from "@/lib/chat/skills";
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "claude-haiku-4-5-20251001";
 
 /**
  * Generate a skill using AI based on user description

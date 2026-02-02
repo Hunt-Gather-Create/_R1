@@ -126,7 +126,7 @@ export async function POST(req: Request) {
   return createChatResponse(messages, {
     system: getSystemPrompt(purpose, soul),
     tools,
-    model: "claude-opus-4-5-20251101",
+    model: "claude-haiku-4-5-20251001",
     maxSteps: 10, // Allow AI to continue after creating issues
     builtInTools: {
       webSearch: true,

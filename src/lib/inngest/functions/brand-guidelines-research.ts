@@ -7,7 +7,7 @@ import { generateText, tool } from "ai";
 import { z } from "zod";
 import type { BrandGuidelines } from "@/lib/types";
 
-const RESEARCH_MODEL = "claude-sonnet-4-5";
+const RESEARCH_MODEL = "claude-haiku-4-5-20251001";
 
 const GUIDELINES_RESEARCH_PROMPT = `You are a brand guidelines research assistant. Your task is to find and extract brand guidelines for a company.
 

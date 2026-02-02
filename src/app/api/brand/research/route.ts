@@ -4,8 +4,8 @@ import { z } from "zod";
 import { getCurrentUserId } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import type { BrandSearchResult } from "@/lib/types";
-// Use Sonnet for brand research - needs better reasoning for web search + tool calling
-const RESEARCH_MODEL = "claude-sonnet-4-5";
+// Use Haiku for cost efficiency
+const RESEARCH_MODEL = "claude-haiku-4-5-20251001";
 import {
   captureScreenshotForBrandColors,
   isCloudflareConfigured,

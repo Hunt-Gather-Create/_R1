@@ -22,11 +22,24 @@ import {
   useSaveChatMessage,
   useClearChatMessages,
   useInvalidateAttachments,
+  useInvalidateAISuggestions,
+  useInvalidateSubtasks,
   useAutoFocusOnComplete,
   useChatAutoScroll,
+  useIssueSubtasks,
 } from "@/lib/hooks";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
 import type { IssueWithLabels, Comment, ChatMessage } from "@/lib/types";
+
+interface SubtaskContext {
+  id: string;
+  identifier: string;
+  title: string;
+  description: string | null;
+  priority: number;
+  status: string;
+  aiAssignable: boolean;
+}
 
 interface IssueContext {
   id: string;
@@ -35,6 +48,7 @@ interface IssueContext {
   status: string;
   priority: number;
   comments: Array<{ body: string }>;
+  subtasks: SubtaskContext[];
 }
 
 interface IssueChatPanelProps {
@@ -71,6 +85,11 @@ export function IssueChatPanel({
   const saveChatMutation = useSaveChatMessage(issue.id);
   const clearChatMutation = useClearChatMessages(issue.id);
   const invalidateAttachments = useInvalidateAttachments(issue.id);
+  const invalidateAISuggestions = useInvalidateAISuggestions(issue.id);
+  const invalidateSubtasks = useInvalidateSubtasks(issue.id);
+
+  // Fetch subtasks for context
+  const { data: subtasks = [] } = useIssueSubtasks(issue.id);
 
   // Build issue context for the API
   const issueContext: IssueContext = useMemo(
@@ -81,8 +100,17 @@ export function IssueChatPanel({
       status: issue.status,
       priority: issue.priority,
       comments: comments.map((c) => ({ body: c.body })),
+      subtasks: subtasks.map((s) => ({
+        id: s.id,
+        identifier: s.identifier,
+        title: s.title,
+        description: s.description,
+        priority: s.priority,
+        status: s.status,
+        aiAssignable: s.aiAssignable,
+      })),
     }),
-    [issue.id, issue.title, issue.description, issue.status, issue.priority, comments]
+    [issue.id, issue.title, issue.description, issue.status, issue.priority, comments, subtasks]
   );
 
   // Custom transport that includes issue context, workspace ID and purpose
@@ -106,6 +134,16 @@ export function IssueChatPanel({
         // Refresh attachments after AI attaches content
         // Small delay to ensure server-side processing is complete
         setTimeout(() => invalidateAttachments(), 500);
+      }
+      if (toolCall.toolName === "suggestAITasks") {
+        // Refresh AI suggestions after AI creates new suggestions
+        // Small delay to ensure server-side processing is complete
+        setTimeout(() => invalidateAISuggestions(), 500);
+      }
+      if (toolCall.toolName === "updateSubtask" || toolCall.toolName === "deleteSubtask") {
+        // Refresh subtasks after AI updates or deletes a subtask
+        // Small delay to ensure server-side processing is complete
+        setTimeout(() => invalidateSubtasks(), 500);
       }
     },
   });
@@ -246,6 +284,42 @@ export function IssueChatPanel({
                     >
                       <Paperclip className="w-3 h-3" />
                       <span>Content attached to issue</span>
+                    </div>
+                  );
+                }
+                // Handle suggestAITasks tool
+                if (toolPart.toolName === "suggestAITasks") {
+                  return (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 text-xs text-purple-500 mt-2 pt-2 border-t border-border/50"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>AI tasks suggested - see subtasks section</span>
+                    </div>
+                  );
+                }
+                // Handle updateSubtask tool
+                if (toolPart.toolName === "updateSubtask") {
+                  return (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>Subtask updated</span>
+                    </div>
+                  );
+                }
+                // Handle deleteSubtask tool
+                if (toolPart.toolName === "deleteSubtask") {
+                  return (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>Subtask deleted</span>
                     </div>
                   );
                 }

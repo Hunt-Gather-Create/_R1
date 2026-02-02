@@ -42,6 +42,7 @@ export {
   useIssueSubtasks,
   useSubtaskCount,
   useSubtaskOperations,
+  useInvalidateSubtasks,
   useConvertToSubtask,
 } from "./use-subtasks";
 
@@ -74,3 +75,21 @@ export {
 export { useAutoFocusOnComplete } from "./use-auto-focus";
 
 export { useChatAutoScroll } from "./use-chat-auto-scroll";
+
+export {
+  useAISuggestions,
+  useInvalidateAISuggestions,
+  useAddSuggestionAsSubtask,
+  useAddAllSuggestionsAsSubtasks,
+  useDismissSuggestion,
+  useDismissAllSuggestions,
+  useToggleAIAssignable,
+  useUpdateAITaskDetails,
+} from "./use-ai-suggestions";
+
+export {
+  useExecuteAITask,
+  useExecuteAllAITasks,
+  useAITaskStatus,
+  useInvalidateAITaskStatus,
+} from "./use-ai-task-execution";

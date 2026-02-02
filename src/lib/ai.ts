@@ -1,9 +1,9 @@
 import { generateObject } from "ai";
 import { z } from "zod";
 
-// Default model - can be any model available on AI Gateway
+// Default model - use Haiku for cost efficiency
 // See: https://vercel.com/ai-gateway/models
-export const DEFAULT_MODEL = "anthropic/claude-sonnet-4-5";
+export const DEFAULT_MODEL = "anthropic/claude-haiku-4-5";
 
 export const userStorySchema = z.object({
   stories: z.array(
