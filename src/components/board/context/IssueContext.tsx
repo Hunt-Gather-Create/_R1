@@ -227,6 +227,7 @@ export function IssueProvider({
       aiExecutionStatus: null,
       aiJobId: null,
       aiExecutionResult: null,
+      aiExecutionSummary: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       labels: [],

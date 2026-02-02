@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { Plus, Sparkles } from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { Plus, Sparkles, Play, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SubtaskItem } from "./SubtaskItem";
@@ -15,9 +15,12 @@ import {
   useAddAllSuggestionsAsSubtasks,
   useDismissSuggestion,
   useUpdateAITaskDetails,
+  useExecuteAITask,
+  useExecuteAllAITasks,
 } from "@/lib/hooks";
 import { toggleAIAssignable } from "@/lib/actions/issues";
-import type { IssueWithLabels } from "@/lib/types";
+import type { IssueWithLabels, AIExecutionStatus } from "@/lib/types";
+import { toast } from "sonner";
 
 interface SubtaskListProps {
   issue: IssueWithLabels;
@@ -43,6 +46,22 @@ export function SubtaskList({ issue, className }: SubtaskListProps) {
   const addAllSuggestions = useAddAllSuggestionsAsSubtasks(issue.id, workspaceId);
   const dismissSuggestion = useDismissSuggestion(issue.id);
   const updateAITaskDetails = useUpdateAITaskDetails(issue.id, workspaceId);
+
+  // AI task execution
+  const executeAITask = useExecuteAITask(issue.id, workspaceId);
+  const executeAllAITasks = useExecuteAllAITasks(issue.id, workspaceId);
+  const [runningTaskIds, setRunningTaskIds] = useState<Set<string>>(new Set());
+
+  // Check if there are any runnable AI subtasks (pending or null status)
+  const runnableAISubtasks = useMemo(() => {
+    return subtasks.filter((s) => {
+      if (!s.aiAssignable) return false;
+      const status = s.aiExecutionStatus as AIExecutionStatus;
+      return status === null || status === "pending" || status === "failed";
+    });
+  }, [subtasks]);
+
+  const hasRunnableAITasks = runnableAISubtasks.length > 0;
 
   useEffect(() => {
     if (isAddingSubtask && inputRef.current) {
@@ -75,8 +94,68 @@ export function SubtaskList({ issue, className }: SubtaskListProps) {
     await toggleAIAssignable(subtaskId, aiAssignable);
   };
 
+  const handleRunAITask = async (subtaskId: string) => {
+    setRunningTaskIds((prev) => new Set(prev).add(subtaskId));
+    try {
+      await executeAITask.mutateAsync(subtaskId);
+      toast.success("AI task started", {
+        description: "The task is running in the background.",
+      });
+    } catch (error) {
+      toast.error("Failed to start AI task", {
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    } finally {
+      setRunningTaskIds((prev) => {
+        const next = new Set(prev);
+        next.delete(subtaskId);
+        return next;
+      });
+    }
+  };
+
+  const handleRunAllAITasks = async () => {
+    try {
+      const result = await executeAllAITasks.mutateAsync();
+      if (result.runIds.length === 0) {
+        toast.info("No tasks to run", {
+          description: "All AI tasks are already completed or running.",
+        });
+      } else {
+        toast.success(`Started ${result.runIds.length} AI task(s)`, {
+          description: "Tasks are running in the background.",
+        });
+      }
+    } catch (error) {
+      toast.error("Failed to start AI tasks", {
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  };
+
   return (
     <div className={cn("space-y-2", className)}>
+      {/* Subtask list header with Run All button */}
+      {subtasks.length > 0 && hasRunnableAITasks && (
+        <div className="flex items-center justify-between pb-1">
+          <span className="text-xs text-muted-foreground">Subtasks</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleRunAllAITasks}
+            disabled={executeAllAITasks.isPending}
+            className="h-6 px-2 text-xs gap-1"
+          >
+            {executeAllAITasks.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Play className="w-3 h-3" />
+            )}
+            Run All AI Tasks
+          </Button>
+        </div>
+      )}
+
       {/* Subtask list */}
       {subtasks.length > 0 && (
         <div className="space-y-2">
@@ -103,6 +182,12 @@ export function SubtaskList({ issue, className }: SubtaskListProps) {
                   data: { aiInstructions: instructions },
                 })
               }
+              onRunAITask={
+                subtask.aiAssignable
+                  ? () => handleRunAITask(subtask.id)
+                  : undefined
+              }
+              isRunning={runningTaskIds.has(subtask.id)}
             />
           ))}
         </div>

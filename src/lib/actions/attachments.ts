@@ -2,16 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "../db";
-import {
-  attachments,
-  issues,
-  columns,
-  activities,
-} from "../db/schema";
+import { attachments, issues, activities } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { getCurrentUserId } from "../auth";
 import { requireWorkspaceAccess } from "./workspace";
-import { getWorkspaceSlug } from "./helpers";
+import { getWorkspaceSlug, getWorkspaceIdFromIssue } from "./helpers";
 import {
   generateDownloadUrl,
   deleteObject,
@@ -19,27 +14,6 @@ import {
   uploadContent,
 } from "../storage/r2-client";
 import type { Attachment, AttachmentWithUrl } from "../types";
-
-/**
- * Get column's workspace ID from an issue
- */
-async function getWorkspaceIdFromIssue(issueId: string): Promise<string | null> {
-  const issue = await db
-    .select({ columnId: issues.columnId })
-    .from(issues)
-    .where(eq(issues.id, issueId))
-    .get();
-
-  if (!issue) return null;
-
-  const column = await db
-    .select({ workspaceId: columns.workspaceId })
-    .from(columns)
-    .where(eq(columns.id, issue.columnId))
-    .get();
-
-  return column?.workspaceId ?? null;
-}
 
 /**
  * Get workspace ID from an attachment

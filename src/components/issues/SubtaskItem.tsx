@@ -9,6 +9,10 @@ import {
   ExternalLink,
   Sparkles,
   Play,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
@@ -26,7 +30,6 @@ import { PriorityIcon } from "./PriorityIcon";
 import { AISubtaskBadge } from "./AISubtaskBadge";
 import { STATUS, type Status, type Priority } from "@/lib/design-tokens";
 import type { IssueWithLabels, UpdateIssueInput, AIExecutionStatus } from "@/lib/types";
-import { toast } from "sonner";
 
 export interface SubtaskItemProps {
   subtask: IssueWithLabels;
@@ -35,6 +38,8 @@ export interface SubtaskItemProps {
   onConvertToIssue: () => void;
   onToggleAI: (aiAssignable: boolean) => void;
   onUpdateAIInstructions: (instructions: string | null) => void;
+  onRunAITask?: () => void;
+  isRunning?: boolean;
 }
 
 export function SubtaskItem({
@@ -44,6 +49,8 @@ export function SubtaskItem({
   onConvertToIssue,
   onToggleAI,
   onUpdateAIInstructions,
+  onRunAITask,
+  isRunning = false,
 }: SubtaskItemProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -55,6 +62,10 @@ export function SubtaskItem({
     subtask.status === STATUS.DONE || subtask.status === STATUS.CANCELED;
   const isAITask = subtask.aiAssignable === true;
   const aiTools = subtask.aiTools ? JSON.parse(subtask.aiTools) as string[] : null;
+  const aiStatus = subtask.aiExecutionStatus as AIExecutionStatus;
+  const isExecuting = isRunning || aiStatus === "pending" || aiStatus === "running";
+  const isCompleted = aiStatus === "completed";
+  const isFailed = aiStatus === "failed";
 
   const handleToggleStatus = () => {
     onUpdate({
@@ -82,9 +93,7 @@ export function SubtaskItem({
   };
 
   const handleRunAITask = () => {
-    toast.info("Coming soon", {
-      description: "AI task execution will be available in a future update.",
-    });
+    onRunAITask?.();
   };
 
   return (
@@ -182,15 +191,41 @@ export function SubtaskItem({
 
         {/* Run button for AI tasks */}
         {isAITask && !isDone && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={handleRunAITask}
-            className="h-6 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            <Play className="w-3 h-3 mr-1" />
-            Run
-          </Button>
+          <>
+            {isExecuting ? (
+              <span className="flex items-center gap-1 h-6 px-2 text-xs text-yellow-500">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Running...
+              </span>
+            ) : isFailed ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleRunAITask}
+                disabled={isRunning}
+                className="h-6 px-2 text-xs text-red-500 hover:text-red-600"
+              >
+                <RefreshCw className="w-3 h-3 mr-1" />
+                Retry
+              </Button>
+            ) : isCompleted ? (
+              <span className="flex items-center gap-1 h-6 px-2 text-xs text-green-500">
+                <CheckCircle2 className="w-3 h-3" />
+                Done
+              </span>
+            ) : (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleRunAITask}
+                disabled={isRunning}
+                className="h-6 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Play className="w-3 h-3 mr-1" />
+                Run
+              </Button>
+            )}
+          </>
         )}
 
         {/* Actions dropdown */}
@@ -297,6 +332,31 @@ export function SubtaskItem({
                       </span>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* Execution Summary */}
+              {subtask.aiExecutionSummary && (
+                <div className="space-y-1 pt-2 border-t border-border/30">
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                    {isCompleted ? (
+                      <CheckCircle2 className="w-3 h-3 text-green-500" />
+                    ) : isFailed ? (
+                      <XCircle className="w-3 h-3 text-red-500" />
+                    ) : null}
+                    <span className="font-medium">Execution Summary</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {subtask.aiExecutionSummary}
+                  </p>
+                </div>
+              )}
+
+              {/* Failed state retry hint */}
+              {isFailed && !subtask.aiExecutionSummary && (
+                <div className="flex items-center gap-1.5 text-[10px] text-red-500 pt-2">
+                  <XCircle className="w-3 h-3" />
+                  <span>Execution failed. Click Retry to run again.</span>
                 </div>
               )}
             </div>

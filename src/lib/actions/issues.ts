@@ -161,6 +161,7 @@ export async function createIssue(
     aiExecutionStatus: null,
     aiJobId: null,
     aiExecutionResult: null,
+    aiExecutionSummary: null,
     createdAt: now,
     updatedAt: now,
   };

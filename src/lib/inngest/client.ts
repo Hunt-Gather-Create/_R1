@@ -17,6 +17,13 @@ export type Events = {
       metadata?: { description?: string };
     };
   };
+  "ai/task.execute": {
+    data: {
+      issueId: string; // The subtask to execute
+      workspaceId: string; // For loading tools, skills, MCP
+      parentIssueId: string; // For attaching output
+    };
+  };
 };
 
 export const inngest = new Inngest({

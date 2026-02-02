@@ -135,6 +135,7 @@ export const issues = sqliteTable("issues", {
   aiExecutionStatus: text("ai_execution_status"), // null | "pending" | "running" | "completed" | "failed"
   aiJobId: text("ai_job_id"), // Reference to background job tracking execution
   aiExecutionResult: text("ai_execution_result"), // JSON result/output
+  aiExecutionSummary: text("ai_execution_summary"), // Summary of what AI did and how it decided
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });

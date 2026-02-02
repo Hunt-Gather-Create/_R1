@@ -86,3 +86,10 @@ export {
   useToggleAIAssignable,
   useUpdateAITaskDetails,
 } from "./use-ai-suggestions";
+
+export {
+  useExecuteAITask,
+  useExecuteAllAITasks,
+  useAITaskStatus,
+  useInvalidateAITaskStatus,
+} from "./use-ai-task-execution";
