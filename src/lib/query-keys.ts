@@ -55,4 +55,7 @@ export const queryKeys = {
     attachments: (chatId: string) =>
       ["workspaceChats", "attachments", chatId] as const,
   },
+  soul: {
+    chat: (workspaceId: string) => ["soul", workspaceId, "chat"] as const,
+  },
 } as const;
