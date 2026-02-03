@@ -8,6 +8,7 @@ import {
   parseTextWithFileAttachments,
 } from "./CollapsibleFileContent";
 import { UserFileAttachment } from "./UserFileAttachment";
+import { ToolResultDisplay } from "./ToolResultDisplay";
 
 interface MessagePart {
   type: string;
@@ -97,9 +98,29 @@ export function ChatMessageItem({ message, renderToolCall }: ChatMessageItemProp
               };
               return <UserFileAttachment key={index} part={filePart} />;
             }
-            // Tool calls - delegate to custom renderer if provided
-            if (part.type?.startsWith("tool-") && renderToolCall) {
-              return renderToolCall(part, index);
+            // Tool calls - delegate to custom renderer if provided, or use default
+            if (part.type?.startsWith("tool-")) {
+              const toolPart = part as MessagePart & { state?: string; output?: unknown };
+
+              // Only show results when output is available
+              if (toolPart.state !== "output-available") {
+                return null;
+              }
+
+              // Use custom renderer if provided
+              if (renderToolCall) {
+                return renderToolCall(part, index);
+              }
+
+              // Default: show tool result display
+              const toolName = part.type.replace("tool-", "");
+              return (
+                <ToolResultDisplay
+                  key={index}
+                  toolName={toolName}
+                  result={toolPart.output}
+                />
+              );
             }
             return null;
           })}

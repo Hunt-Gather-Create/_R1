@@ -8,7 +8,7 @@ import {
   deleteSubtaskSchema,
 } from "./schemas";
 import { attachContentToIssue } from "@/lib/actions/attachments";
-import { addAISuggestions } from "@/lib/actions/ai-suggestions";
+import { addAISuggestions, dismissAllAISuggestions } from "@/lib/actions/ai-suggestions";
 import { updateIssue, deleteIssue } from "@/lib/actions/issues";
 import type { ToolSet } from "ai";
 import type { Priority } from "@/lib/design-tokens";
@@ -64,10 +64,11 @@ export function createIssueTools(context: IssueToolsContext): ToolSet {
 
     suggestAITasks: tool({
       description:
-        "Suggest AI tasks that can be performed for this issue. These appear as 'ghost' subtasks that users can add. Use this to proactively suggest helpful tasks based on the issue context and available tools.",
+        "Suggest AI tasks that can be performed for this issue. These appear as 'ghost' subtasks that users can add. Use this to proactively suggest helpful tasks based on the issue context and available tools. By default, this replaces any existing suggestions.",
       inputSchema: suggestAITasksSchema,
       execute: async ({
         suggestions,
+        replaceExisting = true,
       }: {
         suggestions: Array<{
           title: string;
@@ -75,14 +76,21 @@ export function createIssueTools(context: IssueToolsContext): ToolSet {
           priority?: number;
           toolsRequired?: string[];
         }>;
+        replaceExisting?: boolean;
       }) => {
         try {
           if (suggestions.length === 0) {
             return "No suggestions provided.";
           }
 
+          // Clear existing suggestions if replaceExisting is true
+          if (replaceExisting) {
+            await dismissAllAISuggestions(context.issueId);
+          }
+
           const added = await addAISuggestions(context.issueId, suggestions);
-          return `Added ${added.length} AI task suggestion${added.length > 1 ? "s" : ""}: ${added.map((s) => s.title).join(", ")}`;
+          const action = replaceExisting ? "Replaced with" : "Added";
+          return `${action} ${added.length} AI task suggestion${added.length > 1 ? "s" : ""}: ${added.map((s) => s.title).join(", ")}`;
         } catch (error) {
           console.error("[suggestAITasks] Error:", error);
           return `Failed to add suggestions: ${error instanceof Error ? error.message : "Unknown error"}`;

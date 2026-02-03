@@ -1,25 +1,17 @@
 "use client";
 
 import { useRef, useCallback, useState, useEffect } from "react";
-import { useChat, type UIMessage } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
-import { Bot, User, Trash2 } from "lucide-react";
-import { MarkdownContent } from "@/components/ai-elements/MarkdownContent";
-import {
-  PromptInput,
-  PromptInputTextarea,
-  PromptInputSubmit,
-  PromptInputActions,
-} from "@/components/ai-elements/prompt-input";
-import { cn } from "@/lib/utils";
-import { ChatSpacer } from "@/components/ai-elements/ChatSpacer";
-import { useAutoFocusOnComplete, useChatAutoScroll } from "@/lib/hooks";
+import type { UIMessage } from "@ai-sdk/react";
+import { Bot } from "lucide-react";
+import { useChatCore } from "@/lib/hooks";
+import { ChatContainer } from "@/components/ai-elements/ChatContainer";
+import { ChatLoadingIndicator } from "@/components/ai-elements/ChatMessageBubble";
+import { persistedToUIMessagesBase, serializeMessageParts } from "@/lib/chat/message-persistence";
 import type { WorkspaceSoul } from "@/lib/types";
 import {
   getSoulChatMessages,
   saveSoulChatMessage,
   deleteSoulChatMessages,
-  type SoulChatMessage,
 } from "@/lib/actions/soul";
 
 interface SoulChatProps {
@@ -44,25 +36,6 @@ interface ToolOutput {
   greeting?: string;
 }
 
-// Convert stored messages to UIMessage format
-function storedToUIMessages(stored: SoulChatMessage[]): UIMessage[] {
-  return stored.map((m) => {
-    try {
-      const parts = JSON.parse(m.content);
-      return {
-        id: m.id,
-        role: m.role,
-        parts,
-      };
-    } catch {
-      return {
-        id: m.id,
-        role: m.role,
-        parts: [{ type: "text" as const, text: m.content }],
-      };
-    }
-  });
-}
 
 export function SoulChat({
   workspaceId,
@@ -70,14 +43,10 @@ export function SoulChat({
   initialPrompt,
   onSoulChange,
 }: SoulChatProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const processedToolCallsRef = useRef<Set<string>>(new Set());
   const initialPromptSentRef = useRef(false);
   const savedMessageIdsRef = useRef<Set<string>>(new Set());
-  const [input, setInput] = useState("");
   const [loadedMessages, setLoadedMessages] = useState<UIMessage[] | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
 
   // Load existing messages on mount
   useEffect(() => {
@@ -85,7 +54,7 @@ export function SoulChat({
       try {
         const stored = await getSoulChatMessages(workspaceId);
         if (stored.length > 0) {
-          const uiMessages = storedToUIMessages(stored);
+          const uiMessages = persistedToUIMessagesBase(stored);
           setLoadedMessages(uiMessages);
           // Mark these as already saved
           stored.forEach((m) => savedMessageIdsRef.current.add(m.id));
@@ -99,16 +68,24 @@ export function SoulChat({
     loadMessages();
   }, [workspaceId]);
 
-  const transport = new DefaultChatTransport({
+  const {
+    messages,
+    setMessages,
+    sendMessage,
+    status,
+    isLoading,
+    input,
+    setInput,
+    containerRef,
+    textareaRef,
+    spacerHeight,
+    handleSubmit,
+  } = useChatCore({
     api: "/api/workspace/soul",
-    body: {
+    transportBody: {
       currentSoul,
       workspaceId,
     },
-  });
-
-  const { messages, sendMessage, status, setMessages } = useChat({
-    transport,
   });
 
   // Set messages when loaded from storage
@@ -147,7 +124,7 @@ export function SoulChat({
           await saveSoulChatMessage(workspaceId, {
             id: message.id,
             role: message.role as "user" | "assistant",
-            content: JSON.stringify(message.parts),
+            content: serializeMessageParts(message.parts),
           });
         } catch {
           savedMessageIdsRef.current.delete(message.id);
@@ -256,27 +233,11 @@ export function SoulChat({
     processToolCalls();
   }, [processToolCalls]);
 
-  const isLoading = status === "streaming" || status === "submitted";
-
-  // Scroll to bottom on load, scroll user's message to top when they submit
-  const { spacerHeight } = useChatAutoScroll(containerRef, messages.length, status);
-
-  // Auto-focus input when AI finishes responding
-  useAutoFocusOnComplete(isLoading, textareaRef);
-
-  const handleSubmit = () => {
-    if (input.trim()) {
-      sendMessage({ text: input });
-      setInput("");
-    }
-  };
-
   const handleDeleteConversation = async () => {
     if (!confirm("Delete this conversation? The AI will start fresh but will know the current persona configuration.")) {
       return;
     }
 
-    setIsDeleting(true);
     try {
       await deleteSoulChatMessages(workspaceId);
       setMessages([]);
@@ -285,8 +246,6 @@ export function SoulChat({
       initialPromptSentRef.current = false;
     } catch {
       // Silent fail - conversation remains
-    } finally {
-      setIsDeleting(false);
     }
   };
 
@@ -301,136 +260,34 @@ export function SoulChat({
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="p-4 border-b border-border flex items-center justify-between shrink-0">
-        <div>
-          <h3 className="text-sm font-medium text-foreground">Persona Configuration</h3>
-          <p className="text-xs text-muted-foreground">
-            {messages.length === 0
-              ? "Start a conversation to configure your AI"
-              : `${messages.length} message${messages.length === 1 ? "" : "s"}`}
+    <ChatContainer
+      messages={messages}
+      containerRef={containerRef}
+      textareaRef={textareaRef}
+      spacerHeight={spacerHeight}
+      isLoading={isLoading}
+      input={input}
+      onInputChange={setInput}
+      onSubmit={handleSubmit}
+      header={{
+        title: "Persona Configuration",
+        subtitle:
+          messages.length === 0
+            ? "Start a conversation to configure your AI"
+            : `${messages.length} message${messages.length === 1 ? "" : "s"}`,
+        showClearButton: true,
+      }}
+      onClearHistory={handleDeleteConversation}
+      emptyState={
+        <div className="text-center py-8">
+          <Bot className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
+          <p className="text-sm text-muted-foreground">
+            Tell me how you&apos;d like to adjust your AI assistant&apos;s personality.
           </p>
         </div>
-        {messages.length > 0 && (
-          <button
-            onClick={handleDeleteConversation}
-            disabled={isDeleting || isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50"
-            title="Delete conversation"
-          >
-            <Trash2 className="w-4 h-4" />
-            Clear
-          </button>
-        )}
-      </div>
-
-      {/* Messages */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
-        {messages.length === 0 && (
-          <div className="text-center py-8">
-            <Bot className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
-            <p className="text-sm text-muted-foreground">
-              Tell me how you&apos;d like to adjust your AI assistant&apos;s personality.
-            </p>
-          </div>
-        )}
-        {messages.map((message) => (
-          <div key={message.id} data-message-role={message.role}>
-            <ChatMessage message={message} />
-          </div>
-        ))}
-        {isLoading && <LoadingMessage />}
-        <ChatSpacer height={spacerHeight} />
-      </div>
-
-      {/* Input */}
-      <div className="p-4 border-t border-border shrink-0">
-        <PromptInput
-          value={input}
-          onValueChange={setInput}
-          isLoading={isLoading}
-          onSubmit={handleSubmit}
-        >
-          <PromptInputTextarea
-            ref={textareaRef}
-            placeholder="Describe your preferences..."
-            rows={1}
-          />
-          <PromptInputActions>
-            <PromptInputSubmit />
-          </PromptInputActions>
-        </PromptInput>
-      </div>
-    </div>
-  );
-}
-
-interface ChatMessageProps {
-  message: {
-    id: string;
-    role: string;
-    parts: Array<{ type: string; text?: string }>;
-  };
-}
-
-function ChatMessage({ message }: ChatMessageProps) {
-  const isUser = message.role === "user";
-
-  // Extract text content, filtering out tool calls
-  const textParts = message.parts
-    .filter((p) => p.type === "text" && p.text)
-    .map((p) => p.text)
-    .join("\n");
-
-  if (!textParts) return null;
-
-  return (
-    <div className={cn("flex gap-3", isUser ? "flex-row-reverse" : "flex-row")}>
-      <div
-        className={cn(
-          "flex items-center justify-center w-7 h-7 rounded-full shrink-0",
-          isUser ? "bg-primary text-primary-foreground" : "bg-muted"
-        )}
-      >
-        {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
-      </div>
-      <div
-        className={cn(
-          "flex flex-col gap-1 max-w-[85%]",
-          isUser ? "items-end" : "items-start"
-        )}
-      >
-        <div
-          className={cn(
-            "rounded-lg px-3 py-2 text-sm overflow-hidden break-words",
-            isUser ? "bg-primary text-primary-foreground" : "bg-muted"
-          )}
-        >
-          <MarkdownContent content={textParts} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LoadingMessage() {
-  return (
-    <div className="flex gap-3">
-      <div className="flex items-center justify-center w-7 h-7 rounded-full bg-muted shrink-0">
-        <Bot className="w-4 h-4" />
-      </div>
-      <div className="flex items-center gap-1 px-3 py-2 rounded-lg bg-muted">
-        <span className="w-2 h-2 rounded-full bg-foreground/30 animate-bounce" />
-        <span
-          className="w-2 h-2 rounded-full bg-foreground/30 animate-bounce"
-          style={{ animationDelay: "0.1s" }}
-        />
-        <span
-          className="w-2 h-2 rounded-full bg-foreground/30 animate-bounce"
-          style={{ animationDelay: "0.2s" }}
-        />
-      </div>
-    </div>
+      }
+      inputPlaceholder="Describe your preferences..."
+      LoadingIndicator={ChatLoadingIndicator}
+    />
   );
 }
