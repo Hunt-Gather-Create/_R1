@@ -2,22 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react";
 import TextareaAutosize from "react-textarea-autosize";
-import { Minimize2, Pencil } from "lucide-react";
-import dynamic from "next/dynamic";
+import { Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MarkdownPreview } from "@/components/ui/markdown-editor";
-import { useColorMode } from "@/lib/hooks";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
-
-// Dynamically import markdown editor to avoid SSR issues
-const MDEditor = dynamic(() => import("@uiw/react-md-editor"), { ssr: false });
-import "@uiw/react-md-editor/markdown-editor.css";
+import { DescriptionEditorDialog } from "./DescriptionEditorDialog";
 
 import { StatusSelect } from "./properties/StatusSelect";
 import { PrioritySelect } from "./properties/PrioritySelect";
@@ -68,7 +57,6 @@ export function IssueDetailForm({
   } = useBoardContext();
 
   const { data: members = [] } = useWorkspaceMembers(workspaceId);
-  const colorMode = useColorMode();
   const [title, setTitle] = useState(issue.title);
   const [description, setDescription] = useState(issue.description || "");
   const [isDescriptionDialogOpen, setIsDescriptionDialogOpen] = useState(false);
@@ -141,16 +129,11 @@ export function IssueDetailForm({
     }
   };
 
-  const handleDescriptionDialogClose = useCallback(() => {
+  const handleDescriptionSave = useCallback(() => {
     if (description !== (issue.description || "")) {
       updateSelectedIssue({ description: description || undefined });
     }
-    setIsDescriptionDialogOpen(false);
   }, [description, issue.description, updateSelectedIssue]);
-
-  const handleDescriptionChange = useCallback((val: string | undefined) => {
-    setDescription(val || "");
-  }, []);
 
   const handleAddComment = async (body: string) => {
     await addCommentMutation.mutateAsync(body);
@@ -300,43 +283,13 @@ export function IssueDetailForm({
           </div>
 
           {/* Description Editor Dialog */}
-          <Dialog open={isDescriptionDialogOpen} onOpenChange={(open) => {
-            if (!open) handleDescriptionDialogClose();
-            else setIsDescriptionDialogOpen(true);
-          }}>
-            <DialogContent
-              className="min-w-[90vw] w-[90vw] h-[90vh] flex flex-col p-0 gap-0"
-              showCloseButton={false}
-            >
-              <DialogHeader className="px-4 py-3 border-b border-border shrink-0">
-                <div className="flex items-center justify-between">
-                  <DialogTitle className="text-sm font-medium">
-                    Edit Description
-                  </DialogTitle>
-                  <button
-                    onClick={handleDescriptionDialogClose}
-                    className="p-1.5 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground transition-colors"
-                    aria-label="Close"
-                  >
-                    <Minimize2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </DialogHeader>
-              <div
-                data-color-mode={colorMode}
-                className="markdown-editor-wrapper markdown-editor-fullscreen flex-1 min-h-0"
-              >
-                <MDEditor
-                  value={description}
-                  onChange={handleDescriptionChange}
-                  preview="live"
-                  textareaProps={{ placeholder: "Add a description...", autoFocus: true }}
-                  height="100%"
-                  visibleDragbar={false}
-                />
-              </div>
-            </DialogContent>
-          </Dialog>
+          <DescriptionEditorDialog
+            open={isDescriptionDialogOpen}
+            onOpenChange={setIsDescriptionDialogOpen}
+            value={description}
+            onChange={setDescription}
+            onClose={handleDescriptionSave}
+          />
 
           {/* Subtasks - only show for parent issues (not subtasks) */}
           {!isSubtask && (

@@ -4,6 +4,7 @@ import {
   createChatTools,
   loadSkillsForPurpose,
   loadSkillsForWorkspace,
+  SUBTASK_INDEPENDENCE_GUIDELINES,
 } from "@/lib/chat";
 import type { WorkspacePurpose } from "@/lib/design-tokens";
 
@@ -16,6 +17,7 @@ Your job is to:
 2. Help them write clear, actionable user stories with acceptance criteria
 3. Suggest appropriate priority levels based on the context
 4. When you have enough information, use the suggestIssue tool to populate the form
+5. For complex features, use suggestSubtasks to break down the work into smaller pieces
 
 When writing user stories, follow the format: "As a [user type], I want [goal], so that [benefit]"
 
@@ -25,12 +27,22 @@ Focus on:
 - Testing criteria and acceptance criteria
 - Breaking down complex features into smaller tasks
 
-**Available tools:**
+**Form tools:**
+- suggestIssue: Populate the main issue form with title, description, priority
+- suggestSubtasks: Manage subtasks (add, update, or remove)
+  - By default, replaceExisting=true replaces ALL existing subtasks with the ones you provide
+  - To remove subtasks: only include the ones that should remain
+  - To update subtasks: include the updated versions
+  - Set replaceExisting=false to append new subtasks to the existing list
+
+**Research tools:**
 - Web search: Research related technologies, APIs, or best practices
 - Code execution: Generate example code or analyze technical approaches
 - Web fetch: Read documentation from URLs
 
 Be conversational and helpful. Ask one or two questions at a time to gather context before suggesting an issue.
+
+When a feature is complex, proactively suggest subtasks to help break down the work.
 
 Priority levels:
 - 0 = Urgent (critical bugs, security issues)
@@ -46,6 +58,7 @@ Your job is to:
 2. Help them define clear objectives, target audience, and deliverables
 3. Suggest appropriate priority levels based on deadlines and impact
 4. When you have enough information, use the suggestIssue tool to populate the form
+5. For complex campaigns, use suggestSubtasks to break down the work into phases or deliverables
 
 Focus on:
 - Campaign objectives and KPIs
@@ -54,12 +67,22 @@ Focus on:
 - Timeline and key milestones
 - Success metrics and how to measure results
 
-**Available tools:**
+**Form tools:**
+- suggestIssue: Populate the main issue form with title, description, priority
+- suggestSubtasks: Manage subtasks (add, update, or remove)
+  - By default, replaceExisting=true replaces ALL existing subtasks with the ones you provide
+  - To remove subtasks: only include the ones that should remain
+  - To update subtasks: include the updated versions
+  - Set replaceExisting=false to append new subtasks to the existing list
+
+**Research tools:**
 - Web search: Research competitors, trends, best practices, audience insights
 - Code execution: Run calculations, analyze data
 - Web fetch: Read content from URLs
 
 Be conversational and helpful. Ask one or two questions at a time to gather context before suggesting an issue.
+
+When a campaign is complex, proactively suggest subtasks to break down the work.
 
 Priority levels:
 - 0 = Urgent (time-sensitive campaigns, launch deadlines)
@@ -68,17 +91,58 @@ Priority levels:
 - 3 = Low (nice-to-haves, experimental ideas)
 - 4 = No priority (backlog ideas)`;
 
-function getSystemPrompt(purpose: WorkspacePurpose): string {
-  return purpose === "marketing"
+function getSystemPrompt(
+  purpose: WorkspacePurpose,
+  subtasks?: SuggestedSubtaskContext[]
+): string {
+  const basePrompt = purpose === "marketing"
     ? MARKETING_SYSTEM_PROMPT
     : SOFTWARE_SYSTEM_PROMPT;
+
+  // Build prompt with subtask independence guidelines
+  let prompt = `${basePrompt}
+
+${SUBTASK_INDEPENDENCE_GUIDELINES}`;
+
+  // Add current subtasks context if any exist
+  if (subtasks && subtasks.length > 0) {
+    const subtasksList = subtasks
+      .map((s, i) => `${i + 1}. "${s.title}" (Priority: ${s.priority})${s.description ? ` - ${s.description}` : ""}`)
+      .join("\n");
+
+    prompt += `
+
+## Current Suggested Subtasks
+
+The user has ${subtasks.length} subtask${subtasks.length !== 1 ? "s" : ""} in their form:
+
+${subtasksList}
+
+**To modify subtasks, use suggestSubtasks with ONLY the subtasks you want to keep.**
+- To remove subtasks: Call suggestSubtasks with replaceExisting=true (default) and include ONLY the subtasks that should remain
+- To update a subtask: Call suggestSubtasks with the updated version of that subtask
+- To add subtasks: Call suggestSubtasks with replaceExisting=false to append, or include all existing + new ones with replaceExisting=true
+
+Example - if user says "remove the first subtask", call suggestSubtasks with subtasks 2 and 3 only (omitting subtask 1).
+Example - if user says "keep only subtask 2", call suggestSubtasks with just that one subtask.`;
+  }
+
+  return prompt;
+}
+
+interface SuggestedSubtaskContext {
+  id: string;
+  title: string;
+  description?: string;
+  priority: number;
 }
 
 export async function POST(req: Request) {
-  const { messages, workspacePurpose, workspaceId } = (await req.json()) as {
+  const { messages, workspacePurpose, workspaceId, suggestedSubtasks } = (await req.json()) as {
     messages: UIMessage[];
     workspacePurpose?: WorkspacePurpose;
     workspaceId?: string;
+    suggestedSubtasks?: SuggestedSubtaskContext[];
   };
 
   const purpose = workspacePurpose ?? "software";
@@ -92,7 +156,7 @@ export async function POST(req: Request) {
   const tools = createChatTools();
 
   return createChatResponse(messages, {
-    system: getSystemPrompt(purpose),
+    system: getSystemPrompt(purpose, suggestedSubtasks),
     tools,
     builtInTools: {
       webSearch: true,

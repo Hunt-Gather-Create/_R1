@@ -37,6 +37,8 @@ export interface UseChatCoreOptions<TPersistedMessage = unknown> {
   onToolCall?: (info: { toolCall: ToolCallInfo }) => void;
   /** Optional persistence configuration */
   persistence?: PersistenceConfig<TPersistedMessage>;
+  /** Optional chat ID - changing this will reinitialize the chat with fresh context */
+  chatId?: string;
 }
 
 export interface UseChatCoreReturn {
@@ -87,7 +89,7 @@ export interface UseChatCoreReturn {
 export function useChatCore<TPersistedMessage = unknown>(
   options: UseChatCoreOptions<TPersistedMessage>
 ): UseChatCoreReturn {
-  const { api, transportBody, onToolCall, persistence } = options;
+  const { api, transportBody, onToolCall, persistence, chatId } = options;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -101,18 +103,18 @@ export function useChatCore<TPersistedMessage = unknown>(
   const persistedMessages = persistedData?.data;
   const isLoadingHistory = persistedData?.isLoading ?? false;
 
-  // Memoize transport to prevent unnecessary re-renders
-  const transport = useMemo(
-    () =>
-      new DefaultChatTransport({
-        api,
-        body: transportBody,
-      }),
+  // Memoize transport - recreate when api, body, or chatId changes
+  const transport = useMemo(() => {
+    return new DefaultChatTransport({
+      api,
+      body: transportBody,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [api, JSON.stringify(transportBody)]
-  );
+  }, [api, JSON.stringify(transportBody), chatId]);
 
   const { messages, sendMessage, status, setMessages } = useChat({
+    // Only pass id when chatId is defined to avoid passing undefined
+    ...(chatId ? { id: chatId } : {}),
     transport,
     onToolCall: onToolCall
       ? ({ toolCall }) => {
@@ -163,7 +165,9 @@ export function useChatCore<TPersistedMessage = unknown>(
   useAutoFocusOnComplete(isLoading, textareaRef);
 
   const handleSubmit = useCallback(async () => {
-    if (!input.trim() && files.length === 0) return;
+    if (!input.trim() && files.length === 0) {
+      return;
+    }
 
     const { messageText, fileAttachments } = await prepareFilesForSubmission(files, input);
 
