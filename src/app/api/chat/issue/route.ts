@@ -5,6 +5,7 @@ import {
   loadSkillsForPurpose,
   loadSkillsForWorkspace,
   getPriorityLabel,
+  SUBTASK_INDEPENDENCE_GUIDELINES,
 } from "@/lib/chat";
 import type { WorkspacePurpose } from "@/lib/design-tokens";
 import type { WorkspaceSoul } from "@/lib/types";
@@ -102,43 +103,14 @@ If the user asks for new subtasks and the existing ones have issues (e.g., they'
 
 ## Rules for Subtask Suggestions
 
-### CRITICAL: Subtasks Must Be Fully Independent
+${SUBTASK_INDEPENDENCE_GUIDELINES}
 
-Each subtask is executed **in complete isolation** by a separate AI agent that has NO access to the results of other subtasks. This means:
-
-- A subtask CANNOT use output from another subtask
-- A subtask CANNOT "build on" or "continue" work from another subtask
-- A subtask CANNOT reference "the research" or "the analysis" from a sibling task
-- Each subtask must be self-contained with all context needed to complete it
-
-If you find yourself thinking "this task needs the results from that task", you MUST either:
-1. Combine them into a single subtask, OR
-2. Restructure so each task gathers its own data independently
-
-### Other Guidelines
+### Additional Guidelines for Issue Refinement
 
 - **Be eager** to suggest subtasks - when you see work that can be done, suggest it
-- **Keep it minimal** - suggest 2-5 subtasks MAX. Combine related work into single tasks
 - **Set priority** - assign appropriate priority (0=Urgent, 1=High, 2=Medium, 3=Low, 4=None)
-- **Never include timelines** - no "Week 1-2", "Day 1", "Phase 1" etc. Just the task itself
-- **Keep titles concise** - under 60 characters, action-oriented (e.g., "Research X", "Write Y", "Analyze Z")
-- **Consolidate related work** - don't create separate subtasks for things that should be done together
 - **Include toolsRequired** when relevant (e.g., ["web_search"], ["code_execution"])
 - **Fix existing subtasks** - if existing subtasks are sequential/dependent, delete and replace them
-
-### Examples
-
-**BAD** (dependent - task 2 needs task 1's output):
-- "Research keywords for the topic"
-- "Write content using the researched keywords" ❌ Depends on task 1!
-- "Optimize the written content for SEO" ❌ Depends on task 2!
-
-**GOOD** (independent - each task is self-contained):
-- "Research target keywords and create keyword strategy document"
-- "Audit existing site content for SEO optimization opportunities"
-- "Analyze top 3 competitor articles for content patterns"
-
-Each good task can run in parallel because it gathers its own data and produces its own output.
 
 ## Description Updates
 

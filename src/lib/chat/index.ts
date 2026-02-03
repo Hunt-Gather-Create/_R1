@@ -363,3 +363,40 @@ export const PRIORITY_LABELS: Record<number, string> = {
 export function getPriorityLabel(priority: number): string {
   return PRIORITY_LABELS[priority] ?? "None";
 }
+
+/**
+ * Shared subtask independence guidelines for system prompts.
+ * Used by both create issue and edit issue chat endpoints.
+ */
+export const SUBTASK_INDEPENDENCE_GUIDELINES = `## CRITICAL: Subtasks Must Be Fully Independent
+
+Each subtask will be assigned to a different person or team who works **in complete isolation** without access to results from other subtasks. This means:
+
+- A subtask CANNOT rely on output from another subtask
+- A subtask CANNOT "build on" or "continue" work from another subtask
+- A subtask CANNOT reference "the research" or "the analysis" from a sibling task
+- Each subtask must be self-contained with all context needed to complete it
+
+If you find yourself thinking "this task needs the results from that task", you MUST either:
+1. Combine them into a single subtask, OR
+2. Restructure so each task gathers its own data independently
+
+### Examples
+
+**BAD** (dependent - task 2 needs task 1's output):
+- "Research the best authentication libraries"
+- "Implement authentication using the chosen library" ❌ Depends on task 1!
+- "Write tests for the authentication implementation" ❌ Depends on task 2!
+
+**GOOD** (independent - each task is self-contained):
+- "Research and document authentication options with pros/cons for our stack"
+- "Create authentication module architecture diagram with security considerations"
+- "Define authentication test scenarios and acceptance criteria"
+
+Each good task can be done in parallel because it produces its own standalone deliverable.
+
+### Guidelines
+- Keep subtasks minimal (2-5 MAX) - combine related work into single tasks
+- Keep titles concise and action-oriented (under 60 characters)
+- Never include timelines or phases ("Week 1", "Phase 2") - just the task itself
+- Each subtask should produce a concrete, reviewable deliverable`;

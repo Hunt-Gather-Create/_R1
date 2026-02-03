@@ -1,5 +1,5 @@
 import { createTool } from "../index";
-import { suggestIssueSchema } from "./schemas";
+import { suggestIssueSchema, suggestSubtasksSchema } from "./schemas";
 import type { ToolSet } from "ai";
 
 /**
@@ -13,6 +13,13 @@ export function createChatTools(): ToolSet {
       schema: suggestIssueSchema,
       resultMessage: (input) =>
         `Suggested issue: "${input.title}" with priority ${input.priority}`,
+    }),
+    suggestSubtasks: createTool({
+      description:
+        "Manage subtasks for the issue. By default replaceExisting=true, which replaces ALL existing subtasks with the ones you provide. To remove subtasks, only include the ones that should remain. To update a subtask, include the updated version. To add without removing, set replaceExisting=false.",
+      schema: suggestSubtasksSchema,
+      resultMessage: (input) =>
+        `${input.replaceExisting === false ? "Added" : "Set"} ${input.subtasks.length} subtask${input.subtasks.length !== 1 ? "s" : ""}`,
     }),
   };
 }
