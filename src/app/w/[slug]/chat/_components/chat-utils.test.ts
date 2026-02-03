@@ -70,10 +70,13 @@ describe("persistedToUIMessages", () => {
     expect(result[0].parts).toHaveLength(2);
     expect(result[0].parts[0]).toEqual({ type: "text", text: "Here is your document" });
     expect(result[0].parts[1]).toMatchObject({
-      type: "file-attachment",
-      attachmentId: "att-1",
-      filename: "doc.md",
-      size: 100,
+      type: "text",
+      text: "📎 doc.md",
+      __attachment: {
+        id: "att-1",
+        filename: "doc.md",
+        size: 100,
+      },
     });
   });
 
@@ -90,8 +93,10 @@ describe("persistedToUIMessages", () => {
     expect(result[0].parts).toHaveLength(3);
     expect(result[0].parts[0]).toEqual({ type: "text", text: "Here is the report:" });
     expect(result[0].parts[1]).toMatchObject({
-      type: "file-attachment",
-      attachmentId: "abc-123",
+      type: "text",
+      __attachment: {
+        id: "abc-123",
+      },
     });
     expect(result[0].parts[2]).toEqual({
       type: "text",
@@ -114,15 +119,19 @@ describe("persistedToUIMessages", () => {
     expect(result[0].parts).toHaveLength(5);
     expect(result[0].parts[0]).toEqual({ type: "text", text: "First document:" });
     expect(result[0].parts[1]).toMatchObject({
-      type: "file-attachment",
-      attachmentId: "aaa-111",
-      filename: "first.md",
+      type: "text",
+      __attachment: {
+        id: "aaa-111",
+        filename: "first.md",
+      },
     });
     expect(result[0].parts[2]).toEqual({ type: "text", text: "Second document:" });
     expect(result[0].parts[3]).toMatchObject({
-      type: "file-attachment",
-      attachmentId: "bbb-222",
-      filename: "second.md",
+      type: "text",
+      __attachment: {
+        id: "bbb-222",
+        filename: "second.md",
+      },
     });
     expect(result[0].parts[4]).toEqual({ type: "text", text: "Done!" });
   });
@@ -140,9 +149,9 @@ describe("persistedToUIMessages", () => {
 
     expect(result[0].parts).toHaveLength(3);
     expect(result[0].parts[0]).toEqual({ type: "text", text: "Document:" });
-    expect(result[0].parts[1]).toMatchObject({ type: "file-attachment", attachmentId: "aaa-111" });
+    expect(result[0].parts[1]).toMatchObject({ type: "text", __attachment: { id: "aaa-111" } });
     // Orphan attachment added at the end
-    expect(result[0].parts[2]).toMatchObject({ type: "file-attachment", attachmentId: "bbb-222" });
+    expect(result[0].parts[2]).toMatchObject({ type: "text", __attachment: { id: "bbb-222" } });
   });
 
   it("handles empty content with attachments", () => {
@@ -152,7 +161,7 @@ describe("persistedToUIMessages", () => {
 
     // Empty text is not added, only attachment
     expect(result[0].parts).toHaveLength(1);
-    expect(result[0].parts[0]).toMatchObject({ type: "file-attachment" });
+    expect(result[0].parts[0]).toMatchObject({ type: "text", __attachment: { id: "att-1" } });
   });
 
   it("ensures at least one part exists for empty messages", () => {
@@ -180,7 +189,7 @@ describe("persistedToUIMessages", () => {
       type: "text",
       text: "Here is [attachment:abc-123] my message",
     });
-    expect(result[0].parts[1]).toMatchObject({ type: "file-attachment" });
+    expect(result[0].parts[1]).toMatchObject({ type: "text", __attachment: { id: "abc-123" } });
   });
 
   it("handles multiple messages correctly", () => {
@@ -193,6 +202,82 @@ describe("persistedToUIMessages", () => {
     expect(result).toHaveLength(2);
     expect(result[0].id).toBe("msg-1");
     expect(result[1].id).toBe("msg-2");
+  });
+
+  // New JSON format tests
+  it("parses JSON parts array format with text and tool calls", () => {
+    const parts = [
+      { type: "text", text: "Let me fetch that URL" },
+      { type: "tool-fetchUrl", toolCallId: "tool-1", state: "output-available", output: { success: true } },
+      { type: "text", text: "Here's what I found" },
+    ];
+    const messages = [
+      createMessage({
+        content: JSON.stringify(parts),
+        attachments: [],
+      }),
+    ];
+    const result = persistedToUIMessages(messages);
+
+    expect(result[0].parts).toHaveLength(3);
+    expect(result[0].parts[0]).toEqual({ type: "text", text: "Let me fetch that URL" });
+    expect(result[0].parts[1]).toMatchObject({
+      type: "tool-fetchUrl",
+      toolCallId: "tool-1",
+      state: "output-available",
+    });
+    expect(result[0].parts[2]).toEqual({ type: "text", text: "Here's what I found" });
+  });
+
+  it("converts tool-createFile parts to attachment parts in JSON format", () => {
+    const attachment = createAttachment({ id: "att-123", filename: "doc.md", size: 500 });
+    const parts = [
+      { type: "text", text: "Here's the file" },
+      {
+        type: "tool-createFile",
+        toolCallId: "tool-1",
+        state: "output-available",
+        output: { success: true, attachmentId: "att-123" },
+      },
+    ];
+    const messages = [
+      createMessage({
+        content: JSON.stringify(parts),
+        attachments: [attachment],
+      }),
+    ];
+    const result = persistedToUIMessages(messages);
+
+    expect(result[0].parts).toHaveLength(2);
+    expect(result[0].parts[0]).toEqual({ type: "text", text: "Here's the file" });
+    // tool-createFile should be converted to attachment part
+    expect(result[0].parts[1]).toMatchObject({
+      type: "text",
+      __attachment: { id: "att-123", filename: "doc.md", size: 500 },
+    });
+  });
+
+  it("preserves tool calls in JSON format after reload", () => {
+    const parts = [
+      { type: "text", text: "Loading skill" },
+      { type: "tool-loadSkill", toolCallId: "tool-1", state: "output-available", output: { loaded: true } },
+      { type: "text", text: "Skill loaded successfully" },
+    ];
+    const messages = [
+      createMessage({
+        content: JSON.stringify(parts),
+        attachments: [],
+      }),
+    ];
+    const result = persistedToUIMessages(messages);
+
+    // Tool calls should be preserved
+    const toolPart = result[0].parts.find((p) => p.type === "tool-loadSkill");
+    expect(toolPart).toBeDefined();
+    expect(toolPart).toMatchObject({
+      type: "tool-loadSkill",
+      state: "output-available",
+    });
   });
 });
 
@@ -305,7 +390,7 @@ describe("formatFileSize", () => {
 });
 
 describe("createAttachmentPart", () => {
-  it("creates a file-attachment part from an attachment", () => {
+  it("creates a text part with attachment metadata from an attachment", () => {
     const attachment = createAttachment({
       id: "test-id",
       filename: "document.md",
@@ -314,10 +399,13 @@ describe("createAttachmentPart", () => {
     const result = createAttachmentPart(attachment);
 
     expect(result).toMatchObject({
-      type: "file-attachment",
-      attachmentId: "test-id",
-      filename: "document.md",
-      size: 1234,
+      type: "text",
+      text: "📎 document.md",
+      __attachment: {
+        id: "test-id",
+        filename: "document.md",
+        size: 1234,
+      },
     });
   });
 });

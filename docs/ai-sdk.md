@@ -131,7 +131,205 @@ const createFile = tool({
 
 ## Client-Side Patterns
 
-### Using `useChat`
+### Unified Chat Architecture
+
+The codebase uses a **hook + component pattern** for chat interfaces. This provides consistent behavior across all chat panels while allowing customization.
+
+#### Core Building Blocks
+
+| Module | Purpose |
+|--------|---------|
+| `useChatCore` | Hook that encapsulates transport, state, persistence, and auto-scroll |
+| `ChatContainer` | Reusable UI component for chat layout |
+| `message-persistence.ts` | Shared utilities for saving/loading messages |
+
+### Using `useChatCore`
+
+The `useChatCore` hook is the recommended way to build chat interfaces. It handles:
+- Transport creation and memoization
+- Loading states (`streaming`, `submitted`, `ready`)
+- File attachment preparation
+- Auto-scroll and auto-focus behavior
+- Optional message persistence
+
+```typescript
+"use client";
+
+import { useChatCore } from "@/lib/hooks";
+import { ChatContainer } from "@/components/ai-elements/ChatContainer";
+
+function MyChat() {
+  const chat = useChatCore({
+    api: "/api/chat/my-endpoint",
+    transportBody: { workspaceId: "..." },
+    onToolCall: ({ toolCall }) => {
+      if (toolCall.toolName === "myTool") {
+        // Handle tool call side effects
+      }
+    },
+  });
+
+  return (
+    <ChatContainer
+      messages={chat.messages}
+      containerRef={chat.containerRef}
+      textareaRef={chat.textareaRef}
+      spacerHeight={chat.spacerHeight}
+      isLoading={chat.isLoading}
+      input={chat.input}
+      onInputChange={chat.setInput}
+      onSubmit={chat.handleSubmit}
+      header={{ title: "AI Assistant" }}
+      welcomeMessage="How can I help?"
+    />
+  );
+}
+```
+
+#### `useChatCore` Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `api` | string | API endpoint for chat |
+| `transportBody` | object | Additional data sent with each request |
+| `onToolCall` | function | Called when AI invokes a tool |
+| `persistence` | object | Optional persistence configuration (see below) |
+
+#### `useChatCore` Return Value
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `messages` | UIMessage[] | Current chat messages |
+| `isLoading` | boolean | True when streaming or submitted |
+| `isLoadingHistory` | boolean | True when loading persisted messages |
+| `input` | string | Current input text |
+| `setInput` | function | Set input text |
+| `files` | File[] | Attached files |
+| `setFiles` | function | Set attached files |
+| `handleSubmit` | function | Submit message with files |
+| `handleClearHistory` | function | Clear all messages |
+| `containerRef` | RefObject | Ref for scroll container |
+| `textareaRef` | RefObject | Ref for input textarea |
+| `spacerHeight` | number | Height for scroll spacer |
+
+### Adding Persistence
+
+To persist chat messages across page refreshes, provide a `persistence` config:
+
+```typescript
+import {
+  useIssueChatMessages,
+  useSaveChatMessage,
+  useClearChatMessages
+} from "@/lib/hooks";
+import { persistedToUIMessagesBase, serializeMessageParts } from "@/lib/chat/message-persistence";
+
+const chat = useChatCore({
+  api: "/api/chat/issue",
+  persistence: {
+    entityId: issueId,
+    useMessages: useIssueChatMessages,
+    toUIMessages: persistedToUIMessagesBase,
+    onSaveMessage: (message) => {
+      saveChatMutation.mutate({
+        role: message.role,
+        content: serializeMessageParts(message.parts),
+      });
+    },
+    onClearMessages: async () => {
+      await clearChatMutation.mutateAsync();
+    },
+  },
+});
+```
+
+#### Message Persistence Utilities
+
+The `message-persistence.ts` module provides shared utilities:
+
+```typescript
+import {
+  parseMessageParts,      // Parse JSON parts or plain text
+  serializeMessageParts,  // Serialize parts to JSON
+  persistedToUIMessagesBase, // Convert persisted messages to UIMessage[]
+  createUIMessage,        // Create single UIMessage from persisted
+} from "@/lib/chat/message-persistence";
+```
+
+**Important:** Messages are stored as JSON arrays to preserve tool calls. The utilities handle both the new JSON format and legacy plain text:
+
+```typescript
+// New format (preserves tool calls)
+'[{"type":"text","text":"Hello"},{"type":"tool-search","output":{...}}]'
+
+// Legacy format (plain text, auto-converted)
+"Hello world"
+```
+
+### Using `ChatContainer`
+
+The `ChatContainer` component provides a standard chat layout:
+
+```typescript
+<ChatContainer
+  // Required props from useChatCore
+  messages={chat.messages}
+  containerRef={chat.containerRef}
+  textareaRef={chat.textareaRef}
+  spacerHeight={chat.spacerHeight}
+  isLoading={chat.isLoading}
+  input={chat.input}
+  onInputChange={chat.setInput}
+  onSubmit={chat.handleSubmit}
+
+  // Optional customization
+  header={{
+    title: "AI Assistant",
+    subtitle: "Powered by Claude",
+    icon: <Sparkles className="w-4 h-4" />,
+    showClearButton: true,
+  }}
+  onClearHistory={chat.handleClearHistory}
+  welcomeMessage="How can I help you today?"
+  inputPlaceholder="Type a message..."
+  showAttachmentButton={true}
+  files={chat.files}
+  onFilesChange={chat.setFiles}
+  isLoadingHistory={chat.isLoadingHistory}
+
+  // Custom tool call rendering
+  renderToolCall={(toolName, result, index) => {
+    if (toolName === "updateDescription") {
+      return <div key={index}>✨ Description updated</div>;
+    }
+    return null; // Falls back to ToolResultDisplay
+  }}
+/>
+```
+
+#### Tool Call Rendering
+
+Tool calls appear in messages as parts with `type: "tool-{toolName}"`. The `ChatContainer` extracts the tool name and passes it to your `renderToolCall` function:
+
+```typescript
+renderToolCall={(toolName, result, index, part) => {
+  // toolName: "fetchUrl", "webSearch", etc.
+  // result: The tool's output
+  // index: Part index for React key
+  // part: Full part object if needed
+
+  if (toolName === "webSearch") {
+    return <SearchResultCard key={index} results={result} />;
+  }
+
+  // Return null to use default ToolResultDisplay
+  return null;
+}}
+```
+
+### Using `useChat` Directly
+
+For simple cases or when you need more control, use `useChat` from `@ai-sdk/react` directly:
 
 ```typescript
 "use client";
@@ -252,10 +450,96 @@ function ChatComponent() {
 | File | Purpose |
 |------|---------|
 | `/src/lib/chat/index.ts` | Core chat helpers, `createChatResponse`, `createTool` |
+| `/src/lib/chat/message-persistence.ts` | Shared utilities for saving/loading chat messages |
 | `/src/lib/chat/skills.ts` | Skill loading and manifest |
-| `/src/lib/chat/tools.ts` | Issue and planning tool definitions |
+| `/src/lib/chat/tools/` | Tool definitions (issue, planning, schemas) |
+| `/src/lib/hooks/use-chat-core.ts` | `useChatCore` hook for unified chat state |
 | `/src/lib/hooks/use-auto-focus.ts` | `useAutoFocusOnComplete` hook |
+| `/src/lib/hooks/use-chat-auto-scroll.ts` | Auto-scroll behavior for chat |
+| `/src/components/ai-elements/ChatContainer.tsx` | Reusable chat UI layout |
+| `/src/components/ai-elements/ChatMessageItem.tsx` | Individual message rendering |
+| `/src/components/ai-elements/ToolResultDisplay.tsx` | Default tool result display |
 | `/src/app/api/chat/*/route.ts` | API route handlers |
+
+## Creating a New Chat Panel
+
+Quick checklist for adding a new chat interface:
+
+### 1. Create the API Route
+
+```typescript
+// /src/app/api/chat/my-feature/route.ts
+import { createChatResponse } from "@/lib/chat";
+import type { UIMessage } from "ai";
+
+export const maxDuration = 30;
+
+export async function POST(req: Request) {
+  const { messages, ...context } = await req.json() as {
+    messages: UIMessage[];
+    // Add your context fields
+  };
+
+  return createChatResponse(messages, {
+    system: "Your system prompt here",
+    tools: { /* your tools */ },
+  });
+}
+```
+
+### 2. Create the Chat Component
+
+```typescript
+// /src/components/my-feature/MyChat.tsx
+"use client";
+
+import { useChatCore } from "@/lib/hooks";
+import { ChatContainer } from "@/components/ai-elements/ChatContainer";
+
+export function MyChat({ contextId }: { contextId: string }) {
+  const chat = useChatCore({
+    api: "/api/chat/my-feature",
+    transportBody: { contextId },
+  });
+
+  return (
+    <ChatContainer
+      messages={chat.messages}
+      containerRef={chat.containerRef}
+      textareaRef={chat.textareaRef}
+      spacerHeight={chat.spacerHeight}
+      isLoading={chat.isLoading}
+      input={chat.input}
+      onInputChange={chat.setInput}
+      onSubmit={chat.handleSubmit}
+      header={{ title: "My Chat" }}
+      welcomeMessage="How can I help?"
+    />
+  );
+}
+```
+
+### 3. Add Persistence (Optional)
+
+If messages should survive page refreshes:
+
+1. Create database table/columns for messages
+2. Create TanStack Query hooks (`useMyMessages`, `useSaveMyMessage`, etc.)
+3. Add `persistence` config to `useChatCore`
+
+### 4. Add Custom Tool Rendering (Optional)
+
+```typescript
+<ChatContainer
+  // ... other props
+  renderToolCall={(toolName, result, index) => {
+    if (toolName === "myTool") {
+      return <MyToolResult key={index} data={result} />;
+    }
+    return null; // Use default ToolResultDisplay
+  }}
+/>
+```
 
 ## Related Documentation
 

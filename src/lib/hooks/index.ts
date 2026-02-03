@@ -76,6 +76,8 @@ export { useAutoFocusOnComplete } from "./use-auto-focus";
 
 export { useChatAutoScroll } from "./use-chat-auto-scroll";
 
+export { useChatCore, type UseChatCoreOptions, type UseChatCoreReturn } from "./use-chat-core";
+
 export {
   useAISuggestions,
   useInvalidateAISuggestions,

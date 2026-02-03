@@ -5,30 +5,79 @@ import type { WorkspaceChatMessage, WorkspaceChatAttachment } from "@/lib/types"
 const ATTACHMENT_PLACEHOLDER_PATTERN = /\[attachment:([a-f0-9-]+)\]/g;
 
 /**
- * Creates a file attachment part for rendering in the UI.
- * Uses "file-attachment" type to avoid being sent to the API as a tool call.
+ * Creates a file attachment text part for rendering in the UI.
+ *
+ * IMPORTANT: We use type "text" (not a custom type) to ensure the SDK
+ * properly handles these messages when sending to the API. Using custom
+ * types like "file-attachment" caused issues where the API received
+ * malformed tool_use/tool_result structures.
+ *
+ * The UI component (ChatMessage) checks for the __attachment metadata
+ * to render these as file cards instead of plain text.
  */
 export function createAttachmentPart(attachment: WorkspaceChatAttachment) {
   return {
-    type: "file-attachment",
-    attachmentId: attachment.id,
-    filename: attachment.filename,
-    size: attachment.size,
+    type: "text",
+    text: `📎 ${attachment.filename}`,
+    // Metadata for UI rendering - the ChatMessage component uses this
+    // to render a file card instead of plain text
+    __attachment: {
+      id: attachment.id,
+      filename: attachment.filename,
+      size: attachment.size,
+    },
   } as unknown as UIMessage["parts"][number];
 }
 
 /**
  * Converts persisted messages (from database) to UI message format.
- * Handles attachment placeholders to preserve the order of text and attachments.
+ * Supports two formats:
+ * 1. JSON array of parts (new format) - preserves tool calls and all part types
+ * 2. Plain text with attachment placeholders (legacy format) - backward compatible
  */
 export function persistedToUIMessages(
   persisted: (WorkspaceChatMessage & { attachments: WorkspaceChatAttachment[] })[]
 ): UIMessage[] {
   return persisted.map((msg) => {
-    const parts: UIMessage["parts"] = [];
-
     // Create a map of attachments by ID for quick lookup
     const attachmentMap = new Map(msg.attachments.map((a) => [a.id, a]));
+
+    // Try to parse content as JSON parts array (new format)
+    if (msg.content.startsWith("[")) {
+      try {
+        const parsedParts = JSON.parse(msg.content) as UIMessage["parts"];
+        if (Array.isArray(parsedParts) && parsedParts.length > 0) {
+          // Process parts to restore attachment metadata from database
+          const parts = parsedParts.map((part) => {
+            // Handle tool-createFile parts - restore attachment info from database
+            if (
+              part.type?.startsWith("tool-createFile") &&
+              (part as unknown as { state: string }).state === "output-available"
+            ) {
+              const output = (part as unknown as { output?: { attachmentId?: string } }).output;
+              if (output?.attachmentId) {
+                const attachment = attachmentMap.get(output.attachmentId);
+                if (attachment) {
+                  return createAttachmentPart(attachment);
+                }
+              }
+            }
+            return part;
+          });
+
+          return {
+            id: msg.id,
+            role: msg.role as "user" | "assistant",
+            parts,
+          };
+        }
+      } catch {
+        // Not valid JSON, fall through to legacy parsing
+      }
+    }
+
+    // Legacy format: plain text with optional [attachment:id] placeholders
+    const parts: UIMessage["parts"] = [];
 
     // Check if content has attachment placeholders (use fresh regex each time)
     const hasPlaceholders =

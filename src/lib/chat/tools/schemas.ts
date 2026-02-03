@@ -96,6 +96,11 @@ export const suggestAITasksSchema = z.object({
       })
     )
     .describe("List of AI task suggestions for this issue"),
+  replaceExisting: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe("If true (default), removes existing suggestions before adding new ones"),
 });
 
 /**

@@ -382,7 +382,9 @@ export async function deleteIssue(issueId: string): Promise<void> {
     .where(eq(issues.id, issueId))
     .get();
 
-  if (!issue) return;
+  if (!issue) {
+    throw new Error(`Issue not found: ${issueId}`);
+  }
 
   // Get workspace ID for auth check
   const workspaceId = await getColumnWorkspaceId(issue.columnId);

@@ -1,19 +1,9 @@
 "use client";
 
-import { useRef, useCallback, useState, useEffect } from "react";
-import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
-import { Bot, User } from "lucide-react";
-import { MarkdownContent } from "@/components/ai-elements/MarkdownContent";
-import {
-  PromptInput,
-  PromptInputTextarea,
-  PromptInputSubmit,
-  PromptInputActions,
-} from "@/components/ai-elements/prompt-input";
-import { cn } from "@/lib/utils";
-import { ChatSpacer } from "@/components/ai-elements/ChatSpacer";
-import { useAutoFocusOnComplete, useChatAutoScroll } from "@/lib/hooks";
+import { useRef, useCallback, useEffect } from "react";
+import { useChatCore } from "@/lib/hooks";
+import { ChatContainer } from "@/components/ai-elements/ChatContainer";
+import { ChatLoadingIndicator } from "@/components/ai-elements/ChatMessageBubble";
 import type { Status } from "@/lib/design-tokens";
 
 export interface WorkspaceColumn {
@@ -63,14 +53,11 @@ export function ConfigurationChat({
   onLabelsChange,
   onIssuesChange,
 }: ConfigurationChatProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const processedToolCallsRef = useRef<Set<string>>(new Set());
-  const [input, setInput] = useState("");
 
-  const transport = new DefaultChatTransport({
+  const chat = useChatCore({
     api: "/api/workspace/configure",
-    body: {
+    transportBody: {
       currentConfig: {
         columns: columns.map((c) => ({ name: c.name, status: c.status })),
         labels,
@@ -79,30 +66,9 @@ export function ConfigurationChat({
     },
   });
 
-  const { messages, sendMessage, status } = useChat({
-    transport,
-  });
-
-  // Display messages with welcome message if empty
-  const displayMessages =
-    messages.length === 0
-      ? [
-          {
-            id: "welcome",
-            role: "assistant" as const,
-            parts: [
-              {
-                type: "text" as const,
-                text: "Hi! I'll help you set up your custom workspace. What will you be using this workspace for? Tell me about your workflow or project.",
-              },
-            ],
-          },
-        ]
-      : messages;
-
   // Process tool calls to update configuration
   const processToolCalls = useCallback(() => {
-    for (const message of messages) {
+    for (const message of chat.messages) {
       if (message.role !== "assistant") continue;
 
       for (const part of message.parts) {
@@ -224,127 +190,25 @@ export function ConfigurationChat({
         }
       }
     }
-  }, [messages, columns, issues, onColumnsChange, onLabelsChange, onIssuesChange]);
+  }, [chat.messages, columns, issues, onColumnsChange, onLabelsChange, onIssuesChange]);
 
   useEffect(() => {
     processToolCalls();
   }, [processToolCalls]);
 
-  const isLoading = status === "streaming" || status === "submitted";
-
-  // Scroll to bottom on load, scroll user's message to top when they submit
-  const { spacerHeight } = useChatAutoScroll(containerRef, messages.length, status);
-
-  // Auto-focus input when AI finishes responding
-  useAutoFocusOnComplete(isLoading, textareaRef);
-
-  const handleSubmit = () => {
-    if (input.trim()) {
-      sendMessage({ text: input });
-      setInput("");
-    }
-  };
-
   return (
-    <div className="flex flex-col h-full">
-      {/* Messages */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
-        {displayMessages.map((message) => (
-          <div key={message.id} data-message-role={message.role}>
-            <ChatMessage message={message} />
-          </div>
-        ))}
-        {isLoading && <LoadingMessage />}
-        <ChatSpacer height={spacerHeight} />
-      </div>
-
-      {/* Input */}
-      <div className="p-4 border-t border-border shrink-0">
-        <PromptInput
-          value={input}
-          onValueChange={setInput}
-          isLoading={isLoading}
-          onSubmit={handleSubmit}
-        >
-          <PromptInputTextarea
-            ref={textareaRef}
-            placeholder="Describe your workflow..."
-            rows={1}
-          />
-          <PromptInputActions>
-            <PromptInputSubmit />
-          </PromptInputActions>
-        </PromptInput>
-      </div>
-    </div>
-  );
-}
-
-interface ChatMessageProps {
-  message: {
-    id: string;
-    role: string;
-    parts: Array<{ type: string; text?: string }>;
-  };
-}
-
-function ChatMessage({ message }: ChatMessageProps) {
-  const isUser = message.role === "user";
-
-  // Extract text content, filtering out tool calls
-  const textParts = message.parts
-    .filter((p) => p.type === "text" && p.text)
-    .map((p) => p.text)
-    .join("\n");
-
-  if (!textParts) return null;
-
-  return (
-    <div className={cn("flex gap-3", isUser ? "flex-row-reverse" : "flex-row")}>
-      <div
-        className={cn(
-          "flex items-center justify-center w-7 h-7 rounded-full shrink-0",
-          isUser ? "bg-primary text-primary-foreground" : "bg-muted"
-        )}
-      >
-        {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
-      </div>
-      <div
-        className={cn(
-          "flex flex-col gap-1 max-w-[85%]",
-          isUser ? "items-end" : "items-start"
-        )}
-      >
-        <div
-          className={cn(
-            "rounded-lg px-3 py-2 text-sm overflow-hidden break-words",
-            isUser ? "bg-primary text-primary-foreground" : "bg-muted"
-          )}
-        >
-          <MarkdownContent content={textParts} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LoadingMessage() {
-  return (
-    <div className="flex gap-3">
-      <div className="flex items-center justify-center w-7 h-7 rounded-full bg-muted shrink-0">
-        <Bot className="w-4 h-4" />
-      </div>
-      <div className="flex items-center gap-1 px-3 py-2 rounded-lg bg-muted">
-        <span className="w-2 h-2 rounded-full bg-foreground/30 animate-bounce" />
-        <span
-          className="w-2 h-2 rounded-full bg-foreground/30 animate-bounce"
-          style={{ animationDelay: "0.1s" }}
-        />
-        <span
-          className="w-2 h-2 rounded-full bg-foreground/30 animate-bounce"
-          style={{ animationDelay: "0.2s" }}
-        />
-      </div>
-    </div>
+    <ChatContainer
+      messages={chat.messages}
+      containerRef={chat.containerRef}
+      textareaRef={chat.textareaRef}
+      spacerHeight={chat.spacerHeight}
+      isLoading={chat.isLoading}
+      input={chat.input}
+      onInputChange={chat.setInput}
+      onSubmit={chat.handleSubmit}
+      welcomeMessage="Hi! I'll help you set up your custom workspace. What will you be using this workspace for? Tell me about your workflow or project."
+      inputPlaceholder="Describe your workflow..."
+      LoadingIndicator={ChatLoadingIndicator}
+    />
   );
 }

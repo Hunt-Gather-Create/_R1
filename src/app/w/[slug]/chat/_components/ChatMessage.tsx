@@ -107,6 +107,23 @@ export function ChatMessage({ message }: ChatMessageProps) {
         >
           {message.parts.map((part, index) => {
             if (part.type === "text") {
+              // Check if this is a persisted file attachment (has __attachment metadata)
+              const attachmentMeta = (part as unknown as { __attachment?: { id: string; filename: string; size?: number } }).__attachment;
+              if (attachmentMeta) {
+                return (
+                  <FileAttachmentCard
+                    key={index}
+                    result={{
+                      success: true,
+                      attachmentId: attachmentMeta.id,
+                      filename: attachmentMeta.filename,
+                      size: attachmentMeta.size,
+                    }}
+                    onView={() => viewAttachment(attachmentMeta.id)}
+                  />
+                );
+              }
+
               // Check if this is a user message with embedded file content
               if (isUser && part.text.includes("\n\n--- ")) {
                 const { mainText, filesSections } = parseTextWithFileAttachments(part.text);
@@ -132,29 +149,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
               return <UserFileAttachment key={index} part={filePart} />;
             }
 
-            // Handle persisted file attachments (loaded from database)
-            // Use string cast since "file-attachment" is a custom type not in UIMessage
             const partType = part.type as string;
-            if (partType === "file-attachment") {
-              const attachmentPart = part as unknown as {
-                type: string;
-                attachmentId: string;
-                filename: string;
-                size?: number;
-              };
-              return (
-                <FileAttachmentCard
-                  key={index}
-                  result={{
-                    success: true,
-                    attachmentId: attachmentPart.attachmentId,
-                    filename: attachmentPart.filename,
-                    size: attachmentPart.size,
-                  }}
-                  onView={() => viewAttachment(attachmentPart.attachmentId)}
-                />
-              );
-            }
 
             // Handle tool parts - type is "tool-{toolName}"
             if (partType.startsWith("tool-")) {
