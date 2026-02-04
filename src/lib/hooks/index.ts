@@ -95,3 +95,9 @@ export {
   useAITaskStatus,
   useInvalidateAITaskStatus,
 } from "./use-ai-task-execution";
+
+export {
+  useSoulChatMessages,
+  useSaveSoulChatMessage,
+  useClearSoulChatMessages,
+} from "./use-soul-chat";

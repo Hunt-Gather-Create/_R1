@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode, RefObject } from "react";
+import { useState, type ReactNode, type RefObject } from "react";
 import { Trash2 } from "lucide-react";
 import type { UIMessage } from "@ai-sdk/react";
 import { ChatMessageItem } from "./ChatMessageItem";
@@ -14,6 +14,15 @@ import {
   PromptInputFilePreviews,
   PromptInputActions,
 } from "./prompt-input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 interface MessagePart {
   type: string;
@@ -30,6 +39,8 @@ interface ChatHeaderConfig {
   icon?: ReactNode;
   /** Whether to show the clear history button (when messages exist) */
   showClearButton?: boolean;
+  /** Custom confirmation message for clear dialog */
+  clearConfirmMessage?: string;
 }
 
 export interface ChatContainerProps {
@@ -101,6 +112,8 @@ export function ChatContainer({
   isLoadingHistory = false,
   emptyState,
 }: ChatContainerProps) {
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
   // Build display messages with optional welcome message
   const displayMessages =
     messages.length === 0 && welcomeMessage
@@ -117,6 +130,15 @@ export function ChatContainer({
           },
         ]
       : messages;
+
+  const handleClearClick = () => {
+    setShowClearConfirm(true);
+  };
+
+  const handleClearConfirm = () => {
+    setShowClearConfirm(false);
+    onClearHistory?.();
+  };
 
   // Show loading state if loading history
   if (isLoadingHistory) {
@@ -148,7 +170,7 @@ export function ChatContainer({
           </div>
           {header.showClearButton && messages.length > 0 && onClearHistory && (
             <button
-              onClick={onClearHistory}
+              onClick={handleClearClick}
               className="p-0 rounded text-muted-foreground hover:text-red-500 cursor-pointer"
               title="Clear chat history"
             >
@@ -210,6 +232,27 @@ export function ChatContainer({
           </PromptInputActions>
         </PromptInput>
       </div>
+
+      {/* Clear confirmation dialog */}
+      <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Clear chat history?</DialogTitle>
+            <DialogDescription>
+              {header?.clearConfirmMessage ||
+                "This will delete all messages in this conversation. This action cannot be undone."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowClearConfirm(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleClearConfirm}>
+              Clear
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,18 +1,17 @@
 "use client";
 
-import { useRef, useCallback, useState, useEffect } from "react";
-import type { UIMessage } from "@ai-sdk/react";
+import { useRef, useCallback, useEffect } from "react";
 import { Bot } from "lucide-react";
-import { useChatCore } from "@/lib/hooks";
+import {
+  useChatCore,
+  useSoulChatMessages,
+  useSaveSoulChatMessage,
+  useClearSoulChatMessages,
+} from "@/lib/hooks";
 import { ChatContainer } from "@/components/ai-elements/ChatContainer";
 import { ChatLoadingIndicator } from "@/components/ai-elements/ChatMessageBubble";
 import { persistedToUIMessagesBase, serializeMessageParts } from "@/lib/chat/message-persistence";
 import type { WorkspaceSoul } from "@/lib/types";
-import {
-  getSoulChatMessages,
-  saveSoulChatMessage,
-  deleteSoulChatMessages,
-} from "@/lib/actions/soul";
 
 interface SoulChatProps {
   workspaceId: string;
@@ -36,7 +35,6 @@ interface ToolOutput {
   greeting?: string;
 }
 
-
 export function SoulChat({
   workspaceId,
   currentSoul,
@@ -45,32 +43,14 @@ export function SoulChat({
 }: SoulChatProps) {
   const processedToolCallsRef = useRef<Set<string>>(new Set());
   const initialPromptSentRef = useRef(false);
-  const savedMessageIdsRef = useRef<Set<string>>(new Set());
-  const [loadedMessages, setLoadedMessages] = useState<UIMessage[] | null>(null);
 
-  // Load existing messages on mount
-  useEffect(() => {
-    async function loadMessages() {
-      try {
-        const stored = await getSoulChatMessages(workspaceId);
-        if (stored.length > 0) {
-          const uiMessages = persistedToUIMessagesBase(stored);
-          setLoadedMessages(uiMessages);
-          // Mark these as already saved
-          stored.forEach((m) => savedMessageIdsRef.current.add(m.id));
-        } else {
-          setLoadedMessages([]);
-        }
-      } catch {
-        setLoadedMessages([]);
-      }
-    }
-    loadMessages();
-  }, [workspaceId]);
+  // TanStack Query hooks for persistence
+  const { isLoading: isLoadingHistory } = useSoulChatMessages(workspaceId);
+  const saveChatMutation = useSaveSoulChatMessage(workspaceId);
+  const clearChatMutation = useClearSoulChatMessages(workspaceId);
 
   const {
     messages,
-    setMessages,
     sendMessage,
     status,
     isLoading,
@@ -80,62 +60,46 @@ export function SoulChat({
     textareaRef,
     spacerHeight,
     handleSubmit,
+    handleClearHistory,
   } = useChatCore({
     api: "/api/workspace/soul",
     transportBody: {
       currentSoul,
       workspaceId,
     },
+    persistence: {
+      entityId: workspaceId,
+      useMessages: useSoulChatMessages,
+      toUIMessages: persistedToUIMessagesBase,
+      onSaveMessage: (message) => {
+        saveChatMutation.mutate({
+          id: message.id,
+          role: message.role as "user" | "assistant",
+          content: serializeMessageParts(message.parts),
+        });
+      },
+      onClearMessages: async () => {
+        await clearChatMutation.mutateAsync();
+        // Reset tool processing state when clearing
+        processedToolCallsRef.current.clear();
+        initialPromptSentRef.current = false;
+      },
+    },
   });
-
-  // Set messages when loaded from storage
-  useEffect(() => {
-    if (loadedMessages && loadedMessages.length > 0 && messages.length === 0) {
-      setMessages(loadedMessages);
-    }
-  }, [loadedMessages, setMessages, messages.length]);
 
   // Send initial prompt if no existing conversation
   useEffect(() => {
     if (
       initialPrompt &&
       !initialPromptSentRef.current &&
-      loadedMessages !== null &&
-      loadedMessages.length === 0
+      !isLoadingHistory &&
+      messages.length === 0 &&
+      status === "ready"
     ) {
       initialPromptSentRef.current = true;
       sendMessage({ text: initialPrompt });
     }
-  }, [initialPrompt, sendMessage, loadedMessages]);
-
-  // Save new messages to database
-  useEffect(() => {
-    async function saveMessages() {
-      for (const message of messages) {
-        if (savedMessageIdsRef.current.has(message.id)) continue;
-
-        // Only save complete messages (not streaming)
-        if (status === "streaming" && message === messages[messages.length - 1] && message.role === "assistant") {
-          continue;
-        }
-
-        savedMessageIdsRef.current.add(message.id);
-        try {
-          await saveSoulChatMessage(workspaceId, {
-            id: message.id,
-            role: message.role as "user" | "assistant",
-            content: serializeMessageParts(message.parts),
-          });
-        } catch {
-          savedMessageIdsRef.current.delete(message.id);
-        }
-      }
-    }
-
-    if (status === "ready" && messages.length > 0) {
-      saveMessages();
-    }
-  }, [messages, status, workspaceId]);
+  }, [initialPrompt, sendMessage, isLoadingHistory, messages.length, status]);
 
   // Process tool calls to update soul configuration
   const processToolCalls = useCallback(() => {
@@ -233,24 +197,8 @@ export function SoulChat({
     processToolCalls();
   }, [processToolCalls]);
 
-  const handleDeleteConversation = async () => {
-    if (!confirm("Delete this conversation? The AI will start fresh but will know the current persona configuration.")) {
-      return;
-    }
-
-    try {
-      await deleteSoulChatMessages(workspaceId);
-      setMessages([]);
-      savedMessageIdsRef.current.clear();
-      processedToolCallsRef.current.clear();
-      initialPromptSentRef.current = false;
-    } catch {
-      // Silent fail - conversation remains
-    }
-  };
-
   // Show loading while fetching initial messages
-  if (loadedMessages === null) {
+  if (isLoadingHistory) {
     return (
       <div className="flex flex-col h-full items-center justify-center">
         <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -276,8 +224,10 @@ export function SoulChat({
             ? "Start a conversation to configure your AI"
             : `${messages.length} message${messages.length === 1 ? "" : "s"}`,
         showClearButton: true,
+        clearConfirmMessage:
+          "Delete this conversation? The AI will start fresh but will know the current persona configuration.",
       }}
-      onClearHistory={handleDeleteConversation}
+      onClearHistory={handleClearHistory}
       emptyState={
         <div className="text-center py-8">
           <Bot className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
