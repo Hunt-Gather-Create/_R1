@@ -7,6 +7,7 @@ import {
   trackFunctionFailed,
   researchBrandGuidelines,
   executeAITask,
+  generateAudienceMembers,
 } from "@/lib/inngest/functions";
 
 export const { GET, POST, PUT } = serve({
@@ -18,5 +19,6 @@ export const { GET, POST, PUT } = serve({
     trackFunctionFailed,
     researchBrandGuidelines,
     executeAITask,
+    generateAudienceMembers,
   ],
 });

@@ -2,7 +2,7 @@
 
 import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Building2, Columns3, Tag, Users, Sparkles, Plug, Heart, BarChart3, Palette, Activity } from "lucide-react";
+import { ArrowLeft, Building2, Columns3, Tag, Users, UsersRound, Sparkles, Plug, Heart, BarChart3, Palette, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SettingsProvider, useSettingsContext } from "./context";
 
@@ -76,6 +76,22 @@ function SettingsSidebar() {
               label="Columns"
               isActive={pathname === `${baseSettingsPath}/columns`}
             />
+            {isMarketingWorkspace && (
+              <NavItem
+                href={`${baseSettingsPath}/brand`}
+                icon={<Palette className="w-4 h-4" />}
+                label="Brand"
+                isActive={pathname === `${baseSettingsPath}/brand`}
+              />
+            )}
+            {isMarketingWorkspace && (
+              <NavItem
+                href={`${baseSettingsPath}/audience`}
+                icon={<UsersRound className="w-4 h-4" />}
+                label="Audience"
+                isActive={pathname === `${baseSettingsPath}/audience`}
+              />
+            )}
           </div>
         </div>
 
@@ -103,14 +119,6 @@ function SettingsSidebar() {
               label="Persona"
               isActive={pathname === `${baseSettingsPath}/soul`}
             />
-            {isMarketingWorkspace && (
-              <NavItem
-                href={`${baseSettingsPath}/brand`}
-                icon={<Palette className="w-4 h-4" />}
-                label="Brand"
-                isActive={pathname === `${baseSettingsPath}/brand`}
-              />
-            )}
             <NavItem
               href={`${baseSettingsPath}/integrations`}
               icon={<Plug className="w-4 h-4" />}

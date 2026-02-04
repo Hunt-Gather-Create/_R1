@@ -16,6 +16,8 @@ import type {
   brands,
   backgroundJobs,
   aiSuggestions,
+  audiences,
+  audienceMembers,
 } from "./db/schema";
 import type { Status, Priority } from "./design-tokens";
 
@@ -287,6 +289,15 @@ export type IssueWithAI = Issue & {
   aiExecutionStatus: AIExecutionStatus;
   aiJobId: string | null;
   aiExecutionResult: unknown | null; // Parsed from JSON
+};
+
+// Audience types
+export type Audience = typeof audiences.$inferSelect;
+export type AudienceMember = typeof audienceMembers.$inferSelect;
+export type AudienceGenerationStatus = "pending" | "processing" | "completed" | "failed";
+
+export type AudienceWithMembers = Audience & {
+  members: AudienceMember[];
 };
 
 // R2 Chat Storage Types

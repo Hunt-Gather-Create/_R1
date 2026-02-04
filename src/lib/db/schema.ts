@@ -299,6 +299,40 @@ export const backgroundJobs = sqliteTable("background_jobs", {
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
+// Audiences - target audience groups for marketing workspaces
+export const audiences = sqliteTable("audiences", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  generationStatus: text("generation_status").notNull().default("pending"), // pending | processing | completed | failed
+  generationPrompt: text("generation_prompt"), // The demographic prompt used for generation
+  memberCount: integer("member_count").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
+// Audience Members - lightweight metadata for display (full profile in R2)
+export const audienceMembers = sqliteTable("audience_members", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  audienceId: text("audience_id")
+    .notNull()
+    .references(() => audiences.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  avatar: text("avatar"), // URL or placeholder identifier
+  age: integer("age"),
+  gender: text("gender"),
+  occupation: text("occupation"),
+  location: text("location"),
+  tagline: text("tagline"), // Short description/persona summary
+  primaryPainPoint: text("primary_pain_point"),
+  primaryGoal: text("primary_goal"),
+  profileStorageKey: text("profile_storage_key").notNull(), // R2 key for full JSON profile
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
 // AI Suggestions - ghost subtasks suggested by AI for issues
 export const aiSuggestions = sqliteTable("ai_suggestions", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),

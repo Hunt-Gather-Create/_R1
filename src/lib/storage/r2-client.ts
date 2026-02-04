@@ -55,6 +55,18 @@ export function generateStorageKey(
 }
 
 /**
+ * Generate R2 storage key for an audience member profile
+ * Format: audiences/{workspaceId}/{audienceId}/members/{memberId}.json
+ */
+export function generateAudienceMemberStorageKey(
+  workspaceId: string,
+  audienceId: string,
+  memberId: string
+): string {
+  return `audiences/${workspaceId}/${audienceId}/members/${memberId}.json`;
+}
+
+/**
  * Generate a storage key for a skill asset
  * Format: skills/{workspaceId}/{skillId}/{path}
  */

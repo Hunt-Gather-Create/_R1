@@ -24,6 +24,18 @@ export type Events = {
       parentIssueId: string; // For attaching output
     };
   };
+  "audience/members.generate": {
+    data: {
+      audienceId: string;
+      workspaceId: string;
+      brandId: string;
+      brandName: string;
+      brandIndustry?: string;
+      brandGuidelines?: string; // JSON-stringified BrandGuidelines
+      generationPrompt: string;
+      metadata?: { description?: string };
+    };
+  };
 };
 
 export const inngest = new Inngest({
