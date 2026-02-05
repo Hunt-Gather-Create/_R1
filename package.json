@@ -68,6 +68,7 @@
     "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",
+    "unique-names-generator": "^4.7.1",
     "zod": "^4.3.5"
   },
   "devDependencies": {

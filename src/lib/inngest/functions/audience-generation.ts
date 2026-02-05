@@ -8,6 +8,7 @@ import { z } from "zod";
 import { uploadContent, generateAudienceMemberStorageKey } from "@/lib/storage/r2-client";
 import { generateRandomPersonaStructure, getRandomIntensity, getRandomTimeframe, type RandomPersonaStructure } from "@/lib/utils/audience-generator";
 import type { BrandGuidelines } from "@/lib/types";
+import { uniqueNamesGenerator, names } from "unique-names-generator";
 
 const GENERATION_MODEL = "claude-haiku-4-5-20251001";
 const MEMBERS_TO_GENERATE = 10;
@@ -141,11 +142,20 @@ function buildBrandContext(
   return context;
 }
 
+export function generateUniqueFirstNames(count: number): string[] {
+  const nameSet = new Set<string>();
+  while (nameSet.size < count) {
+    const name = uniqueNamesGenerator({ dictionaries: [names], style: "capital" });
+    nameSet.add(name);
+  }
+  return Array.from(nameSet);
+}
+
 async function generateCreativeContent(
   structure: RandomPersonaStructure,
   brandContext: string,
   generationPrompt: string,
-  existingNames: string[]
+  assignedFirstName: string
 ): Promise<z.infer<typeof aiGeneratedContentSchema>> {
   const demographicProfile = formatDemographicProfile(structure);
 
@@ -154,9 +164,7 @@ async function generateCreativeContent(
     .replace("{brandContext}", brandContext)
     .replace("{generationPrompt}", generationPrompt);
 
-  if (existingNames.length > 0) {
-    prompt += `\n\nIMPORTANT: Do NOT use any of these names (already used): ${existingNames.join(", ")}`;
-  }
+  prompt += `\n\nIMPORTANT: The persona's first name should be "${assignedFirstName}". Generate an appropriate last name that fits their cultural background and demographics. The full name should feel natural and realistic. However, if "${assignedFirstName}" does not match the persona's specified GENDER, you MUST replace it with a gender-appropriate first name that sounds similar or starts with the same letter.`;
 
   const result = await generateText({
     model: anthropic(GENERATION_MODEL),
@@ -307,63 +315,45 @@ export const generateAudienceMembers = inngest.createFunction(
       return { status: "processing" };
     });
 
-    // Track successful member IDs and names for diversity
+    // Pre-generate unique first names to avoid duplicates across parallel calls
+    const uniqueFirstNames = generateUniqueFirstNames(MEMBERS_TO_GENERATE);
+
+    // Generate all members in parallel
+    const memberResults = await Promise.all(
+      Array.from({ length: MEMBERS_TO_GENERATE }, (_, i) =>
+        step.run(`generate-member-${i + 1}`, async () => {
+          try {
+            const structure = generateRandomPersonaStructure();
+            const creative = await generateCreativeContent(
+              structure, brandContext, generationPrompt, uniqueFirstNames[i]
+            );
+            const memberData = combinePersonaData(structure, creative);
+            const memberId = await saveMember(memberData, workspaceId, audienceId);
+            return {
+              success: true as const,
+              memberId,
+              name: memberData.name,
+            };
+          } catch (error) {
+            console.error(`Failed to generate member ${i + 1}:`, error);
+            return {
+              success: false as const,
+              error: error instanceof Error ? error.message : "Unknown error",
+            };
+          }
+        })
+      )
+    );
+
+    // Collect results
     const savedMemberIds: string[] = [];
-    const existingNames: string[] = [];
     const errors: { index: number; error: string }[] = [];
-
-    // Generate each member in a separate step
-    for (let i = 0; i < MEMBERS_TO_GENERATE; i++) {
-      const namesSnapshot = [...existingNames];
-      const currentCount = savedMemberIds.length;
-
-      const memberResult = await step.run(`generate-member-${i + 1}`, async () => {
-        try {
-          // Generate random structured data
-          const structure = generateRandomPersonaStructure();
-
-          // Generate creative content via AI
-          const creative = await generateCreativeContent(
-            structure,
-            brandContext,
-            generationPrompt,
-            namesSnapshot
-          );
-
-          // Combine into full persona
-          const memberData = combinePersonaData(structure, creative);
-
-          // Save the member
-          const memberId = await saveMember(memberData, workspaceId, audienceId);
-
-          // Update audience member count
-          await db
-            .update(audiences)
-            .set({
-              memberCount: currentCount + 1,
-              updatedAt: new Date(),
-            })
-            .where(eq(audiences.id, audienceId));
-
-          return {
-            success: true as const,
-            memberId,
-            name: memberData.name,
-          };
-        } catch (error) {
-          console.error(`Failed to generate member ${i + 1}:`, error);
-          return {
-            success: false as const,
-            error: error instanceof Error ? error.message : "Unknown error",
-          };
-        }
-      });
-
-      if (memberResult.success) {
-        savedMemberIds.push(memberResult.memberId);
-        existingNames.push(memberResult.name);
+    for (let i = 0; i < memberResults.length; i++) {
+      const result = memberResults[i];
+      if (result.success) {
+        savedMemberIds.push(result.memberId);
       } else {
-        errors.push({ index: i, error: memberResult.error });
+        errors.push({ index: i, error: result.error });
       }
     }
 
