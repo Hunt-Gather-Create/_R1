@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { getMemberInitials, getMemberDisplayName } from "@/lib/utils/member-utils";
 import type { WorkspaceMemberWithUser } from "@/lib/types";
 
 interface AssigneeSelectProps {
@@ -17,27 +18,6 @@ interface AssigneeSelectProps {
   members: WorkspaceMemberWithUser[];
   onChange: (userId: string | null) => void;
   className?: string;
-}
-
-function getInitials(firstName?: string | null, lastName?: string | null, email?: string): string {
-  if (firstName && lastName) {
-    return `${firstName[0]}${lastName[0]}`.toUpperCase();
-  }
-  if (firstName) {
-    return firstName.slice(0, 2).toUpperCase();
-  }
-  return email?.slice(0, 2).toUpperCase() ?? "?";
-}
-
-function getMemberDisplayName(member: WorkspaceMemberWithUser): string {
-  const { user } = member;
-  if (user.firstName && user.lastName) {
-    return `${user.firstName} ${user.lastName}`;
-  }
-  if (user.firstName) {
-    return user.firstName;
-  }
-  return user.email;
 }
 
 export function AssigneeSelect({
@@ -60,11 +40,7 @@ export function AssigneeSelect({
               <Avatar className="h-5 w-5">
                 <AvatarImage src={selectedMember.user.avatarUrl ?? undefined} />
                 <AvatarFallback className="text-[10px]">
-                  {getInitials(
-                    selectedMember.user.firstName,
-                    selectedMember.user.lastName,
-                    selectedMember.user.email
-                  )}
+                  {getMemberInitials(selectedMember)}
                 </AvatarFallback>
               </Avatar>
               <span className="truncate">{getMemberDisplayName(selectedMember)}</span>
@@ -90,11 +66,7 @@ export function AssigneeSelect({
               <Avatar className="h-5 w-5">
                 <AvatarImage src={member.user.avatarUrl ?? undefined} />
                 <AvatarFallback className="text-[10px]">
-                  {getInitials(
-                    member.user.firstName,
-                    member.user.lastName,
-                    member.user.email
-                  )}
+                  {getMemberInitials(member)}
                 </AvatarFallback>
               </Avatar>
               <span className="truncate">{getMemberDisplayName(member)}</span>
