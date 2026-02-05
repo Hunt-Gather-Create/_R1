@@ -12,6 +12,7 @@ import { getWorkspaceSkills } from "@/lib/actions/skills";
 import { getWorkspaceMcpServers } from "@/lib/actions/integrations";
 import { getWorkspaceBrand } from "@/lib/actions/brand";
 import { getWorkspaceJobs } from "@/lib/actions/background-jobs";
+import { getWorkspaceMemories } from "@/lib/actions/memories";
 import type { JobsQueryOptions } from "@/lib/types";
 
 export function useWorkspace(slug: string) {
@@ -97,6 +98,16 @@ export function useWorkspaceJobs(
   });
 }
 
+export function useWorkspaceMemories(workspaceId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.settings.memories(workspaceId ?? ""),
+    queryFn: () => getWorkspaceMemories(workspaceId!),
+    enabled: !!workspaceId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes
+  });
+}
+
 // Hook for invalidating settings queries
 export function useInvalidateSettings() {
   const queryClient = useQueryClient();
@@ -129,6 +140,10 @@ export function useInvalidateSettings() {
     invalidateJobs: (workspaceId: string) =>
       queryClient.invalidateQueries({
         queryKey: queryKeys.settings.jobs(workspaceId),
+      }),
+    invalidateMemories: (workspaceId: string) =>
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.settings.memories(workspaceId),
       }),
   };
 }

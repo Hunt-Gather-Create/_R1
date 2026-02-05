@@ -2,6 +2,7 @@ import { type UIMessage } from "ai";
 import {
   createChatResponse,
   createIssueTools,
+  createMemoryTools,
   loadSkillsForPurpose,
   loadSkillsForWorkspace,
   getPriorityLabel,
@@ -9,8 +10,9 @@ import {
   SUBTASK_INDEPENDENCE_GUIDELINES,
 } from "@/lib/chat";
 import type { WorkspacePurpose } from "@/lib/design-tokens";
-import type { WorkspaceSoul, Brand } from "@/lib/types";
+import type { WorkspaceSoul, Brand, WorkspaceMemory } from "@/lib/types";
 import { loadWorkspaceContext } from "@/lib/brand-utils";
+import { getLastUserMessageText } from "@/lib/memory-utils";
 
 export const maxDuration = 30;
 
@@ -38,7 +40,8 @@ function buildSystemPrompt(
   issueContext: IssueContext,
   purpose: WorkspacePurpose,
   soul: WorkspaceSoul | null,
-  brand: Brand | null
+  brand: Brand | null,
+  memories: WorkspaceMemory[] = []
 ): string {
   const commentsText =
     issueContext.comments.length > 0
@@ -129,7 +132,7 @@ ${issueContext.description ? `This issue already has a description. **Ask the us
 
 Be conversational and helpful. Ask clarifying questions when needed.`;
 
-  return buildContextualSystemPrompt(basePrompt, soul, brand);
+  return buildContextualSystemPrompt(basePrompt, soul, brand, memories);
 }
 
 export async function POST(req: Request) {
@@ -143,19 +146,24 @@ export async function POST(req: Request) {
 
   const purpose = workspacePurpose ?? "software";
 
-  // Load workspace context (soul and brand) in parallel
-  const { soul, brand } = await loadWorkspaceContext(workspaceId);
+  // Extract last user message for memory search
+  const lastUserMessage = getLastUserMessageText(messages);
+
+  // Load workspace context (soul, brand, and memories) in parallel
+  const { soul, brand, memories } = await loadWorkspaceContext(workspaceId, lastUserMessage);
 
   // Load skills - use workspace skills if workspaceId provided, otherwise just purpose-based
   const skills = workspaceId
     ? await loadSkillsForWorkspace(workspaceId, purpose)
     : await loadSkillsForPurpose(purpose);
 
-  // Create tools with issue context
-  const tools = createIssueTools({ issueId: issueContext.id });
+  // Create tools with issue context and memory tools
+  const issueTools = createIssueTools({ issueId: issueContext.id });
+  const memoryTools = workspaceId ? createMemoryTools({ workspaceId }) : {};
+  const tools = { ...issueTools, ...memoryTools };
 
   return createChatResponse(messages, {
-    system: buildSystemPrompt(issueContext, purpose, soul, brand),
+    system: buildSystemPrompt(issueContext, purpose, soul, brand, memories),
     tools,
     builtInTools: {
       webSearch: true,
