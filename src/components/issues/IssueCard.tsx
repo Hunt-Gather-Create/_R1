@@ -1,17 +1,20 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useSyncExternalStore, useMemo } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
+import { getMemberInitials, getMemberDisplayName } from "@/lib/utils/member-utils";
 import { PriorityIcon } from "./PriorityIcon";
 import { StatusDot } from "./StatusDot";
 import { QuickActions } from "./QuickActions";
 import { SubtaskProgress } from "./SubtaskProgress";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useOptionalWorkspaceContext } from "@/components/workspace/context/WorkspaceProvider";
 import { Calendar } from "lucide-react";
 import { format, isPast, isToday } from "date-fns";
 import { useSubtaskCount } from "@/lib/hooks";
-import type { IssueWithLabels, Label } from "@/lib/types";
+import type { IssueWithLabels, Label, WorkspaceMemberWithUser } from "@/lib/types";
 import type { Priority, Status } from "@/lib/design-tokens";
 
 interface IssueCardProps {
@@ -59,6 +62,30 @@ function DueDateBadge({ date }: { date: Date }) {
   );
 }
 
+// Assignee avatar component
+function AssigneeAvatar({ member }: { member: WorkspaceMemberWithUser }) {
+  const displayName = getMemberDisplayName(member);
+
+  return (
+    <Avatar className="h-5 w-5 shrink-0" title={displayName}>
+      <AvatarImage src={member.user.avatarUrl ?? undefined} alt={displayName} />
+      <AvatarFallback className="text-[8px] bg-muted text-muted-foreground">
+        {getMemberInitials(member)}
+      </AvatarFallback>
+    </Avatar>
+  );
+}
+
+// Hook to get assignee from workspace members
+function useAssignee(assigneeId: string | null) {
+  const workspaceContext = useOptionalWorkspaceContext();
+  const members = workspaceContext?.members;
+  return useMemo(() => {
+    if (!assigneeId || !members) return null;
+    return members.find((m) => m.userId === assigneeId) ?? null;
+  }, [assigneeId, members]);
+}
+
 // Hydration-safe mount detection without triggering cascading renders
 const emptySubscribe = () => () => {};
 const getClientSnapshot = () => true;
@@ -94,6 +121,9 @@ export function IssueCard({
     issue.parentIssueId ? null : issue.id
   );
 
+  // Get assignee from workspace members
+  const assignee = useAssignee(issue.assigneeId);
+
   const style = mounted
     ? {
         transform: CSS.Transform.toString(transform),
@@ -121,13 +151,18 @@ export function IssueCard({
         issue.sentToAI ? "bg-blue-950" : "bg-card hover:bg-accent/30"
       )}
     >
-      {/* Top row: Identifier + Priority + Quick Actions */}
+      {/* Top row: Identifier + Priority + Estimate + Quick Actions */}
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-[10px] font-medium text-muted-foreground shrink-0">
             {issue.identifier}
           </span>
           <PriorityIcon priority={issue.priority as Priority} size="sm" />
+          {issue.estimate && (
+            <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">
+              {issue.estimate}pt
+            </span>
+          )}
         </div>
         <QuickActions onDelete={onDelete} onSendToAI={onSendToAI} className="shrink-0" />
       </div>
@@ -162,16 +197,27 @@ export function IssueCard({
           )}
         </div>
 
-        {/* Due date */}
-        {issue.dueDate && <DueDateBadge date={new Date(issue.dueDate)} />}
+        {/* Right side: Assignee + Due date */}
+        <div className="flex items-center gap-2 shrink-0">
+          {assignee && <AssigneeAvatar member={assignee} />}
+          {issue.dueDate && <DueDateBadge date={new Date(issue.dueDate)} />}
+        </div>
       </div>
 
-      {/* Estimate badge (if set) */}
-      {issue.estimate && (
-        <div className="absolute top-3 right-3">
-          <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            {issue.estimate}pt
-          </span>
+      {/* Subtask progress bar at bottom of card */}
+      {subtaskCount && subtaskCount.total > 0 && (
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-muted rounded-b-md overflow-hidden">
+          <div
+            className={cn(
+              "h-full transition-all",
+              subtaskCount.completed === subtaskCount.total
+                ? "bg-status-done"
+                : "bg-primary"
+            )}
+            style={{
+              width: `${Math.round((subtaskCount.completed / subtaskCount.total) * 100)}%`,
+            }}
+          />
         </div>
       )}
     </div>
@@ -186,6 +232,9 @@ export function IssueCardCompact({
   issue: IssueWithLabels;
   onClick: () => void;
 }) {
+  // Get assignee from workspace members
+  const assignee = useAssignee(issue.assigneeId);
+
   return (
     <div
       onClick={onClick}
@@ -204,6 +253,7 @@ export function IssueCardCompact({
           ))}
         </div>
       )}
+      {assignee && <AssigneeAvatar member={assignee} />}
       {issue.dueDate && <DueDateBadge date={new Date(issue.dueDate)} />}
     </div>
   );
