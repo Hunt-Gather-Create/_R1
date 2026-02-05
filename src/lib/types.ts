@@ -18,6 +18,7 @@ import type {
   aiSuggestions,
   audiences,
   audienceMembers,
+  workspaceMemories,
 } from "./db/schema";
 import type { Status, Priority } from "./design-tokens";
 
@@ -299,6 +300,19 @@ export type AudienceGenerationStatus = "pending" | "processing" | "completed" | 
 
 export type AudienceWithMembers = Audience & {
   members: AudienceMember[];
+};
+
+// Workspace Memories - AI-created contextual memories
+export type WorkspaceMemory = typeof workspaceMemories.$inferSelect;
+
+export type CreateWorkspaceMemoryInput = {
+  content: string;
+  tags: string[];
+};
+
+export type UpdateWorkspaceMemoryInput = {
+  content?: string;
+  tags?: string[];
 };
 
 // R2 Chat Storage Types

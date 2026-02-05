@@ -334,6 +334,18 @@ export const audienceMembers = sqliteTable("audience_members", {
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
+// Workspace Memories - AI-created contextual memories for chat
+export const workspaceMemories = sqliteTable("workspace_memories", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  tags: text("tags").notNull(), // JSON array of tag strings
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
 // AI Suggestions - ghost subtasks suggested by AI for issues
 export const aiSuggestions = sqliteTable("ai_suggestions", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),

@@ -16,6 +16,7 @@ import {
   useWorkspaceSkills,
   useWorkspaceMcpServers,
   useWorkspaceBrand,
+  useWorkspaceMemories,
   useInvalidateSettings,
 } from "@/lib/hooks";
 import { getCurrentUserId } from "@/lib/auth";
@@ -26,6 +27,7 @@ import type {
   Label,
   Column,
   WorkspaceSkill,
+  WorkspaceMemory,
 } from "@/lib/types";
 import type { McpServerWithStatus } from "@/lib/actions/integrations";
 import type { BrandWithLogoUrl } from "@/lib/actions/brand";
@@ -39,6 +41,7 @@ interface SettingsContextValue {
   skills: WorkspaceSkill[];
   mcpServers: McpServerWithStatus[];
   brand: BrandWithLogoUrl | null;
+  memories: WorkspaceMemory[];
 
   // Loading states
   isLoading: boolean;
@@ -58,6 +61,7 @@ interface SettingsContextValue {
   refreshSkills: () => Promise<void>;
   refreshMcpServers: () => Promise<void>;
   refreshBrand: () => Promise<void>;
+  refreshMemories: () => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -125,6 +129,12 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     refetch: refetchBrand,
   } = useWorkspaceBrand(workspace?.id ?? null);
 
+  const {
+    data: memories = [],
+    isLoading: isMemoriesLoading,
+    refetch: refetchMemories,
+  } = useWorkspaceMemories(workspace?.id ?? null);
+
   // Load current user ID
   useEffect(() => {
     getCurrentUserId().then(setCurrentUserId);
@@ -138,7 +148,8 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     isColumnsLoading ||
     isSkillsLoading ||
     isMcpServersLoading ||
-    isBrandLoading;
+    isBrandLoading ||
+    isMemoriesLoading;
   const error = workspaceError
     ? workspaceError instanceof Error
       ? workspaceError.message
@@ -200,6 +211,13 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     }
   };
 
+  const refreshMemories = async () => {
+    if (workspace) {
+      invalidate.invalidateMemories(workspace.id);
+      await refetchMemories();
+    }
+  };
+
   const value: SettingsContextValue = {
     workspace: workspace ?? null,
     members,
@@ -208,6 +226,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     skills,
     mcpServers,
     brand: brand ?? null,
+    memories,
     isLoading,
     error,
     currentUserId,
@@ -221,6 +240,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     refreshSkills,
     refreshMcpServers,
     refreshBrand,
+    refreshMemories,
   };
 
   return (

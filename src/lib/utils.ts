@@ -24,3 +24,15 @@ export function transformCiteTags(content: string): string {
 export function stripCiteTags(content: string): string {
   return content.replace(/<cite[^>]*>(.*?)<\/cite>/gi, "$1");
 }
+
+/**
+ * Parse JSON-encoded tags string into an array.
+ * Returns empty array if parsing fails.
+ */
+export function parseMemoryTags(tagsJson: string): string[] {
+  try {
+    return JSON.parse(tagsJson) as string[];
+  } catch {
+    return [];
+  }
+}

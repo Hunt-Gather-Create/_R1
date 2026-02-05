@@ -2,7 +2,7 @@
 
 import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Building2, Columns3, Tag, Users, UsersRound, Sparkles, Plug, Heart, BarChart3, Palette, Activity } from "lucide-react";
+import { ArrowLeft, Building2, Columns3, Tag, Users, UsersRound, Sparkles, Plug, Heart, BarChart3, Palette, Activity, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SettingsProvider, useSettingsContext } from "./context";
 
@@ -136,6 +136,12 @@ function SettingsSidebar() {
               icon={<Activity className="w-4 h-4" />}
               label="Background Jobs"
               isActive={pathname === `${baseSettingsPath}/jobs`}
+            />
+            <NavItem
+              href={`${baseSettingsPath}/memories`}
+              icon={<Brain className="w-4 h-4" />}
+              label="Memories"
+              isActive={pathname === `${baseSettingsPath}/memories`}
             />
           </div>
         </div>

@@ -169,6 +169,44 @@ export const suggestSubtasksSchema = z.object({
     .describe("If true (default), removes existing subtasks before adding new ones. Set to false to append."),
 });
 
+/**
+ * Schema for storing a new workspace memory
+ */
+export const storeMemorySchema = z.object({
+  content: z
+    .string()
+    .describe(
+      "The memory content to store. Be specific and include relevant context."
+    ),
+  tags: z
+    .array(z.string())
+    .describe(
+      "Tags for categorizing and searching this memory (e.g., ['preference', 'workflow', 'contact'])"
+    ),
+});
+
+/**
+ * Schema for updating an existing workspace memory
+ */
+export const updateMemorySchema = z.object({
+  memoryId: z.string().describe("The ID of the memory to update"),
+  content: z
+    .string()
+    .optional()
+    .describe("Updated content for the memory"),
+  tags: z
+    .array(z.string())
+    .optional()
+    .describe("Updated tags for the memory"),
+});
+
+/**
+ * Schema for deleting a workspace memory
+ */
+export const deleteMemorySchema = z.object({
+  memoryId: z.string().describe("The ID of the memory to delete"),
+});
+
 export type UpdateDescriptionInput = z.infer<typeof updateDescriptionSchema>;
 export type AttachContentInput = z.infer<typeof attachContentSchema>;
 export type PlanIssueInput = z.infer<typeof planIssueSchema>;
@@ -177,6 +215,9 @@ export type SuggestAITasksInput = z.infer<typeof suggestAITasksSchema>;
 export type SuggestSubtasksInput = z.infer<typeof suggestSubtasksSchema>;
 export type UpdateSubtaskInput = z.infer<typeof updateSubtaskSchema>;
 export type DeleteSubtaskInput = z.infer<typeof deleteSubtaskSchema>;
+export type StoreMemoryInput = z.infer<typeof storeMemorySchema>;
+export type UpdateMemoryInput = z.infer<typeof updateMemorySchema>;
+export type DeleteMemoryInput = z.infer<typeof deleteMemorySchema>;
 
 /**
  * Schema for creating a workspace skill

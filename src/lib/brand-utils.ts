@@ -2,27 +2,39 @@
  * Server-side brand utilities that require database access.
  * For client-safe utilities, import from ./brand-formatters instead.
  */
-import type { Brand, WorkspaceSoul } from "./types";
+import type { Brand, WorkspaceSoul, WorkspaceMemory } from "./types";
 import { db } from "./db";
 import { workspaces, brands } from "./db/schema";
 import { eq } from "drizzle-orm";
 import { getWorkspaceSoul } from "./soul-utils";
+import { loadRelevantMemories } from "./memory-utils";
 
 // Re-export client-safe function for convenience
 export { buildBrandSystemPrompt } from "./brand-formatters";
 
+export interface WorkspaceContext {
+  soul: WorkspaceSoul | null;
+  brand: Brand | null;
+  memories: WorkspaceMemory[];
+}
+
 /**
- * Load workspace context (soul and brand) in parallel.
- * Use this in API routes to efficiently fetch both context sources.
+ * Load workspace context (soul, brand, and memories) in parallel.
+ * Use this in API routes to efficiently fetch all context sources.
+ *
+ * @param workspaceId - The workspace to load context for
+ * @param userMessage - Optional user message for memory search (if not provided, no memories loaded)
  */
 export async function loadWorkspaceContext(
-  workspaceId: string | undefined
-): Promise<{ soul: WorkspaceSoul | null; brand: Brand | null }> {
-  const [soul, brand] = await Promise.all([
+  workspaceId: string | undefined,
+  userMessage?: string
+): Promise<WorkspaceContext> {
+  const [soul, brand, memories] = await Promise.all([
     getWorkspaceSoul(workspaceId),
     getWorkspaceBrandForPrompt(workspaceId),
+    loadRelevantMemories(workspaceId, userMessage),
   ]);
-  return { soul, brand };
+  return { soul, brand, memories };
 }
 
 /**

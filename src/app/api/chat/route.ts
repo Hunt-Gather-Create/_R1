@@ -2,15 +2,17 @@ import { type UIMessage } from "ai";
 import {
   createChatResponse,
   createChatTools,
+  createMemoryTools,
   loadSkillsForPurpose,
   loadSkillsForWorkspace,
   buildContextualSystemPrompt,
   SUBTASK_INDEPENDENCE_GUIDELINES,
 } from "@/lib/chat";
 import type { WorkspacePurpose } from "@/lib/design-tokens";
-import type { WorkspaceSoul, Brand } from "@/lib/types";
+import type { WorkspaceSoul, Brand, WorkspaceMemory } from "@/lib/types";
 import { loadWorkspaceContext } from "@/lib/brand-utils";
 import { createSkillTools } from "@/lib/chat/tools/skill-creator-tool";
+import { getLastUserMessageText } from "@/lib/memory-utils";
 
 export const maxDuration = 30;
 
@@ -103,6 +105,7 @@ function getSystemPrompt(
   purpose: WorkspacePurpose,
   soul: WorkspaceSoul | null,
   brand: Brand | null,
+  memories: WorkspaceMemory[] = [],
   subtasks?: SuggestedSubtaskContext[]
 ): string {
   const basePrompt = purpose === "marketing"
@@ -137,7 +140,7 @@ Example - if user says "remove the first subtask", call suggestSubtasks with sub
 Example - if user says "keep only subtask 2", call suggestSubtasks with just that one subtask.`;
   }
 
-  return buildContextualSystemPrompt(prompt, soul, brand);
+  return buildContextualSystemPrompt(prompt, soul, brand, memories);
 }
 
 interface SuggestedSubtaskContext {
@@ -157,21 +160,25 @@ export async function POST(req: Request) {
 
   const purpose = workspacePurpose ?? "software";
 
-  // Load workspace context (soul and brand) in parallel
-  const { soul, brand } = await loadWorkspaceContext(workspaceId);
+  // Extract last user message for memory search
+  const lastUserMessage = getLastUserMessageText(messages);
+
+  // Load workspace context (soul, brand, and memories) in parallel
+  const { soul, brand, memories } = await loadWorkspaceContext(workspaceId, lastUserMessage);
 
   // Load skills - use workspace skills if workspaceId provided, otherwise just purpose-based
   const skills = workspaceId
     ? await loadSkillsForWorkspace(workspaceId, purpose)
     : await loadSkillsForPurpose(purpose);
 
-  // Create tools for issue suggestion
+  // Create tools for issue suggestion, memory management, and skill management
   const chatTools = createChatTools();
+  const memoryTools = workspaceId ? createMemoryTools({ workspaceId }) : {};
   const skillTools = createSkillTools(workspaceId);
-  const tools = { ...chatTools, ...skillTools };
+  const tools = { ...chatTools, ...memoryTools, ...skillTools };
 
   return createChatResponse(messages, {
-    system: getSystemPrompt(purpose, soul, brand, suggestedSubtasks),
+    system: getSystemPrompt(purpose, soul, brand, memories, suggestedSubtasks),
     tools,
     builtInTools: {
       webSearch: true,

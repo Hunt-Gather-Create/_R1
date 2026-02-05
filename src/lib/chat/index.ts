@@ -34,7 +34,9 @@ export {
   createPlanningTools,
   createChatTools,
   createSkillLoaderTool,
+  createMemoryTools,
   type IssueToolsContext,
+  type MemoryToolsContext,
 } from "./tools";
 
 /**
