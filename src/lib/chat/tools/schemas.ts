@@ -218,3 +218,54 @@ export type DeleteSubtaskInput = z.infer<typeof deleteSubtaskSchema>;
 export type StoreMemoryInput = z.infer<typeof storeMemorySchema>;
 export type UpdateMemoryInput = z.infer<typeof updateMemorySchema>;
 export type DeleteMemoryInput = z.infer<typeof deleteMemorySchema>;
+
+/**
+ * Schema for creating a workspace skill
+ */
+export const createSkillSchema = z.object({
+  name: z
+    .string()
+    .describe(
+      "The skill name: lowercase, alphanumeric, hyphens only (e.g., 'simplify-for-kids', 'code-reviewer')"
+    ),
+  description: z
+    .string()
+    .describe(
+      "A 1-2 sentence description explaining when to use this skill and what it does"
+    ),
+  content: z
+    .string()
+    .describe(
+      "The full markdown instructions the AI follows when the skill is invoked"
+    ),
+});
+
+export type CreateSkillInput = z.infer<typeof createSkillSchema>;
+
+/**
+ * Schema for updating an existing workspace skill
+ */
+export const updateSkillSchema = z.object({
+  skillName: z
+    .string()
+    .describe("The exact name of the skill to update"),
+  name: z
+    .string()
+    .optional()
+    .describe("New name for the skill (lowercase, alphanumeric, hyphens only)"),
+  description: z
+    .string()
+    .optional()
+    .describe("New description for the skill"),
+  content: z
+    .string()
+    .optional()
+    .describe("New markdown instructions for the skill"),
+  userConfirmed: z
+    .boolean()
+    .describe(
+      "REQUIRED: Must be true. Before calling this tool, you MUST warn the user that updating this skill will affect ALL users in the workspace and get their explicit confirmation."
+    ),
+});
+
+export type UpdateSkillInput = z.infer<typeof updateSkillSchema>;

@@ -11,6 +11,7 @@ import {
 import type { WorkspacePurpose } from "@/lib/design-tokens";
 import type { WorkspaceSoul, Brand, WorkspaceMemory } from "@/lib/types";
 import { loadWorkspaceContext } from "@/lib/brand-utils";
+import { createSkillTools } from "@/lib/chat/tools/skill-creator-tool";
 import { getLastUserMessageText } from "@/lib/memory-utils";
 
 export const maxDuration = 30;
@@ -44,6 +45,8 @@ Focus on:
 - Web search: Research related technologies, APIs, or best practices
 - Code execution: Generate example code or analyze technical approaches
 - Web fetch: Read documentation from URLs
+- Create skill: Save a repeatable workflow or instruction set as a reusable skill for this workspace
+- Update skill: Modify an existing skill (MUST warn user it affects all users and get confirmation first)
 
 Be conversational and helpful. Ask one or two questions at a time to gather context before suggesting an issue.
 
@@ -84,6 +87,8 @@ Focus on:
 - Web search: Research competitors, trends, best practices, audience insights
 - Code execution: Run calculations, analyze data
 - Web fetch: Read content from URLs
+- Create skill: Save a repeatable workflow or instruction set as a reusable skill for this workspace
+- Update skill: Modify an existing skill (MUST warn user it affects all users and get confirmation first)
 
 Be conversational and helpful. Ask one or two questions at a time to gather context before suggesting an issue.
 
@@ -166,10 +171,11 @@ export async function POST(req: Request) {
     ? await loadSkillsForWorkspace(workspaceId, purpose)
     : await loadSkillsForPurpose(purpose);
 
-  // Create tools for issue suggestion and memory management
+  // Create tools for issue suggestion, memory management, and skill management
   const chatTools = createChatTools();
   const memoryTools = workspaceId ? createMemoryTools({ workspaceId }) : {};
-  const tools = { ...chatTools, ...memoryTools };
+  const skillTools = createSkillTools(workspaceId);
+  const tools = { ...chatTools, ...memoryTools, ...skillTools };
 
   return createChatResponse(messages, {
     system: getSystemPrompt(purpose, soul, brand, memories, suggestedSubtasks),
