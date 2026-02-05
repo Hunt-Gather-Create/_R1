@@ -2,13 +2,15 @@ import { type UIMessage } from "ai";
 import {
   createChatResponse,
   createPlanningTools,
+  createMemoryTools,
   loadSkillsForPurpose,
   loadSkillsForWorkspace,
   buildContextualSystemPrompt,
 } from "@/lib/chat";
 import type { WorkspacePurpose } from "@/lib/design-tokens";
-import type { WorkspaceSoul, Brand } from "@/lib/types";
+import type { WorkspaceSoul, Brand, WorkspaceMemory } from "@/lib/types";
 import { loadWorkspaceContext } from "@/lib/brand-utils";
+import { getLastUserMessageText } from "@/lib/memory-utils";
 
 export const maxDuration = 30;
 
@@ -93,13 +95,14 @@ Task format:
 function getSystemPrompt(
   purpose: WorkspacePurpose,
   soul: WorkspaceSoul | null,
-  brand: Brand | null
+  brand: Brand | null,
+  memories: WorkspaceMemory[] = []
 ): string {
   const basePrompt = purpose === "marketing"
     ? MARKETING_SYSTEM_PROMPT
     : SOFTWARE_SYSTEM_PROMPT;
 
-  return buildContextualSystemPrompt(basePrompt, soul, brand);
+  return buildContextualSystemPrompt(basePrompt, soul, brand, memories);
 }
 
 export async function POST(req: Request) {
@@ -111,19 +114,24 @@ export async function POST(req: Request) {
 
   const purpose = workspacePurpose ?? "software";
 
-  // Load workspace context (soul and brand) in parallel
-  const { soul, brand } = await loadWorkspaceContext(workspaceId);
+  // Extract last user message for memory search
+  const lastUserMessage = getLastUserMessageText(messages);
+
+  // Load workspace context (soul, brand, and memories) in parallel
+  const { soul, brand, memories } = await loadWorkspaceContext(workspaceId, lastUserMessage);
 
   // Load skills - use workspace skills if workspaceId provided, otherwise just purpose-based
   const skills = workspaceId
     ? await loadSkillsForWorkspace(workspaceId, purpose)
     : await loadSkillsForPurpose(purpose);
 
-  // Create planning tools
-  const tools = createPlanningTools();
+  // Create planning tools and memory tools
+  const planningTools = createPlanningTools();
+  const memoryTools = workspaceId ? createMemoryTools({ workspaceId }) : {};
+  const tools = { ...planningTools, ...memoryTools };
 
   return createChatResponse(messages, {
-    system: getSystemPrompt(purpose, soul, brand),
+    system: getSystemPrompt(purpose, soul, brand, memories),
     tools,
     model: "claude-haiku-4-5-20251001",
     maxSteps: 10, // Allow AI to continue after creating issues

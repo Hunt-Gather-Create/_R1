@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildContextualSystemPrompt } from "./context-prompt";
-import type { WorkspaceSoul, Brand } from "@/lib/types";
+import type { WorkspaceSoul, Brand, WorkspaceMemory } from "@/lib/types";
 
 // Factory helper for creating test souls
 function createSoul(overrides: Partial<WorkspaceSoul> = {}): WorkspaceSoul {
@@ -40,6 +40,19 @@ function createBrand(overrides: Partial<Brand> = {}): Brand {
     guidelines: null,
     guidelinesStatus: null,
     guidelinesUpdatedAt: null,
+    createdAt: new Date("2024-01-01"),
+    updatedAt: new Date("2024-01-01"),
+    ...overrides,
+  };
+}
+
+// Factory helper for creating test memories
+function createMemory(overrides: Partial<WorkspaceMemory> = {}): WorkspaceMemory {
+  return {
+    id: "memory-1",
+    workspaceId: "workspace-1",
+    content: "Test memory content",
+    tags: JSON.stringify(["test", "preference"]),
     createdAt: new Date("2024-01-01"),
     updatedAt: new Date("2024-01-01"),
     ...overrides,
@@ -119,5 +132,48 @@ describe("buildContextualSystemPrompt", () => {
     // Should have exactly one separator between combined context and base prompt
     const separatorCount = (result.match(/---/g) || []).length;
     expect(separatorCount).toBe(1);
+  });
+
+  it("prepends memories when memories array is provided", () => {
+    const memories = [
+      createMemory({ content: "User prefers dark mode" }),
+      createMemory({ content: "User's timezone is PST", tags: JSON.stringify(["timezone"]) }),
+    ];
+    const result = buildContextualSystemPrompt(basePrompt, null, null, memories);
+
+    expect(result).toContain("## Workspace Memories");
+    expect(result).toContain("User prefers dark mode");
+    expect(result).toContain("User's timezone is PST");
+    expect(result).toContain("---");
+    expect(result).toContain(basePrompt);
+  });
+
+  it("returns base prompt when memories array is empty", () => {
+    const result = buildContextualSystemPrompt(basePrompt, null, null, []);
+    expect(result).toBe(basePrompt);
+  });
+
+  it("includes all context types when soul, brand, and memories are provided", () => {
+    const soul = createSoul({ name: "Aria" });
+    const brand = createBrand({ summary: "A tech company" });
+    const memories = [createMemory({ content: "User likes concise responses" })];
+
+    const result = buildContextualSystemPrompt(basePrompt, soul, brand, memories);
+
+    expect(result).toContain("You are Aria");
+    expect(result).toContain("## Brand Context");
+    expect(result).toContain("## Workspace Memories");
+    expect(result).toContain("User likes concise responses");
+    expect(result).toContain(basePrompt);
+
+    // Verify order: soul -> brand -> memories -> base
+    const soulIdx = result.indexOf("Aria");
+    const brandIdx = result.indexOf("Brand Context");
+    const memoriesIdx = result.indexOf("Workspace Memories");
+    const baseIdx = result.indexOf(basePrompt);
+
+    expect(soulIdx).toBeLessThan(brandIdx);
+    expect(brandIdx).toBeLessThan(memoriesIdx);
+    expect(memoriesIdx).toBeLessThan(baseIdx);
   });
 });

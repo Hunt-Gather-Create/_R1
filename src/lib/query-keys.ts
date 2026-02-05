@@ -42,6 +42,8 @@ export const queryKeys = {
       ["settings", "brand", workspaceId] as const,
     jobs: (workspaceId: string) =>
       ["settings", "jobs", workspaceId] as const,
+    memories: (workspaceId: string) =>
+      ["settings", "memories", workspaceId] as const,
   },
   smithery: {
     servers: (query: string, page: number, verifiedOnly: boolean) =>
