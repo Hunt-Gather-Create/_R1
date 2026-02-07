@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -20,7 +21,15 @@ import {
 } from "./_components/ConfigurationChat";
 import { ConfigurationPreview } from "./_components/ConfigurationPreview";
 
-type Step = "purpose" | "name" | "configure";
+const MarketingOnboarding = dynamic(
+  () =>
+    import("./_components/MarketingOnboarding").then(
+      (mod) => mod.MarketingOnboarding
+    ),
+  { ssr: false }
+);
+
+type Step = "purpose" | "name" | "configure" | "marketing-onboarding";
 
 const PURPOSE_UI: Record<
   WorkspacePurpose,
@@ -72,6 +81,8 @@ export default function NewWorkspacePage() {
   const [issues, setIssues] = useState<SuggestedIssue[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [marketingWorkspaceId, setMarketingWorkspaceId] = useState<string | null>(null);
+  const [marketingWorkspaceSlug, setMarketingWorkspaceSlug] = useState<string | null>(null);
 
   const handlePurposeSelect = (selected: WorkspacePurpose) => {
     setPurpose(selected);
@@ -83,16 +94,35 @@ export default function NewWorkspacePage() {
       setStep("purpose");
     } else if (step === "configure") {
       setStep("name");
+    } else if (step === "marketing-onboarding") {
+      // Note: workspace already created, but user can go back to rename
+      setStep("name");
     }
     setError(null);
   };
 
-  const handleNameSubmit = (e: React.FormEvent) => {
+  const handleNameSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
     if (purpose === "custom") {
       setStep("configure");
+    } else if (purpose === "marketing") {
+      // Create workspace immediately, then enter marketing onboarding
+      setIsLoading(true);
+      setError(null);
+      try {
+        const workspace = await createWorkspace(name.trim(), "marketing");
+        setMarketingWorkspaceId(workspace.id);
+        setMarketingWorkspaceSlug(workspace.slug);
+        setStep("marketing-onboarding");
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Failed to create workspace"
+        );
+      } finally {
+        setIsLoading(false);
+      }
     } else {
       handleCreateTemplateWorkspace();
     }
@@ -155,8 +185,22 @@ export default function NewWorkspacePage() {
         return "Name your workspace";
       case "configure":
         return "Configure your workspace";
+      case "marketing-onboarding":
+        return "Set up your marketing workspace";
     }
   };
+
+  // Marketing onboarding flow - full screen
+  if (step === "marketing-onboarding" && marketingWorkspaceId && marketingWorkspaceSlug) {
+    return (
+      <MarketingOnboarding
+        workspaceId={marketingWorkspaceId}
+        workspaceSlug={marketingWorkspaceSlug}
+        workspaceName={name}
+        onBack={handleBack}
+      />
+    );
+  }
 
   // Custom workspace configuration step - full width chat interface
   if (step === "configure") {
@@ -332,7 +376,7 @@ export default function NewWorkspacePage() {
             >
               {isLoading
                 ? "Creating..."
-                : purpose === "custom"
+                : purpose === "custom" || purpose === "marketing"
                   ? "Continue"
                   : "Create Workspace"}
             </button>

@@ -28,6 +28,10 @@ import {
   type TemplateWorkspacePurpose,
   type Status,
 } from "../design-tokens";
+import {
+  MARKETING_PROJECT_TYPES,
+  type MarketingProjectType,
+} from "../marketing-project-types";
 
 /**
  * Get the current authenticated user or redirect to auth
@@ -643,6 +647,85 @@ export async function updateWorkspaceSettings(
     message: "Workspace settings updated",
     newSlug: updates.slug,
   };
+}
+
+/**
+ * Create starter issues for a marketing workspace based on project type.
+ * Issues are placed in the first appropriate column (backlog or todo).
+ */
+export async function createStarterIssues(
+  workspaceId: string,
+  projectType: string
+): Promise<void> {
+  await requireWorkspaceAccess(workspaceId, "admin");
+
+  const config =
+    MARKETING_PROJECT_TYPES[projectType as MarketingProjectType];
+  if (!config) {
+    throw new Error(`Unknown project type: ${projectType}`);
+  }
+
+  // Get workspace columns
+  const workspaceColumns = await db
+    .select()
+    .from(columns)
+    .where(eq(columns.workspaceId, workspaceId))
+    .orderBy(asc(columns.position));
+
+  if (workspaceColumns.length === 0) {
+    throw new Error("Workspace has no columns");
+  }
+
+  // Get workspace identifier for issue naming
+  const workspace = await db
+    .select({ identifier: workspaces.identifier, issueCounter: workspaces.issueCounter })
+    .from(workspaces)
+    .where(eq(workspaces.id, workspaceId))
+    .get();
+
+  if (!workspace) {
+    throw new Error("Workspace not found");
+  }
+
+  // Find the appropriate column for each issue based on its status
+  const columnByStatus = new Map(
+    workspaceColumns
+      .filter((c) => c.status)
+      .map((c) => [c.status, c.id])
+  );
+  const defaultColumnId = workspaceColumns[0].id;
+
+  const now = new Date();
+  let counter = workspace.issueCounter;
+
+  for (let i = 0; i < config.starterIssues.length; i++) {
+    const issue = config.starterIssues[i];
+    counter++;
+
+    const targetColumnId =
+      columnByStatus.get(issue.status) ?? defaultColumnId;
+
+    await db.insert(issues).values({
+      id: crypto.randomUUID(),
+      columnId: targetColumnId,
+      identifier: `${workspace.identifier}-${counter}`,
+      title: issue.title,
+      description: issue.description,
+      status: issue.status,
+      priority: 4,
+      position: i,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  // Update issue counter
+  await db
+    .update(workspaces)
+    .set({ issueCounter: counter })
+    .where(eq(workspaces.id, workspaceId));
+
+  revalidatePath("/");
 }
 
 /**

@@ -46,6 +46,16 @@ export type Events = {
       metadata?: { description?: string };
     };
   };
+  "soul/generate": {
+    data: {
+      workspaceId: string;
+      brandId: string;
+      brandName: string;
+      brandSummary?: string;
+      projectType: string;
+      workspaceName: string;
+    };
+  };
 };
 
 export const inngest = new Inngest({
