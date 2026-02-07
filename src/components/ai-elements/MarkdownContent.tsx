@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { memo, useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -74,7 +74,7 @@ function CodeBlock({ children, className, language }: CodeBlockProps) {
   );
 }
 
-export function MarkdownContent({ content, className }: MarkdownContentProps) {
+export const MarkdownContent = memo(function MarkdownContent({ content, className }: MarkdownContentProps) {
   return (
     <div className={cn("prose prose-sm dark:prose-invert max-w-none overflow-x-auto [&_li>p]:inline [&_li>p]:m-0", className)}>
       <ReactMarkdown
@@ -131,4 +131,4 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
       </ReactMarkdown>
     </div>
   );
-}
+});
