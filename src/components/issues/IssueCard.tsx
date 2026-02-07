@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore, useMemo } from "react";
+import { useMemo } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
@@ -13,7 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useOptionalWorkspaceContext } from "@/components/workspace/context/WorkspaceProvider";
 import { Calendar } from "lucide-react";
 import { format, isPast, isToday } from "date-fns";
-import { useSubtaskCount } from "@/lib/hooks";
+import { useSubtaskCount, useMounted } from "@/lib/hooks";
 import type { IssueWithLabels, Label, WorkspaceMemberWithUser } from "@/lib/types";
 import type { Priority, Status } from "@/lib/design-tokens";
 
@@ -86,11 +86,6 @@ function useAssignee(assigneeId: string | null) {
   }, [assigneeId, members]);
 }
 
-// Hydration-safe mount detection without triggering cascading renders
-const emptySubscribe = () => () => {};
-const getClientSnapshot = () => true;
-const getServerSnapshot = () => false;
-
 export function IssueCard({
   issue,
   onClick,
@@ -98,8 +93,7 @@ export function IssueCard({
   onSendToAI,
   isDragging: isDraggingProp,
 }: IssueCardProps) {
-  // Use useSyncExternalStore for SSR-safe mounted state (rerender-derived-state-no-effect rule)
-  const mounted = useSyncExternalStore(emptySubscribe, getClientSnapshot, getServerSnapshot);
+  const mounted = useMounted();
 
   const {
     attributes,

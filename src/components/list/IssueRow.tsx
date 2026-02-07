@@ -12,6 +12,7 @@ import type { Status, Priority } from "@/lib/design-tokens";
 interface IssueRowProps {
   issue: IssueWithLabels;
   isSelected?: boolean;
+  isDragging?: boolean;
   onSelect?: () => void;
   onClick?: () => void;
   onSendToAI?: () => void;
@@ -55,6 +56,7 @@ function DueDateCell({ date }: { date: Date }) {
 export function IssueRow({
   issue,
   isSelected = false,
+  isDragging = false,
   onSelect,
   onClick,
   onSendToAI,
@@ -64,6 +66,7 @@ export function IssueRow({
       className={cn(
         "group flex items-center h-9 border-b border-border/50 cursor-pointer",
         "transition-colors",
+        isDragging && "opacity-50",
         isSelected && "bg-primary/10",
         issue.sentToAI ? "bg-blue-950" : "hover:bg-accent/30"
       )}

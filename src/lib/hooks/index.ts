@@ -102,3 +102,5 @@ export {
   useSaveSoulChatMessage,
   useClearSoulChatMessages,
 } from "./use-soul-chat";
+
+export { useMounted } from "./use-mounted";

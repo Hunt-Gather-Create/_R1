@@ -1,35 +1,25 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { IssueRow } from "./IssueRow";
 import { ListHeader, type SortField, type SortDirection } from "./ListHeader";
-import {
-  IssueProvider,
-  useIssueContext,
-} from "@/components/board/context/IssueContext";
+import { ListGroup } from "./ListGroup";
+import { useBoardContext } from "@/components/board/context/BoardProvider";
 import { cn } from "@/lib/utils";
 import { useSendToAI } from "@/lib/hooks";
-import type { BoardWithColumnsAndIssues, IssueWithLabels } from "@/lib/types";
+import { columnAwareCollisionDetection } from "@/lib/collision-detection";
+import { useIssueDragAndDrop } from "@/components/board/hooks/useIssueDragAndDrop";
+import { useGroupedIssues } from "./hooks/useGroupedIssues";
+import type { IssueWithLabels } from "@/lib/types";
 
 interface ListViewProps {
-  initialBoard: BoardWithColumnsAndIssues;
   onIssueSelect?: (issue: IssueWithLabels) => void;
 }
 
-export function ListView({ initialBoard, onIssueSelect }: ListViewProps) {
-  return (
-    <IssueProvider initialBoard={initialBoard}>
-      <ListViewContent onIssueSelect={onIssueSelect} />
-    </IssueProvider>
-  );
-}
-
-function ListViewContent({
-  onIssueSelect,
-}: {
-  onIssueSelect?: (issue: IssueWithLabels) => void;
-}) {
-  const { board } = useIssueContext();
+export function ListView({ onIssueSelect }: ListViewProps) {
+  const { board, addIssue, findColumn, moveIssueToColumn } =
+    useBoardContext();
   const { sendToAI } = useSendToAI();
 
   const [sortField, setSortField] = useState<SortField>("createdAt");
@@ -37,54 +27,18 @@ function ListViewContent({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
 
-  // Flatten all issues from all columns
-  const allIssues = useMemo(() => {
-    return board.columns.flatMap((col) => col.issues);
-  }, [board.columns]);
+  const { groups, flatIssues, dndEnabled, showGroups } = useGroupedIssues(
+    sortField,
+    sortDirection
+  );
 
-  // Sort issues
-  const sortedIssues = useMemo(() => {
-    const sorted = [...allIssues].sort((a, b) => {
-      let comparison = 0;
-
-      switch (sortField) {
-        case "identifier":
-          comparison = a.identifier.localeCompare(b.identifier);
-          break;
-        case "status":
-          comparison = a.status.localeCompare(b.status);
-          break;
-        case "priority":
-          comparison = a.priority - b.priority;
-          break;
-        case "title":
-          comparison = a.title.localeCompare(b.title);
-          break;
-        case "dueDate":
-          const aDate = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
-          const bDate = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
-          comparison = aDate - bDate;
-          break;
-        case "estimate":
-          comparison = (a.estimate ?? 0) - (b.estimate ?? 0);
-          break;
-        case "createdAt":
-          comparison =
-            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-          break;
-        case "updatedAt":
-          comparison =
-            new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
-          break;
-        default:
-          comparison = 0;
-      }
-
-      return sortDirection === "asc" ? comparison : -comparison;
-    });
-
-    return sorted;
-  }, [allIssues, sortField, sortDirection]);
+  const {
+    sensors,
+    activeIssue,
+    handleDragStart,
+    handleDragOver,
+    handleDragEnd,
+  } = useIssueDragAndDrop({ board, findColumn, moveIssueToColumn });
 
   const handleSort = useCallback((field: SortField) => {
     setSortField((prev) => {
@@ -110,16 +64,34 @@ function ListViewContent({
   }, []);
 
   const selectAll = useCallback(() => {
-    if (selectedIds.size === sortedIssues.length) {
+    if (selectedIds.size === flatIssues.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(sortedIssues.map((i) => i.id)));
+      setSelectedIds(new Set(flatIssues.map((i) => i.id)));
     }
-  }, [selectedIds.size, sortedIssues]);
+  }, [selectedIds.size, flatIssues]);
+
+  const handleIssueClick = useCallback(
+    (issue: IssueWithLabels, globalIndex: number) => {
+      setFocusedIndex(globalIndex);
+      onIssueSelect?.(issue);
+    },
+    [onIssueSelect]
+  );
+
+  const handleAddIssue = useCallback(
+    (columnId: string, title: string) => {
+      addIssue(columnId, { title });
+    },
+    [addIssue]
+  );
 
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip when drag is active
+      if (activeIssue) return;
+
       if (
         document.activeElement?.tagName === "INPUT" ||
         document.activeElement?.tagName === "TEXTAREA"
@@ -131,7 +103,7 @@ function ListViewContent({
         case "ArrowDown":
         case "j":
           e.preventDefault();
-          setFocusedIndex((i) => Math.min(i + 1, sortedIssues.length - 1));
+          setFocusedIndex((i) => Math.min(i + 1, flatIssues.length - 1));
           break;
         case "ArrowUp":
         case "k":
@@ -140,14 +112,14 @@ function ListViewContent({
           break;
         case "Enter":
           e.preventDefault();
-          if (focusedIndex >= 0 && focusedIndex < sortedIssues.length) {
-            onIssueSelect?.(sortedIssues[focusedIndex]);
+          if (focusedIndex >= 0 && focusedIndex < flatIssues.length) {
+            onIssueSelect?.(flatIssues[focusedIndex]);
           }
           break;
         case " ":
           e.preventDefault();
-          if (focusedIndex >= 0 && focusedIndex < sortedIssues.length) {
-            toggleSelect(sortedIssues[focusedIndex].id);
+          if (focusedIndex >= 0 && focusedIndex < flatIssues.length) {
+            toggleSelect(flatIssues[focusedIndex].id);
           }
           break;
         case "Escape":
@@ -160,24 +132,48 @@ function ListViewContent({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [focusedIndex, sortedIssues, onIssueSelect, toggleSelect]);
+  }, [focusedIndex, flatIssues, onIssueSelect, toggleSelect, activeIssue]);
 
-  return (
-    <div className="flex flex-col h-full">
+  const listContent = (
+    <>
       <ListHeader
         sortField={sortField}
         sortDirection={sortDirection}
         onSort={handleSort}
         selectedCount={selectedIds.size}
-        totalCount={sortedIssues.length}
+        totalCount={flatIssues.length}
         onSelectAll={selectAll}
         isAllSelected={
-          selectedIds.size === sortedIssues.length && sortedIssues.length > 0
+          selectedIds.size === flatIssues.length && flatIssues.length > 0
         }
       />
 
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {sortedIssues.length === 0 ? (
+        {showGroups ? (
+          groups.map((group) => {
+            let startIndex = 0;
+            for (const g of groups) {
+              if (g.id === group.id) break;
+              startIndex += g.issues.length;
+            }
+
+            return (
+              <ListGroup
+                key={group.id}
+                column={group.column}
+                sortedIssues={group.issues}
+                selectedIds={selectedIds}
+                focusedIndex={focusedIndex}
+                startIndex={startIndex}
+                dndEnabled={dndEnabled}
+                onToggleSelect={toggleSelect}
+                onIssueClick={handleIssueClick}
+                onAddIssue={handleAddIssue}
+                onSendToAI={sendToAI}
+              />
+            );
+          })
+        ) : flatIssues.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <p className="text-sm text-muted-foreground mb-2">
               No issues found
@@ -187,7 +183,7 @@ function ListViewContent({
             </p>
           </div>
         ) : (
-          sortedIssues.map((issue, index) => (
+          flatIssues.map((issue, index) => (
             <div
               key={issue.id}
               className={cn(
@@ -227,6 +223,32 @@ function ListViewContent({
           </button>
         </div>
       )}
-    </div>
+    </>
   );
+
+  if (dndEnabled) {
+    return (
+      <div className="flex flex-col h-full">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={columnAwareCollisionDetection}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+        >
+          {listContent}
+
+          <DragOverlay dropAnimation={null}>
+            {activeIssue ? (
+              <div className="bg-card border border-border shadow-lg rounded">
+                <IssueRow issue={activeIssue} />
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      </div>
+    );
+  }
+
+  return <div className="flex flex-col h-full">{listContent}</div>;
 }

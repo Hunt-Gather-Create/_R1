@@ -78,7 +78,7 @@ function MainContent() {
             </div>
           ) : (
             <div className="relative h-full">
-              <ListView initialBoard={board} onIssueSelect={selectIssue} />
+              <ListView onIssueSelect={selectIssue} />
             </div>
           )}
         </div>
