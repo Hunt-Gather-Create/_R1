@@ -63,10 +63,6 @@ export function IssueChatPanel({
   const { data: subtasks = [] } = useIssueSubtasks(issue.id);
 
 
-  // Create a stable key that changes when subtasks load
-  // This forces the chat to reinitialize with the new context
-  const chatKey = `${issue.id}-${subtasks.length}`;
-
   // Build issue context for the API
   const issueContext: IssueContext = useMemo(
     () => ({
@@ -91,7 +87,7 @@ export function IssueChatPanel({
 
   const chat = useChatCore({
     api: "/api/chat/issue",
-    chatId: chatKey, // Changes when subtasks load, forcing fresh context
+    chatId: issue.id,
     transportBody: { issueContext, workspaceId, workspacePurpose },
     onToolCall: ({ toolCall }) => {
       if (toolCall.toolName === "updateDescription") {

@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { Bot, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
@@ -27,7 +28,7 @@ interface ChatMessageItemProps {
   renderToolCall?: (part: MessagePart, index: number) => React.ReactNode;
 }
 
-export function ChatMessageItem({ message, renderToolCall }: ChatMessageItemProps) {
+export const ChatMessageItem = memo(function ChatMessageItem({ message, renderToolCall }: ChatMessageItemProps) {
   // Skip system messages - they're not displayed in chat
   if (message.role === "system") {
     return null;
@@ -128,4 +129,4 @@ export function ChatMessageItem({ message, renderToolCall }: ChatMessageItemProp
       </div>
     </div>
   );
-}
+});

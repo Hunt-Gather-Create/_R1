@@ -129,6 +129,17 @@ export function useChatCore<TPersistedMessage = unknown>(
       : undefined,
   });
 
+  // Reset initialization state when chatId changes (prevents stale message flash)
+  const prevChatIdRef = useRef(chatId);
+  useEffect(() => {
+    if (prevChatIdRef.current !== chatId) {
+      prevChatIdRef.current = chatId;
+      hasInitializedRef.current = false;
+      lastSavedMessageRef.current = null;
+      setMessages([]);
+    }
+  }, [chatId, setMessages]);
+
   // Initialize chat messages from persisted data
   useEffect(() => {
     if (!persistence || hasInitializedRef.current || !persistedMessages) return;
