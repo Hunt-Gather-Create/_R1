@@ -2,11 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "../db";
-import { workspaces } from "../db/schema";
+import { workspaces, brands } from "../db/schema";
 import { eq } from "drizzle-orm";
 import type { WorkspaceSoul, R2ChatMessage } from "../types";
 import { requireWorkspaceAccess } from "./workspace";
 import { getMessages, appendMessage, deleteConversation } from "../storage/r2-chat";
+import { inngest } from "../inngest/client";
 
 /**
  * Get the soul configuration for a workspace
@@ -130,4 +131,41 @@ export async function deleteSoulChatMessages(
 
   // Use "config" as entityId since soul chat is per-workspace config
   await deleteConversation(workspaceId, "soul", user.id, "config");
+}
+
+/**
+ * Trigger background soul generation from brand data and project type.
+ * Fire-and-forget: sends an Inngest event and returns immediately.
+ */
+export async function generateSoulFromBrand(
+  workspaceId: string,
+  projectType: string
+): Promise<void> {
+  const { workspace } = await requireWorkspaceAccess(workspaceId, "admin");
+
+  if (!workspace.brandId) {
+    throw new Error("Workspace must have a brand to generate a soul");
+  }
+
+  const brand = await db
+    .select()
+    .from(brands)
+    .where(eq(brands.id, workspace.brandId))
+    .get();
+
+  if (!brand) {
+    throw new Error("Brand not found");
+  }
+
+  await inngest.send({
+    name: "soul/generate",
+    data: {
+      workspaceId,
+      brandId: brand.id,
+      brandName: brand.name,
+      brandSummary: brand.summary ?? undefined,
+      projectType,
+      workspaceName: workspace.name,
+    },
+  });
 }

@@ -11,12 +11,14 @@ const RESEARCH_MODEL = "claude-haiku-4-5-20251001";
 
 const GUIDELINES_RESEARCH_PROMPT = `You are a brand guidelines research assistant. Your task is to find and extract brand guidelines for a company.
 
-Your approach:
+Your approach (follow ALL steps in order):
 1. Search for "[brand name] brand guidelines", "[brand name] style guide", "[brand name] media kit", or "[brand name] press kit"
-2. Fetch relevant pages/documents you find
-3. If no official guidelines exist, fetch the brand's website and infer guidelines from their design
-4. Extract structured guidelines data
+2. Fetch any relevant pages/documents you find from search results
+3. ALWAYS fetch the brand's homepage AND at least one additional page (e.g., /about, /about-us, /company, /our-story). You MUST fetch at least 2 pages before drawing any conclusions.
+4. Analyze all fetched content to extract or infer brand guidelines
 5. Report your findings using the report_guidelines tool
+
+CRITICAL: You must use web_fetch on at least 2 different URLs before calling report_guidelines. Even if no official guidelines exist, you can ALWAYS infer useful information (logo treatment, voice & tone, imagery style) from the brand's own website pages. Never give up after checking only the homepage.
 
 What to extract (DO NOT extract colors - those are captured separately):
 - **Logo rules**: How the logo should be used, clear space, minimum sizes, variations, what NOT to do with the logo
@@ -36,7 +38,8 @@ Confidence levels:
 
 IMPORTANT about notFound:
 - Set notFound: false if you were able to extract ANY useful brand information (logo rules, typography, voice/tone, imagery, etc.)
-- Set notFound: true ONLY if you truly couldn't find or infer anything useful about the brand
+- Set notFound: true ONLY if you truly couldn't find or infer anything useful about the brand after fetching multiple pages
+- If you have a website URL, you should almost NEVER return notFound: true — there is always something to infer from a live website
 
 IMPORTANT: You MUST call the report_guidelines tool with your findings. Never respond without calling it.`;
 
@@ -96,6 +99,20 @@ const reportGuidelinesTool = tool({
   execute: async (input) => input,
 });
 
+/** Extract the report_guidelines tool result from generateText steps */
+function extractGuidelinesResult(
+  steps: { toolResults: Array<{ toolName: string; [key: string]: unknown }> }[]
+): z.infer<typeof reportGuidelinesSchema> | null {
+  for (const step of steps) {
+    for (const toolResult of step.toolResults) {
+      if (toolResult.toolName === "report_guidelines" && "output" in toolResult) {
+        return toolResult.output as z.infer<typeof reportGuidelinesSchema>;
+      }
+    }
+  }
+  return null;
+}
+
 export const researchBrandGuidelines = inngest.createFunction(
   {
     id: "brand-guidelines-research",
@@ -123,7 +140,7 @@ export const researchBrandGuidelines = inngest.createFunction(
     });
 
     // Step 2: Research guidelines using AI
-    const guidelinesResult = await step.run("research-guidelines", async () => {
+    const initialResult = await step.run("research-guidelines", async () => {
       const searchContext = websiteUrl
         ? `Brand: ${brandName}\nWebsite: ${websiteUrl}`
         : `Brand: ${brandName}`;
@@ -139,17 +156,43 @@ export const researchBrandGuidelines = inngest.createFunction(
         },
       });
 
-      // Extract the tool result
-      for (const stepResult of result.steps) {
-        for (const toolResult of stepResult.toolResults) {
-          if (toolResult.toolName === "report_guidelines" && "output" in toolResult) {
-            return (toolResult as { output: z.infer<typeof reportGuidelinesSchema> }).output;
-          }
-        }
+      return extractGuidelinesResult(result.steps);
+    });
+
+    // Step 2b: If the AI returned notFound but didn't fetch enough pages, retry with explicit URLs
+    const guidelinesResult = await step.run("validate-and-retry", async () => {
+      // If we got a good result, use it
+      if (!initialResult || !initialResult.notFound) {
+        return initialResult;
       }
 
-      // Fallback if no tool was called
-      return null;
+      // Check if the AI fetched enough pages
+      const sourceCount = initialResult.sources?.length ?? 0;
+      if (sourceCount >= 2 || !websiteUrl) {
+        // AI did its due diligence, accept the notFound result
+        return initialResult;
+      }
+
+      // AI gave up too early — retry with explicit instructions to fetch more pages
+      const retryResult = await generateText({
+        model: anthropic(RESEARCH_MODEL),
+        system: GUIDELINES_RESEARCH_PROMPT,
+        prompt: `Your previous research for "${brandName}" only checked ${sourceCount} page(s) and concluded nothing was found. That's not enough.
+
+Please fetch these pages and infer brand guidelines from their design, content, and messaging:
+1. ${websiteUrl} (homepage)
+2. ${websiteUrl}/about (or /about-us, /company, /our-story — try variations)
+
+Look at how they present themselves: their logo treatment, writing style, imagery choices, and overall tone. Every website has brand characteristics that can be extracted.
+
+Report your findings using the report_guidelines tool. Set notFound: false if you can infer anything useful.`,
+        tools: {
+          web_fetch: anthropic.tools.webFetch_20250910({ maxUses: 5 }),
+          report_guidelines: reportGuidelinesTool,
+        },
+      });
+
+      return extractGuidelinesResult(retryResult.steps) ?? initialResult;
     });
 
     // Step 3: Save results to database
