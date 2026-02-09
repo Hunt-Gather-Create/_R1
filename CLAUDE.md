@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Memory
+
+@.claude/MEMORY.md
+
+**Rules for updating project memory:**
+- When you discover a non-obvious pattern, gotcha, or useful context about this codebase, add it to `.claude/MEMORY.md`
+- Keep entries concise (1-2 lines each) — this file is loaded into every session
+- Organize under the existing headings: Scripts, Patterns, Gotchas, Decisions
+- Remove entries that become outdated or wrong
+- This is shared team memory (checked into git), not personal notes
+
 ## Commands
 
 ```bash
