@@ -3,6 +3,7 @@
 import { memo, useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import rehypeRaw from "rehype-raw";
 import { Check, Copy } from "lucide-react";
 import { cn, transformCiteTags } from "@/lib/utils";
@@ -78,7 +79,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, classNam
   return (
     <div className={cn("prose prose-sm dark:prose-invert max-w-none overflow-x-auto [&_li>p]:inline [&_li>p]:m-0", className)}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkBreaks]}
         rehypePlugins={[rehypeRaw]}
         components={{
           // Style citation links from web search results
