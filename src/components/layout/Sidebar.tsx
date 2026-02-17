@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import {
   LayoutGrid,
+  LayoutDashboard,
   List,
   Settings,
   ChevronLeft,
@@ -308,6 +309,12 @@ export function Sidebar() {
 
       {/* Footer Actions */}
       <div className="p-2 border-t border-sidebar-border">
+        <NavItem
+          icon={<LayoutDashboard className="w-4 h-4" />}
+          label="Dashboard"
+          isCollapsed={sidebarCollapsed}
+          href="/dashboard"
+        />
         <NavItem
           icon={<Home className="w-4 h-4" />}
           label="All Projects"

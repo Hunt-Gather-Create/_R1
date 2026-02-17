@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { tool, type ToolSet } from "ai";
 import { createSkillSchema, updateSkillSchema } from "./schemas";
 import {
   createWorkspaceSkill,
@@ -113,7 +113,7 @@ export function createSkillUpdaterTool(workspaceId: string) {
  * Creates skill management tools for a workspace.
  * Returns an empty object if no workspaceId is provided.
  */
-export function createSkillTools(workspaceId?: string) {
+export function createSkillTools(workspaceId?: string): ToolSet {
   if (!workspaceId) return {};
   return {
     create_skill: createSkillCreatorTool(workspaceId),
