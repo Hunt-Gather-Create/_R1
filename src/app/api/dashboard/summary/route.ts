@@ -2,8 +2,11 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { streamText } from "ai";
 import { getWorkspaceSummaryContext, type TimeRange } from "@/lib/actions/dashboard";
 import { recordTokenUsage } from "@/lib/token-usage";
+import { getCurrentUser } from "@/lib/auth";
 
 export const maxDuration = 30;
+
+const VALID_TIME_RANGES: TimeRange[] = ["day", "week", "month"];
 
 const SUMMARY_SYSTEM_PROMPT = `You are a workspace digest assistant. Given workspace context (issues, activities, team members), produce a concise digest.
 
@@ -26,13 +29,17 @@ Rules:
 - Do not use emojis`;
 
 export async function POST(req: Request) {
-  const { workspaceId, timeRange } = (await req.json()) as {
-    workspaceId: string;
-    timeRange: TimeRange;
-  };
+  const user = await getCurrentUser();
+  if (!user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const body = await req.json();
+  const workspaceId = typeof body?.workspaceId === "string" ? body.workspaceId : "";
+  const timeRange = VALID_TIME_RANGES.includes(body?.timeRange) ? (body.timeRange as TimeRange) : "";
 
   if (!workspaceId || !timeRange) {
-    return new Response("Missing workspaceId or timeRange", { status: 400 });
+    return new Response("Missing or invalid workspaceId or timeRange", { status: 400 });
   }
 
   const context = await getWorkspaceSummaryContext(workspaceId, timeRange);

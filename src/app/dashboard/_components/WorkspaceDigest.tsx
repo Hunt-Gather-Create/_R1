@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { StatusDot } from "@/components/issues/StatusDot";
 import { PriorityIcon } from "@/components/issues/PriorityIcon";
 import type { Status, Priority } from "@/lib/design-tokens";
@@ -64,31 +65,128 @@ function IssueRow({
   slug: string;
 }) {
   return (
-    <Link
-      href={`/w/${slug}`}
-      className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/50 transition-colors group"
-    >
-      <span className="text-xs text-muted-foreground font-mono w-16 flex-shrink-0 truncate">
-        {issue.identifier}
-      </span>
-      <StatusDot status={issue.status as Status} size="sm" />
-      <PriorityIcon priority={issue.priority as Priority} size="sm" />
-      <span className="text-sm text-foreground truncate flex-1">
-        {issue.title}
-      </span>
-      {issue.dueDate && (
-        <span
-          className={cn(
-            "text-[10px] flex-shrink-0",
-            new Date(issue.dueDate) < new Date()
-              ? "text-destructive"
-              : "text-muted-foreground"
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/50 transition-colors group w-full text-left">
+          <span className="text-xs text-muted-foreground font-mono w-16 flex-shrink-0 truncate">
+            {issue.identifier}
+          </span>
+          <StatusDot status={issue.status as Status} size="sm" />
+          <PriorityIcon priority={issue.priority as Priority} size="sm" />
+          <span className="text-sm text-foreground truncate flex-1">
+            {issue.title}
+          </span>
+          {issue.assigneeName && (
+            <Badge variant="outline" className="text-[10px] flex-shrink-0 truncate max-w-[100px]">
+              {issue.assigneeName}
+            </Badge>
           )}
-        >
-          {formatDueDate(new Date(issue.dueDate))}
-        </span>
-      )}
-    </Link>
+          {issue.labels.length > 0 && (
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {issue.labels.map((label) => (
+                <span
+                  key={label.id}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] text-foreground/70 bg-muted flex-shrink-0"
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: label.color }}
+                  />
+                  {label.name}
+                </span>
+              ))}
+            </div>
+          )}
+          {issue.dueDate && (
+            <span
+              className={cn(
+                "text-[10px] flex-shrink-0",
+                new Date(issue.dueDate) < new Date()
+                  ? "text-destructive"
+                  : "text-muted-foreground"
+              )}
+            >
+              {formatDueDate(new Date(issue.dueDate))}
+            </span>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80">
+        <div className="space-y-3">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground font-mono">
+              {issue.identifier}
+            </span>
+            <Link
+              href={`/w/${slug}?issue=${issue.identifier}`}
+              className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+            >
+              Open ticket
+              <ArrowUpRight className="w-3 h-3" />
+            </Link>
+          </div>
+
+          {/* Title */}
+          <h4 className="text-sm font-medium text-foreground leading-snug">
+            {issue.title}
+          </h4>
+
+          {/* Status & Priority */}
+          <div className="flex items-center gap-3">
+            <StatusDot status={issue.status as Status} size="sm" showLabel />
+            <PriorityIcon priority={issue.priority as Priority} size="sm" showLabel />
+          </div>
+
+          {/* Assignee */}
+          {issue.assigneeName && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Assignee:</span>
+              <span className="text-xs text-foreground">{issue.assigneeName}</span>
+            </div>
+          )}
+
+          {/* Due date */}
+          {issue.dueDate && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Due:</span>
+              <span
+                className={cn(
+                  "text-xs",
+                  new Date(issue.dueDate) < new Date()
+                    ? "text-destructive"
+                    : "text-foreground"
+                )}
+              >
+                {new Intl.DateTimeFormat("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                }).format(new Date(issue.dueDate))}
+              </span>
+            </div>
+          )}
+
+          {/* Labels */}
+          {issue.labels.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {issue.labels.map((label) => (
+                <span
+                  key={label.id}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] text-foreground/70 bg-muted"
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: label.color }}
+                  />
+                  {label.name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -196,6 +294,14 @@ export function WorkspaceDigest({
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* Summary */}
+        <WorkspaceSummary
+          workspaceId={data.workspace.id}
+          timeRange={timeRange}
+        />
+
+        <hr className="border-border" />
+
         {/* My Issues */}
         <CollapsibleIssueList
           title="My Issues"
@@ -217,12 +323,6 @@ export function WorkspaceDigest({
           slug={data.workspace.slug}
         />
 
-        {/* AI Summary */}
-        <WorkspaceSummary
-          workspaceId={data.workspace.id}
-          timeRange={timeRange}
-        />
-
         {/* Recent Activity */}
         {data.recentActivities.length > 0 && (
           <div>
@@ -235,7 +335,7 @@ export function WorkspaceDigest({
                   key={activity.id}
                   className="flex items-center gap-2 px-2 py-1 text-xs"
                 >
-                  <span className="text-muted-foreground flex-shrink-0 w-12 text-right">
+                  <span className="text-muted-foreground flex-shrink-0 w-20 whitespace-nowrap font-mono">
                     {formatRelativeTime(new Date(activity.createdAt))}
                   </span>
                   <span className="text-foreground/80 truncate">

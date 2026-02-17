@@ -76,7 +76,7 @@ export function WorkspaceSummary({
 
   if (status === "error") {
     return (
-      <div className="rounded-md bg-muted/30 px-3 py-2">
+      <div>
         <div className="flex items-center justify-between">
           <p className="text-xs text-muted-foreground">{errorMessage}</p>
           <button
@@ -93,19 +93,38 @@ export function WorkspaceSummary({
 
   if (status === "loading") {
     return (
-      <div className="rounded-md bg-muted/30 px-3 py-3 space-y-2">
+      <div className="space-y-5 min-h-[420px]">
         <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
           Generating summary...
         </p>
-        <Skeleton className="h-3 w-full" />
-        <Skeleton className="h-3 w-4/5" />
-        <Skeleton className="h-3 w-3/5" />
+        {/* Tickets in Motion */}
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-36" />
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-11/12" />
+          <Skeleton className="h-3 w-4/5" />
+          <Skeleton className="h-3 w-3/5" />
+        </div>
+        {/* Team Activity */}
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-28" />
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-10/12" />
+          <Skeleton className="h-3 w-4/5" />
+        </div>
+        {/* Action Items & Blockers */}
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-44" />
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-9/12" />
+          <Skeleton className="h-3 w-3/5" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="rounded-md bg-muted/30 px-3 py-2">
+    <div className="min-h-[420px]">
       <div className="flex items-center justify-between mb-1">
         <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
           Summary
@@ -114,7 +133,7 @@ export function WorkspaceSummary({
           <button
             onClick={fetchSummary}
             className="text-muted-foreground hover:text-foreground transition-colors"
-            title="Regenerate summary"
+            aria-label="Regenerate summary"
           >
             <RefreshCw className="w-3 h-3" />
           </button>
@@ -122,7 +141,7 @@ export function WorkspaceSummary({
       </div>
       <MarkdownContent
         content={content}
-        className="text-xs [&_h3]:text-xs [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:text-xs [&_li]:text-xs"
+        className="prose-base [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1.5 [&_p]:text-base [&_li]:text-base [&_ul]:text-base"
       />
     </div>
   );

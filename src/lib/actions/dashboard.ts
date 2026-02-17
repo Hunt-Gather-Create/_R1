@@ -27,6 +27,7 @@ export interface DashboardIssue {
   priority: number;
   dueDate: Date | null;
   columnId: string;
+  assigneeName: string | null;
   labels: { id: string; name: string; color: string }[];
 }
 
@@ -78,6 +79,8 @@ function getSinceDate(timeRange: TimeRange): Date {
       return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     case "month":
       return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    default:
+      throw new Error(`Invalid time range: ${timeRange}`);
   }
 }
 
@@ -87,6 +90,7 @@ export const getDashboardData = cache(
   async (timeRange: TimeRange): Promise<DashboardData> => {
     const user = await requireAuth();
     const sinceDate = getSinceDate(timeRange);
+    const userInfo = { id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email };
 
     // 1. Get all workspace memberships
     const memberships = await db
@@ -95,11 +99,7 @@ export const getDashboardData = cache(
       .where(eq(workspaceMembers.userId, user.id));
 
     if (memberships.length === 0) {
-      return {
-        user: { id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email },
-        workspaces: [],
-        timeRange,
-      };
+      return { user: userInfo, workspaces: [], timeRange };
     }
 
     const workspaceIds = memberships.map((m) => m.workspaceId);
@@ -123,21 +123,17 @@ export const getDashboardData = cache(
 
     if (allColumns.length === 0) {
       return {
-        user: { id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email },
+        user: userInfo,
         workspaces: [],
         timeRange,
       };
     }
 
-    // 3. Build columnId -> workspaceId map
+    // 3. Build column lookup maps in a single pass
     const columnToWorkspace = new Map<string, string>();
-    for (const col of allColumns) {
-      columnToWorkspace.set(col.id, col.workspaceId);
-    }
-
-    // Build column -> status map
     const columnToStatus = new Map<string, string | null>();
     for (const col of allColumns) {
+      columnToWorkspace.set(col.id, col.workspaceId);
       columnToStatus.set(col.id, col.status);
     }
 
@@ -152,6 +148,7 @@ export const getDashboardData = cache(
       priority: issues.priority,
       dueDate: issues.dueDate,
       columnId: issues.columnId,
+      assigneeId: issues.assigneeId,
       createdAt: issues.createdAt,
     };
 
@@ -276,7 +273,29 @@ export const getDashboardData = cache(
       });
     }
 
-    // Helper to resolve issue with effective status and labels
+    // Batch fetch assignee names for all issues
+    const allAssigneeIds = [
+      ...new Set(
+        [...myIssues, ...unassignedIssues, ...newIssues]
+          .map((i) => i.assigneeId)
+          .filter(Boolean) as string[]
+      ),
+    ];
+    const assigneeUsers =
+      allAssigneeIds.length > 0
+        ? await db
+            .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+            .from(users)
+            .where(inArray(users.id, allAssigneeIds))
+        : [];
+    const assigneeNameMap = new Map(
+      assigneeUsers.map((u) => [
+        u.id,
+        [u.firstName, u.lastName].filter(Boolean).join(" ") || null,
+      ])
+    );
+
+    // Helper to resolve issue with effective status, labels, and assignee name
     const resolveIssue = (issue: typeof myIssues[number]) => {
       const effectiveStatus = columnToStatus.get(issue.columnId) ?? issue.status;
       return {
@@ -287,6 +306,7 @@ export const getDashboardData = cache(
         priority: issue.priority,
         dueDate: issue.dueDate,
         columnId: issue.columnId,
+        assigneeName: issue.assigneeId ? (assigneeNameMap.get(issue.assigneeId) ?? null) : null,
         labels: labelsByIssueId.get(issue.id) ?? [],
       };
     };
@@ -307,7 +327,6 @@ export const getDashboardData = cache(
     }
 
     // Group new issues (created in time range)
-    const newIssueIdSet = new Set<string>();
     for (const issue of newIssues) {
       const wsId = columnToWorkspace.get(issue.columnId);
       if (!wsId) continue;
@@ -315,7 +334,6 @@ export const getDashboardData = cache(
       if (!wsData) continue;
 
       wsData.newIssues.push(resolveIssue(issue));
-      newIssueIdSet.add(issue.id);
       wsData.stats.created++;
     }
 
