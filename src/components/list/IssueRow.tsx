@@ -4,8 +4,10 @@ import { cn } from "@/lib/utils";
 import { StatusDot } from "@/components/issues/StatusDot";
 import { PriorityIcon } from "@/components/issues/PriorityIcon";
 import { QuickActions } from "@/components/issues/QuickActions";
+import { EpicBadge } from "@/components/issues/EpicBadge";
 import { Calendar, Check } from "lucide-react";
 import { format, isPast, isToday } from "date-fns";
+import { useEpicTitle } from "@/lib/hooks";
 import type { IssueWithLabels, Label } from "@/lib/types";
 import type { Status, Priority } from "@/lib/design-tokens";
 
@@ -61,6 +63,8 @@ export function IssueRow({
   onClick,
   onSendToAI,
 }: IssueRowProps) {
+  const epicTitle = useEpicTitle(issue.epicId);
+
   return (
     <div
       className={cn(
@@ -125,6 +129,11 @@ export function IssueRow({
             </span>
           )}
         </div>
+      </div>
+
+      {/* Epic */}
+      <div className="w-28 flex-shrink-0 px-2 overflow-hidden">
+        {epicTitle && <EpicBadge title={epicTitle} />}
       </div>
 
       {/* Due Date */}

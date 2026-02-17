@@ -91,6 +91,20 @@ export const columns = sqliteTable("columns", {
   status: text("status"),
 });
 
+// Epics - grouping for planning sessions
+export const epics = sqliteTable("epics", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("active"), // active, completed, canceled
+  dueDate: integer("due_date", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
 // Cycles - time-boxed iterations (sprints)
 // Defined before issues to avoid circular reference
 export const cycles = sqliteTable("cycles", {
@@ -120,6 +134,9 @@ export const issues = sqliteTable("issues", {
   estimate: integer("estimate"), // Story points
   dueDate: integer("due_date", { mode: "timestamp" }),
   cycleId: text("cycle_id").references(() => cycles.id, {
+    onDelete: "set null",
+  }),
+  epicId: text("epic_id").references(() => epics.id, {
     onDelete: "set null",
   }),
   // Subtask support: references parent issue (1 level only - subtasks cannot have subtasks)

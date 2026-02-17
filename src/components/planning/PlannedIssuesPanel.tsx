@@ -6,7 +6,7 @@ import { marked } from "marked";
 import { cn } from "@/lib/utils";
 import { PRIORITY_CONFIG } from "@/lib/design-tokens";
 import { PriorityIcon } from "@/components/issues/PriorityIcon";
-import type { PlannedIssue } from "./PlanningChatPanel";
+import type { PlannedIssue, EpicSummary } from "./PlanningChatPanel";
 
 interface PlannedIssuesPanelProps {
   issues: PlannedIssue[];
@@ -14,6 +14,7 @@ interface PlannedIssuesPanelProps {
   onRemoveIssue: (id: string) => void;
   onCreateAll: () => void;
   isCreating: boolean;
+  epicSummary?: EpicSummary | null;
 }
 
 function IssueCard({
@@ -143,6 +144,7 @@ export function PlannedIssuesPanel({
   onRemoveIssue,
   onCreateAll,
   isCreating,
+  epicSummary,
 }: PlannedIssuesPanelProps) {
   const pendingCount = issues.filter((i) => i.status === "pending").length;
   const createdCount = issues.filter((i) => i.status === "created").length;
@@ -152,7 +154,9 @@ export function PlannedIssuesPanel({
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border shrink-0">
         <div>
-          <h3 className="text-sm font-medium">Planned Issues</h3>
+          <h3 className="text-sm font-medium">
+            {epicSummary ? epicSummary.title : "Planned Issues"}
+          </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             {issues.length === 0
               ? "Issues will appear here as you chat"

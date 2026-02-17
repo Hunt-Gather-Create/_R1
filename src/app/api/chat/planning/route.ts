@@ -46,6 +46,7 @@ Workflow:
 3. Call planIssue for EACH individual issue - don't batch them
 4. After creating an issue, briefly confirm and move to the next one
 5. Continue until all pieces of the feature are captured
+6. After ALL issues are created, call summarizeEpic with a title and description for the overall plan
 
 Examples of good issue breakdown:
 - "User authentication" becomes: "Create login form UI", "Add password validation", "Implement JWT token handling", "Add logout functionality"
@@ -87,6 +88,7 @@ Workflow:
 3. Call planIssue for EACH individual task - don't batch them
 4. After creating a task, briefly confirm and move to the next one
 5. Continue until all pieces of the campaign are captured
+6. After ALL tasks are created, call summarizeEpic with a title and description for the overall plan
 
 Examples of good task breakdown:
 - "Product launch campaign" becomes: "Write launch announcement copy", "Design email header graphic", "Create social media post templates", "Draft press release", "Set up tracking UTMs"

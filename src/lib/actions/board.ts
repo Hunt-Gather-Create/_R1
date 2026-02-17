@@ -8,6 +8,7 @@ import {
   labels,
   issueLabels,
   cycles,
+  epics,
 } from "../db/schema";
 import { eq, asc, inArray } from "drizzle-orm";
 import type { WorkspaceWithColumnsAndIssues, Label } from "../types";
@@ -21,7 +22,7 @@ export async function getWorkspaceWithIssues(
   await requireWorkspaceAccess(workspaceId);
 
   // Parallelize independent queries (async-parallel rule)
-  const [workspace, workspaceColumns, workspaceLabels, workspaceCycles] =
+  const [workspace, workspaceColumns, workspaceLabels, workspaceCycles, workspaceEpics] =
     await Promise.all([
       db
         .select()
@@ -43,6 +44,11 @@ export async function getWorkspaceWithIssues(
         .from(cycles)
         .where(eq(cycles.workspaceId, workspaceId))
         .orderBy(asc(cycles.startDate)),
+      db
+        .select()
+        .from(epics)
+        .where(eq(epics.workspaceId, workspaceId))
+        .orderBy(asc(epics.createdAt)),
     ]);
 
   if (!workspace) {
@@ -124,6 +130,7 @@ export async function getWorkspaceWithIssues(
     columns: visibleColumns,
     labels: workspaceLabels,
     cycles: workspaceCycles,
+    epics: workspaceEpics,
   };
 }
 

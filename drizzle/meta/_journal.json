@@ -15,6 +15,20 @@
       "when": 1770312554322,
       "tag": "0001_harsh_luke_cage",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1770668560283,
+      "tag": "0002_smooth_sersi",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1771351041588,
+      "tag": "0003_warm_pepper_potts",
+      "breakpoints": true
     }
   ]
 }

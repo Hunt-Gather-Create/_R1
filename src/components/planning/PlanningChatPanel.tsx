@@ -15,11 +15,17 @@ export interface PlannedIssue {
   status: "pending" | "creating" | "created";
 }
 
-interface PlanningChatPanelProps {
-  onPlanIssue: (issue: Omit<PlannedIssue, "id" | "status">) => void;
+export interface EpicSummary {
+  title: string;
+  description: string;
 }
 
-export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
+interface PlanningChatPanelProps {
+  onPlanIssue: (issue: Omit<PlannedIssue, "id" | "status">) => void;
+  onSummarizeEpic: (summary: EpicSummary) => void;
+}
+
+export function PlanningChatPanel({ onPlanIssue, onSummarizeEpic }: PlanningChatPanelProps) {
   const { workspaceId, workspacePurpose } = useBoardContext();
 
   const chat = useChatCore({
@@ -36,6 +42,13 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
           title: args.title,
           description: args.description,
           priority: args.priority,
+        });
+      }
+      if (toolCall.toolName === "summarizeEpic") {
+        const args = toolCall.input as EpicSummary;
+        onSummarizeEpic({
+          title: args.title,
+          description: args.description,
         });
       }
     },
@@ -61,7 +74,6 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
       }}
       welcomeMessage={welcomeText}
       renderToolCall={(toolName, result, index) => {
-        // Handle custom tool (planIssue)
         if (toolName === "planIssue") {
           return (
             <div
@@ -70,6 +82,17 @@ export function PlanningChatPanel({ onPlanIssue }: PlanningChatPanelProps) {
             >
               <Sparkles className="w-3 h-3" />
               <span>Issue added to plan</span>
+            </div>
+          );
+        }
+        if (toolName === "summarizeEpic") {
+          return (
+            <div
+              key={index}
+              className="flex items-center gap-2 text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50"
+            >
+              <Sparkles className="w-3 h-3" />
+              <span>Epic summary set</span>
             </div>
           );
         }

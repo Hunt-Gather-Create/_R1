@@ -116,6 +116,7 @@ export function Sidebar() {
     setCreateIssueOpen,
     setCommandPaletteOpen,
     setAIPlanningOpen,
+    setEpicsDrawerOpen,
   } = useAppShell();
 
   const workspaceContext = useOptionalWorkspaceContext();
@@ -288,6 +289,12 @@ export function Sidebar() {
             icon={<Clock className="w-4 h-4" />}
             label="Cycles"
             isCollapsed={sidebarCollapsed}
+          />
+          <NavItem
+            icon={<Layers className="w-4 h-4" />}
+            label="Epics"
+            isCollapsed={sidebarCollapsed}
+            onClick={() => setEpicsDrawerOpen(true)}
           />
           <NavItem
             icon={<MessageSquare className="w-4 h-4" />}

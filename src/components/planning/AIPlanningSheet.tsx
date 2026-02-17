@@ -3,8 +3,9 @@
 import { useState, useCallback } from "react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
-import { PlanningChatPanel, type PlannedIssue } from "./PlanningChatPanel";
+import { PlanningChatPanel, type PlannedIssue, type EpicSummary } from "./PlanningChatPanel";
 import { PlannedIssuesPanel } from "./PlannedIssuesPanel";
+import { createEpic } from "@/lib/actions/epics";
 
 interface AIPlanningSheetProps {
   open: boolean;
@@ -12,9 +13,10 @@ interface AIPlanningSheetProps {
 }
 
 export function AIPlanningSheet({ open, onOpenChange }: AIPlanningSheetProps) {
-  const { board, addIssue } = useBoardContext();
+  const { board, addIssue, workspaceId } = useBoardContext();
   const [plannedIssues, setPlannedIssues] = useState<PlannedIssue[]>([]);
   const [isCreating, setIsCreating] = useState(false);
+  const [epicSummary, setEpicSummary] = useState<EpicSummary | null>(null);
 
   // Find the intake column based on workspace purpose
   const intakeColumn = board.columns.find((col) => {
@@ -54,6 +56,9 @@ export function AIPlanningSheet({ open, onOpenChange }: AIPlanningSheetProps) {
 
     setIsCreating(true);
 
+    // Create the epic first
+    const epic = await createEpic(workspaceId, epicSummary ?? { title: "Untitled Epic" });
+
     const pendingIssues = plannedIssues.filter((i) => i.status === "pending");
 
     for (const issue of pendingIssues) {
@@ -62,11 +67,12 @@ export function AIPlanningSheet({ open, onOpenChange }: AIPlanningSheetProps) {
         prev.map((i) => (i.id === issue.id ? { ...i, status: "creating" } : i))
       );
 
-      // Create the issue
+      // Create the issue with epicId
       addIssue(intakeColumn.id, {
         title: issue.title,
         description: issue.description,
         priority: issue.priority,
+        epicId: epic.id,
       });
 
       // Mark as created
@@ -81,7 +87,7 @@ export function AIPlanningSheet({ open, onOpenChange }: AIPlanningSheetProps) {
     }
 
     setIsCreating(false);
-  }, [plannedIssues, intakeColumn, addIssue]);
+  }, [plannedIssues, intakeColumn, addIssue, workspaceId, epicSummary]);
 
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
@@ -89,6 +95,7 @@ export function AIPlanningSheet({ open, onOpenChange }: AIPlanningSheetProps) {
         // Reset state when closing
         setPlannedIssues([]);
         setIsCreating(false);
+        setEpicSummary(null);
       }
       onOpenChange(isOpen);
     },
@@ -112,7 +119,10 @@ export function AIPlanningSheet({ open, onOpenChange }: AIPlanningSheetProps) {
         <div className="flex flex-1 min-h-0">
           {/* Left: AI Chat */}
           <div className="w-[55%] border-r border-border">
-            <PlanningChatPanel onPlanIssue={handlePlanIssue} />
+            <PlanningChatPanel
+              onPlanIssue={handlePlanIssue}
+              onSummarizeEpic={setEpicSummary}
+            />
           </div>
 
           {/* Right: Planned Issues */}
@@ -123,6 +133,7 @@ export function AIPlanningSheet({ open, onOpenChange }: AIPlanningSheetProps) {
               onRemoveIssue={handleRemoveIssue}
               onCreateAll={handleCreateAll}
               isCreating={isCreating}
+              epicSummary={epicSummary}
             />
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planIssueSchema } from "@/lib/chat/tools/schemas";
+import { planIssueSchema, summarizeEpicSchema } from "@/lib/chat/tools/schemas";
 
 describe("planIssue schema validation", () => {
   describe("valid inputs", () => {
@@ -161,5 +161,69 @@ describe("system prompt selection", () => {
     expect(getSystemPromptType(undefined as unknown as string)).toBe(
       "software"
     );
+  });
+});
+
+describe("summarizeEpic schema validation", () => {
+  describe("valid inputs", () => {
+    it("accepts valid epic with title and description", () => {
+      const input = {
+        title: "User Authentication System",
+        description: "Implements login, signup, and password reset flows for the application.",
+      };
+
+      const result = summarizeEpicSchema.safeParse(input);
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts empty description string", () => {
+      const input = {
+        title: "Quick Feature",
+        description: "",
+      };
+
+      const result = summarizeEpicSchema.safeParse(input);
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe("invalid inputs", () => {
+    it("rejects missing title", () => {
+      const input = {
+        description: "Some description",
+      };
+
+      const result = summarizeEpicSchema.safeParse(input);
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects missing description", () => {
+      const input = {
+        title: "Some title",
+      };
+
+      const result = summarizeEpicSchema.safeParse(input);
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects non-string title", () => {
+      const input = {
+        title: 123,
+        description: "Some description",
+      };
+
+      const result = summarizeEpicSchema.safeParse(input);
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects non-string description", () => {
+      const input = {
+        title: "Some title",
+        description: 456,
+      };
+
+      const result = summarizeEpicSchema.safeParse(input);
+      expect(result.success).toBe(false);
+    });
   });
 });

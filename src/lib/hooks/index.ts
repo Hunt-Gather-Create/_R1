@@ -104,3 +104,5 @@ export {
 } from "./use-soul-chat";
 
 export { useMounted } from "./use-mounted";
+
+export { useEpicTitle } from "./use-epic-title";

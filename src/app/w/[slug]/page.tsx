@@ -46,6 +46,12 @@ const AIPlanningSheet = dynamic(
   { ssr: false }
 );
 
+const EpicsDrawer = dynamic(
+  () =>
+    import("@/components/epics/EpicsDrawer").then((mod) => mod.EpicsDrawer),
+  { ssr: false }
+);
+
 /**
  * Main content area that renders the board/list view and detail panel.
  * Uses BoardContext for all issue operations.
@@ -58,6 +64,8 @@ function MainContent() {
     setCreateIssueOpen,
     isAIPlanningOpen,
     setAIPlanningOpen,
+    isEpicsDrawerOpen,
+    setEpicsDrawerOpen,
   } = useAppShell();
 
   const {
@@ -103,6 +111,12 @@ function MainContent() {
       <AIPlanningSheet
         open={isAIPlanningOpen}
         onOpenChange={setAIPlanningOpen}
+      />
+
+      {/* Epics Drawer */}
+      <EpicsDrawer
+        open={isEpicsDrawerOpen}
+        onOpenChange={setEpicsDrawerOpen}
       />
     </>
   );

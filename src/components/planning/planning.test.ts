@@ -1,4 +1,4 @@
-import type { PlannedIssue } from "./PlanningChatPanel";
+import type { PlannedIssue, EpicSummary } from "./PlanningChatPanel";
 import type { Priority } from "@/lib/design-tokens";
 
 // Helper to create mock planned issues
@@ -197,5 +197,61 @@ describe("intake column selection", () => {
 
     const intakeColumn = findIntakeColumn(columns);
     expect(intakeColumn?.name).toBe("BACKLOG");
+  });
+});
+
+describe("EpicSummary", () => {
+  it("stores epic title and description", () => {
+    const summary: EpicSummary = {
+      title: "User Authentication",
+      description: "Implements login, signup, and password reset flows.",
+    };
+
+    expect(summary.title).toBe("User Authentication");
+    expect(summary.description).toBe(
+      "Implements login, signup, and password reset flows."
+    );
+  });
+
+  it("falls back to Untitled Epic when no summary provided", () => {
+    const summary: EpicSummary | null = null;
+    const fallback = summary ?? { title: "Untitled Epic" };
+
+    expect(fallback.title).toBe("Untitled Epic");
+  });
+});
+
+describe("handleCreateAll with epic", () => {
+  it("passes epicId to each issue when creating", () => {
+    const epicId = "epic-123";
+    const pendingIssues = [
+      createPlannedIssue({ id: "1", status: "pending" }),
+      createPlannedIssue({ id: "2", status: "pending" }),
+      createPlannedIssue({ id: "3", status: "created" }),
+    ];
+
+    // Simulate: filter pending, then create each with epicId
+    const issuesToCreate = pendingIssues.filter((i) => i.status === "pending");
+    const createdInputs = issuesToCreate.map((issue) => ({
+      title: issue.title,
+      description: issue.description,
+      priority: issue.priority,
+      epicId,
+    }));
+
+    expect(createdInputs).toHaveLength(2);
+    expect(createdInputs[0].epicId).toBe(epicId);
+    expect(createdInputs[1].epicId).toBe(epicId);
+  });
+
+  it("skips already-created issues", () => {
+    const pendingIssues = [
+      createPlannedIssue({ id: "1", status: "created" }),
+      createPlannedIssue({ id: "2", status: "pending" }),
+    ];
+
+    const issuesToCreate = pendingIssues.filter((i) => i.status === "pending");
+    expect(issuesToCreate).toHaveLength(1);
+    expect(issuesToCreate[0].id).toBe("2");
   });
 });

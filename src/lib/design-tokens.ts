@@ -161,6 +161,7 @@ export const GROUP_BY = {
   PRIORITY: "priority",
   LABEL: "label",
   CYCLE: "cycle",
+  EPIC: "epic",
   NONE: "none",
 } as const;
 

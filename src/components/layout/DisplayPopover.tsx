@@ -16,6 +16,7 @@ const GROUP_BY_LABELS: Record<GroupBy, string> = {
   [GROUP_BY.PRIORITY]: "Priority",
   [GROUP_BY.LABEL]: "Label",
   [GROUP_BY.CYCLE]: "Cycle",
+  [GROUP_BY.EPIC]: "Epic",
   [GROUP_BY.NONE]: "No grouping",
 };
 

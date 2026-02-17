@@ -34,8 +34,11 @@ import type {
   UpdateIssueInput,
   Label,
   Cycle,
+  Epic,
+  EpicStatus,
 } from "@/lib/types";
 import { STATUS, type WorkspacePurpose, type Status } from "@/lib/design-tokens";
+import { updateEpic as updateEpicAction } from "@/lib/actions/epics";
 
 interface BoardContextValue {
   board: BoardWithColumnsAndIssues;
@@ -50,6 +53,8 @@ interface BoardContextValue {
   allIssues: IssueWithLabels[];
   labels: Label[];
   cycles: Cycle[];
+  epics: Epic[];
+  updateEpic: (epicId: string, data: { title?: string; description?: string; status?: EpicStatus; dueDate?: Date | null }) => Promise<void>;
 
   addIssue: (columnId: string, input: CreateIssueInput) => void;
   updateIssue: (issueId: string, data: UpdateIssueInput) => void;
@@ -223,6 +228,7 @@ export function BoardProvider({
         estimate: input.estimate ?? null,
         dueDate: input.dueDate ?? null,
         cycleId: input.cycleId ?? null,
+        epicId: input.epicId ?? null,
         parentIssueId: input.parentIssueId ?? null,
         position:
           board.columns.find((c) => c.id === columnId)?.issues.length ?? 0,
@@ -412,6 +418,14 @@ export function BoardProvider({
     [selectedIssueId, removeLabelFromIssue]
   );
 
+  const updateEpic = useCallback(
+    async (epicId: string, data: { title?: string; description?: string; status?: EpicStatus; dueDate?: Date | null }) => {
+      await updateEpicAction(epicId, data);
+      await refreshBoard();
+    },
+    [refreshBoard]
+  );
+
   const workspacePurpose: WorkspacePurpose =
     "purpose" in board &&
     (board.purpose === "software" || board.purpose === "marketing")
@@ -438,6 +452,8 @@ export function BoardProvider({
       allIssues: filteredAllIssues,
       labels: board.labels,
       cycles: board.cycles,
+      epics: board.epics ?? [],
+      updateEpic,
       addIssue,
       updateIssue,
       removeIssue,
@@ -466,6 +482,8 @@ export function BoardProvider({
       filteredAllIssues,
       board.labels,
       board.cycles,
+      board.epics,
+      updateEpic,
       addIssue,
       updateIssue,
       removeIssue,

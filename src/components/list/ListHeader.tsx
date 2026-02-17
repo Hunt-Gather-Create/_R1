@@ -149,6 +149,13 @@ export function ListHeader({
         </span>
       </div>
 
+      {/* Epic */}
+      <div className="w-28 flex-shrink-0 px-2">
+        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+          Epic
+        </span>
+      </div>
+
       {/* Due Date */}
       <HeaderCell
         field="dueDate"

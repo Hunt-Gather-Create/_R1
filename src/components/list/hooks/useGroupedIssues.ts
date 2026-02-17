@@ -64,6 +64,45 @@ export function useGroupedIssues(
         });
     }
 
+    if (groupBy === GROUP_BY.EPIC) {
+      const epicMap = new Map(board.epics?.map((e) => [e.id, e.title]) ?? []);
+      const epicGroups = new Map<string, IssueWithLabels[]>();
+      const noEpic: IssueWithLabels[] = [];
+
+      for (const issue of allIssues) {
+        if (!issue.epicId) {
+          noEpic.push(issue);
+        } else {
+          const list = epicGroups.get(issue.epicId) ?? [];
+          list.push(issue);
+          epicGroups.set(issue.epicId, list);
+        }
+      }
+
+      const result: IssueGroup[] = Array.from(epicGroups.entries()).map(
+        ([epicId, issues]) => ({
+          id: `epic-${epicId}`,
+          column: createVirtualColumn(
+            `epic-${epicId}`,
+            epicMap.get(epicId) ?? "Unknown Epic",
+            board.id,
+            issues
+          ),
+          issues: sortIssues(issues, sortField, sortDirection),
+        })
+      );
+
+      if (noEpic.length > 0) {
+        result.push({
+          id: "no-epic",
+          column: createVirtualColumn("no-epic", "No Epic", board.id, noEpic, 999),
+          issues: sortIssues(noEpic, sortField, sortDirection),
+        });
+      }
+
+      return result;
+    }
+
     if (groupBy === GROUP_BY.LABEL) {
       const labelGroups = new Map<string, IssueWithLabels[]>();
       const unlabeled: IssueWithLabels[] = [];

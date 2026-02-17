@@ -36,6 +36,8 @@ interface AppShellContextValue {
   setCommandPaletteOpen: (open: boolean) => void;
   isAIPlanningOpen: boolean;
   setAIPlanningOpen: (open: boolean) => void;
+  isEpicsDrawerOpen: boolean;
+  setEpicsDrawerOpen: (open: boolean) => void;
 }
 
 const AppShellContext = createContext<AppShellContextValue | null>(null);
@@ -70,6 +72,7 @@ function AppShellContent({
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [isAIPlanningOpen, setAIPlanningOpen] = useState(false);
+  const [isEpicsDrawerOpen, setEpicsDrawerOpen] = useState(false);
 
   // Detail panel is open when there's an issue in URL
   const detailPanelOpen = !!urlState.issue;
@@ -121,6 +124,8 @@ function AppShellContent({
         clearChord();
         if (isCommandPaletteOpen) {
           setCommandPaletteOpen(false);
+        } else if (isEpicsDrawerOpen) {
+          setEpicsDrawerOpen(false);
         } else if (isAIPlanningOpen) {
           setAIPlanningOpen(false);
         } else if (urlState.create) {
@@ -200,6 +205,7 @@ function AppShellContent({
     },
     [
       isCommandPaletteOpen,
+      isEpicsDrawerOpen,
       isAIPlanningOpen,
       urlState.create,
       detailPanelOpen,
@@ -235,6 +241,8 @@ function AppShellContent({
     setCommandPaletteOpen,
     isAIPlanningOpen,
     setAIPlanningOpen,
+    isEpicsDrawerOpen,
+    setEpicsDrawerOpen,
   };
 
   return (

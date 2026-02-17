@@ -151,6 +151,7 @@ export async function createIssue(
     estimate: input.estimate ?? null,
     dueDate: input.dueDate ?? null,
     cycleId: input.cycleId ?? null,
+    epicId: input.epicId ?? null,
     parentIssueId,
     position: (maxPosition?.maxPos ?? -1) + 1,
     sentToAI: false,

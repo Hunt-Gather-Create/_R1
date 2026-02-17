@@ -207,6 +207,19 @@ export const deleteMemorySchema = z.object({
   memoryId: z.string().describe("The ID of the memory to delete"),
 });
 
+/**
+ * Schema for summarizing a planning session into an epic
+ */
+export const summarizeEpicSchema = z.object({
+  title: z
+    .string()
+    .describe("A concise title for the epic (max 80 chars)"),
+  description: z
+    .string()
+    .describe("A 2-3 sentence summary of the epic scope"),
+});
+
+export type SummarizeEpicInput = z.infer<typeof summarizeEpicSchema>;
 export type UpdateDescriptionInput = z.infer<typeof updateDescriptionSchema>;
 export type AttachContentInput = z.infer<typeof attachContentSchema>;
 export type PlanIssueInput = z.infer<typeof planIssueSchema>;

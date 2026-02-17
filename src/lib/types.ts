@@ -19,6 +19,7 @@ import type {
   audiences,
   audienceMembers,
   workspaceMemories,
+  epics,
 } from "./db/schema";
 import type { Status, Priority } from "./design-tokens";
 
@@ -38,6 +39,9 @@ export type WorkspaceMcpServer = typeof workspaceMcpServers.$inferSelect;
 export type WorkspaceChat = typeof workspaceChats.$inferSelect;
 export type WorkspaceChatAttachment = typeof workspaceChatAttachments.$inferSelect;
 export type Brand = typeof brands.$inferSelect;
+export type Epic = typeof epics.$inferSelect;
+export type EpicStatus = "active" | "completed" | "canceled";
+export type CreateEpicInput = { title: string; description?: string; dueDate?: Date };
 
 // Attachment with signed URL for display
 export type AttachmentWithUrl = Attachment & { url: string };
@@ -77,6 +81,7 @@ export type WorkspaceWithColumnsAndIssues = Workspace & {
   columns: ColumnWithIssues[];
   labels: Label[];
   cycles: Cycle[];
+  epics: Epic[];
 };
 
 // Legacy alias for backward compatibility
@@ -95,6 +100,7 @@ export type CreateIssueInput = {
   estimate?: number;
   dueDate?: Date;
   cycleId?: string;
+  epicId?: string;
   labelIds?: string[];
   parentIssueId?: string; // For creating subtasks
   assigneeId?: string | null; // Workspace member assigned to this issue
