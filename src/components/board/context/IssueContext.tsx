@@ -216,11 +216,12 @@ export function IssueProvider({
       estimate: input.estimate ?? null,
       dueDate: input.dueDate ?? null,
       cycleId: input.cycleId ?? null,
+      epicId: input.epicId ?? null,
       parentIssueId: input.parentIssueId ?? null,
       position:
         board.columns.find((c) => c.id === columnId)?.issues.length ?? 0,
       sentToAI: false,
-      assigneeId: null,
+      assigneeId: input.assigneeId ?? null,
       aiAssignable: false,
       aiInstructions: null,
       aiTools: null,
