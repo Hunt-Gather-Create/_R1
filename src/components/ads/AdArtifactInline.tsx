@@ -161,7 +161,7 @@ export function AdArtifactInline({
   }
 
   return (
-    <div className="mt-3 mb-3 max-w-sm">
+    <div className="mt-3 mb-3 max-w-fit">
       <ArtifactProvider
         artifact={artifact.data}
         name={artifact.data.name}
