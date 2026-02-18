@@ -54,6 +54,7 @@ interface MarkdownEditorProps {
   minHeight?: number;
   className?: string;
   compact?: boolean;
+  previewMode?: "edit" | "live" | "preview";
 }
 
 export function MarkdownEditor({
@@ -64,6 +65,7 @@ export function MarkdownEditor({
   minHeight = 120,
   className,
   compact = false,
+  previewMode = "edit",
 }: MarkdownEditorProps) {
   const colorMode = useColorMode();
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -97,7 +99,7 @@ export function MarkdownEditor({
           value={value}
           onChange={handleChange}
           onBlur={onBlur}
-          preview="edit"
+          preview={previewMode}
           hideToolbar={compact}
           commands={toolbarCommands}
           extraCommands={[]}

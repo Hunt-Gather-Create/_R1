@@ -20,6 +20,7 @@ import { ActivityFeed } from "./ActivityFeed";
 import { SubtaskList } from "./SubtaskList";
 import { SubtaskProgress } from "./SubtaskProgress";
 import { AttachmentList } from "./AttachmentList";
+import { IssueKnowledgeLinks } from "./IssueKnowledgeLinks";
 import {
   useIssueComments,
   useIssueActivities,
@@ -319,6 +320,9 @@ export function IssueDetailForm({
               <SubtaskList issue={issue} />
             </div>
           )}
+
+          {/* Attachments */}
+          <IssueKnowledgeLinks issueId={issue.id} workspaceId={workspaceId} />
 
           {/* Attachments */}
           <div>

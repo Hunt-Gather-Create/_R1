@@ -17,7 +17,14 @@ const SOUL_SCHEMA = z.object({
   tone: z.enum(["professional", "friendly", "casual", "formal"]),
   responseLength: z.enum(["concise", "moderate", "detailed"]),
   domainExpertise: z.array(z.string()).describe("3-5 areas of expertise"),
-  terminology: z.record(z.string(), z.string()).describe("5-10 domain-specific terms and definitions"),
+  terminology: z
+    .array(
+      z.object({
+        term: z.string().describe("Domain-specific term"),
+        definition: z.string().describe("Definition of the term"),
+      })
+    )
+    .describe("5-10 domain-specific terms and definitions"),
   doRules: z.array(z.string()).describe("5-8 things the AI SHOULD do"),
   dontRules: z.array(z.string()).describe("3-5 things the AI should NOT do"),
   greeting: z.string().describe("Custom greeting message"),
@@ -115,9 +122,15 @@ Generate a complete soul configuration.`;
     // Step 3: Save to database
     const savedResult = await step.run("save-soul", async () => {
       const now = new Date().toISOString();
+      const terminology = Object.fromEntries(
+        soulData.terminology
+          .map((entry) => [entry.term.trim(), entry.definition.trim()] as const)
+          .filter(([term, definition]) => Boolean(term && definition))
+      );
 
       const soul: WorkspaceSoul = {
         ...soulData,
+        terminology,
         version: 1,
         createdAt: now,
         updatedAt: now,

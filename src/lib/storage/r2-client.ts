@@ -81,6 +81,44 @@ export function generateSkillAssetKey(
 }
 
 /**
+ * Generate a storage key for a knowledge document markdown file.
+ * Format: kb/{workspaceId}/{folderPath}/{slug}-{docId}.md
+ */
+export function generateKnowledgeDocumentStorageKey(
+  workspaceId: string,
+  folderPath: string | null,
+  slug: string,
+  documentId: string
+): string {
+  const normalizedFolderPath = (folderPath ?? "")
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => segment.replace(/[^a-zA-Z0-9_-]/g, "-"))
+    .join("/");
+
+  const base = `kb/${workspaceId}`;
+  const safeSlug = slug.replace(/[^a-zA-Z0-9_-]/g, "-");
+  if (!normalizedFolderPath) {
+    return `${base}/${safeSlug}-${documentId}.md`;
+  }
+  return `${base}/${normalizedFolderPath}/${safeSlug}-${documentId}.md`;
+}
+
+/**
+ * Generate a storage key for knowledge images.
+ * Format: kb-assets/{workspaceId}/{documentId}/{uuid}_{filename}
+ */
+export function generateKnowledgeImageStorageKey(
+  workspaceId: string,
+  documentId: string,
+  filename: string
+): string {
+  const uuid = crypto.randomUUID();
+  const sanitized = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return `kb-assets/${workspaceId}/${documentId}/${uuid}_${sanitized}`;
+}
+
+/**
  * Generate a presigned URL for uploading a file directly to R2
  * Expires in 15 minutes
  */
@@ -143,7 +181,8 @@ export async function deleteObject(storageKey: string): Promise<void> {
 export async function uploadContent(
   storageKey: string,
   content: string,
-  contentType: string
+  contentType: string,
+  metadata?: Record<string, string>
 ): Promise<void> {
   const client = createS3Client();
   const bucket = getBucketName();
@@ -153,6 +192,7 @@ export async function uploadContent(
     Key: storageKey,
     Body: content,
     ContentType: contentType,
+    Metadata: metadata,
   });
 
   await client.send(command);
@@ -179,6 +219,45 @@ export async function getContent(storageKey: string): Promise<string | null> {
     return await response.Body.transformToString();
   } catch (error: unknown) {
     // Return null for NotFound errors (object doesn't exist)
+    if (
+      error &&
+      typeof error === "object" &&
+      "name" in error &&
+      error.name === "NoSuchKey"
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Get binary content and content type directly from R2.
+ * Returns null if the object doesn't exist.
+ */
+export async function getObjectBinary(storageKey: string): Promise<{
+  body: Uint8Array;
+  contentType: string;
+} | null> {
+  const client = createS3Client();
+  const bucket = getBucketName();
+
+  const command = new GetObjectCommand({
+    Bucket: bucket,
+    Key: storageKey,
+  });
+
+  try {
+    const response = await client.send(command);
+    if (!response.Body) {
+      return null;
+    }
+
+    return {
+      body: await response.Body.transformToByteArray(),
+      contentType: response.ContentType ?? "application/octet-stream",
+    };
+  } catch (error: unknown) {
     if (
       error &&
       typeof error === "object" &&

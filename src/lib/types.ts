@@ -20,6 +20,12 @@ import type {
   audienceMembers,
   workspaceMemories,
   epics,
+  knowledgeFolders,
+  knowledgeDocuments,
+  knowledgeDocumentTags,
+  knowledgeDocumentLinks,
+  issueKnowledgeDocuments,
+  knowledgeAssets,
 } from "./db/schema";
 import type { Status, Priority } from "./design-tokens";
 
@@ -42,6 +48,12 @@ export type Brand = typeof brands.$inferSelect;
 export type Epic = typeof epics.$inferSelect;
 export type EpicStatus = "active" | "completed" | "canceled";
 export type CreateEpicInput = { title: string; description?: string; dueDate?: Date };
+export type KnowledgeFolder = typeof knowledgeFolders.$inferSelect;
+export type KnowledgeDocument = typeof knowledgeDocuments.$inferSelect;
+export type KnowledgeDocumentTag = typeof knowledgeDocumentTags.$inferSelect;
+export type KnowledgeDocumentLink = typeof knowledgeDocumentLinks.$inferSelect;
+export type IssueKnowledgeDocument = typeof issueKnowledgeDocuments.$inferSelect;
+export type KnowledgeAsset = typeof knowledgeAssets.$inferSelect;
 
 // Attachment with signed URL for display
 export type AttachmentWithUrl = Attachment & { url: string };
@@ -344,3 +356,13 @@ export interface R2ChatConversation {
   };
   messages: R2ChatMessage[];
 }
+
+export type KnowledgeDocumentWithContent = KnowledgeDocument & {
+  content: string;
+  tags: string[];
+  backlinks: KnowledgeDocument[];
+};
+
+export type KnowledgeFolderWithStats = KnowledgeFolder & {
+  documentCount: number;
+};

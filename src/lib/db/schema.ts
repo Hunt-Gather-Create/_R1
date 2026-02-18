@@ -375,3 +375,104 @@ export const aiSuggestions = sqliteTable("ai_suggestions", {
   toolsRequired: text("tools_required"), // JSON array - hint for which tools
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
+
+// Knowledge Base folders (workspace-scoped tree)
+export const knowledgeFolders = sqliteTable("knowledge_folders", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  parentFolderId: text("parent_folder_id"),
+  name: text("name").notNull(),
+  path: text("path").notNull(), // e.g. "product/api"
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
+// Knowledge Base markdown documents
+export const knowledgeDocuments = sqliteTable("knowledge_documents", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  folderId: text("folder_id").references(() => knowledgeFolders.id, {
+    onDelete: "set null",
+  }),
+  title: text("title").notNull(),
+  slug: text("slug").notNull(),
+  storageKey: text("storage_key").notNull(),
+  contentHash: text("content_hash"),
+  summary: text("summary"),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
+// Extracted #tags for filtering and autocomplete
+export const knowledgeDocumentTags = sqliteTable(
+  "knowledge_document_tags",
+  {
+    documentId: text("document_id")
+      .notNull()
+      .references(() => knowledgeDocuments.id, { onDelete: "cascade" }),
+    tag: text("tag").notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.documentId, table.tag] }),
+  })
+);
+
+// Wiki-link graph between documents
+export const knowledgeDocumentLinks = sqliteTable(
+  "knowledge_document_links",
+  {
+    sourceDocumentId: text("source_document_id")
+      .notNull()
+      .references(() => knowledgeDocuments.id, { onDelete: "cascade" }),
+    targetDocumentId: text("target_document_id")
+      .notNull()
+      .references(() => knowledgeDocuments.id, { onDelete: "cascade" }),
+    linkType: text("link_type").notNull().default("wiki"), // wiki | ticket
+    createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.sourceDocumentId, table.targetDocumentId, table.linkType] }),
+  })
+);
+
+// Explicit issue -> knowledge document links
+export const issueKnowledgeDocuments = sqliteTable(
+  "issue_knowledge_documents",
+  {
+    issueId: text("issue_id")
+      .notNull()
+      .references(() => issues.id, { onDelete: "cascade" }),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => knowledgeDocuments.id, { onDelete: "cascade" }),
+    linkedBy: text("linked_by").references(() => users.id, { onDelete: "set null" }),
+    linkedAt: integer("linked_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.issueId, table.documentId] }),
+  })
+);
+
+// Knowledge assets (images embedded in markdown docs)
+export const knowledgeAssets = sqliteTable("knowledge_assets", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  documentId: text("document_id").references(() => knowledgeDocuments.id, {
+    onDelete: "cascade",
+  }),
+  filename: text("filename").notNull(),
+  mimeType: text("mime_type").notNull(),
+  size: integer("size").notNull(),
+  storageKey: text("storage_key").notNull(),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});

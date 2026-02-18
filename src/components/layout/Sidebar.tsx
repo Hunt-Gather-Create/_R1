@@ -19,6 +19,7 @@ import {
   Wand2,
   MessageSquare,
   Home,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { VIEW } from "@/lib/design-tokens";
@@ -303,6 +304,13 @@ export function Sidebar() {
             isCollapsed={sidebarCollapsed}
             href={workspace ? `/w/${workspace.slug}/chat` : undefined}
             shortcut="G A"
+          />
+          <NavItem
+            icon={<BookOpen className="w-4 h-4" />}
+            label="Knowledge"
+            isCollapsed={sidebarCollapsed}
+            href={workspace ? `/w/${workspace.slug}/knowledge` : undefined}
+            shortcut="G K"
           />
         </NavSection>
       </nav>

@@ -11,6 +11,7 @@ import {
   labels,
   users,
   issues,
+  knowledgeFolders,
 } from "../db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import type {
@@ -194,6 +195,18 @@ export async function createWorkspace(
       status: col.status,
     });
   }
+
+  // Create root knowledge base folder
+  await db.insert(knowledgeFolders).values({
+    id: crypto.randomUUID(),
+    workspaceId,
+    parentFolderId: null,
+    name: "Knowledge Base",
+    path: "knowledge-base",
+    createdBy: user.id,
+    createdAt: now,
+    updatedAt: now,
+  });
 
   // Create default labels based on purpose
   for (const label of config.defaultLabels) {
