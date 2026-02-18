@@ -50,7 +50,7 @@ fi
 
 if [ "$launch_claude" = true ]; then
   cd "$worktree_dir"
-  exec claude --chrome
+  exec claude --chrome --dangerously-skip-permissions
 else
   echo ""
   echo "Ready! Run:"
