@@ -10,6 +10,7 @@ CREATE TABLE `knowledge_folders` (
 	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE set null
 );
+--> statement-breakpoint
 CREATE TABLE `knowledge_documents` (
 	`id` text PRIMARY KEY NOT NULL,
 	`workspace_id` text NOT NULL,
@@ -28,12 +29,14 @@ CREATE TABLE `knowledge_documents` (
 	FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE set null,
 	FOREIGN KEY (`updated_by`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE set null
 );
+--> statement-breakpoint
 CREATE TABLE `knowledge_document_tags` (
 	`document_id` text NOT NULL,
 	`tag` text NOT NULL,
 	PRIMARY KEY(`document_id`, `tag`),
 	FOREIGN KEY (`document_id`) REFERENCES `knowledge_documents`(`id`) ON UPDATE no action ON DELETE cascade
 );
+--> statement-breakpoint
 CREATE TABLE `knowledge_document_links` (
 	`source_document_id` text NOT NULL,
 	`target_document_id` text NOT NULL,
@@ -43,6 +46,7 @@ CREATE TABLE `knowledge_document_links` (
 	FOREIGN KEY (`source_document_id`) REFERENCES `knowledge_documents`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`target_document_id`) REFERENCES `knowledge_documents`(`id`) ON UPDATE no action ON DELETE cascade
 );
+--> statement-breakpoint
 CREATE TABLE `issue_knowledge_documents` (
 	`issue_id` text NOT NULL,
 	`document_id` text NOT NULL,
@@ -53,6 +57,7 @@ CREATE TABLE `issue_knowledge_documents` (
 	FOREIGN KEY (`document_id`) REFERENCES `knowledge_documents`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`linked_by`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE set null
 );
+--> statement-breakpoint
 CREATE TABLE `knowledge_assets` (
 	`id` text PRIMARY KEY NOT NULL,
 	`workspace_id` text NOT NULL,
