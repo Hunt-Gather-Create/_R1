@@ -9,6 +9,15 @@ interface RouteContext {
   params: Promise<{ assetId: string }>;
 }
 
+const ALLOWED_IMAGE_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "image/gif",
+  "image/avif",
+]);
+
 export async function GET(_req: Request, context: RouteContext) {
   const userId = await getCurrentUserId();
   if (!userId) {
@@ -17,8 +26,18 @@ export async function GET(_req: Request, context: RouteContext) {
 
   const { assetId } = await context.params;
   const asset = await db
-    .select()
+    .select({
+      storageKey: knowledgeAssets.storageKey,
+      mimeType: knowledgeAssets.mimeType,
+    })
     .from(knowledgeAssets)
+    .innerJoin(
+      workspaceMembers,
+      and(
+        eq(workspaceMembers.workspaceId, knowledgeAssets.workspaceId),
+        eq(workspaceMembers.userId, userId)
+      )
+    )
     .where(eq(knowledgeAssets.id, assetId))
     .get();
 
@@ -26,30 +45,25 @@ export async function GET(_req: Request, context: RouteContext) {
     return NextResponse.json({ error: "Asset not found" }, { status: 404 });
   }
 
-  const member = await db
-    .select({ workspaceId: workspaceMembers.workspaceId })
-    .from(workspaceMembers)
-    .where(
-      and(
-        eq(workspaceMembers.workspaceId, asset.workspaceId),
-        eq(workspaceMembers.userId, userId)
-      )
-    )
-    .get();
-
-  if (!member) {
-    return NextResponse.json({ error: "Access denied" }, { status: 403 });
-  }
-
   const object = await getObjectBinary(asset.storageKey);
   if (!object) {
     return NextResponse.json({ error: "Asset content missing" }, { status: 404 });
   }
 
-  return new Response(object.body, {
+  const normalizedMimeType = asset.mimeType.toLowerCase().split(";")[0]?.trim() ?? "";
+  if (!ALLOWED_IMAGE_MIME_TYPES.has(normalizedMimeType)) {
+    return NextResponse.json({ error: "Unsupported asset type" }, { status: 415 });
+  }
+
+  const body = object.body.buffer.slice(
+    object.body.byteOffset,
+    object.body.byteOffset + object.body.byteLength
+  ) as ArrayBuffer;
+  return new Response(body, {
     headers: {
-      "Content-Type": object.contentType,
+      "Content-Type": normalizedMimeType,
       "Cache-Control": "private, max-age=300",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

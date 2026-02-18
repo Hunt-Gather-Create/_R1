@@ -468,6 +468,11 @@ export default function KnowledgeBasePage() {
         if (!folder || folder.parentFolderId === null || folder.parentFolderId === targetFolderId) {
           return;
         }
+        const descendantIds = getDescendantFolderIds(folders, folderId);
+        if (descendantIds.has(targetFolderId)) {
+          toast.error("Cannot move a folder into its own subfolder");
+          return;
+        }
 
         try {
           await moveFolder.mutateAsync({

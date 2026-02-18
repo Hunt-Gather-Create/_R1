@@ -30,6 +30,19 @@ import { getWorkspaceSlug, getWorkspaceIdFromIssue } from "./helpers";
 import { requireWorkspaceAccess } from "./workspace";
 
 const ROOT_FOLDER_NAME = "Knowledge Base";
+const MAX_KNOWLEDGE_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_KNOWLEDGE_IMAGE_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "image/gif",
+  "image/avif",
+]);
+
+function normalizeMimeType(mimeType: string): string {
+  return mimeType.trim().toLowerCase().split(";")[0] ?? "";
+}
 
 function slugify(input: string): string {
   const slug = input
@@ -153,25 +166,39 @@ async function syncDocumentTagsAndLinks(
     return;
   }
 
-  const targets: Array<{ id: string; title: string }> = [];
-  for (const title of wikiLinks) {
-    const target = await db
-      .select({
-        id: knowledgeDocuments.id,
-        title: knowledgeDocuments.title,
-      })
-      .from(knowledgeDocuments)
-      .where(
-        and(
-          eq(knowledgeDocuments.workspaceId, workspaceId),
-          sql`lower(${knowledgeDocuments.title}) = ${title.toLowerCase()}`
-        )
-      )
-      .get();
+  const linkTitles = wikiLinks.map((title) => title.toLowerCase());
+  const matchingTargets =
+    linkTitles.length > 0
+      ? await db
+          .select({
+            id: knowledgeDocuments.id,
+            title: knowledgeDocuments.title,
+            lowerTitle: sql<string>`lower(${knowledgeDocuments.title})`,
+          })
+          .from(knowledgeDocuments)
+          .where(
+            and(
+              eq(knowledgeDocuments.workspaceId, workspaceId),
+              inArray(sql<string>`lower(${knowledgeDocuments.title})`, linkTitles)
+            )
+          )
+      : [];
 
-    if (target && target.id !== documentId) {
-      targets.push(target);
-    }
+  const targetsByTitle = new Map<string, Array<{ id: string; title: string }>>();
+  for (const target of matchingTargets) {
+    const current = targetsByTitle.get(target.lowerTitle) ?? [];
+    current.push({ id: target.id, title: target.title });
+    targetsByTitle.set(target.lowerTitle, current);
+  }
+
+  const targets: Array<{ id: string; title: string }> = [];
+  for (const linkTitle of linkTitles) {
+    const candidates = targetsByTitle.get(linkTitle) ?? [];
+    if (candidates.length !== 1) continue;
+
+    const candidate = candidates[0];
+    if (candidate.id === documentId) continue;
+    targets.push(candidate);
   }
 
   const deduped = new Map<string, string>();
@@ -1232,12 +1259,13 @@ export async function createKnowledgeImageUpload(input: {
   size: number;
 }): Promise<{ uploadUrl: string; assetId: string; imageMarkdownUrl: string; storageKey: string }> {
   const { user } = await requireWorkspaceAccess(input.workspaceId, "member");
+  const mimeType = normalizeMimeType(input.mimeType);
 
-  if (!input.mimeType.startsWith("image/")) {
+  if (!ALLOWED_KNOWLEDGE_IMAGE_MIME_TYPES.has(mimeType)) {
     throw new Error("Only image uploads are supported");
   }
-  if (input.size > 10 * 1024 * 1024) {
-    throw new Error("Image size exceeds 10MB");
+  if (input.size <= 0 || input.size > MAX_KNOWLEDGE_IMAGE_SIZE_BYTES) {
+    throw new Error("Image size must be between 1 byte and 10MB");
   }
 
   const doc = await db
@@ -1255,14 +1283,14 @@ export async function createKnowledgeImageUpload(input: {
     input.filename
   );
   const assetId = crypto.randomUUID();
-  const uploadUrl = await generateUploadUrl(storageKey, input.mimeType);
+  const uploadUrl = await generateUploadUrl(storageKey, mimeType);
 
   await db.insert(knowledgeAssets).values({
     id: assetId,
     workspaceId: input.workspaceId,
     documentId: input.documentId,
     filename: input.filename,
-    mimeType: input.mimeType,
+    mimeType,
     size: input.size,
     storageKey,
     createdBy: user.id,

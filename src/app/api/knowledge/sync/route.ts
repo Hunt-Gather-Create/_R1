@@ -26,9 +26,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Knowledge sync failed:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Sync failed" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to sync knowledge index" }, { status: 500 });
   }
 }
