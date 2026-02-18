@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactElement,
+} from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,6 +60,7 @@ import {
   type LexicalCommand,
   type LexicalNode,
   type NodeKey,
+  type SerializedLexicalNode,
   TextNode,
   $isParagraphNode,
 } from "lexical";
@@ -86,7 +94,15 @@ const INSERT_IMAGE_COMMAND: LexicalCommand<InsertImagePayload> = createCommand(
   "INSERT_IMAGE_COMMAND"
 );
 
-class ImageNode extends DecoratorNode<JSX.Element> {
+function getSerializedStringField(
+  serializedNode: SerializedLexicalNode,
+  field: string
+): string | null {
+  const value = (serializedNode as Record<string, unknown>)[field];
+  return typeof value === "string" ? value : null;
+}
+
+class ImageNode extends DecoratorNode<ReactElement> {
   __src: string;
   __altText: string;
 
@@ -104,13 +120,15 @@ class ImageNode extends DecoratorNode<JSX.Element> {
     this.__altText = altText;
   }
 
-  static importJSON(serializedNode: {
-    src: string;
-    altText?: string;
-  }): ImageNode {
+  static importJSON(serializedNode: SerializedLexicalNode): ImageNode {
+    const src = getSerializedStringField(serializedNode, "src");
+    if (!src) {
+      throw new Error("Invalid serialized image node: missing src");
+    }
+
     return $createImageNode({
-      src: serializedNode.src,
-      altText: serializedNode.altText ?? "",
+      src,
+      altText: getSerializedStringField(serializedNode, "altText") ?? "",
     });
   }
 
@@ -134,7 +152,7 @@ class ImageNode extends DecoratorNode<JSX.Element> {
     return false;
   }
 
-  decorate(): JSX.Element {
+  decorate(): ReactElement {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
