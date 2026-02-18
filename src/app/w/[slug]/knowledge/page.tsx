@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   useParams,
   usePathname,
@@ -14,6 +15,7 @@ import {
   Code2,
   FilePlus2,
   FileText,
+  FileUp,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -30,6 +32,8 @@ import { getWorkspaceBySlug } from "@/lib/actions/workspace";
 import { createKnowledgeImageUpload } from "@/lib/actions/knowledge";
 import {
   useCreateKnowledgeDocument,
+  useCreateKnowledgeDocumentUpload,
+  useFinalizeKnowledgeDocumentUpload,
   useCreateKnowledgeFolder,
   useDeleteKnowledgeDocument,
   useDeleteKnowledgeFolder,
@@ -71,6 +75,24 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TreeView, type TreeDataItem } from "@/components/ui/tree-view";
+
+const KnowledgeDocumentPreview = dynamic(
+  () =>
+    import("@/components/knowledge/document-preview").then(
+      (module) => module.DocumentPreview
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-full w-full flex items-center justify-center text-sm text-muted-foreground">
+        Loading preview...
+      </div>
+    ),
+  }
+);
+
+const KNOWLEDGE_UPLOAD_ACCEPT =
+  ".md,.markdown,.txt,.csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,text/markdown,text/plain,text/csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 function getDescendantFolderIds(
   folders: Array<{ id: string; parentFolderId: string | null }>,
@@ -119,6 +141,7 @@ export default function KnowledgeBasePage() {
   const [newFolderName, setNewFolderName] = useState("");
   const [isCreateDocumentOpen, setIsCreateDocumentOpen] = useState(false);
   const [newDocumentTitle, setNewDocumentTitle] = useState("Untitled Document");
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const [documentToDelete, setDocumentToDelete] = useState<{
     id: string;
@@ -167,6 +190,8 @@ export default function KnowledgeBasePage() {
 
   const createFolder = useCreateKnowledgeFolder(workspaceId ?? "");
   const createDocument = useCreateKnowledgeDocument(workspaceId ?? "");
+  const createDocumentUpload = useCreateKnowledgeDocumentUpload(workspaceId ?? "");
+  const finalizeDocumentUpload = useFinalizeKnowledgeDocumentUpload(workspaceId ?? "");
   const updateDocument = useUpdateKnowledgeDocument(workspaceId ?? "");
   const deleteDocument = useDeleteKnowledgeDocument(workspaceId ?? "");
   const deleteFolder = useDeleteKnowledgeFolder(workspaceId ?? "");
@@ -174,11 +199,13 @@ export default function KnowledgeBasePage() {
   const moveFolder = useMoveKnowledgeFolder(workspaceId ?? "");
   const renameDocument = useRenameKnowledgeDocument(workspaceId ?? "");
   const renameFolder = useRenameKnowledgeFolder(workspaceId ?? "");
+  const previewGenerationInFlightRef = useRef<Set<string>>(new Set());
 
   const folders = useMemo(() => foldersQuery.data ?? [], [foldersQuery.data]);
   const documents = useMemo(() => documentsQuery.data ?? [], [documentsQuery.data]);
   const tags = tagsQuery.data ?? [];
   const selectedDoc = selectedDocumentQuery.data;
+  const selectedDocIsMarkdown = selectedDoc?.isMarkdown ?? false;
 
   const rootFolder = useMemo(
     () => folders.find((folder) => folder.parentFolderId === null) ?? null,
@@ -199,7 +226,7 @@ export default function KnowledgeBasePage() {
     if (doc.id === lastLoadedDocumentId) return;
 
     setEditorTitle(doc.title);
-    setEditorContent(doc.content);
+    setEditorContent(doc.content ?? "");
     setLastLoadedDocumentId(doc.id);
   }, [selectedDocumentQuery.data, lastLoadedDocumentId]);
 
@@ -212,7 +239,8 @@ export default function KnowledgeBasePage() {
     !!selectedDocumentId &&
     !!editorTitle.trim() &&
     !!selectedDoc &&
-    (editorTitle !== selectedDoc.title || editorContent !== selectedDoc.content);
+    (editorTitle !== selectedDoc.title ||
+      (selectedDocIsMarkdown && editorContent !== (selectedDoc.content ?? "")));
 
   const setSelectedDocumentInUrl = useCallback(
     (documentId: string | null) => {
@@ -237,6 +265,36 @@ export default function KnowledgeBasePage() {
     },
     [setSelectedDocumentInUrl]
   );
+
+  const runPreviewGeneration = useCallback(
+    async (documentId: string, silent: boolean = false) => {
+      const inFlight = previewGenerationInFlightRef.current;
+      if (inFlight.has(documentId)) return;
+      inFlight.add(documentId);
+
+      try {
+        const result = await finalizeDocumentUpload.mutateAsync(documentId);
+        if (!silent && result.previewStatus === "failed") {
+          toast.error(result.previewError || "Preview conversion failed");
+        }
+      } catch (error) {
+        if (!silent) {
+          toast.error(
+            error instanceof Error ? error.message : "Failed to generate preview"
+          );
+        }
+      } finally {
+        inFlight.delete(documentId);
+      }
+    },
+    [finalizeDocumentUpload]
+  );
+
+  useEffect(() => {
+    if (!selectedDoc || selectedDoc.isMarkdown) return;
+    if (selectedDoc.previewStatus !== "pending") return;
+    void runPreviewGeneration(selectedDoc.id, true);
+  }, [runPreviewGeneration, selectedDoc]);
 
   const handleCreateFolder = async () => {
     if (!workspaceId) return;
@@ -279,16 +337,73 @@ export default function KnowledgeBasePage() {
     }
   };
 
+  const handleSelectUploadFile = () => {
+    uploadInputRef.current?.click();
+  };
+
+  const handleUploadDocument = async (file: File) => {
+    if (!workspaceId) return;
+
+    let createdDocumentId: string | null = null;
+    try {
+      const { document, uploadUrl } = await createDocumentUpload.mutateAsync({
+        filename: file.name,
+        mimeType: file.type || "application/octet-stream",
+        size: file.size,
+        folderId: defaultParentFolderId,
+      });
+      createdDocumentId = document.id;
+
+      const uploadResponse = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": file.type || document.mimeType,
+        },
+        body: file,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("Failed to upload file to R2");
+      }
+
+      openDocument(document.id, document.folderId ?? null);
+      if (document.previewStatus === "pending") {
+        toast.success("File uploaded. Generating preview...");
+        void runPreviewGeneration(document.id, false);
+      } else {
+        toast.success("File uploaded");
+      }
+    } catch (error) {
+      if (createdDocumentId) {
+        try {
+          await deleteDocument.mutateAsync(createdDocumentId);
+        } catch (cleanupError) {
+          console.error("Failed to clean up uploaded knowledge file:", cleanupError);
+        }
+      }
+      toast.error(error instanceof Error ? error.message : "Failed to upload file");
+    }
+  };
+
   const handleSaveDocument = async () => {
     if (!selectedDocumentId) return;
 
     try {
-      await updateDocument.mutateAsync({
+      if (selectedDocIsMarkdown) {
+        await updateDocument.mutateAsync({
+          documentId: selectedDocumentId,
+          title: editorTitle.trim(),
+          content: editorContent,
+        });
+        toast.success("Document saved");
+        return;
+      }
+
+      await renameDocument.mutateAsync({
         documentId: selectedDocumentId,
         title: editorTitle.trim(),
-        content: editorContent,
       });
-      toast.success("Document saved");
+      toast.success("File renamed");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to save document");
     }
@@ -732,8 +847,28 @@ export default function KnowledgeBasePage() {
                   <FilePlus2 className="mr-2 h-4 w-4" />
                   New File
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    handleSelectUploadFile();
+                  }}
+                >
+                  <FileUp className="mr-2 h-4 w-4" />
+                  Upload File
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <input
+              ref={uploadInputRef}
+              type="file"
+              className="hidden"
+              accept={KNOWLEDGE_UPLOAD_ACCEPT}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (!file) return;
+                void handleUploadDocument(file);
+              }}
+            />
           </div>
 
           <div className="min-h-0 flex-1 overflow-auto p-2">
@@ -777,7 +912,7 @@ export default function KnowledgeBasePage() {
         <main className="flex-1 min-w-0 flex">
           {!selectedDocumentId ? (
             <div className="h-full w-full flex items-center justify-center text-sm text-muted-foreground">
-              Select a file to edit
+              Select a file to edit or preview
             </div>
           ) : selectedDocumentQuery.isLoading && !selectedDoc ? (
             <div className="h-full w-full flex items-center justify-center text-sm text-muted-foreground">
@@ -792,10 +927,12 @@ export default function KnowledgeBasePage() {
                   placeholder="Document title"
                   className="h-8"
                 />
-                <Button size="sm" variant="outline" onClick={() => setIsSourceOpen(true)}>
-                  <Code2 className="w-4 h-4 mr-1.5" />
-                  Source
-                </Button>
+                {selectedDocIsMarkdown ? (
+                  <Button size="sm" variant="outline" onClick={() => setIsSourceOpen(true)}>
+                    <Code2 className="w-4 h-4 mr-1.5" />
+                    Source
+                  </Button>
+                ) : null}
                 <Button size="sm" onClick={handleSaveDocument} disabled={!canSave}>
                   <Save className="w-4 h-4 mr-1.5" />
                   Save
@@ -817,14 +954,34 @@ export default function KnowledgeBasePage() {
               </div>
 
               <div className="flex-1 min-h-0 p-3 overflow-hidden">
-                <LexicalMarkdownEditor
-                  key={selectedDocumentId}
-                  value={editorContent}
-                  onChange={setEditorContent}
-                  placeholder="Write markdown..."
-                  className="h-full"
-                  onUploadImage={handleUploadImage}
-                />
+                {selectedDocIsMarkdown ? (
+                  <LexicalMarkdownEditor
+                    key={selectedDocumentId}
+                    value={editorContent}
+                    onChange={setEditorContent}
+                    placeholder="Write markdown..."
+                    className="h-full"
+                    onUploadImage={handleUploadImage}
+                  />
+                ) : selectedDoc ? (
+                  <KnowledgeDocumentPreview
+                    title={selectedDoc.title}
+                    previewUrl={selectedDoc.previewUrl}
+                    downloadUrl={selectedDoc.downloadUrl}
+                    fileExtension={selectedDoc.fileExtension}
+                    previewStatus={selectedDoc.previewStatus}
+                    previewError={selectedDoc.previewError}
+                    onRetryPreview={() => {
+                      if (!selectedDoc) return;
+                      void runPreviewGeneration(selectedDoc.id, false);
+                    }}
+                    isRetryingPreview={finalizeDocumentUpload.isPending}
+                  />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center text-sm text-muted-foreground">
+                    Preview unavailable
+                  </div>
+                )}
               </div>
 
               {selectedDoc?.backlinks?.length ? (

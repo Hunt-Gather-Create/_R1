@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import {
   createKnowledgeDocument,
+  createKnowledgeDocumentUpload,
+  finalizeKnowledgeDocumentUpload,
   createKnowledgeFolder,
   deleteKnowledgeFolder,
   deleteKnowledgeDocument,
@@ -103,6 +105,45 @@ export function useCreateKnowledgeDocument(workspaceId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.documents(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.tags(workspaceId) });
+    },
+  });
+}
+
+export function useCreateKnowledgeDocumentUpload(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      filename: string;
+      mimeType: string;
+      size: number;
+      folderId?: string | null;
+    }) =>
+      createKnowledgeDocumentUpload({
+        workspaceId,
+        filename: input.filename,
+        mimeType: input.mimeType,
+        size: input.size,
+        folderId: input.folderId,
+      }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.documents(workspaceId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.knowledge.document(result.document.id),
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.tags(workspaceId) });
+    },
+  });
+}
+
+export function useFinalizeKnowledgeDocumentUpload(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (documentId: string) => finalizeKnowledgeDocumentUpload(documentId),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.documents(workspaceId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.knowledge.document(result.documentId),
+      });
     },
   });
 }

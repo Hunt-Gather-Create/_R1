@@ -81,14 +81,15 @@ export function generateSkillAssetKey(
 }
 
 /**
- * Generate a storage key for a knowledge document markdown file.
- * Format: kb/{workspaceId}/{folderPath}/{slug}-{docId}.md
+ * Generate a storage key for a knowledge document.
+ * Format: kb/{workspaceId}/{folderPath}/{slug}-{docId}.{ext}
  */
 export function generateKnowledgeDocumentStorageKey(
   workspaceId: string,
   folderPath: string | null,
   slug: string,
-  documentId: string
+  documentId: string,
+  fileExtension: string = "md"
 ): string {
   const normalizedFolderPath = (folderPath ?? "")
     .split("/")
@@ -98,10 +99,26 @@ export function generateKnowledgeDocumentStorageKey(
 
   const base = `kb/${workspaceId}`;
   const safeSlug = slug.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const safeExtension = fileExtension
+    .trim()
+    .toLowerCase()
+    .replace(/^\./, "")
+    .replace(/[^a-z0-9]/g, "") || "bin";
   if (!normalizedFolderPath) {
-    return `${base}/${safeSlug}-${documentId}.md`;
+    return `${base}/${safeSlug}-${documentId}.${safeExtension}`;
   }
-  return `${base}/${normalizedFolderPath}/${safeSlug}-${documentId}.md`;
+  return `${base}/${normalizedFolderPath}/${safeSlug}-${documentId}.${safeExtension}`;
+}
+
+/**
+ * Generate a storage key for a PDF preview derived from an uploaded document.
+ * Format: kb-previews/{workspaceId}/{documentId}.pdf
+ */
+export function generateKnowledgeDocumentPreviewStorageKey(
+  workspaceId: string,
+  documentId: string
+): string {
+  return `kb-previews/${workspaceId}/${documentId}.pdf`;
 }
 
 /**
@@ -181,6 +198,29 @@ export async function deleteObject(storageKey: string): Promise<void> {
 export async function uploadContent(
   storageKey: string,
   content: string,
+  contentType: string,
+  metadata?: Record<string, string>
+): Promise<void> {
+  const client = createS3Client();
+  const bucket = getBucketName();
+
+  const command = new PutObjectCommand({
+    Bucket: bucket,
+    Key: storageKey,
+    Body: content,
+    ContentType: contentType,
+    Metadata: metadata,
+  });
+
+  await client.send(command);
+}
+
+/**
+ * Upload binary content directly to R2.
+ */
+export async function uploadBinaryContent(
+  storageKey: string,
+  content: Uint8Array,
   contentType: string,
   metadata?: Record<string, string>
 ): Promise<void> {

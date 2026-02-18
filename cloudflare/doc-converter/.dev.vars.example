@@ -1,0 +1,2 @@
+# Optional local dev auth token for /convert
+DOC_CONVERTER_API_TOKEN=
