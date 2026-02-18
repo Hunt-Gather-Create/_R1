@@ -19,6 +19,7 @@ import {
   FolderPlus,
   Layers,
   MoreHorizontal,
+  Pencil,
   Plus,
   RefreshCw,
   Save,
@@ -36,6 +37,10 @@ import {
   useKnowledgeDocuments,
   useKnowledgeFolders,
   useKnowledgeTags,
+  useMoveKnowledgeDocument,
+  useMoveKnowledgeFolder,
+  useRenameKnowledgeDocument,
+  useRenameKnowledgeFolder,
   useUpdateKnowledgeDocument,
 } from "@/lib/hooks";
 import { LexicalMarkdownEditor } from "@/components/ui/lexical-markdown-editor";
@@ -58,7 +63,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
@@ -116,10 +120,22 @@ export default function KnowledgeBasePage() {
   const [isCreateDocumentOpen, setIsCreateDocumentOpen] = useState(false);
   const [newDocumentTitle, setNewDocumentTitle] = useState("Untitled Document");
 
-  const [isDeleteDocumentOpen, setIsDeleteDocumentOpen] = useState(false);
+  const [documentToDelete, setDocumentToDelete] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const [documentToRename, setDocumentToRename] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const [renameDocumentTitle, setRenameDocumentTitle] = useState("");
   const [folderToDelete, setFolderToDelete] = useState<{ id: string; name: string } | null>(
     null
   );
+  const [folderToRename, setFolderToRename] = useState<{ id: string; name: string } | null>(
+    null
+  );
+  const [renameFolderName, setRenameFolderName] = useState("");
 
   useEffect(() => {
     if (!params.slug) return;
@@ -154,6 +170,10 @@ export default function KnowledgeBasePage() {
   const updateDocument = useUpdateKnowledgeDocument(workspaceId ?? "");
   const deleteDocument = useDeleteKnowledgeDocument(workspaceId ?? "");
   const deleteFolder = useDeleteKnowledgeFolder(workspaceId ?? "");
+  const moveDocument = useMoveKnowledgeDocument(workspaceId ?? "");
+  const moveFolder = useMoveKnowledgeFolder(workspaceId ?? "");
+  const renameDocument = useRenameKnowledgeDocument(workspaceId ?? "");
+  const renameFolder = useRenameKnowledgeFolder(workspaceId ?? "");
 
   const folders = useMemo(() => foldersQuery.data ?? [], [foldersQuery.data]);
   const documents = useMemo(() => documentsQuery.data ?? [], [documentsQuery.data]);
@@ -275,18 +295,45 @@ export default function KnowledgeBasePage() {
   };
 
   const handleDeleteDocument = async () => {
-    if (!selectedDocumentId) return;
+    if (!documentToDelete) return;
 
     try {
-      await deleteDocument.mutateAsync(selectedDocumentId);
-      setIsDeleteDocumentOpen(false);
-      setSelectedDocumentInUrl(null);
-      setEditorTitle("");
-      setEditorContent("");
-      setLastLoadedDocumentId(null);
+      await deleteDocument.mutateAsync(documentToDelete.id);
+      const isActiveDocument = selectedDocumentId === documentToDelete.id;
+
+      setDocumentToDelete(null);
+      if (isActiveDocument) {
+        setSelectedDocumentInUrl(null);
+        setEditorTitle("");
+        setEditorContent("");
+        setLastLoadedDocumentId(null);
+      }
+
       toast.success("Document deleted");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to delete document");
+    }
+  };
+
+  const handleRenameDocument = async () => {
+    if (!documentToRename) return;
+
+    const title = renameDocumentTitle.trim();
+    if (!title) return;
+
+    try {
+      await renameDocument.mutateAsync({
+        documentId: documentToRename.id,
+        title,
+      });
+      if (selectedDocumentId === documentToRename.id) {
+        setEditorTitle(title);
+      }
+      setDocumentToRename(null);
+      setRenameDocumentTitle("");
+      toast.success("File renamed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to rename file");
     }
   };
 
@@ -313,6 +360,25 @@ export default function KnowledgeBasePage() {
       toast.success("Folder deleted");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to delete folder");
+    }
+  };
+
+  const handleRenameFolder = async () => {
+    if (!folderToRename) return;
+
+    const name = renameFolderName.trim();
+    if (!name) return;
+
+    try {
+      await renameFolder.mutateAsync({
+        folderId: folderToRename.id,
+        name,
+      });
+      setFolderToRename(null);
+      setRenameFolderName("");
+      toast.success("Folder renamed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to rename folder");
     }
   };
 
@@ -370,6 +436,60 @@ export default function KnowledgeBasePage() {
     }
   };
 
+  const handleTreeItemDrop = useCallback(
+    async (source: TreeDataItem, target: TreeDataItem) => {
+      if (!target.id.startsWith("folder:")) return;
+
+      const targetFolderId = target.id.slice("folder:".length);
+      if (!targetFolderId || targetFolderId === "__unfiled__") return;
+
+      if (source.id.startsWith("doc:")) {
+        const documentId = source.id.slice("doc:".length);
+        const document = documents.find((candidate) => candidate.id === documentId);
+        if (!document || document.folderId === targetFolderId) return;
+
+        try {
+          await moveDocument.mutateAsync({ documentId, targetFolderId });
+          if (selectedDocumentId === documentId) {
+            setSelectedFolderId(targetFolderId);
+          }
+          toast.success("File moved");
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : "Failed to move file");
+        }
+        return;
+      }
+
+      if (source.id.startsWith("folder:")) {
+        const folderId = source.id.slice("folder:".length);
+        if (!folderId || folderId === "__unfiled__") return;
+
+        const folder = folders.find((candidate) => candidate.id === folderId);
+        if (!folder || folder.parentFolderId === null || folder.parentFolderId === targetFolderId) {
+          return;
+        }
+
+        try {
+          await moveFolder.mutateAsync({
+            folderId,
+            targetParentFolderId: targetFolderId,
+          });
+          toast.success("Folder moved");
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : "Failed to move folder");
+        }
+      }
+    },
+    [
+      documents,
+      folders,
+      moveDocument,
+      moveFolder,
+      selectedDocumentId,
+      setSelectedFolderId,
+    ]
+  );
+
   const treeItems = useMemo<TreeDataItem[]>(() => {
     const foldersByParentId = new Map<string | null, typeof folders>();
     for (const folder of folders) {
@@ -398,6 +518,44 @@ export default function KnowledgeBasePage() {
       name: doc.title,
       icon: FileText,
       onClick: () => openDocument(doc.id, doc.folderId ?? null),
+      draggable: true,
+      droppable: false,
+      actions: (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={`File actions for ${doc.title}`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={(event) => {
+                event.preventDefault();
+                setDocumentToRename({ id: doc.id, title: doc.title });
+                setRenameDocumentTitle(doc.title);
+              }}
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Rename File
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={(event) => {
+                event.preventDefault();
+                setDocumentToDelete({ id: doc.id, title: doc.title });
+              }}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete File
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
     });
 
     const createFolderNode = (folder: (typeof folders)[number]): TreeDataItem => {
@@ -416,6 +574,8 @@ export default function KnowledgeBasePage() {
         icon: Folder,
         openIcon: FolderOpen,
         onClick: () => setSelectedFolderId(folder.id),
+        draggable: folder.parentFolderId !== null,
+        droppable: true,
         actions:
           folder.parentFolderId !== null ? (
             <DropdownMenu>
@@ -430,6 +590,16 @@ export default function KnowledgeBasePage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setFolderToRename({ id: folder.id, name: folder.name });
+                    setRenameFolderName(folder.name);
+                  }}
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Rename Folder
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   variant="destructive"
                   onClick={(event) => {
@@ -464,6 +634,8 @@ export default function KnowledgeBasePage() {
         icon: Folder,
         openIcon: FolderOpen,
         onClick: () => setSelectedFolderId(null),
+        draggable: false,
+        droppable: false,
         children: unfiledDocuments,
       });
     }
@@ -566,6 +738,9 @@ export default function KnowledgeBasePage() {
               <TreeView
                 data={treeItems}
                 selectedItemId={selectedTreeItemId}
+                onItemDrop={(source, target) => {
+                  void handleTreeItemDrop(source, target);
+                }}
               />
             )}
           </div>
@@ -620,38 +795,20 @@ export default function KnowledgeBasePage() {
                   <Save className="w-4 h-4 mr-1.5" />
                   Save
                 </Button>
-                <AlertDialog
-                  open={isDeleteDocumentOpen}
-                  onOpenChange={setIsDeleteDocumentOpen}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive"
+                  onClick={() => {
+                    if (!selectedDocumentId) return;
+                    setDocumentToDelete({
+                      id: selectedDocumentId,
+                      title: editorTitle.trim() || selectedDoc?.title || "Untitled",
+                    });
+                  }}
                 >
-                  <AlertDialogTrigger asChild>
-                    <Button size="sm" variant="ghost" className="text-destructive">
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete file?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This action cannot be undone. This will permanently delete this
-                        file and its uploaded images.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        className="bg-destructive text-white hover:bg-destructive/90"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          void handleDeleteDocument();
-                        }}
-                        disabled={deleteDocument.isPending}
-                      >
-                        {deleteDocument.isPending ? "Deleting..." : "Delete"}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                  <Trash2 className="w-4 h-4" />
+                </Button>
               </div>
 
               <div className="flex-1 min-h-0 p-3 overflow-hidden">
@@ -787,6 +944,137 @@ export default function KnowledgeBasePage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={folderToRename !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setFolderToRename(null);
+            setRenameFolderName("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Folder</DialogTitle>
+            <DialogDescription>Choose a new folder name.</DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleRenameFolder();
+            }}
+          >
+            <Input
+              autoFocus
+              value={renameFolderName}
+              onChange={(event) => setRenameFolderName(event.target.value)}
+              placeholder="Folder name"
+            />
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setFolderToRename(null);
+                  setRenameFolderName("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={!renameFolderName.trim() || renameFolder.isPending}
+              >
+                {renameFolder.isPending ? "Renaming..." : "Rename Folder"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={documentToRename !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDocumentToRename(null);
+            setRenameDocumentTitle("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename File</DialogTitle>
+            <DialogDescription>Choose a new file name.</DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleRenameDocument();
+            }}
+          >
+            <Input
+              autoFocus
+              value={renameDocumentTitle}
+              onChange={(event) => setRenameDocumentTitle(event.target.value)}
+              placeholder="File title"
+            />
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setDocumentToRename(null);
+                  setRenameDocumentTitle("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={!renameDocumentTitle.trim() || renameDocument.isPending}
+              >
+                {renameDocument.isPending ? "Renaming..." : "Rename File"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={documentToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDocumentToDelete(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete file?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete{" "}
+              {documentToDelete ? `"${documentToDelete.title}"` : "this file"} and its
+              uploaded images.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDeleteDocument();
+              }}
+              disabled={deleteDocument.isPending}
+            >
+              {deleteDocument.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={folderToDelete !== null}

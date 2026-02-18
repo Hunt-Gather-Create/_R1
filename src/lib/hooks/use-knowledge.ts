@@ -13,6 +13,10 @@ import {
   getKnowledgeFolders,
   getKnowledgeTags,
   linkKnowledgeDocumentToIssue,
+  moveKnowledgeDocument,
+  moveKnowledgeFolder,
+  renameKnowledgeDocument,
+  renameKnowledgeFolder,
   unlinkKnowledgeDocumentFromIssue,
   updateKnowledgeDocument,
 } from "@/lib/actions/knowledge";
@@ -135,6 +139,59 @@ export function useDeleteKnowledgeFolder(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (folderId: string) => deleteKnowledgeFolder(folderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.folders(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.documents(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.tags(workspaceId) });
+    },
+  });
+}
+
+export function useMoveKnowledgeDocument(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { documentId: string; targetFolderId: string | null }) =>
+      moveKnowledgeDocument(input),
+    onSuccess: (doc) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.documents(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.document(doc.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.folders(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.tags(workspaceId) });
+    },
+  });
+}
+
+export function useRenameKnowledgeDocument(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { documentId: string; title: string }) =>
+      renameKnowledgeDocument(input),
+    onSuccess: (doc) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.documents(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.document(doc.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.folders(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.tags(workspaceId) });
+    },
+  });
+}
+
+export function useMoveKnowledgeFolder(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { folderId: string; targetParentFolderId: string | null }) =>
+      moveKnowledgeFolder(input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.folders(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.documents(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.tags(workspaceId) });
+    },
+  });
+}
+
+export function useRenameKnowledgeFolder(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { folderId: string; name: string }) => renameKnowledgeFolder(input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.folders(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.documents(workspaceId) });

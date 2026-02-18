@@ -103,6 +103,13 @@ function collectFolderIdsForDelete(
   return [...folderIds];
 }
 
+function replacePathPrefix(path: string, oldPrefix: string, newPrefix: string): string {
+  if (path === oldPrefix) return newPrefix;
+  const oldWithSlash = `${oldPrefix}/`;
+  if (!path.startsWith(oldWithSlash)) return path;
+  return `${newPrefix}${path.slice(oldPrefix.length)}`;
+}
+
 async function deleteStorageKeys(storageKeys: string[]): Promise<void> {
   if (storageKeys.length === 0) return;
 
@@ -617,6 +624,507 @@ export async function deleteKnowledgeFolder(folderId: string): Promise<void> {
 
   const workspaceSlug = await getWorkspaceSlug(folder.workspaceId);
   revalidatePath(workspaceSlug ? `/w/${workspaceSlug}/knowledge` : "/");
+}
+
+export async function moveKnowledgeDocument(input: {
+  documentId: string;
+  targetFolderId: string | null;
+}): Promise<KnowledgeDocument> {
+  const existing = await db
+    .select()
+    .from(knowledgeDocuments)
+    .where(eq(knowledgeDocuments.id, input.documentId))
+    .get();
+
+  if (!existing) {
+    throw new Error("Document not found");
+  }
+
+  const { user } = await requireWorkspaceAccess(existing.workspaceId, "member");
+  const rootFolder = await ensureKnowledgeRootFolder(existing.workspaceId);
+  const targetFolderId = input.targetFolderId ?? rootFolder.id;
+
+  const targetFolder = await db
+    .select()
+    .from(knowledgeFolders)
+    .where(
+      and(
+        eq(knowledgeFolders.id, targetFolderId),
+        eq(knowledgeFolders.workspaceId, existing.workspaceId)
+      )
+    )
+    .get();
+
+  if (!targetFolder) {
+    throw new Error("Target folder not found");
+  }
+
+  if (existing.folderId === targetFolderId) {
+    return existing;
+  }
+
+  const nextStorageKey = generateKnowledgeDocumentStorageKey(
+    existing.workspaceId,
+    targetFolder.path,
+    existing.slug,
+    existing.id
+  );
+
+  if (nextStorageKey !== existing.storageKey) {
+    const content = await getContent(existing.storageKey);
+    if (content === null) {
+      throw new Error("Document content missing in R2 storage");
+    }
+
+    const tags = extractTags(content);
+    await uploadContent(nextStorageKey, content, "text/markdown; charset=utf-8", {
+      workspace_id: existing.workspaceId,
+      title: existing.title,
+      tags: tags.join(","),
+      folder_path: targetFolder.path,
+    });
+  }
+
+  await db
+    .update(knowledgeDocuments)
+    .set({
+      folderId: targetFolderId,
+      storageKey: nextStorageKey,
+      updatedBy: user.id,
+      updatedAt: new Date(),
+    })
+    .where(eq(knowledgeDocuments.id, existing.id));
+
+  const updated = await db
+    .select()
+    .from(knowledgeDocuments)
+    .where(eq(knowledgeDocuments.id, existing.id))
+    .get();
+
+  if (!updated) {
+    throw new Error("Document not found");
+  }
+
+  if (nextStorageKey !== existing.storageKey) {
+    try {
+      await deleteObject(existing.storageKey);
+    } catch (error) {
+      console.error("Failed to delete old knowledge document from R2:", error);
+    }
+  }
+
+  const workspaceSlug = await getWorkspaceSlug(existing.workspaceId);
+  revalidatePath(workspaceSlug ? `/w/${workspaceSlug}/knowledge` : "/");
+
+  return updated;
+}
+
+export async function renameKnowledgeDocument(input: {
+  documentId: string;
+  title: string;
+}): Promise<KnowledgeDocument> {
+  const existing = await db
+    .select()
+    .from(knowledgeDocuments)
+    .where(eq(knowledgeDocuments.id, input.documentId))
+    .get();
+
+  if (!existing) {
+    throw new Error("Document not found");
+  }
+
+  const { user } = await requireWorkspaceAccess(existing.workspaceId, "member");
+
+  const title = input.title.trim();
+  if (!title) {
+    throw new Error("Document title is required");
+  }
+
+  if (existing.title === title) {
+    return existing;
+  }
+
+  const slug = slugify(title);
+  const folderPath = await getFolderPath(existing.folderId);
+  const nextStorageKey = generateKnowledgeDocumentStorageKey(
+    existing.workspaceId,
+    folderPath,
+    slug,
+    existing.id
+  );
+
+  if (nextStorageKey !== existing.storageKey) {
+    const content = await getContent(existing.storageKey);
+    if (content === null) {
+      throw new Error("Document content missing in R2 storage");
+    }
+
+    const tags = extractTags(content);
+    await uploadContent(nextStorageKey, content, "text/markdown; charset=utf-8", {
+      workspace_id: existing.workspaceId,
+      title,
+      tags: tags.join(","),
+      folder_path: folderPath ?? "",
+    });
+
+  }
+
+  await db
+    .update(knowledgeDocuments)
+    .set({
+      title,
+      slug,
+      storageKey: nextStorageKey,
+      updatedBy: user.id,
+      updatedAt: new Date(),
+    })
+    .where(eq(knowledgeDocuments.id, existing.id));
+
+  const updated = await db
+    .select()
+    .from(knowledgeDocuments)
+    .where(eq(knowledgeDocuments.id, existing.id))
+    .get();
+
+  if (!updated) {
+    throw new Error("Document not found");
+  }
+
+  if (nextStorageKey !== existing.storageKey) {
+    try {
+      await deleteObject(existing.storageKey);
+    } catch (error) {
+      console.error("Failed to delete old knowledge document from R2:", error);
+    }
+  }
+
+  const workspaceSlug = await getWorkspaceSlug(existing.workspaceId);
+  revalidatePath(workspaceSlug ? `/w/${workspaceSlug}/knowledge` : "/");
+
+  return updated;
+}
+
+export async function moveKnowledgeFolder(input: {
+  folderId: string;
+  targetParentFolderId: string | null;
+}): Promise<KnowledgeFolder> {
+  const folder = await db
+    .select()
+    .from(knowledgeFolders)
+    .where(eq(knowledgeFolders.id, input.folderId))
+    .get();
+
+  if (!folder) {
+    throw new Error("Folder not found");
+  }
+
+  const { user } = await requireWorkspaceAccess(folder.workspaceId, "member");
+  const rootFolder = await ensureKnowledgeRootFolder(folder.workspaceId);
+
+  if (folder.parentFolderId === null) {
+    throw new Error("Root folder cannot be moved");
+  }
+
+  const targetParentFolderId = input.targetParentFolderId ?? rootFolder.id;
+  const targetParent = await db
+    .select()
+    .from(knowledgeFolders)
+    .where(
+      and(
+        eq(knowledgeFolders.id, targetParentFolderId),
+        eq(knowledgeFolders.workspaceId, folder.workspaceId)
+      )
+    )
+    .get();
+
+  if (!targetParent) {
+    throw new Error("Target folder not found");
+  }
+
+  if (targetParent.id === folder.id) {
+    throw new Error("Folder cannot be moved into itself");
+  }
+
+  if (folder.parentFolderId === targetParent.id) {
+    return folder;
+  }
+
+  const workspaceFolders = await db
+    .select({
+      id: knowledgeFolders.id,
+      parentFolderId: knowledgeFolders.parentFolderId,
+      path: knowledgeFolders.path,
+    })
+    .from(knowledgeFolders)
+    .where(eq(knowledgeFolders.workspaceId, folder.workspaceId));
+
+  const folderIdsToMove = collectFolderIdsForDelete(workspaceFolders, folder.id);
+  if (folderIdsToMove.includes(targetParent.id)) {
+    throw new Error("Folder cannot be moved into its own child folder");
+  }
+
+  const oldPath = folder.path;
+  const newPath = `${targetParent.path}/${slugify(folder.name)}`;
+  const nextFolderPathById = new Map<string, string>();
+  nextFolderPathById.set(folder.id, newPath);
+
+  const now = new Date();
+  await db
+    .update(knowledgeFolders)
+    .set({
+      parentFolderId: targetParent.id,
+      path: newPath,
+      updatedAt: now,
+    })
+    .where(eq(knowledgeFolders.id, folder.id));
+
+  const descendants = workspaceFolders.filter(
+    (candidate) => candidate.id !== folder.id && folderIdsToMove.includes(candidate.id)
+  );
+  const oldDocumentStorageKeys: string[] = [];
+  for (const descendant of descendants) {
+    const descendantPath = replacePathPrefix(descendant.path, oldPath, newPath);
+    nextFolderPathById.set(descendant.id, descendantPath);
+    await db
+      .update(knowledgeFolders)
+      .set({
+        path: descendantPath,
+        updatedAt: now,
+      })
+      .where(eq(knowledgeFolders.id, descendant.id));
+  }
+
+  const docsInMovedFolders = await db
+    .select({
+      id: knowledgeDocuments.id,
+      folderId: knowledgeDocuments.folderId,
+      title: knowledgeDocuments.title,
+      slug: knowledgeDocuments.slug,
+      storageKey: knowledgeDocuments.storageKey,
+    })
+    .from(knowledgeDocuments)
+    .where(
+      and(
+        eq(knowledgeDocuments.workspaceId, folder.workspaceId),
+        inArray(knowledgeDocuments.folderId, folderIdsToMove)
+      )
+    );
+
+  for (const doc of docsInMovedFolders) {
+    if (!doc.folderId) continue;
+
+    const nextFolderPath = nextFolderPathById.get(doc.folderId);
+    if (!nextFolderPath) continue;
+
+    const nextStorageKey = generateKnowledgeDocumentStorageKey(
+      folder.workspaceId,
+      nextFolderPath,
+      doc.slug,
+      doc.id
+    );
+
+    if (nextStorageKey === doc.storageKey) continue;
+
+    const content = await getContent(doc.storageKey);
+    if (content === null) {
+      throw new Error(`Document content missing in R2 storage for ${doc.id}`);
+    }
+
+    const tags = extractTags(content);
+    await uploadContent(nextStorageKey, content, "text/markdown; charset=utf-8", {
+      workspace_id: folder.workspaceId,
+      title: doc.title,
+      tags: tags.join(","),
+      folder_path: nextFolderPath,
+    });
+
+    await db
+      .update(knowledgeDocuments)
+      .set({
+        storageKey: nextStorageKey,
+        updatedBy: user.id,
+        updatedAt: now,
+      })
+      .where(eq(knowledgeDocuments.id, doc.id));
+
+    oldDocumentStorageKeys.push(doc.storageKey);
+  }
+
+  await deleteStorageKeys(oldDocumentStorageKeys);
+
+  const updated = await db
+    .select()
+    .from(knowledgeFolders)
+    .where(eq(knowledgeFolders.id, folder.id))
+    .get();
+
+  if (!updated) {
+    throw new Error("Folder not found");
+  }
+
+  const workspaceSlug = await getWorkspaceSlug(folder.workspaceId);
+  revalidatePath(workspaceSlug ? `/w/${workspaceSlug}/knowledge` : "/");
+
+  return updated;
+}
+
+export async function renameKnowledgeFolder(input: {
+  folderId: string;
+  name: string;
+}): Promise<KnowledgeFolder> {
+  const folder = await db
+    .select()
+    .from(knowledgeFolders)
+    .where(eq(knowledgeFolders.id, input.folderId))
+    .get();
+
+  if (!folder) {
+    throw new Error("Folder not found");
+  }
+
+  const { user } = await requireWorkspaceAccess(folder.workspaceId, "member");
+
+  if (folder.parentFolderId === null) {
+    throw new Error("Root folder cannot be renamed");
+  }
+
+  const name = input.name.trim();
+  if (!name) {
+    throw new Error("Folder name is required");
+  }
+
+  if (folder.name === name) {
+    return folder;
+  }
+
+  const parentFolder = await db
+    .select()
+    .from(knowledgeFolders)
+    .where(
+      and(
+        eq(knowledgeFolders.id, folder.parentFolderId),
+        eq(knowledgeFolders.workspaceId, folder.workspaceId)
+      )
+    )
+    .get();
+
+  if (!parentFolder) {
+    throw new Error("Parent folder not found");
+  }
+
+  const workspaceFolders = await db
+    .select({
+      id: knowledgeFolders.id,
+      parentFolderId: knowledgeFolders.parentFolderId,
+      path: knowledgeFolders.path,
+    })
+    .from(knowledgeFolders)
+    .where(eq(knowledgeFolders.workspaceId, folder.workspaceId));
+
+  const folderIdsToRename = collectFolderIdsForDelete(workspaceFolders, folder.id);
+  const oldPath = folder.path;
+  const newPath = `${parentFolder.path}/${slugify(name)}`;
+  const nextFolderPathById = new Map<string, string>();
+  nextFolderPathById.set(folder.id, newPath);
+
+  const now = new Date();
+  await db
+    .update(knowledgeFolders)
+    .set({
+      name,
+      path: newPath,
+      updatedAt: now,
+    })
+    .where(eq(knowledgeFolders.id, folder.id));
+
+  const descendants = workspaceFolders.filter(
+    (candidate) => candidate.id !== folder.id && folderIdsToRename.includes(candidate.id)
+  );
+  const oldDocumentStorageKeys: string[] = [];
+  for (const descendant of descendants) {
+    const descendantPath = replacePathPrefix(descendant.path, oldPath, newPath);
+    nextFolderPathById.set(descendant.id, descendantPath);
+    await db
+      .update(knowledgeFolders)
+      .set({
+        path: descendantPath,
+        updatedAt: now,
+      })
+      .where(eq(knowledgeFolders.id, descendant.id));
+  }
+
+  const docsInRenamedFolders = await db
+    .select({
+      id: knowledgeDocuments.id,
+      folderId: knowledgeDocuments.folderId,
+      title: knowledgeDocuments.title,
+      slug: knowledgeDocuments.slug,
+      storageKey: knowledgeDocuments.storageKey,
+    })
+    .from(knowledgeDocuments)
+    .where(
+      and(
+        eq(knowledgeDocuments.workspaceId, folder.workspaceId),
+        inArray(knowledgeDocuments.folderId, folderIdsToRename)
+      )
+    );
+
+  for (const doc of docsInRenamedFolders) {
+    if (!doc.folderId) continue;
+
+    const nextFolderPath = nextFolderPathById.get(doc.folderId);
+    if (!nextFolderPath) continue;
+
+    const nextStorageKey = generateKnowledgeDocumentStorageKey(
+      folder.workspaceId,
+      nextFolderPath,
+      doc.slug,
+      doc.id
+    );
+
+    if (nextStorageKey === doc.storageKey) continue;
+
+    const content = await getContent(doc.storageKey);
+    if (content === null) {
+      throw new Error(`Document content missing in R2 storage for ${doc.id}`);
+    }
+
+    const tags = extractTags(content);
+    await uploadContent(nextStorageKey, content, "text/markdown; charset=utf-8", {
+      workspace_id: folder.workspaceId,
+      title: doc.title,
+      tags: tags.join(","),
+      folder_path: nextFolderPath,
+    });
+
+    await db
+      .update(knowledgeDocuments)
+      .set({
+        storageKey: nextStorageKey,
+        updatedBy: user.id,
+        updatedAt: now,
+      })
+      .where(eq(knowledgeDocuments.id, doc.id));
+
+    oldDocumentStorageKeys.push(doc.storageKey);
+  }
+
+  await deleteStorageKeys(oldDocumentStorageKeys);
+
+  const updated = await db
+    .select()
+    .from(knowledgeFolders)
+    .where(eq(knowledgeFolders.id, folder.id))
+    .get();
+
+  if (!updated) {
+    throw new Error("Folder not found");
+  }
+
+  const workspaceSlug = await getWorkspaceSlug(folder.workspaceId);
+  revalidatePath(workspaceSlug ? `/w/${workspaceSlug}/knowledge` : "/");
+
+  return updated;
 }
 
 export async function getIssueKnowledgeDocuments(issueId: string): Promise<KnowledgeDocument[]> {

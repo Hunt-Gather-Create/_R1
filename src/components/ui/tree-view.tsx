@@ -13,6 +13,8 @@ export type TreeDataItem = {
   children?: TreeDataItem[];
   actions?: React.ReactNode;
   onClick?: () => void;
+  draggable?: boolean;
+  droppable?: boolean;
   disabled?: boolean;
   className?: string;
 };
@@ -34,6 +36,7 @@ type TreeViewProps = React.HTMLAttributes<HTMLDivElement> & {
   defaultNodeIcon?: React.ComponentType<{ className?: string }>;
   defaultLeafIcon?: React.ComponentType<{ className?: string }>;
   renderItem?: (params: TreeRenderItemParams) => React.ReactNode;
+  onItemDrop?: (source: TreeDataItem, target: TreeDataItem) => void;
 };
 
 function flattenNodeIds(items: TreeDataItem[]): string[] {
@@ -88,6 +91,20 @@ function getNodeIcon(
   return hasChildren ? defaultNodeIcon : defaultLeafIcon;
 }
 
+function flattenTreeItems(items: TreeDataItem[]): TreeDataItem[] {
+  const flat: TreeDataItem[] = [];
+  const walk = (nodes: TreeDataItem[]) => {
+    for (const node of nodes) {
+      flat.push(node);
+      if (node.children?.length) {
+        walk(node.children);
+      }
+    }
+  };
+  walk(items);
+  return flat;
+}
+
 export function TreeView({
   data,
   selectedItemId,
@@ -96,6 +113,7 @@ export function TreeView({
   defaultNodeIcon,
   defaultLeafIcon,
   renderItem,
+  onItemDrop,
   className,
   ...props
 }: TreeViewProps) {
@@ -114,6 +132,15 @@ export function TreeView({
 
     return new Set(findAncestorIds(items, selectedItemId));
   });
+  const [draggedItemId, setDraggedItemId] = React.useState<string | null>(null);
+
+  const itemById = React.useMemo(() => {
+    const map = new Map<string, TreeDataItem>();
+    for (const item of flattenTreeItems(items)) {
+      map.set(item.id, item);
+    }
+    return map;
+  }, [items]);
 
   React.useEffect(() => {
     if (selectedItemId === undefined) return;
@@ -161,6 +188,17 @@ export function TreeView({
     });
   }, []);
 
+  const handleItemDrop = React.useCallback(
+    (sourceId: string, targetId: string) => {
+      if (!onItemDrop) return;
+      const source = itemById.get(sourceId);
+      const target = itemById.get(targetId);
+      if (!source || !target || source.id === target.id) return;
+      onItemDrop(source, target);
+    },
+    [itemById, onItemDrop]
+  );
+
   return (
     <div className={cn("relative overflow-hidden", className)} role="tree" {...props}>
       <ul className="space-y-1">
@@ -176,6 +214,9 @@ export function TreeView({
             defaultLeafIcon={defaultLeafIcon}
             defaultNodeIcon={defaultNodeIcon}
             renderItem={renderItem}
+            draggedItemId={draggedItemId}
+            setDraggedItemId={setDraggedItemId}
+            onItemDrop={handleItemDrop}
           />
         ))}
       </ul>
@@ -193,6 +234,9 @@ type TreeNodeItemProps = {
   defaultNodeIcon?: React.ComponentType<{ className?: string }>;
   defaultLeafIcon?: React.ComponentType<{ className?: string }>;
   renderItem?: (params: TreeRenderItemParams) => React.ReactNode;
+  draggedItemId: string | null;
+  setDraggedItemId: (id: string | null) => void;
+  onItemDrop: (sourceId: string, targetId: string) => void;
 };
 
 function TreeNodeItem({
@@ -205,10 +249,16 @@ function TreeNodeItem({
   defaultNodeIcon,
   defaultLeafIcon,
   renderItem,
+  draggedItemId,
+  setDraggedItemId,
+  onItemDrop,
 }: TreeNodeItemProps) {
   const hasChildren = !!item.children?.length;
   const isSelected = selectedItemId === item.id;
   const isOpen = hasChildren && expandedItemIds.has(item.id);
+  const canDrop = item.droppable !== false && !item.disabled;
+  const isDragging = draggedItemId === item.id;
+  const [isDragOver, setIsDragOver] = React.useState(false);
   const Icon = getNodeIcon(
     item,
     isSelected,
@@ -221,6 +271,41 @@ function TreeNodeItem({
     ? React.createElement(Icon, { className: "h-4 w-4 shrink-0" })
     : null;
 
+  const handleDragStart = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!item.draggable || item.disabled) {
+      event.preventDefault();
+      return;
+    }
+
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", item.id);
+    setDraggedItemId(item.id);
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!draggedItemId || draggedItemId === item.id || !canDrop) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  const handleDragLeave = () => {
+    if (isDragOver) setIsDragOver(false);
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!draggedItemId || draggedItemId === item.id || !canDrop) return;
+    event.preventDefault();
+    setIsDragOver(false);
+    onItemDrop(draggedItemId, item.id);
+    setDraggedItemId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItemId(null);
+    setIsDragOver(false);
+  };
+
   return (
     <li>
       <div
@@ -228,10 +313,18 @@ function TreeNodeItem({
           "group relative flex min-h-8 items-center rounded-md pr-2",
           "hover:bg-accent/60",
           isSelected && "bg-accent text-accent-foreground",
+          isDragOver && "bg-primary/20",
+          isDragging && "opacity-60",
           item.disabled && "cursor-not-allowed opacity-50",
           item.className
         )}
         style={{ paddingLeft: 8 + level * 14 }}
+        draggable={!!item.draggable && !item.disabled}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onDragEnd={handleDragEnd}
       >
         {hasChildren ? (
           <button
@@ -302,6 +395,9 @@ function TreeNodeItem({
               defaultLeafIcon={defaultLeafIcon}
               defaultNodeIcon={defaultNodeIcon}
               renderItem={renderItem}
+              draggedItemId={draggedItemId}
+              setDraggedItemId={setDraggedItemId}
+              onItemDrop={onItemDrop}
             />
           ))}
         </ul>
