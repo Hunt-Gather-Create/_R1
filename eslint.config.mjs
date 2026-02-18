@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Legacy local assets from prior preview integration.
+    "public/nutrient-viewer/**",
   ]),
 ]);
 

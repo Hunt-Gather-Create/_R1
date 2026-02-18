@@ -114,6 +114,8 @@ export {
   useKnowledgeTags,
   useCreateKnowledgeFolder,
   useCreateKnowledgeDocument,
+  useCreateKnowledgeDocumentUpload,
+  useFinalizeKnowledgeDocumentUpload,
   useUpdateKnowledgeDocument,
   useDeleteKnowledgeDocument,
   useDeleteKnowledgeFolder,

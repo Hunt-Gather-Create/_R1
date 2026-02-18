@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kb-doc-converter",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-02-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "DOC_CONVERTER",
+        "class_name": "DocConverterContainer"
+      }
+    ]
+  },
+  "containers": [
+    {
+      "class_name": "DocConverterContainer",
+      "image": "./Dockerfile",
+      "name": "kb-doc-converter-docconvertercontainer"
+    }
+  ],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["DocConverterContainer"]
+    }
+  ]
+}

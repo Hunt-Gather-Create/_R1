@@ -358,7 +358,12 @@ export interface R2ChatConversation {
 }
 
 export type KnowledgeDocumentWithContent = KnowledgeDocument & {
-  content: string;
+  content: string | null;
+  isMarkdown: boolean;
+  previewUrl: string | null;
+  downloadUrl: string;
+  previewStatus: "ready" | "pending" | "failed";
+  previewError: string | null;
   tags: string[];
   backlinks: KnowledgeDocument[];
 };

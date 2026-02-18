@@ -390,7 +390,7 @@ export const knowledgeFolders = sqliteTable("knowledge_folders", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
-// Knowledge Base markdown documents
+// Knowledge Base documents
 export const knowledgeDocuments = sqliteTable("knowledge_documents", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   workspaceId: text("workspace_id")
@@ -401,7 +401,14 @@ export const knowledgeDocuments = sqliteTable("knowledge_documents", {
   }),
   title: text("title").notNull(),
   slug: text("slug").notNull(),
+  mimeType: text("mime_type").notNull().default("text/markdown"),
+  fileExtension: text("file_extension").notNull().default("md"),
+  size: integer("size").notNull().default(0),
   storageKey: text("storage_key").notNull(),
+  previewStorageKey: text("preview_storage_key"),
+  previewMimeType: text("preview_mime_type"),
+  previewStatus: text("preview_status").notNull().default("ready"),
+  previewError: text("preview_error"),
   contentHash: text("content_hash"),
   summary: text("summary"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
