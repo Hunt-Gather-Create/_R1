@@ -1,8 +1,8 @@
-import { escapeHtml, htmlWrapper } from "./index";
+import { escapeHtml, htmlWrapper, profileImageHtml } from "./index";
 
 export function renderInstagramReel(content: unknown, mediaUrls?: string[]): string {
   const c = content as {
-    profile?: { username?: string };
+    profile?: { username?: string; image?: string; imageBackgroundColor?: string | null };
     caption?: string;
     content?: { prompt?: string; altText?: string };
     cta?: { text?: string };
@@ -10,7 +10,15 @@ export function renderInstagramReel(content: unknown, mediaUrls?: string[]): str
     comments?: number;
   };
 
-  const username = escapeHtml(c.profile?.username || "Your Brand");
+  const profile = c.profile;
+  const username = escapeHtml(profile?.username || "Your Brand");
+  const profileImg = profileImageHtml(
+    profile?.image,
+    profile?.imageBackgroundColor,
+    32,
+    username,
+    true
+  );
   const caption = escapeHtml(c.caption || "");
   const ctaText = escapeHtml(c.cta?.text || "Learn more");
   const likes = c.likes ?? 15;
@@ -26,7 +34,7 @@ export function renderInstagramReel(content: unknown, mediaUrls?: string[]): str
     <div style="display:flex;justify-content:space-between;align-items:flex-end;">
       <div style="flex:1;color:#fff;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-          <div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.3);"></div>
+          ${profileImg}
           <span style="font-weight:600;font-size:13px;">${username}</span>
         </div>
         <div style="font-size:13px;margin-bottom:12px;">${caption}</div>

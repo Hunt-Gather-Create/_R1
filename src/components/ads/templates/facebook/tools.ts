@@ -7,7 +7,7 @@ export const FacebookInStreamVideoTool = {
     name: z.string().describe('Name of the Facebook in-stream video ad'),
     type: z.enum(['ad-template:facebook-in-stream-video']),
     content: z.object({
-      company: z.string().describe('Company name'),
+      company: z.string().describe('Company name. When workspace has a brand, use the brand name. Profile image and URL are filled from the workspace brand when the ad is saved.'),
       image: z.string().describe('Image prompt for generating the main image'),
       url: z.string().describe('URL of the Facebook in-stream video'),
       followerCount: z.number().describe('Number of followers'),

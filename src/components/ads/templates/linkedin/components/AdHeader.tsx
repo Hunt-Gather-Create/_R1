@@ -8,16 +8,24 @@ interface AdHeaderProps {
   title: string; // Can be company name or ad title
   sponsoredText?: string; // e.g., "Sponsored"
   metadataText?: string; // e.g., follower count, job title, etc.
+  /** Background color for the profile image (e.g. workspace brand primary color) */
+  imageBackgroundColor?: string | null;
 }
 
-export default function AdHeader({ profileImageUrl, title, sponsoredText = 'Sponsored', metadataText }: AdHeaderProps) {
+export default function AdHeader({
+  profileImageUrl,
+  title,
+  sponsoredText = 'Sponsored',
+  metadataText,
+  imageBackgroundColor,
+}: AdHeaderProps) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', marginBottom: linkedInLayout.spacingMedium }}>
       <div style={{
         width: '48px', // LinkedIn standard size for profile pic in feed
         height: '48px',
         borderRadius: '50%',
-        backgroundColor: linkedInColors.secondary, // Placeholder background
+        backgroundColor: imageBackgroundColor ?? linkedInColors.secondary,
         marginRight: linkedInLayout.spacingSmall,
         overflow: 'hidden',
       }}>

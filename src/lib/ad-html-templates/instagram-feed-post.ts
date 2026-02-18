@@ -1,8 +1,8 @@
-import { escapeHtml, htmlWrapper } from "./index";
+import { escapeHtml, htmlWrapper, profileImageHtml } from "./index";
 
 export function renderInstagramFeedPost(content: unknown, mediaUrls?: string[]): string {
   const c = content as {
-    profile?: { username?: string };
+    profile?: { username?: string; image?: string; imageBackgroundColor?: string | null };
     caption?: string;
     content?: { prompt?: string; altText?: string };
     cta?: { text?: string };
@@ -10,7 +10,15 @@ export function renderInstagramFeedPost(content: unknown, mediaUrls?: string[]):
     likes?: number;
   };
 
-  const username = escapeHtml(c.profile?.username || "Your Brand");
+  const profile = c.profile;
+  const username = escapeHtml(profile?.username || "Your Brand");
+  const profileImg = profileImageHtml(
+    profile?.image,
+    profile?.imageBackgroundColor,
+    36,
+    username,
+    true
+  );
   const caption = escapeHtml(c.caption || "");
   const ctaText = escapeHtml(c.cta?.text || "Learn more");
   const likes = c.likes ?? 15;
@@ -21,7 +29,7 @@ export function renderInstagramFeedPost(content: unknown, mediaUrls?: string[]):
 <div style="max-width:500px;width:100%;background:#fff;border:1px solid #dbdbdb;border-radius:4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#262627;font-size:14px;">
   <!-- Header -->
   <div style="display:flex;align-items:center;padding:12px 16px;gap:10px;">
-    <div style="width:36px;height:36px;border-radius:50%;background:#e0e0e0;flex-shrink:0;"></div>
+    ${profileImg}
     <div style="flex:1;">
       <div style="font-weight:600;font-size:14px;">${username}</div>
       <div style="font-size:12px;color:#737373;">Sponsored</div>

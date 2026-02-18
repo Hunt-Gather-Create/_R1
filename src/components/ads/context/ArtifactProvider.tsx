@@ -419,9 +419,17 @@ export const ArtifactProvider: React.FC<ArtifactProviderProps> = ({
     }
   }, [mediaUrls, name]);
 
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  const prevRegeneratingRef = useRef<false | number>(false);
   useEffect(() => {
-    if (enableGenerate) save();
-  }, [isRegenerating, save, enableGenerate]);
+    const wasRegenerating = prevRegeneratingRef.current !== false;
+    const didJustFinishRegenerating = wasRegenerating && isRegenerating === false;
+    prevRegeneratingRef.current = isRegenerating;
+    if (enableGenerate && didJustFinishRegenerating) {
+      saveRef.current();
+    }
+  }, [isRegenerating, enableGenerate]);
 
   const contextValue: ArtifactContextValue = {
     artifact: defaultArtifact,

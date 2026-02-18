@@ -51,15 +51,18 @@ export function InstagramFeedPost({ content: adContent }: { content: InstagramAd
     likes = 15,
   } = adContent;
 
-  // TODO: get the company profile
-  const companyProfile = {
-    image: instagramBranding.logoPlaceholder,
-    username: profile.username || 'Your Brand',
-  };
+  const profileImage = (profile as { image?: string }).image ?? instagramBranding.logoPlaceholder;
+  const profileUsername = (profile as { username?: string }).username ?? 'Your Brand';
+  const profileBgColor = (profile as { imageBackgroundColor?: string | null }).imageBackgroundColor;
+  const companyProfile = { image: profileImage, username: profileUsername };
 
   return (
     <InstagramAdCard>
-      <InstagramAdHeader image={companyProfile.image} username={companyProfile.username} />
+      <InstagramAdHeader
+        image={companyProfile.image}
+        username={companyProfile.username}
+        imageBackgroundColor={profileBgColor}
+      />
       <InstagramAdContent content={content} aspectRatio={aspectRatio} />
       <InstagramAdCTA text={cta.text} url={cta.url} type="strip" />
       <div
@@ -77,7 +80,7 @@ export function InstagramFeedPost({ content: adContent }: { content: InstagramAd
           paddingRight: instagramLayout.spacingXLarge,
         }}
       >
-        <InstagramAdCaption name={profile.username} content={caption} likes={likes} />
+        <InstagramAdCaption name={companyProfile.username} content={caption} likes={likes} />
       </div>
     </InstagramAdCard>
   );

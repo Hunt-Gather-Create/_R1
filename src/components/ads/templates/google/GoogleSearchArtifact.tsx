@@ -5,5 +5,7 @@ import GoogleSearchAd from "./GoogleSearchAd";
 
 export const GoogleSearchArtifact = () => {
   const { content, name } = useArtifact();
-  return <GoogleSearchAd name={name} type="ad-template:google-search-ad" content={content} />;
+  return (
+    <GoogleSearchAd name={name} type="ad-template:google-search-ad" content={content} />
+  );
 };

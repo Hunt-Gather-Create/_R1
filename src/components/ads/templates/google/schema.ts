@@ -1,9 +1,10 @@
 import { z } from 'zod';
 
 export const companySchema = z.object({
-  name: z.string().describe('Name of the company'),
-  logo: z.string().describe('URL of the company logo'),
-  url: z.string().describe('URL of the company'),
+  name: z.string().describe('Name of the company (for display). When workspace has a brand, use the brand name.'),
+  logo: z.string().describe('URL of the company logo. Filled from workspace brand logo when the ad is saved; provide a placeholder if needed.'),
+  url: z.string().describe('Company website URL. Filled from workspace brand website when the ad is saved; provide a placeholder if needed.'),
+  imageBackgroundColor: z.string().nullable().optional().describe('Background color for the profile image'),
 });
 
 export const suggestedSearchSchema = z.object({

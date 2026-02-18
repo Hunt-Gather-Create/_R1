@@ -97,7 +97,11 @@ export const LinkedInCarouselAd: React.FC<CarouselAdPropsType> = ({ content }) =
     setCurrentIndex((prev) => (prev + 1) % carouselItems.length);
   };
 
-  const companyLogo = linkedInBranding.logoPlaceholder || profileImageUrl;
+  const headerTitle = companyName;
+  const profile = content && typeof (content as { profile?: unknown }).profile === "object" ? (content as { profile: { profileImageUrl?: string; imageBackgroundColor?: string | null } }).profile : undefined;
+  const companyLogo =
+    profile?.profileImageUrl ?? linkedInBranding.logoPlaceholder ?? profileImageUrl;
+  const profileImageBg = profile?.imageBackgroundColor;
 
   const socialCounts = React.useMemo(
     () => ({
@@ -117,9 +121,10 @@ export const LinkedInCarouselAd: React.FC<CarouselAdPropsType> = ({ content }) =
   return (
     <LinkedInAdCard className="w-full">
       <AdHeader
-        title={companyName}
+        title={headerTitle}
         profileImageUrl={companyLogo}
         metadataText={followerCount ? `${followerCount.toLocaleString()} followers` : undefined}
+        imageBackgroundColor={profileImageBg}
       />
       <AdMainContent
         copy={adCopy}

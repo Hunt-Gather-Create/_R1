@@ -6,9 +6,16 @@ import { InstagramAdIcon } from './InstagramAdIcon';
 
 interface InstagramAdHeaderProps extends InstagramAdProfileType {
   metadataText?: string;
+  /** Background color for the profile image (e.g. workspace brand primary color) */
+  imageBackgroundColor?: string | null;
 }
 
-export function InstagramAdHeader({ image, username, metadataText }: InstagramAdHeaderProps) {
+export function InstagramAdHeader({
+  image,
+  username,
+  metadataText,
+  imageBackgroundColor,
+}: InstagramAdHeaderProps) {
   return (
     <div
       className="flex items-center justify-between w-full"
@@ -19,7 +26,12 @@ export function InstagramAdHeader({ image, username, metadataText }: InstagramAd
         paddingRight: instagramLayout.spacingLarge,
       }}
     >
-      <InstagramAdProfile image={image} username={username} metadataText={metadataText} />
+      <InstagramAdProfile
+        image={image}
+        username={username}
+        metadataText={metadataText}
+        imageBackgroundColor={imageBackgroundColor}
+      />
       <InstagramAdIcon name="meatball" width={22} height={22} />
     </div>
   );

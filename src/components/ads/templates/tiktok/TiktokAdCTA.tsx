@@ -35,9 +35,13 @@ export const TiktokAdCTA = ({ content: adContent }: TiktokAdCTAProps) => {
 
   const aspectRatio = '9:16';
   const randomLikes = Math.floor(Math.random() * 100);
+  const profileImage = (profile as { image?: string }).image ?? tiktokBranding.logoPlaceholder;
+  const profileUsername = (profile as { username?: string }).username ?? 'Your Brand';
+  const profileBgColor = (profile as { imageBackgroundColor?: string | null }).imageBackgroundColor;
   const companyProfile = {
-    image: tiktokBranding.logoPlaceholder,
-    username: profile.username || 'Your Brand',
+    image: profileImage,
+    username: profileUsername,
+    imageBackgroundColor: profileBgColor,
   };
 
   return (

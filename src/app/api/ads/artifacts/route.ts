@@ -4,6 +4,8 @@ import {
   getChatAdArtifacts,
   updateAdArtifactMedia,
 } from "@/lib/actions/ad-artifacts";
+import { getWorkspaceBrand } from "@/lib/actions/brand";
+import { mergeWorkspaceBrandIntoContent } from "@/lib/ads/merge-workspace-brand";
 
 export async function POST(req: Request) {
   try {
@@ -17,6 +19,29 @@ export async function POST(req: Request) {
       );
     }
 
+    const platform = artifact.platform || "unknown";
+    const templateType = artifact.templateType || artifact.type || "unknown";
+    let content = artifact.content;
+    const brand = await getWorkspaceBrand(workspaceId);
+    if (brand) {
+      const contentObj =
+        typeof content === "string" ? (JSON.parse(content) as Record<string, unknown>) : { ...content };
+      const merged = mergeWorkspaceBrandIntoContent(
+        contentObj,
+        {
+          name: brand.name,
+          resolvedLogoUrl: brand.resolvedLogoUrl ?? null,
+          websiteUrl: brand.websiteUrl ?? null,
+          primaryColor: brand.primaryColor ?? null,
+        },
+        platform,
+        templateType
+      );
+      content = JSON.stringify(merged);
+    } else if (typeof content !== "string") {
+      content = JSON.stringify(content);
+    }
+
     const saved = await createAdArtifact({
       workspaceId,
       chatId: artifact.chatId,
@@ -24,9 +49,7 @@ export async function POST(req: Request) {
       platform: artifact.platform || "unknown",
       templateType: artifact.templateType || artifact.type || "unknown",
       name: artifact.name || "Untitled Ad",
-      content: typeof artifact.content === "string"
-        ? artifact.content
-        : JSON.stringify(artifact.content),
+      content,
       mediaAssets: artifact.mediaUrls
         ? JSON.stringify(artifact.mediaUrls)
         : undefined,

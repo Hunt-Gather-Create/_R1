@@ -38,15 +38,18 @@ export function InstagramCarousel({ content: adContent }: InstagramCarouselProps
     likes = 17,
   } = adContent;
 
-  // TODO: get the company profile
-  const companyProfile = {
-    image: instagramBranding.logoPlaceholder,
-    username: profile.username || 'Your Brand',
-  };
+  const profileImage = (profile as { image?: string }).image ?? instagramBranding.logoPlaceholder;
+  const profileUsername = (profile as { username?: string }).username ?? 'Your Brand';
+  const profileBgColor = (profile as { imageBackgroundColor?: string | null }).imageBackgroundColor;
+  const companyProfile = { image: profileImage, username: profileUsername };
 
   return (
     <InstagramAdCard>
-      <InstagramAdHeader image={companyProfile.image} username={companyProfile.username} />
+      <InstagramAdHeader
+        image={companyProfile.image}
+        username={companyProfile.username}
+        imageBackgroundColor={profileBgColor}
+      />
       <div className="relative">
         <div
           className="absolute left-0 top-0 bottom-0 z-[1] flex items-center justify-center cursor-pointer opacity-0 hover:opacity-100 transition-all duration-100"

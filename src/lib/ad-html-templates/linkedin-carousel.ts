@@ -1,4 +1,4 @@
-import { escapeHtml, htmlWrapper } from "./index";
+import { escapeHtml, htmlWrapper, profileImageHtml } from "./index";
 
 export function renderLinkedInCarousel(content: unknown, mediaUrls?: string[]): string {
   const c = content as {
@@ -11,9 +11,18 @@ export function renderLinkedInCarousel(content: unknown, mediaUrls?: string[]): 
       headline?: string;
     }>;
     overallCtaButtonText?: string;
+    profile?: { profileImageUrl?: string; imageBackgroundColor?: string | null };
   };
 
   const companyName = escapeHtml(c.companyName || "Company");
+  const profile = c.profile;
+  const profileImg = profileImageHtml(
+    profile?.profileImageUrl,
+    profile?.imageBackgroundColor,
+    48,
+    companyName,
+    false
+  );
   const followers = c.followerCount ? `${c.followerCount.toLocaleString()} followers` : "";
   const adCopy = escapeHtml(c.adCopy || "");
   const ctaText = escapeHtml(c.overallCtaButtonText || "Learn more");
@@ -38,7 +47,7 @@ export function renderLinkedInCarousel(content: unknown, mediaUrls?: string[]): 
   const body = `
 <div style="max-width:550px;width:100%;background:#fff;border:1px solid #e0e0e0;border-radius:8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#000;font-size:14px;">
   <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;">
-    <div style="width:48px;height:48px;border-radius:4px;background:#e0e0e0;flex-shrink:0;"></div>
+    ${profileImg}
     <div>
       <div style="font-weight:600;">${companyName}</div>
       ${followers ? `<div style="font-size:12px;color:#666;">${followers}</div>` : ""}

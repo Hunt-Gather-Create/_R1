@@ -15,7 +15,7 @@ export const LinkedInSingleImageAdSchema = {
     name: z.string().describe('Name of the LinkedIn Single Image Ad'),
     type: z.enum(['ad-template:linkedin-single-image']).describe('Type identifier for this ad format'),
     content: z.object({
-      companyName: z.string().describe('Company name appearing in the ad header'),
+      companyName: z.string().describe('Company name appearing in the ad header. When workspace has a brand, use the brand name. Profile image and URL are filled from the workspace brand when the ad is saved.'),
       followerCount: z.number().optional().describe('Number of followers, displayed in the header'),
       adCopy: z.string().describe('Main text content of the ad (the post body)'),
       imagePrompt: z.string().describe('Prompt for generating the main ad image'),
@@ -50,14 +50,18 @@ export const LinkedInSingleImageAd: React.FC<Props> = ({ content }) => {
     [],
   );
 
-  const companyLogo = linkedInBranding.logoPlaceholder;
+  const headerTitle = companyName;
+  const profile = content && typeof (content as { profile?: unknown }).profile === "object" ? (content as { profile: { profileImageUrl?: string; imageBackgroundColor?: string | null } }).profile : undefined;
+  const companyLogo = profile?.profileImageUrl ?? linkedInBranding.logoPlaceholder;
+  const profileImageBg = profile?.imageBackgroundColor;
 
   return (
     <LinkedInAdCard>
       <AdHeader
-        title={companyName}
+        title={headerTitle}
         profileImageUrl={companyLogo}
         metadataText={followerCount ? `${followerCount.toLocaleString()} followers` : undefined}
+        imageBackgroundColor={profileImageBg}
       />
       <AdMainContent
         imagePrompt={imagePrompt}
@@ -66,7 +70,7 @@ export const LinkedInSingleImageAd: React.FC<Props> = ({ content }) => {
         mediaType="image"
         copy={adCopy}
       >
-        <AdCallToActionDisplay headline={headline} companyName={companyName} ctaButtonText={ctaButtonText} />
+        <AdCallToActionDisplay headline={headline} companyName={headerTitle} ctaButtonText={ctaButtonText} />
         <AdSocialCounts
           reactionCount={socialCounts.reactionCount}
           commentText={`${socialCounts.commentCount} comments`}

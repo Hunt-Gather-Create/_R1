@@ -1,13 +1,21 @@
-import { escapeHtml, htmlWrapper } from "./index";
+import { escapeHtml, htmlWrapper, profileImageHtml } from "./index";
 
 export function renderInstagramStory(content: unknown, mediaUrls?: string[]): string {
   const c = content as {
-    profile?: { username?: string };
+    profile?: { username?: string; image?: string; imageBackgroundColor?: string | null };
     content?: { prompt?: string; altText?: string };
     cta?: { text?: string };
   };
 
-  const username = escapeHtml(c.profile?.username || "Your Brand");
+  const profile = c.profile;
+  const username = escapeHtml(profile?.username || "Your Brand");
+  const profileImg = profileImageHtml(
+    profile?.image,
+    profile?.imageBackgroundColor,
+    32,
+    username,
+    true
+  );
   const ctaText = escapeHtml(c.cta?.text || "Learn more");
   const imageUrl = mediaUrls?.[0] || "";
   const altText = escapeHtml(c.content?.altText || "Story image");
@@ -20,7 +28,7 @@ export function renderInstagramStory(content: unknown, mediaUrls?: string[]): st
       <div style="height:2px;width:33%;background:#fff;border-radius:2px;"></div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
-      <div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.3);flex-shrink:0;"></div>
+      ${profileImg}
       <span style="color:#fff;font-size:13px;font-weight:600;">${username}</span>
       <span style="color:rgba(255,255,255,0.6);font-size:12px;">Sponsored</span>
     </div>

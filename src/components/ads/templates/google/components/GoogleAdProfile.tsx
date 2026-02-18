@@ -9,22 +9,36 @@ import { RetryImage } from '@/components/ads/components/RetryImage';
 interface GoogleAdProfileProps extends z.infer<typeof companySchema> {
   className?: string;
   style?: CSSProperties;
+  /** Background color for the profile image (e.g. workspace brand primary color) */
+  imageBackgroundColor?: string | null;
 }
 
-export default function GoogleAdProfile({ logo, name, url, className, style }: GoogleAdProfileProps) {
+export default function GoogleAdProfile({
+  logo,
+  name,
+  url,
+  className,
+  style,
+  imageBackgroundColor,
+}: GoogleAdProfileProps) {
   return (
     <div className={cn('flex items-center gap-2', className)} style={style}>
-      <RetryImage
-        src={logo}
-        alt={name}
-        fallbackSrc={googleAdBranding.logoPlaceholder}
-        className="rounded-full border object-contain object-center"
+      <div
+        className="rounded-full border overflow-hidden flex items-center justify-center"
         style={{
           width: googleAdLayout.profile.width,
           height: googleAdLayout.profile.height,
           borderColor: googleAdColors.border,
+          backgroundColor: imageBackgroundColor ?? undefined,
         }}
-      />
+      >
+        <RetryImage
+          src={logo}
+          alt={name}
+          fallbackSrc={googleAdBranding.logoPlaceholder}
+          className="w-full h-full object-contain object-center"
+        />
+      </div>
       <div>
         <h3 className="text-sm font-medium">{name}</h3>
         <div className="flex items-center" style={{ gap: googleAdLayout.spacing.md }}>

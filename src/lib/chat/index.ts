@@ -426,6 +426,7 @@ export const AD_TOOLS_PROMPT = `
 
 **Ad creation guidelines:**
 - **IMPORTANT: Before creating any ads, always call \`load_skill\` with skillName "ad-campaign" to get the full campaign workflow and platform-specific guidelines.**
+- **Profile image and profile/company URL come from the workspace brand.** When the workspace has a brand configured, the ad artifact is saved with the brand's logo as the profile image and the brand's website URL as the company/profile URL. You only need to provide the company/brand name for display; do not invent or ask for profile image URLs or company URLs—they are resolved from the workspace brand when the ad is created.
 - When the user has a brand configured, use the brand's company name, tone, and style in the ad content
 - For image prompts, write descriptive scenes focusing on mood, composition, and lighting — avoid text in images
 - Use one strong, clear image per ad slot unless the user specifically asks for multiple

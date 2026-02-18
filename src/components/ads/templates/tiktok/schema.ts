@@ -7,8 +7,8 @@ export const TiktokAdContentSchema = z.object({
 });
 
 export const TiktokAdProfileSchema = z.object({
-    image: z.string().describe('Profile image URL'),
-    username: z.string().describe('Profile username'),
+    image: z.string().describe('Profile image URL. Filled from workspace brand logo when the ad is saved; provide a placeholder if needed.'),
+    username: z.string().describe('Profile username (e.g. brand/company name). When workspace has a brand, use the brand name.'),
 });
 
 export const TiktokAdCaptionSchema = z.string()

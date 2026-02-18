@@ -7,9 +7,17 @@ interface InstagramAdProfileProps extends InstagramAdProfile {
   image: string;
   metadataText?: string;
   style?: React.CSSProperties;
+  /** Background color for the profile image (e.g. workspace brand primary color) */
+  imageBackgroundColor?: string | null;
 }
 
-export function InstagramAdProfile({ image, username, metadataText = 'Sponsored', style }: InstagramAdProfileProps) {
+export function InstagramAdProfile({
+  image,
+  username,
+  metadataText = 'Sponsored',
+  style,
+  imageBackgroundColor,
+}: InstagramAdProfileProps) {
   return (
     <div
       className="flex items-center"
@@ -27,7 +35,7 @@ export function InstagramAdProfile({ image, username, metadataText = 'Sponsored'
           width: instagramLayout.profileImageSize,
           height: instagramLayout.profileImageSize,
           border: `1px solid ${instagramColors.border}`,
-          backgroundColor: instagramColors.backgroundSecondary,
+          backgroundColor: imageBackgroundColor ?? instagramColors.backgroundSecondary,
         }}
       />
       <div className="flex flex-col gap-1" style={{ gap: instagramLayout.spacingXXXSmall }}>

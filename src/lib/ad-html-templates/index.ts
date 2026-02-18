@@ -26,6 +26,33 @@ export function escapeHtml(str: string): string {
     .replace(/'/g, "&#039;");
 }
 
+/**
+ * Renders profile/company image HTML from content (workspace brand when present).
+ * Uses profileImageUrl when available, otherwise a placeholder div with optional background color.
+ */
+export function profileImageHtml(
+  profileImageUrl: string | null | undefined,
+  imageBackgroundColor: string | null | undefined,
+  sizePx: number,
+  alt: string,
+  round = true
+): string {
+  const safeColor =
+    imageBackgroundColor &&
+    typeof imageBackgroundColor === "string" &&
+    imageBackgroundColor.length <= 64 &&
+    !/[;"'<>]/.test(imageBackgroundColor);
+  const bgStyle = safeColor
+    ? `background:${escapeHtml(imageBackgroundColor)};`
+    : "background:#e0e0e0;";
+  const size = `${sizePx}px`;
+  const shape = round ? "50%" : "4px";
+  if (profileImageUrl && profileImageUrl.trim()) {
+    return `<img src="${escapeHtml(profileImageUrl.trim())}" alt="${escapeHtml(alt)}" width="${size}" height="${size}" style="width:${size};height:${size};border-radius:${shape};object-fit:cover;flex-shrink:0;" />`;
+  }
+  return `<div style="width:${size};height:${size};border-radius:${shape};${bgStyle}flex-shrink:0;"></div>`;
+}
+
 export function htmlWrapper(title: string, body: string): string {
   return `<!DOCTYPE html>
 <html lang="en">

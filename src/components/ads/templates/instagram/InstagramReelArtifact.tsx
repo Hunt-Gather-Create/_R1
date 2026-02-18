@@ -23,6 +23,10 @@ export function InstagramReelArtifact({ className }: InstagramReelArtifactProps)
   const [expanded, setExpanded] = useState(false);
   const { profile, cta, caption, likes, comments } = artifact.content;
 
+  const profileImage = (profile as { image?: string })?.image ?? instagramBranding.logoPlaceholder;
+  const profileUsername = (profile as { username?: string })?.username ?? 'Your Brand';
+  const profileBgColor = (profile as { imageBackgroundColor?: string | null })?.imageBackgroundColor;
+
   return (
     <div className="h-full w-full">
       <InstagramAdCard className={`border-none p-0 relative h-full min-h-[700px] max-h-[800px] w-[450px] ${className}`}>
@@ -35,12 +39,13 @@ export function InstagramReelArtifact({ className }: InstagramReelArtifactProps)
         >
           <div className="flex flex-col justify-end flex-1" style={{ gap: instagramLayout.spacing }}>
             <InstagramAdProfile
-              image={instagramBranding.logoPlaceholder}
-              username={profile.username}
+              image={profileImage}
+              username={profileUsername}
               style={{ color: instagramColors.background }}
+              imageBackgroundColor={profileBgColor}
             />
             <InstagramAdCaption
-              name={profile.username}
+              name={profileUsername}
               content={caption}
               showLikes={false}
               showUsername={false}

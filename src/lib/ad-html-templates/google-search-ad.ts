@@ -1,8 +1,8 @@
-import { escapeHtml, htmlWrapper } from "./index";
+import { escapeHtml, htmlWrapper, profileImageHtml } from "./index";
 
 export function renderGoogleSearchAd(content: unknown, _mediaUrls?: string[]): string {
   const c = content as {
-    company?: { name?: string; logo?: string; url?: string };
+    company?: { name?: string; logo?: string; url?: string; imageBackgroundColor?: string | null };
     search?: {
       title?: string;
       description?: string;
@@ -12,8 +12,16 @@ export function renderGoogleSearchAd(content: unknown, _mediaUrls?: string[]): s
     };
   };
 
-  const companyName = escapeHtml(c.company?.name || "Company");
-  const companyUrl = escapeHtml(c.company?.url || "#");
+  const company = c.company;
+  const companyName = escapeHtml(company?.name || "Company");
+  const companyUrl = escapeHtml(company?.url || "#");
+  const profileImg = profileImageHtml(
+    company?.logo,
+    company?.imageBackgroundColor,
+    28,
+    companyName,
+    true
+  );
   const title = escapeHtml(c.search?.title || "");
   const description = escapeHtml(c.search?.description || "");
   const link = escapeHtml(c.search?.link || "#");
@@ -30,7 +38,7 @@ export function renderGoogleSearchAd(content: unknown, _mediaUrls?: string[]): s
 <div style="max-width:600px;width:100%;background:#fff;border:1px solid #d2d2d2;border-radius:8px;padding:16px;font-family:Roboto,Arial,sans-serif;color:#202124;font-size:14px;">
   <div style="font-weight:700;margin-bottom:8px;">Sponsored</div>
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-    <div style="width:28px;height:28px;border-radius:50%;background:#e0e0e0;flex-shrink:0;"></div>
+    ${profileImg}
     <div>
       <div style="font-size:14px;font-weight:500;">${companyName}</div>
       <div style="font-size:12px;color:#4d5156;">${companyUrl}</div>

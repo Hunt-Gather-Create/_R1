@@ -1,4 +1,4 @@
-import { escapeHtml, htmlWrapper } from "./index";
+import { escapeHtml, htmlWrapper, profileImageHtml } from "./index";
 
 export function renderFacebookInStreamVideo(content: unknown, mediaUrls?: string[]): string {
   const c = content as {
@@ -8,6 +8,7 @@ export function renderFacebookInStreamVideo(content: unknown, mediaUrls?: string
     primaryText?: string;
     image?: string;
     callToAction?: string;
+    profile?: { imageUrl?: string; imageBackgroundColor?: string | null };
     secondaryAd?: {
       title?: string;
       description?: string;
@@ -17,6 +18,14 @@ export function renderFacebookInStreamVideo(content: unknown, mediaUrls?: string
 
   const company = escapeHtml(c.company || "Company");
   const abbrev = escapeHtml(c.companyAbbreviation || company.slice(0, 2));
+  const profile = c.profile;
+  const profileImg = profileImageHtml(
+    profile?.imageUrl,
+    profile?.imageBackgroundColor,
+    36,
+    company,
+    true
+  );
   const primaryText = escapeHtml(c.primaryText || "");
   const ctaText = escapeHtml(c.callToAction || "Learn More");
   const imageUrl = mediaUrls?.[0] || "";
@@ -27,7 +36,7 @@ export function renderFacebookInStreamVideo(content: unknown, mediaUrls?: string
   <!-- Primary Ad -->
   <div style="background:#fff;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;">
     <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;">
-      <div style="width:36px;height:36px;border-radius:50%;background:#e0e9f5;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#1877f2;">${abbrev}</div>
+      ${profileImg}
       <div>
         <div style="font-weight:600;font-size:14px;">${company}</div>
         <div style="font-size:12px;color:#65676b;">Sponsored</div>

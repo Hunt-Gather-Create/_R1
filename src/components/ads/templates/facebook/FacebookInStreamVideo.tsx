@@ -41,17 +41,22 @@ function SecondaryAd({
   companyName,
   adContent: { title, description, image },
   onCollapse: handleCollapse,
+  imageBackgroundColor,
 }: {
   companyAbbreviation: string;
   companyName: string;
   onCollapse: () => void;
   adContent: FacebookInStreamVideoToolProps['content']['secondaryAd'];
+  imageBackgroundColor?: string;
 }) {
   return (
     <Card className="w-full max-w-xl bg-white duration-300 animate-in fade-in">
       <CardHeader className="flex flex-row items-start space-x-4 p-4 justify-between">
         <a href="#" className="flex items-center gap-2">
-          <Avatar className="h-8 w-8 bg-sky-100">
+          <Avatar
+            className="h-8 w-8"
+            style={imageBackgroundColor ? { backgroundColor: imageBackgroundColor } : { backgroundColor: 'rgb(224 242 254)' }}
+          >
             <AvatarImage src="/placeholder.svg" alt={companyName} />
             <AvatarFallback>{companyAbbreviation}</AvatarFallback>
           </Avatar>
@@ -97,11 +102,19 @@ function SecondaryAd({
   );
 }
 
-export default function FacebookInStreamVideo({
-  content,
-}: FacebookInStreamVideoToolProps) {
+export default function FacebookInStreamVideo({ content }: FacebookInStreamVideoToolProps) {
   const [showSecondaryAd, setShowSecondaryAd] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const companyName = content.company;
+  const profile =
+    content && "profile" in content && typeof (content as Record<string, unknown>).profile === "object"
+      ? ((content as Record<string, unknown>).profile as { imageUrl?: string; imageBackgroundColor?: string })
+      : undefined;
+  const companyLogo = profile?.imageUrl ?? '/placeholder.svg';
+  const profileImageBackgroundColor = profile?.imageBackgroundColor;
+  const companyAbbreviation =
+    content.companyAbbreviation ?? (content.company ?? '').slice(0, 2).toUpperCase();
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -115,12 +128,15 @@ export default function FacebookInStreamVideo({
       <Card className="w-full max-w-md overflow-hidden bg-white">
         <CardHeader className="flex flex-row items-center space-x-4 p-4 justify-between">
           <a href={content.url} target="_blank" className="flex items-center gap-2">
-            <Avatar className="h-8 w-8">
-              <AvatarImage src="/placeholder.svg" alt={content.company} />
-              <AvatarFallback>{content.companyAbbreviation}</AvatarFallback>
+            <Avatar
+              className="h-8 w-8"
+              style={profileImageBackgroundColor ? { backgroundColor: profileImageBackgroundColor } : undefined}
+            >
+              <AvatarImage src={companyLogo} alt={companyName} />
+              <AvatarFallback>{companyAbbreviation}</AvatarFallback>
             </Avatar>
             <div className="flex flex-col">
-              <span className="text-sm font-semibold">{content.company}</span>
+              <span className="text-sm font-semibold">{companyName}</span>
               <span className="text-xs text-muted-foreground">Sponsored</span>
             </div>
           </a>
@@ -133,7 +149,7 @@ export default function FacebookInStreamVideo({
           <p className="px-4 pb-4">{content.primaryText}</p>
           <ArtifactMedia
             prompt={content.image}
-            altText={content.company}
+            altText={companyName}
             aspectRatio="1:1"
             mediaIndex={0}
           />
@@ -179,10 +195,11 @@ export default function FacebookInStreamVideo({
           className="transition-all max-w-md duration-300 ease-out opacity-100 translate-y-0"
         >
           <SecondaryAd
-            companyAbbreviation={content.companyAbbreviation}
-            companyName={content.company}
+            companyAbbreviation={companyAbbreviation}
+            companyName={companyName}
             adContent={content.secondaryAd}
             onCollapse={() => setIsCollapsed(!isCollapsed)}
+            imageBackgroundColor={profileImageBackgroundColor}
           />
         </div>
       )}

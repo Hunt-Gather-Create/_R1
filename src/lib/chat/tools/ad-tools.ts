@@ -1,6 +1,8 @@
 import { tool, jsonSchema } from "ai";
 import { z } from "zod";
 import { createAdArtifact } from "@/lib/actions/ad-artifacts";
+import { getWorkspaceBrand } from "@/lib/actions/brand";
+import { mergeWorkspaceBrandIntoContent } from "@/lib/ads/merge-workspace-brand";
 
 // Import schemas from each platform's template files
 import { InstagramFeedPostSchema } from "@/components/ads/templates/instagram/InstagramFeedPost";
@@ -80,13 +82,30 @@ function createAdTool(
       const { platform, templateType } = parseTemplateType(input.type);
 
       try {
+        // Resolve workspace brand into content on the backend so the frontend only renders content
+        let contentToSave = input.content as Record<string, unknown>;
+        const brand = await getWorkspaceBrand(context.workspaceId);
+        if (brand) {
+          contentToSave = mergeWorkspaceBrandIntoContent(
+            contentToSave,
+            {
+              name: brand.name,
+              resolvedLogoUrl: brand.resolvedLogoUrl ?? null,
+              websiteUrl: brand.websiteUrl ?? null,
+              primaryColor: brand.primaryColor ?? null,
+            },
+            platform,
+            templateType
+          );
+        }
+
         const artifact = await createAdArtifact({
           workspaceId: context.workspaceId,
           chatId: context.chatId, // only set for workspace chat; omit for issue chat (FK references workspace_chats.id)
           platform,
           templateType,
           name: input.name,
-          content: JSON.stringify(input.content),
+          content: JSON.stringify(contentToSave),
           brandId: context.brandId,
         });
 

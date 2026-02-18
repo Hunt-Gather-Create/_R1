@@ -47,11 +47,10 @@ export const InstagramStory = ({ content: adContent }: InstagramStoryProps) => {
     aspectRatio = '9:16',
   } = adContent;
 
-  // TODO: get the company profile
-  const companyProfile = {
-    image: instagramBranding.logoPlaceholder,
-    username: profile.username || 'Your Brand',
-  };
+  const profileImage = (profile as { image?: string }).image ?? instagramBranding.logoPlaceholder;
+  const profileUsername = (profile as { username?: string }).username ?? 'Your Brand';
+  const profileBgColor = (profile as { imageBackgroundColor?: string | null }).imageBackgroundColor;
+  const companyProfile = { image: profileImage, username: profileUsername };
 
   return (
     <InstagramAdCard className="relative">
@@ -70,6 +69,7 @@ export const InstagramStory = ({ content: adContent }: InstagramStoryProps) => {
             image={companyProfile.image}
             username={companyProfile.username}
             style={{ color: instagramColors.background }}
+            imageBackgroundColor={profileBgColor}
           />
           <div className="flex items-center" style={{ gap: instagramLayout.spacing }}>
             <InstagramAdIcon name="meatball" color={instagramColors.background} />

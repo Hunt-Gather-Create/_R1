@@ -1,14 +1,22 @@
-import { escapeHtml, htmlWrapper } from "./index";
+import { escapeHtml, htmlWrapper, profileImageHtml } from "./index";
 
 export function renderTiktokCta(content: unknown, mediaUrls?: string[]): string {
   const c = content as {
-    profile?: { username?: string };
+    profile?: { username?: string; image?: string; imageBackgroundColor?: string | null };
     content?: { prompt?: string; altText?: string };
     caption?: string;
     cta?: { text?: string };
   };
 
-  const username = escapeHtml(c.profile?.username || "Your Brand");
+  const profile = c.profile;
+  const username = escapeHtml(profile?.username || "Your Brand");
+  const profileImg = profileImageHtml(
+    profile?.image,
+    profile?.imageBackgroundColor,
+    36,
+    username,
+    true
+  );
   const caption = escapeHtml(c.caption || "");
   const ctaText = escapeHtml(c.cta?.text || "Learn more");
   const imageUrl = mediaUrls?.[0] || "";
@@ -19,7 +27,7 @@ export function renderTiktokCta(content: unknown, mediaUrls?: string[]): string 
   <div style="position:relative;">
     ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${altText}" style="width:100%;aspect-ratio:9/16;object-fit:cover;background:#161823;" />` : `<div style="width:100%;aspect-ratio:9/16;background:#161823;"></div>`}
     <div style="position:absolute;bottom:0;left:0;right:62px;padding:16px;z-index:2;background:linear-gradient(transparent, rgba(0,0,0,0.5));">
-      <div style="font-weight:700;font-size:15px;margin-bottom:4px;">@${username}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">${profileImg}<span style="font-weight:700;font-size:15px;">@${username}</span></div>
       <div style="font-size:13px;margin-bottom:12px;">${caption}</div>
       <div style="background:#fe2c55;color:#fff;padding:10px 20px;border-radius:4px;font-size:15px;font-weight:600;display:inline-block;">${ctaText}</div>
     </div>
