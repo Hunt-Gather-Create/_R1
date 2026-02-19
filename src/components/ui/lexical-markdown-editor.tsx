@@ -459,14 +459,14 @@ export function LexicalMarkdownEditor({
   return (
     <div
       className={cn(
-        "h-full min-h-0 rounded-md border border-border bg-background",
+        "h-full min-h-0 flex flex-col rounded-md border border-border bg-background",
         className,
       )}
     >
       <LexicalComposer initialConfig={initialConfig}>
         {!compact && <ToolbarPlugin onUploadImage={onUploadImage} />}
         <div
-          className="overflow-y-auto px-3 py-2"
+          className="flex-1 min-h-0 overflow-y-auto px-3 py-2"
           style={{ minHeight: `${minHeight}px` }}
           onBlur={onBlur}
         >
