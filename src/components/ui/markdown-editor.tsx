@@ -1,50 +1,16 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import dynamic from "next/dynamic";
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useColorMode } from "@/lib/hooks";
-import { commands, ICommand } from "@uiw/react-md-editor";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import "@uiw/react-md-editor/markdown-editor.css";
-
-// Dynamically import to avoid SSR issues
-const MDEditor = dynamic(() => import("@uiw/react-md-editor"), { ssr: false });
-const MDPreview = dynamic(
-  () => import("@uiw/react-md-editor").then((mod) => mod.default.Markdown),
-  { ssr: false }
-);
-
-// Slack-style toolbar commands (subset of full markdown)
-const TOOLBAR_COMMANDS = [
-  commands.bold,
-  commands.italic,
-  commands.strikethrough,
-  commands.divider,
-  commands.code,
-  commands.codeBlock,
-  commands.divider,
-  commands.link,
-  commands.divider,
-  commands.unorderedListCommand,
-  commands.orderedListCommand,
-  commands.divider,
-  commands.quote,
-];
-
-const createExpandCommand = (onExpand: () => void): ICommand => ({
-  name: "expand",
-  keyCommand: "expand",
-  buttonProps: { "aria-label": "Expand to fullscreen", title: "Expand" },
-  icon: <Maximize2 className="w-3.5 h-3.5" />,
-  execute: onExpand,
-});
+import { LexicalMarkdownEditor } from "./lexical-markdown-editor";
+import { LexicalMarkdownPreview } from "./lexical";
 
 interface MarkdownEditorProps {
   value: string;
@@ -55,6 +21,7 @@ interface MarkdownEditorProps {
   className?: string;
   compact?: boolean;
   previewMode?: "edit" | "live" | "preview";
+  onUploadImage?: (file: File) => Promise<string>;
 }
 
 export function MarkdownEditor({
@@ -65,47 +32,26 @@ export function MarkdownEditor({
   minHeight = 120,
   className,
   compact = false,
-  previewMode = "edit",
+  onUploadImage,
 }: MarkdownEditorProps) {
-  const colorMode = useColorMode();
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const handleExpand = useCallback(() => setIsFullscreen(true), []);
   const handleClose = useCallback(() => {
     setIsFullscreen(false);
     onBlur?.();
   }, [onBlur]);
 
-  const handleChange = useCallback(
-    (val: string | undefined) => onChange(val || ""),
-    [onChange]
-  );
-
-  const toolbarCommands = compact
-    ? []
-    : [...TOOLBAR_COMMANDS, commands.divider, createExpandCommand(handleExpand)];
-
   return (
     <>
-      <div
-        data-color-mode={colorMode}
-        className={cn(
-          "markdown-editor-wrapper",
-          compact && "markdown-editor-compact",
-          className
-        )}
-      >
-        <MDEditor
+      <div className={cn(className)}>
+        <LexicalMarkdownEditor
           value={value}
-          onChange={handleChange}
+          onChange={onChange}
+          placeholder={placeholder}
+          compact={compact}
           onBlur={onBlur}
-          preview={previewMode}
-          hideToolbar={compact}
-          commands={toolbarCommands}
-          extraCommands={[]}
-          textareaProps={{ placeholder }}
-          height={minHeight}
-          visibleDragbar={false}
+          minHeight={minHeight}
+          onUploadImage={onUploadImage}
         />
       </div>
 
@@ -128,19 +74,13 @@ export function MarkdownEditor({
               </button>
             </div>
           </DialogHeader>
-          <div
-            data-color-mode={colorMode}
-            className="markdown-editor-wrapper markdown-editor-fullscreen flex-1 min-h-0"
-          >
-            <MDEditor
+          <div className="flex-1 min-h-0">
+            <LexicalMarkdownEditor
               value={value}
-              onChange={handleChange}
-              preview="live"
-              commands={TOOLBAR_COMMANDS}
-              extraCommands={[]}
-              textareaProps={{ placeholder, autoFocus: true }}
-              height="100%"
-              visibleDragbar={false}
+              onChange={onChange}
+              placeholder={placeholder}
+              className="h-full border-0 rounded-none"
+              onUploadImage={onUploadImage}
             />
           </div>
         </DialogContent>
@@ -155,16 +95,7 @@ interface MarkdownPreviewProps {
 }
 
 export function MarkdownPreview({ content, className }: MarkdownPreviewProps) {
-  const colorMode = useColorMode();
-
   if (!content) return null;
 
-  return (
-    <div
-      data-color-mode={colorMode}
-      className={cn("markdown-preview-wrapper", className)}
-    >
-      <MDPreview source={content} />
-    </div>
-  );
+  return <LexicalMarkdownPreview content={content} className={className} />;
 }

@@ -22,8 +22,7 @@ import {
   isPdfType,
   formatFileSize,
 } from "@/lib/storage/file-validation";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { LexicalMarkdownPreview } from "@/components/ui/lexical";
 import type { AttachmentWithUrl } from "@/lib/types";
 
 function isMarkdownType(mimeType: string, filename: string): boolean {
@@ -214,11 +213,9 @@ export function AttachmentPreview({
                 </div>
               ) : (
                 <div className="max-w-4xl mx-auto bg-background rounded-lg border border-border p-8">
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {stripCiteTags(markdownContent || "")}
-                    </ReactMarkdown>
-                  </div>
+                  <LexicalMarkdownPreview
+                    content={stripCiteTags(markdownContent || "")}
+                  />
                 </div>
               )}
             </div>

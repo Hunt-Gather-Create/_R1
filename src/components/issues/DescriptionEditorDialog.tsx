@@ -2,18 +2,13 @@
 
 import { useCallback } from "react";
 import { Minimize2 } from "lucide-react";
-import dynamic from "next/dynamic";
-import { useColorMode } from "@/lib/hooks";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
-// Dynamically import markdown editor to avoid SSR issues
-const MDEditor = dynamic(() => import("@uiw/react-md-editor"), { ssr: false });
-import "@uiw/react-md-editor/markdown-editor.css";
+import { LexicalMarkdownEditor } from "@/components/ui/lexical-markdown-editor";
 
 interface DescriptionEditorDialogProps {
   open: boolean;
@@ -23,6 +18,7 @@ interface DescriptionEditorDialogProps {
   /** Called when dialog closes - use for persisting changes */
   onClose?: () => void;
   placeholder?: string;
+  onUploadImage?: (file: File) => Promise<string>;
 }
 
 export function DescriptionEditorDialog({
@@ -32,20 +28,12 @@ export function DescriptionEditorDialog({
   onChange,
   onClose,
   placeholder = "Add a description...",
+  onUploadImage,
 }: DescriptionEditorDialogProps) {
-  const colorMode = useColorMode();
-
   const handleClose = useCallback(() => {
     onClose?.();
     onOpenChange(false);
   }, [onClose, onOpenChange]);
-
-  const handleChange = useCallback(
-    (val: string | undefined) => {
-      onChange(val || "");
-    },
-    [onChange]
-  );
 
   return (
     <Dialog
@@ -73,17 +61,13 @@ export function DescriptionEditorDialog({
             </button>
           </div>
         </DialogHeader>
-        <div
-          data-color-mode={colorMode}
-          className="markdown-editor-wrapper markdown-editor-fullscreen flex-1 min-h-0"
-        >
-          <MDEditor
+        <div className="flex-1 min-h-0">
+          <LexicalMarkdownEditor
             value={value}
-            onChange={handleChange}
-            preview="live"
-            textareaProps={{ placeholder, autoFocus: true }}
-            height="100%"
-            visibleDragbar={false}
+            onChange={onChange}
+            placeholder={placeholder}
+            className="h-full border-0 rounded-none"
+            onUploadImage={onUploadImage}
           />
         </div>
       </DialogContent>

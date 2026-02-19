@@ -20,7 +20,6 @@ import { ActivityFeed } from "./ActivityFeed";
 import { SubtaskList } from "./SubtaskList";
 import { SubtaskProgress } from "./SubtaskProgress";
 import { AttachmentList } from "./AttachmentList";
-import { IssueKnowledgeLinks } from "./IssueKnowledgeLinks";
 import {
   useIssueComments,
   useIssueActivities,
@@ -29,6 +28,7 @@ import {
   useDeleteComment,
   useSubtaskCount,
   useWorkspaceMembers,
+  useUploadImage,
 } from "@/lib/hooks";
 import type { IssueWithLabels, Comment } from "@/lib/types";
 import type { Priority } from "@/lib/design-tokens";
@@ -59,6 +59,7 @@ export function IssueDetailForm({
   } = useBoardContext();
 
   const { data: members = [] } = useWorkspaceMembers(workspaceId);
+  const uploadImage = useUploadImage(workspaceId);
   const epicTitle = issue.epicId
     ? board.epics?.find((e) => e.id === issue.epicId)?.title ?? null
     : null;
@@ -304,6 +305,7 @@ export function IssueDetailForm({
             value={description}
             onChange={setDescription}
             onClose={handleDescriptionSave}
+            onUploadImage={uploadImage}
           />
 
           {/* Subtasks - only show for parent issues (not subtasks) */}
@@ -320,9 +322,6 @@ export function IssueDetailForm({
               <SubtaskList issue={issue} />
             </div>
           )}
-
-          {/* Attachments */}
-          <IssueKnowledgeLinks issueId={issue.id} workspaceId={workspaceId} />
 
           {/* Attachments */}
           <div>

@@ -560,6 +560,7 @@ export default function BrandSettingsPage() {
                   {/* Summary */}
                   <BrandSummaryField
                     brandId={workspaceBrand.id}
+                    workspaceId={workspace!.id}
                     value={editedSummary}
                     onChange={setEditedSummary}
                     onSave={handleSaveSummary}

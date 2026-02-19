@@ -1952,7 +1952,7 @@ export async function getKnowledgeTags(workspaceId: string): Promise<string[]> {
 
 export async function createKnowledgeImageUpload(input: {
   workspaceId: string;
-  documentId: string;
+  documentId?: string;
   filename: string;
   mimeType: string;
   size: number;
@@ -1969,16 +1969,18 @@ export async function createKnowledgeImageUpload(input: {
     throw new Error("Image size must be between 1 byte and 10MB");
   }
 
-  const doc = await db
-    .select()
-    .from(knowledgeDocuments)
-    .where(eq(knowledgeDocuments.id, input.documentId))
-    .get();
-  if (!doc || doc.workspaceId !== input.workspaceId) {
-    throw new Error("Document not found");
-  }
-  if (!isMarkdownDocument(doc)) {
-    throw new Error("Images can only be uploaded for markdown files");
+  if (input.documentId) {
+    const doc = await db
+      .select()
+      .from(knowledgeDocuments)
+      .where(eq(knowledgeDocuments.id, input.documentId))
+      .get();
+    if (!doc || doc.workspaceId !== input.workspaceId) {
+      throw new Error("Document not found");
+    }
+    if (!isMarkdownDocument(doc)) {
+      throw new Error("Images can only be uploaded for markdown files");
+    }
   }
 
   const storageKey = generateKnowledgeImageStorageKey(
@@ -1992,7 +1994,7 @@ export async function createKnowledgeImageUpload(input: {
   await db.insert(knowledgeAssets).values({
     id: assetId,
     workspaceId: input.workspaceId,
-    documentId: input.documentId,
+    documentId: input.documentId ?? null,
     filename: input.filename,
     mimeType,
     size: input.size,

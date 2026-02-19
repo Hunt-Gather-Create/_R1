@@ -5,11 +5,12 @@ import { Pencil, Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DescriptionEditorDialog } from "@/components/issues/DescriptionEditorDialog";
 import { Button } from "@/components/ui/button";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { LexicalMarkdownPreview } from "@/components/ui/lexical";
+import { useUploadImage } from "@/lib/hooks";
 
 interface BrandSummaryFieldProps {
   brandId: string;
+  workspaceId: string;
   value: string;
   onChange: (value: string) => void;
   onSave: (value?: string) => void;
@@ -19,6 +20,7 @@ interface BrandSummaryFieldProps {
 
 export function BrandSummaryField({
   brandId,
+  workspaceId,
   value,
   onChange,
   onSave,
@@ -28,6 +30,7 @@ export function BrandSummaryField({
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const uploadImage = useUploadImage(workspaceId);
 
   const handleClose = () => {
     onSave();
@@ -120,10 +123,8 @@ export function BrandSummaryField({
           )}
         >
           {value ? (
-            <div className="p-3 prose prose-sm dark:prose-invert max-w-none">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {value}
-              </ReactMarkdown>
+            <div className="p-3">
+              <LexicalMarkdownPreview content={value} />
             </div>
           ) : (
             <div className="p-3 text-muted-foreground text-sm">
@@ -151,6 +152,7 @@ export function BrandSummaryField({
         onChange={onChange}
         onClose={handleClose}
         placeholder="Write a 1-3 sentence summary of what the brand does, their target audience, and value proposition..."
+        onUploadImage={uploadImage}
       />
     </>
   );

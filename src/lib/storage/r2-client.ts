@@ -124,15 +124,17 @@ export function generateKnowledgeDocumentPreviewStorageKey(
 /**
  * Generate a storage key for knowledge images.
  * Format: kb-assets/{workspaceId}/{documentId}/{uuid}_{filename}
+ * When documentId is omitted: kb-assets/{workspaceId}/general/{uuid}_{filename}
  */
 export function generateKnowledgeImageStorageKey(
   workspaceId: string,
-  documentId: string,
+  documentId: string | undefined,
   filename: string
 ): string {
   const uuid = crypto.randomUUID();
   const sanitized = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
-  return `kb-assets/${workspaceId}/${documentId}/${uuid}_${sanitized}`;
+  const folder = documentId ?? "general";
+  return `kb-assets/${workspaceId}/${folder}/${uuid}_${sanitized}`;
 }
 
 /**

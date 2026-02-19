@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
   type ChangeEvent,
-  type ReactElement,
 } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -26,23 +25,18 @@ import { ListPlugin } from "@lexical/react/LexicalListPlugin";
 import { LinkPlugin } from "@lexical/react/LexicalLinkPlugin";
 import { MarkdownShortcutPlugin } from "@lexical/react/LexicalMarkdownShortcutPlugin";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import { $createHeadingNode, $createQuoteNode } from "@lexical/rich-text";
 import {
-  $createHeadingNode,
-  $createQuoteNode,
-  HeadingNode,
-  QuoteNode,
-} from "@lexical/rich-text";
-import { ListItemNode, ListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from "@lexical/list";
-import { LinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link";
-import { $createCodeNode, CodeNode } from "@lexical/code";
+  INSERT_ORDERED_LIST_COMMAND,
+  INSERT_UNORDERED_LIST_COMMAND,
+} from "@lexical/list";
+import { TOGGLE_LINK_COMMAND } from "@lexical/link";
+import { $createCodeNode } from "@lexical/code";
 import { $setBlocksType } from "@lexical/selection";
 import {
   $convertFromMarkdownString,
   $convertToMarkdownString,
   TRANSFORMERS,
-  type ElementTransformer,
-  type TextMatchTransformer,
-  type Transformer,
 } from "@lexical/markdown";
 import {
   $createParagraphNode,
@@ -54,13 +48,8 @@ import {
   UNDO_COMMAND,
   COMMAND_PRIORITY_EDITOR,
   createCommand,
-  DecoratorNode,
-  type EditorConfig,
   type EditorState,
   type LexicalCommand,
-  type LexicalNode,
-  type NodeKey,
-  type SerializedLexicalNode,
   TextNode,
   $isParagraphNode,
 } from "lexical";
@@ -76,6 +65,12 @@ import {
   ChevronDown,
   ImagePlus,
 } from "lucide-react";
+import {
+  $createImageNode,
+  MARKDOWN_TRANSFORMERS,
+  LEXICAL_NODES,
+  LEXICAL_THEME,
+} from "./lexical/shared";
 
 interface LexicalMarkdownEditorProps {
   value: string;
@@ -83,6 +78,9 @@ interface LexicalMarkdownEditorProps {
   placeholder?: string;
   className?: string;
   onUploadImage?: (file: File) => Promise<string>;
+  compact?: boolean;
+  onBlur?: () => void;
+  minHeight?: number;
 }
 
 type InsertImagePayload = {
@@ -91,144 +89,9 @@ type InsertImagePayload = {
 };
 
 const INSERT_IMAGE_COMMAND: LexicalCommand<InsertImagePayload> = createCommand(
-  "INSERT_IMAGE_COMMAND"
+  "INSERT_IMAGE_COMMAND",
 );
 
-function getSerializedStringField(
-  serializedNode: SerializedLexicalNode,
-  field: string
-): string | null {
-  const value = (serializedNode as Record<string, unknown>)[field];
-  return typeof value === "string" ? value : null;
-}
-
-class ImageNode extends DecoratorNode<ReactElement> {
-  __src: string;
-  __altText: string;
-
-  static getType(): string {
-    return "image";
-  }
-
-  static clone(node: ImageNode): ImageNode {
-    return new ImageNode(node.__src, node.__altText, node.__key);
-  }
-
-  constructor(src: string, altText: string, key?: NodeKey) {
-    super(key);
-    this.__src = src;
-    this.__altText = altText;
-  }
-
-  static importJSON(serializedNode: SerializedLexicalNode): ImageNode {
-    const src = getSerializedStringField(serializedNode, "src");
-    if (!src) {
-      throw new Error("Invalid serialized image node: missing src");
-    }
-
-    return $createImageNode({
-      src,
-      altText: getSerializedStringField(serializedNode, "altText") ?? "",
-    });
-  }
-
-  exportJSON() {
-    return {
-      type: "image",
-      version: 1,
-      src: this.__src,
-      altText: this.__altText,
-    };
-  }
-
-  createDOM(config: EditorConfig): HTMLElement {
-    void config;
-    const span = document.createElement("span");
-    span.className = "block my-3";
-    return span;
-  }
-
-  updateDOM(): false {
-    return false;
-  }
-
-  decorate(): ReactElement {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={this.__src}
-        alt={this.__altText}
-        className="max-w-full h-auto rounded border border-border"
-      />
-    );
-  }
-}
-
-function $createImageNode({
-  src,
-  altText = "",
-}: {
-  src: string;
-  altText?: string;
-}): ImageNode {
-  return new ImageNode(src, altText);
-}
-
-function $isImageNode(node: LexicalNode | null | undefined): node is ImageNode {
-  return node instanceof ImageNode;
-}
-
-const IMAGE_MARKDOWN_TRANSFORMER: TextMatchTransformer = {
-  type: "text-match",
-  dependencies: [ImageNode],
-  trigger: ")",
-  importRegExp: /!\[([^\]]*)\]\(([^)\s]+(?:\s+"[^"]*")?)\)/,
-  regExp: /!\[([^\]]*)\]\(([^)\s]+(?:\s+"[^"]*")?)\)$/,
-  export: (node) => {
-    if (!$isImageNode(node)) {
-      return null;
-    }
-    return `![${node.__altText}](${node.__src})`;
-  },
-  replace: (textNode, match) => {
-    const [, alt, srcRaw] = match;
-    const src = srcRaw.replace(/\s+"[^"]*"$/, "");
-    textNode.replace(
-      $createImageNode({
-        src,
-        altText: alt ?? "",
-      })
-    );
-  },
-};
-
-const IMAGE_ELEMENT_TRANSFORMER: ElementTransformer = {
-  type: "element",
-  dependencies: [ImageNode],
-  regExp: /^!\[([^\]]*)\]\(([^)\s]+(?:\s+"[^"]*")?)\)$/,
-  export: (node) => {
-    if (!$isImageNode(node)) {
-      return null;
-    }
-    return `![${node.__altText}](${node.__src})`;
-  },
-  replace: (parentNode, _children, match) => {
-    const [, alt, srcRaw] = match;
-    const src = srcRaw.replace(/\s+"[^"]*"$/, "");
-    parentNode.replace(
-      $createImageNode({
-        src,
-        altText: alt ?? "",
-      })
-    );
-  },
-};
-
-const MARKDOWN_TRANSFORMERS: Transformer[] = [
-  IMAGE_ELEMENT_TRANSFORMER,
-  ...TRANSFORMERS,
-  IMAGE_MARKDOWN_TRANSFORMER,
-];
 const IMAGE_LINE_REGEXP = /^!\[([^\]]*)\]\(([^)\s]+(?:\s+"[^"]*")?)\)$/;
 
 function ImageMarkdownFallbackPlugin() {
@@ -249,7 +112,7 @@ function ImageMarkdownFallbackPlugin() {
         $createImageNode({
           src,
           altText: alt ?? "",
-        })
+        }),
       );
     });
   }, [editor]);
@@ -317,7 +180,7 @@ function ToolbarPlugin({
         });
         return true;
       },
-      COMMAND_PRIORITY_EDITOR
+      COMMAND_PRIORITY_EDITOR,
     );
   }, [editor]);
 
@@ -330,7 +193,7 @@ function ToolbarPlugin({
       | "quote"
       | "bullet"
       | "number"
-      | "code"
+      | "code",
   ) => {
     editor.focus(() => {
       editor.update(() => {
@@ -566,6 +429,9 @@ export function LexicalMarkdownEditor({
   placeholder = "Write markdown...",
   className,
   onUploadImage,
+  compact = false,
+  onBlur,
+  minHeight = 280,
 }: LexicalMarkdownEditorProps) {
   const initialConfig = useMemo(
     () => ({
@@ -573,7 +439,7 @@ export function LexicalMarkdownEditor({
       onError(error: Error) {
         throw error;
       },
-      nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, LinkNode, CodeNode, ImageNode],
+      nodes: LEXICAL_NODES,
       editorState: () => {
         if (value.trim().length > 0) {
           $convertFromMarkdownString(value, MARKDOWN_TRANSFORMERS);
@@ -584,29 +450,26 @@ export function LexicalMarkdownEditor({
         root.clear();
         root.append($createParagraphNode());
       },
-      theme: {
-        paragraph: "mb-2",
-        heading: {
-          h1: "text-3xl font-bold leading-tight mt-4 mb-2",
-          h2: "text-2xl font-semibold leading-tight mt-4 mb-2",
-          h3: "text-xl font-semibold leading-tight mt-3 mb-1",
-        },
-        quote: "border-l-2 border-border pl-3 text-muted-foreground italic",
-        text: {
-          bold: "font-semibold",
-          italic: "italic",
-          code: "rounded bg-muted px-1 py-0.5 font-mono text-xs",
-        },
-      },
+      theme: LEXICAL_THEME,
     }),
-    [value]
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only init once
+    [],
   );
 
   return (
-    <div className={cn("h-full min-h-0 rounded-md border border-border bg-background", className)}>
+    <div
+      className={cn(
+        "h-full min-h-0 rounded-md border border-border bg-background",
+        className,
+      )}
+    >
       <LexicalComposer initialConfig={initialConfig}>
-        <ToolbarPlugin onUploadImage={onUploadImage} />
-        <div className="h-[calc(100%-40px)] min-h-[280px] overflow-y-auto px-3 py-2">
+        {!compact && <ToolbarPlugin onUploadImage={onUploadImage} />}
+        <div
+          className="overflow-y-auto px-3 py-2"
+          style={{ minHeight: `${minHeight}px` }}
+          onBlur={onBlur}
+        >
           <RichTextPlugin
             contentEditable={
               <ContentEditable className="min-h-[260px] outline-none text-sm leading-6 prose prose-sm max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-pre:my-3 prose-code:before:content-none prose-code:after:content-none dark:prose-invert" />

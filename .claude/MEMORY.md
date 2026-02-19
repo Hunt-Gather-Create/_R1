@@ -13,7 +13,7 @@ Shared learnings and context that persist across sessions for all contributors.
 
 ## Gotchas
 
-<!-- Add non-obvious behaviors, tricky bugs, and things to watch out for -->
+- Turbopack requires `.tsx` extension for any file containing JSX — `.ts` files with JSX fail with cryptic "Expected '>', got 'src'" errors
 
 ## Decisions
 

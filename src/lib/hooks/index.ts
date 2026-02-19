@@ -107,6 +107,8 @@ export { useMounted } from "./use-mounted";
 
 export { useEpicTitle } from "./use-epic-title";
 
+export { useUploadImage } from "./use-upload-image";
+
 export {
   useKnowledgeFolders,
   useKnowledgeDocuments,
