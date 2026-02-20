@@ -16,8 +16,8 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "🛳️ Ship It",
-  description: "A Linear-style issue tracker with keyboard-first navigation",
+  title: "_R1 | Workspaces",
+  description: "The workspace for teams that ship",
 };
 
 export default function RootLayout({
