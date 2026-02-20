@@ -40,7 +40,7 @@ describe("invite code validation", () => {
 
   describe("expiry check logic", () => {
     it("treats null expiresAt as never expired", () => {
-      const code = { expiresAt: null };
+      const code: { expiresAt: Date | null } = { expiresAt: null };
       const isExpired = code.expiresAt && code.expiresAt < new Date();
       expect(isExpired).toBeFalsy();
     });

@@ -17,7 +17,6 @@ export default async function ClaimPage({ params }: ClaimPageProps) {
   // Check if user is authenticated
   const authUser = await getCurrentUser();
   let isAuthenticated = false;
-  let isAlreadyActive = false;
 
   if (authUser) {
     isAuthenticated = true;
@@ -31,7 +30,6 @@ export default async function ClaimPage({ params }: ClaimPageProps) {
     });
 
     if (dbUser.status === "active") {
-      isAlreadyActive = true;
       redirect("/projects");
     }
   }
@@ -42,7 +40,6 @@ export default async function ClaimPage({ params }: ClaimPageProps) {
       isValid={valid}
       errorMessage={errorMessage}
       isAuthenticated={isAuthenticated}
-      isAlreadyActive={isAlreadyActive}
     />
   );
 }

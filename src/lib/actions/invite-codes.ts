@@ -31,22 +31,23 @@ export async function getInviteCode(
 /**
  * Validate an invite code: exists and not expired.
  * Returns { valid, errorMessage }.
+ * Uses a generic error message to prevent invite code enumeration.
  */
 export async function validateInviteCode(
   token: string
 ): Promise<{ valid: boolean; errorMessage?: string }> {
   if (!UUID_REGEX.test(token)) {
-    return { valid: false, errorMessage: "Invalid invite code format." };
+    return { valid: false, errorMessage: "This invite code is invalid or has expired." };
   }
 
   const code = await getInviteCode(token);
 
   if (!code) {
-    return { valid: false, errorMessage: "This invite code doesn't exist." };
+    return { valid: false, errorMessage: "This invite code is invalid or has expired." };
   }
 
   if (code.expiresAt && code.expiresAt < new Date()) {
-    return { valid: false, errorMessage: "This invite code has expired." };
+    return { valid: false, errorMessage: "This invite code is invalid or has expired." };
   }
 
   return { valid: true };
@@ -54,6 +55,8 @@ export async function validateInviteCode(
 
 /**
  * Claim an invite code: validates the code and activates the user.
+ * Uses a transaction to atomically activate the user and delete the code,
+ * preventing race conditions where multiple users claim the same code.
  * Requires authentication. Redirects to /projects on success.
  */
 export async function claimInviteCode(token: string): Promise<void> {
@@ -69,11 +72,15 @@ export async function claimInviteCode(token: string): Promise<void> {
     throw new Error(errorMessage ?? "Invalid invite code.");
   }
 
-  // Activate user
-  await db
-    .update(users)
-    .set({ status: "active", updatedAt: new Date() })
-    .where(eq(users.id, user.id));
+  // Atomically activate user and consume the invite code
+  await db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({ status: "active", updatedAt: new Date() })
+      .where(eq(users.id, user.id));
+
+    await tx.delete(inviteCodes).where(eq(inviteCodes.id, token));
+  });
 
   redirect("/projects");
 }

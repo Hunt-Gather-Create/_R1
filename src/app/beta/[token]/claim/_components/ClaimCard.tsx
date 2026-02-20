@@ -8,7 +8,6 @@ interface ClaimCardProps {
   isValid: boolean;
   errorMessage?: string;
   isAuthenticated: boolean;
-  isAlreadyActive: boolean;
 }
 
 export function ClaimCard({

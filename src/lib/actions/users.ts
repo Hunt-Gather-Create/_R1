@@ -18,7 +18,9 @@ export interface WorkOSUserData {
 const AUTO_ACTIVE_DOMAINS = ["civilization.agency", "stabilization.hsc"];
 
 function isAutoActiveDomain(email: string): boolean {
-  const domain = email.split("@")[1]?.toLowerCase();
+  const lastAt = email.lastIndexOf("@");
+  if (lastAt === -1) return false;
+  const domain = email.substring(lastAt + 1).toLowerCase();
   return AUTO_ACTIVE_DOMAINS.includes(domain);
 }
 

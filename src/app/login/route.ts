@@ -1,14 +1,15 @@
 import { getSignInUrl } from "@workos-inc/authkit-nextjs";
-import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
 export const GET = async (request: NextRequest) => {
   const returnTo = request.nextUrl.searchParams.get("returnTo");
 
-  // Persist returnTo as httpOnly cookie if it's a valid claim/invite path
+  const signInUrl = await getSignInUrl();
+  const response = NextResponse.redirect(signInUrl);
+
+  // Persist returnTo as httpOnly cookie on the redirect response
   if (returnTo?.startsWith("/beta/") || returnTo?.startsWith("/invite/")) {
-    const cookieStore = await cookies();
-    cookieStore.set("returnTo", returnTo, {
+    response.cookies.set("returnTo", returnTo, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -17,6 +18,5 @@ export const GET = async (request: NextRequest) => {
     });
   }
 
-  const signInUrl = await getSignInUrl();
-  return NextResponse.redirect(signInUrl);
+  return response;
 };
