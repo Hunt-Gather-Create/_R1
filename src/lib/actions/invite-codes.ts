@@ -89,11 +89,6 @@ export async function validateInviteCode(
 export async function claimInviteCode(token: string): Promise<void> {
   const user = await requireAuth();
 
-  // Already active — just redirect
-  if (user.status === "active") {
-    redirect("/projects");
-  }
-
   const { valid, errorMessage } = await validateInviteCode(token, user.id);
   if (!valid) {
     throw new Error(errorMessage ?? "Invalid invite code.");
@@ -123,10 +118,13 @@ export async function claimInviteCode(token: string): Promise<void> {
       }
     }
 
-    await tx
-      .update(users)
-      .set({ status: "active", updatedAt: new Date() })
-      .where(eq(users.id, user.id));
+    // Activate user if not already active
+    if (user.status !== "active") {
+      await tx
+        .update(users)
+        .set({ status: "active", updatedAt: new Date() })
+        .where(eq(users.id, user.id));
+    }
 
     await tx.insert(inviteCodeClaims).values({
       inviteCodeId: token,
