@@ -10,6 +10,7 @@ import {
   captureScreenshotForBrandColors,
   isCloudflareConfigured,
 } from "@/lib/cloudflare-browser";
+import { llmsTxtTool } from "@/lib/llms-txt";
 
 export const maxDuration = 60;
 
@@ -56,10 +57,11 @@ Be thorough but concise. Focus on the most likely interpretations of the brand n
 const URL_RESEARCH_PROMPT = `You are a brand research assistant. The user has provided a specific website URL for a brand.
 
 Your task:
-1. Use web_fetch to load the page content
+1. Use web_fetch to load the page content. If web_fetch fails or is unavailable, use the llms_txt tool to try the site's llms.txt for context.
 2. Extract brand information from the page
 3. Use additional web_search if needed to find more details (tagline, industry, etc.)
-4. IMPORTANT: You MUST call the report_brand tool with the extracted information. Do not respond with text - always use the tool.
+4. Use the llms_txt tool to try the site's llms.txt for context for deeper information.
+5. IMPORTANT: You MUST call the report_brand tool with the extracted information. Do not respond with text - always use the tool.
 
 Extract as much as you can:
 - Brand name (required - look for company name, site title, or og:site_name)
@@ -89,9 +91,9 @@ Your task:
      * Secondary navigation elements
      * Footer accents
      * Any color that complements the primary (often a contrasting or analogous color)
-2. Use web_fetch to load the page content for text information
+2. Use web_fetch to load the page content for text information. If web_fetch fails, use the llms_txt tool to try the site's llms.txt for context.
 3. Use additional web_search if needed for more details
-4. IMPORTANT: You MUST call the report_brand tool with the extracted information.
+4. Use the llms_txt tool to try the site's llms.txt for context for deeper information.
 
 Extract:
 - Brand name (required)
@@ -113,10 +115,11 @@ Brand selected: {{BRAND_NAME}}
 Website: {{BRAND_URL}}
 
 Your task:
-1. Use web_fetch to load the brand's website
+1. Use web_fetch to load the brand's website. If web_fetch fails, use the llms_txt tool to try the site's llms.txt for context.
 2. Use web_search to find additional information about the brand
 3. Extract comprehensive brand information
-4. Use the report_brand tool to return the information
+4. Use the llms_txt tool to try the site's llms.txt for context for deeper information.
+5. IMPORTANT: You MUST call the report_brand tool with the extracted information.
 
 Extract as much as you can:
 - Confirm the brand name
@@ -249,6 +252,7 @@ async function handleUrlResearch(url: string) {
   const tools = {
     web_fetch: anthropic.tools.webFetch_20250910({ maxUses: 2 }),
     web_search: anthropic.tools.webSearch_20250305({ maxUses: 2 }),
+    llms_txt: llmsTxtTool,
     report_brand: reportBrandTool,
   };
 
@@ -337,6 +341,7 @@ async function handleSelectionResearch(selection: BrandSearchResult) {
     tools: {
       web_fetch: anthropic.tools.webFetch_20250910({ maxUses: 2 }),
       web_search: anthropic.tools.webSearch_20250305({ maxUses: 2 }),
+      llms_txt: llmsTxtTool,
       report_brand: reportBrandTool,
     },
   });

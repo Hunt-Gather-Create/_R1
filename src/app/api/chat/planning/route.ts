@@ -144,6 +144,7 @@ export async function POST(req: Request) {
     model: "claude-haiku-4-5-20251001",
     maxSteps: 10, // Allow AI to continue after creating issues
     builtInTools: {
+      llmsTxt: true,
       webSearch: true,
       codeExecution: true,
       webFetch: true,

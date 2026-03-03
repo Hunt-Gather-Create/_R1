@@ -9,6 +9,7 @@ import {
 } from "ai";
 import { z, type ZodObject, type ZodRawShape } from "zod";
 import type { ParsedSkill } from "./skills";
+import { llmsTxtTool } from "@/lib/llms-txt";
 import { getMcpToolsForWorkspace } from "@/lib/mcp";
 import { recordTokenUsage } from "@/lib/token-usage";
 
@@ -46,6 +47,7 @@ export interface BuiltInToolsConfig {
   webSearch?: boolean | { maxUses?: number };
   codeExecution?: boolean;
   webFetch?: boolean | { maxUses?: number };
+  llmsTxt?: boolean | { maxUses?: number };
 }
 
 /**
@@ -277,6 +279,10 @@ export async function createChatResponse(
     allTools.web_fetch = anthropic.tools.webFetch_20250910({
       maxUses: options.maxUses ?? 2,
     });
+  }
+
+  if (config.builtInTools?.llmsTxt) {
+    allTools.llms_txt = llmsTxtTool;
   }
 
   // Add skill loader tool if skills are provided (lazy loading)

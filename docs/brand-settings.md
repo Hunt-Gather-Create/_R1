@@ -15,7 +15,7 @@ When adding a brand, users can:
 2. **Enter website URL** - AI extracts brand information from the website
 3. **Create from scratch** - Manually enter brand details
 
-The research flow uses `/api/brand/research` endpoint which leverages AI to gather brand information.
+The research flow uses `/api/brand/research` endpoint which leverages AI to gather brand information. The model can use the `llms_txt` tool to read a site's llms.txt (https://llmstxt.org/) when available, e.g. when web_fetch fails.
 
 ### Brand Overview
 

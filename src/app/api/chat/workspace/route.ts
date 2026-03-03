@@ -236,6 +236,7 @@ export async function POST(req: Request) {
       webSearch: true,
       codeExecution: true,
       webFetch: true,
+      llmsTxt: true,
     },
     skills,
     workspaceId,
