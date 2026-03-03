@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fetchLlmsTxt, llmsTxtTool } from "./llms-txt";
+import { createLlmsTxtTool, fetchLlmsTxt, llmsTxtTool } from "./llms-txt";
 
 describe("fetchLlmsTxt", () => {
   const mockFetch = vi.fn();
@@ -75,7 +75,11 @@ describe("llmsTxtTool", () => {
       text: () => Promise.resolve(content),
     });
 
-    const result = await llmsTxtTool.execute({ url: "https://example.com" });
+    const execute = llmsTxtTool.execute;
+    expect(execute).toBeDefined();
+    const result = await (execute as (args: { url: string }) => Promise<string>)(
+      { url: "https://example.com" }
+    );
 
     expect(result).toBe(content);
   });
@@ -83,8 +87,39 @@ describe("llmsTxtTool", () => {
   it("execute returns fallback message when llms.txt not found", async () => {
     mockFetch.mockResolvedValue({ ok: false });
 
-    const result = await llmsTxtTool.execute({ url: "https://example.com" });
+    const execute = llmsTxtTool.execute;
+    expect(execute).toBeDefined();
+    const result = await (execute as (args: { url: string }) => Promise<string>)(
+      { url: "https://example.com" }
+    );
 
     expect(result).toBe("No llms.txt found for this site.");
+  });
+});
+
+describe("createLlmsTxtTool", () => {
+  const mockFetch = vi.fn();
+  beforeEach(() => {
+    vi.stubGlobal("fetch", mockFetch);
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue({ ok: true, text: () => Promise.resolve("# Ok") });
+  });
+
+  it("enforces maxUses and returns limit message when exceeded", async () => {
+    const limitedTool = createLlmsTxtTool(2);
+    const execute = limitedTool.execute;
+    expect(execute).toBeDefined();
+    const run = execute as (args: { url: string }) => Promise<string>;
+
+    const first = await run({ url: "https://a.com" });
+    const second = await run({ url: "https://b.com" });
+    const third = await run({ url: "https://c.com" });
+
+    expect(first).toBe("# Ok");
+    expect(second).toBe("# Ok");
+    expect(third).toBe(
+      "llms_txt tool limit reached for this conversation. Do not call llms_txt again."
+    );
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 });

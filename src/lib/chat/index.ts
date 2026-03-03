@@ -9,7 +9,7 @@ import {
 } from "ai";
 import { z, type ZodObject, type ZodRawShape } from "zod";
 import type { ParsedSkill } from "./skills";
-import { llmsTxtTool } from "@/lib/llms-txt";
+import { createLlmsTxtTool } from "@/lib/llms-txt";
 import { getMcpToolsForWorkspace } from "@/lib/mcp";
 import { recordTokenUsage } from "@/lib/token-usage";
 
@@ -282,7 +282,11 @@ export async function createChatResponse(
   }
 
   if (config.builtInTools?.llmsTxt) {
-    allTools.llms_txt = llmsTxtTool;
+    const options =
+      typeof config.builtInTools.llmsTxt === "object"
+        ? config.builtInTools.llmsTxt
+        : {};
+    allTools.llms_txt = createLlmsTxtTool(options.maxUses ?? 2);
   }
 
   // Add skill loader tool if skills are provided (lazy loading)
