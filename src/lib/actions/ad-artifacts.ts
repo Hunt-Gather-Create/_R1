@@ -82,6 +82,7 @@ export async function createAdArtifact(input: {
   content: string;
   mediaAssets?: string;
   brandId?: string;
+  issueId?: string;
 }): Promise<AdArtifact> {
   await requireWorkspaceAccess(input.workspaceId, "member");
   try {
@@ -97,6 +98,7 @@ export async function createAdArtifact(input: {
         content: input.content,
         mediaAssets: input.mediaAssets ?? null,
         brandId: input.brandId ?? null,
+        issueId: input.issueId ?? null,
       })
       .returning();
 
@@ -547,6 +549,7 @@ export async function refreshAdAttachment(artifactId: string): Promise<void> {
 /**
  * Re-render and overwrite the HTML attachment only when all media for the current index are ready.
  * Called after generate-image so the attachment is updated only when every slot has media (no placeholders).
+ * Also auto-creates the attachment when issueId is set but no attachment exists yet.
  */
 export async function refreshAdAttachmentIfMediaReady(artifactId: string): Promise<void> {
   const artifact = await db
@@ -555,12 +558,27 @@ export async function refreshAdAttachmentIfMediaReady(artifactId: string): Promi
     .where(eq(adArtifacts.id, artifactId))
     .get();
 
-  if (!artifact?.issueAttachmentId) return;
+  if (!artifact) return;
 
   const slots = parseMediaAssetsToSlots(artifact.mediaAssets);
   if (!allCurrentMediaReady(slots)) return;
 
-  await refreshAdAttachment(artifactId);
+  if (artifact.issueAttachmentId) {
+    await refreshAdAttachment(artifactId);
+  } else if (artifact.issueId) {
+    // Guard: ad needs images (has prompts) but none initiated yet — wait for images
+    let parsedContent: Record<string, unknown>;
+    try {
+      parsedContent = JSON.parse(artifact.content) as Record<string, unknown>;
+    } catch {
+      parsedContent = {};
+    }
+    const prompts = getPromptsFromContent(artifact.platform, artifact.templateType, parsedContent);
+    const needsImages = prompts.some((p) => p?.trim());
+    if (needsImages && slots.length === 0) return;
+
+    await attachAdArtifactToIssue(artifactId, artifact.issueId);
+  }
 }
 
 /**

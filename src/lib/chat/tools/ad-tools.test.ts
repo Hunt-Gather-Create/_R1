@@ -9,7 +9,7 @@ function getExecute(tools: ReturnType<typeof createAdTools>, name: keyof ReturnT
 const mockCreateAdArtifact = vi.fn();
 const mockUpdateAdArtifactContent = vi.fn();
 const mockUpdateAdArtifactMedia = vi.fn();
-const mockAttachAdArtifactToIssue = vi.fn();
+const mockRefreshAdAttachmentIfMediaReady = vi.fn();
 const mockGetWorkspaceBrand = vi.fn();
 
 vi.mock("@/lib/actions/ad-artifacts", async (importOriginal) => {
@@ -19,7 +19,7 @@ vi.mock("@/lib/actions/ad-artifacts", async (importOriginal) => {
     createAdArtifact: (...args: unknown[]) => mockCreateAdArtifact(...args),
     updateAdArtifactContent: (...args: unknown[]) => mockUpdateAdArtifactContent(...args),
     updateAdArtifactMedia: (...args: unknown[]) => mockUpdateAdArtifactMedia(...args),
-    attachAdArtifactToIssue: (...args: unknown[]) => mockAttachAdArtifactToIssue(...args),
+    refreshAdAttachmentIfMediaReady: (...args: unknown[]) => mockRefreshAdAttachmentIfMediaReady(...args),
   };
 });
 
@@ -70,7 +70,6 @@ describe("createAdTools", () => {
       expect(result).toEqual({
         success: true,
         artifactId: "artifact-1",
-        attachmentId: undefined,
         name: "My Ad",
         platform: "instagram",
         templateType: "feed-post",
@@ -273,8 +272,8 @@ describe("createAdTools", () => {
   });
 
   describe("tool execute - auto-attach to issue", () => {
-    it("calls attachAdArtifactToIssue when issueId in context", async () => {
-      mockAttachAdArtifactToIssue.mockResolvedValue({ success: true, attachmentId: "att-1" });
+    it("calls refreshAdAttachmentIfMediaReady when issueId in context", async () => {
+      mockRefreshAdAttachmentIfMediaReady.mockResolvedValue(undefined);
 
       const tools = createAdTools({ ...baseContext, issueId: "issue-1" });
       const result = await getExecute(tools, "create_ad_instagram_feed_post")({
@@ -283,8 +282,8 @@ describe("createAdTools", () => {
         content: {},
       });
 
-      expect(result).toMatchObject({ success: true, attachmentId: "att-1" });
-      expect(mockAttachAdArtifactToIssue).toHaveBeenCalledWith("artifact-1", "issue-1");
+      expect(result).toMatchObject({ success: true, artifactId: "artifact-1" });
+      expect(mockRefreshAdAttachmentIfMediaReady).toHaveBeenCalledWith("artifact-1");
     });
   });
 });

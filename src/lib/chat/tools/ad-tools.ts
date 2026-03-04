@@ -2,7 +2,7 @@ import { tool, jsonSchema } from "ai";
 import { z } from "zod";
 import {
   createAdArtifact,
-  attachAdArtifactToIssue,
+  refreshAdAttachmentIfMediaReady,
   updateAdArtifactContent,
   updateAdArtifactWithNewImageVersion,
 } from "@/lib/actions/ad-artifacts";
@@ -158,27 +158,18 @@ function createAdTool(
           name: input.name,
           content: JSON.stringify(contentObj),
           brandId: context.brandId,
+          issueId: context.issueId,
         });
 
-        // Profile/company image is generated when the ad is rendered (no server-side generation).
-
-        // Auto-attach to issue when in issue chat context
-        let attachmentId: string | undefined;
+        // Auto-create attachment immediately (no-media ads like Google Search) or
+        // once all images are ready (media ads). Fire-and-forget.
         if (context.issueId) {
-          try {
-            const attachResult = await attachAdArtifactToIssue(artifact.id, context.issueId);
-            if (attachResult.success) {
-              attachmentId = attachResult.attachmentId;
-            }
-          } catch (e) {
-            console.error("Failed to auto-attach ad to issue:", e);
-          }
+          refreshAdAttachmentIfMediaReady(artifact.id).catch(() => {});
         }
 
         return {
           success: true,
           artifactId: artifact.id,
-          attachmentId,
           name: input.name,
           platform,
           templateType,

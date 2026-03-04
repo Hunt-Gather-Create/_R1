@@ -1,0 +1,1 @@
+ALTER TABLE `ad_artifacts` ADD `issue_id` text REFERENCES issues(id);
