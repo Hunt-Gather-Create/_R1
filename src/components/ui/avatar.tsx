@@ -25,10 +25,12 @@ Avatar.displayName = "Avatar";
 
 interface AvatarImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   src?: string;
+  /** Use "contain" for brand logos so the full logo is visible; default "cover" for avatars. */
+  objectFit?: "cover" | "contain";
 }
 
 const AvatarImage = React.forwardRef<HTMLImageElement, AvatarImageProps>(
-  ({ className, src, alt, ...props }, ref) => {
+  ({ className, src, alt, objectFit = "cover", ...props }, ref) => {
     const [hasError, setHasError] = React.useState(false);
 
     if (!src || hasError) {
@@ -40,7 +42,11 @@ const AvatarImage = React.forwardRef<HTMLImageElement, AvatarImageProps>(
         ref={ref}
         src={src}
         alt={alt}
-        className={cn("aspect-square h-full w-full object-cover", className)}
+        className={cn(
+          "aspect-square h-full w-full",
+          objectFit === "contain" ? "object-contain" : "object-cover",
+          className
+        )}
         onError={() => setHasError(true)}
         {...props}
       />

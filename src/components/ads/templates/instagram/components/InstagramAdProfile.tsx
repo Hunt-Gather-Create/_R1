@@ -50,7 +50,7 @@ export function InstagramAdProfile({
         imagePrompt={imagePrompt}
         alt={imageAltText ?? username}
         artifactId={artifactId}
-        className="w-8 h-8 rounded-full object-cover object-center"
+        className="w-8 h-8 rounded-full object-contain object-center"
         style={profileImageStyle}
         imageBackgroundColor={imageBackgroundColor}
       />

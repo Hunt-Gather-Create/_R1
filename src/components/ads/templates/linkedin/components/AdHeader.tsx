@@ -32,7 +32,7 @@ export default function AdHeader({
         <RetryImage
           src={profileImageUrl || linkedInBranding.profilePlaceholder}
           alt={`${title} logo`}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
         />
       </div>
       <div className="flex gap-1 justify-between w-full" style={{ fontFamily: linkedInFonts.primary, color: linkedInColors.textPrimary }}>

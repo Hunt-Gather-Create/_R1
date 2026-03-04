@@ -57,7 +57,7 @@ function SecondaryAd({
             className="h-8 w-8"
             style={imageBackgroundColor ? { backgroundColor: imageBackgroundColor } : { backgroundColor: 'rgb(224 242 254)' }}
           >
-            <AvatarImage src="/placeholder.svg" alt={companyName} />
+            <AvatarImage src="/placeholder.svg" alt={companyName} objectFit="contain" />
             <AvatarFallback>{companyAbbreviation}</AvatarFallback>
           </Avatar>
           <div className="flex flex-col">
@@ -131,7 +131,7 @@ export default function FacebookInStreamVideo({ content }: FacebookInStreamVideo
               className="h-8 w-8"
               style={profileImageBackgroundColor ? { backgroundColor: profileImageBackgroundColor } : undefined}
             >
-              <AvatarImage src={companyLogo} alt={companyName} />
+              <AvatarImage src={companyLogo} alt={companyName} objectFit="contain" />
               <AvatarFallback>{companyAbbreviation}</AvatarFallback>
             </Avatar>
             <div className="flex flex-col">

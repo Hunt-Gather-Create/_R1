@@ -46,6 +46,7 @@ export function ProfileImageOrGenerate({
         style={{
           ...style,
           backgroundColor: imageBackgroundColor ?? undefined,
+          objectFit: "contain",
         }}
       />
     );

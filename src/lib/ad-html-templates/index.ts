@@ -49,7 +49,7 @@ export function profileImageHtml(
   const shape = round ? "50%" : "4px";
   const url = profileImageUrl?.trim();
   if (url) {
-    return `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" width="${size}" height="${size}" style="width:${size};height:${size};border-radius:${shape};object-fit:cover;flex-shrink:0;" />`;
+    return `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" width="${size}" height="${size}" style="width:${size};height:${size};border-radius:${shape};object-fit:contain;flex-shrink:0;" />`;
   }
   return `<div style="width:${size};height:${size};border-radius:${shape};${bgStyle}flex-shrink:0;"></div>`;
 }
