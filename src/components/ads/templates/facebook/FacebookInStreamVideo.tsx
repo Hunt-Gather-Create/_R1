@@ -84,7 +84,6 @@ function SecondaryAd({
               altText={title}
               aspectRatio="1:1"
               mediaIndex={0}
-              disableGenerate={true}
             />
           </div>
           <div className="flex flex-col justify-between text-sm py-3">

@@ -30,11 +30,15 @@ function isEmptyUrl(value: unknown): boolean {
  * When profile/company image URL is empty and we have a generated image in slot 0,
  * substitute it into content and return content media starting at index 1
  * (so content image indices stay 0-based for the frontend).
+ * Skip for Facebook in-stream: slot 0 is the secondary ad image, not profile.
  */
 function mergeProfileMediaIntoContent(
   content: Record<string, unknown>,
   resolvedMediaBySlot: ResolvedMediaBySlot
 ): { mergedContent: Record<string, unknown>; contentMediaBySlot: ResolvedMediaBySlot } {
+  if (content.secondaryAd != null && typeof content.secondaryAd === "object") {
+    return { mergedContent: content, contentMediaBySlot: resolvedMediaBySlot };
+  }
   const profileUrl = resolvedMediaBySlot[0]?.currentImageUrl ?? null;
   if (!profileUrl) return { mergedContent: content, contentMediaBySlot: resolvedMediaBySlot };
 

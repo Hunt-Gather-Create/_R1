@@ -119,6 +119,17 @@ describe("getPromptsFromContent", () => {
       "slide 2",
     ]);
   });
+
+  it("returns secondary then primary image prompts for Facebook in-stream (no profile slot)", () => {
+    const content = {
+      image: "primary image prompt",
+      secondaryAd: { title: "Secondary", description: "Desc", image: "secondary image prompt" },
+    };
+    expect(getPromptsFromContent("facebook", "in-stream-video", content)).toEqual([
+      "secondary image prompt",
+      "primary image prompt",
+    ]);
+  });
 });
 
 describe("mergeClientMediaIntoSlots", () => {

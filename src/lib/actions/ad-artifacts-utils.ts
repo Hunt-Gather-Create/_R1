@@ -89,12 +89,15 @@ export function getPromptsFromContent(
   content: Record<string, unknown>
 ): string[] {
   const prompts: string[] = [];
+  const isFacebookInStream = platform === "facebook" && templateType === "in-stream-video";
   const profile = content.profile && typeof content.profile === "object" ? (content.profile as Record<string, unknown>) : null;
   const company = content.company && typeof content.company === "object" ? (content.company as Record<string, unknown>) : null;
 
-  // Slot 0: profile or company image prompt
-  const profilePrompt = (profile?.imagePrompt as string)?.trim() || (company?.imagePrompt as string)?.trim() || "";
-  prompts.push(profilePrompt || "");
+  // Slot 0: profile or company image prompt (skip for Facebook in-stream; that template uses slot 0 = secondary ad image)
+  if (!isFacebookInStream) {
+    const profilePrompt = (profile?.imagePrompt as string)?.trim() || (company?.imagePrompt as string)?.trim() || "";
+    prompts.push(profilePrompt || "");
+  }
 
   // Content slots (platform-specific)
   if (platform === "instagram") {
@@ -120,8 +123,13 @@ export function getPromptsFromContent(
       }
     }
   } else if (platform === "facebook" && templateType === "in-stream-video") {
-    const c = content.content as { image?: string } | undefined;
-    prompts.push((c?.image as string)?.trim() || "");
+    // Slot 0 = secondary ad image, slot 1 = primary ad image (no profile slot in this template)
+    const secondary = content.secondaryAd && typeof content.secondaryAd === "object"
+      ? (content.secondaryAd as { image?: string }).image
+      : undefined;
+    const primary = (content as { image?: string }).image;
+    prompts.push((secondary as string)?.trim() || "");
+    prompts.push((primary as string)?.trim() || "");
   }
   return prompts;
 }
