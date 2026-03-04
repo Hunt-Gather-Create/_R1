@@ -53,39 +53,10 @@ export default function GeneratedImage({
     }
   }, [imageUrl]);
 
-  // Load existing artifact image if available (only when no imageUrl from parent)
+  // Rely on parent to pass imageUrl (e.g. from getAdArtifact). No client fetch — parent loads artifact and passes resolved media.
   useEffect(() => {
-    if (imageUrl) {
-      setIsInitialized(true);
-      return;
-    }
-
-    async function loadArtifact() {
-      if (!artifactId) {
-        setIsInitialized(true);
-        return;
-      }
-
-      try {
-        const response = await fetch(`/api/ads/artifacts/${artifactId}`);
-        if (!response.ok) {
-          setIsInitialized(true);
-          return;
-        }
-
-        const data = await response.json();
-        if (data.imageUrl) {
-          setGeneratedImage(data.imageUrl);
-          hasAttemptedGeneration.current = true;
-        }
-      } catch {
-        // Ignore errors loading artifact
-      }
-      setIsInitialized(true);
-    }
-
-    loadArtifact();
-  }, [artifactId, imageUrl]);
+    setIsInitialized(true);
+  }, []);
 
   const generateImage = useMemo(
     () =>

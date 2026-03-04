@@ -47,12 +47,12 @@ export class ArtifactSaveService {
     mediaUrls: ArtifactSaveData['mediaUrls']
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await fetch(`/api/ads/artifacts/${artifactId}/media`, {
+      const response = await fetch('/api/ads/artifacts', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ mediaUrls }),
+        body: JSON.stringify({ artifactId, mediaUrls }),
       });
 
       if (!response.ok) {

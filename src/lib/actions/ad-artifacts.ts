@@ -3,13 +3,23 @@
 import { db } from "../db";
 import { adArtifacts, attachments, workspaceChats } from "../db/schema";
 import { eq, desc } from "drizzle-orm";
-import { generateDownloadUrl, deleteObject, uploadContent } from "../storage/r2-client";
+import { generateDownloadUrl, deleteObject, uploadContent, getObjectBinary } from "../storage/r2-client";
 import { renderAdToHtml } from "../ad-html-templates";
 import { revalidatePath } from "next/cache";
 import { attachContentToIssue } from "./attachments";
 import { requireWorkspaceAccess } from "./workspace";
 import { getWorkspaceSlug } from "./helpers";
 import type { AdArtifact } from "../types";
+import type { MediaSlot } from "@/components/ads/types/ArtifactData";
+import {
+  parseMediaAssetsToSlots,
+  allCurrentMediaReady,
+  getPromptsFromContent,
+  mergeClientMediaIntoSlots,
+  isClientMediaShape,
+  type ClientMediaPayload,
+} from "./ad-artifacts-utils";
+
 function isEmptyUrl(value: unknown): boolean {
   if (value == null) return true;
   if (typeof value !== "string") return true;
@@ -101,11 +111,72 @@ export type ResolvedMediaBySlot = Array<{
   currentImageUrl: string | null;
   generatedAt: Date;
   showVideo: boolean;
+  /** Prompt for the current version (for client-side generation when url is missing) */
+  currentPrompt?: string;
 }>;
+
+/**
+ * Resolve current version of each slot to a base64 data URL for HTML embedding.
+ * Only uses storageKey (fetches from R2) or existing imageUrl if it is already a data URL.
+ * Returns one string per slot in order (for renderAdToHtml mediaUrls).
+ */
+export async function resolveMediaToBase64DataUrls(mediaAssets: string | null): Promise<string[]> {
+  const slots = parseMediaAssetsToSlots(mediaAssets);
+  const dataUrls: string[] = [];
+  for (const slot of slots) {
+    const v = slot.versions[slot.currentIndex];
+    if (!v) {
+      dataUrls.push("");
+      continue;
+    }
+    if (v.imageUrl?.startsWith("data:")) {
+      dataUrls.push(v.imageUrl);
+      continue;
+    }
+    if (v.storageKey) {
+      const obj = await getObjectBinary(v.storageKey);
+      if (obj) {
+        const base64 = Buffer.from(obj.body).toString("base64");
+        const mime = obj.contentType.startsWith("image/") ? obj.contentType : "image/png";
+        dataUrls.push(`data:${mime};base64,${base64}`);
+        continue;
+      }
+    }
+    dataUrls.push("");
+  }
+  return dataUrls;
+}
+
+/**
+ * Resolve a single slot's versions to URLs (signed for display). Returns imageUrls in version order
+ * and the current version's url + prompt.
+ */
+async function resolveSlotToUrls(slot: MediaSlot): Promise<{
+  imageUrls: string[];
+  currentImageUrl: string | null;
+  currentPrompt: string | undefined;
+}> {
+  const imageUrls: string[] = [];
+  for (const v of slot.versions) {
+    if (v.storageKey) {
+      const url = await generateDownloadUrl(v.storageKey);
+      imageUrls.push(url);
+    } else if (v.imageUrl) {
+      imageUrls.push(v.imageUrl);
+    } else {
+      imageUrls.push("");
+    }
+  }
+  const idx = Math.max(0, Math.min(slot.currentIndex, slot.versions.length - 1));
+  const currentImageUrl = imageUrls[idx] || null;
+  const currentPrompt = slot.versions[idx]?.prompt;
+  return { imageUrls, currentImageUrl, currentPrompt };
+}
 
 /**
  * Get a single ad artifact with fresh signed URLs for media.
  * resolvedMediaBySlot can be passed as initialMediaUrls to ArtifactProvider so generated images show on reload.
+ * Each slot includes currentPrompt for the current version so the client can generate when url is missing.
  */
 export async function getAdArtifact(
   artifactId: string
@@ -125,35 +196,19 @@ export async function getAdArtifact(
   const resolvedMediaUrls: string[] = [];
   const resolvedMediaBySlot: ResolvedMediaBySlot = [];
 
-  if (artifact.mediaAssets) {
-    try {
-      const assets = JSON.parse(artifact.mediaAssets) as Array<{
-        storageKey?: string;
-        imageUrls?: string[];
-      }>;
-      for (const asset of assets) {
-        const imageUrls: string[] = [];
-        if (asset.storageKey) {
-          const url = await generateDownloadUrl(asset.storageKey);
-          imageUrls.push(url);
-          resolvedMediaUrls.push(url);
-        }
-        if (asset.imageUrls) {
-          imageUrls.push(...asset.imageUrls);
-          resolvedMediaUrls.push(...asset.imageUrls);
-        }
-        resolvedMediaBySlot.push({
-          imageUrls,
-          videoUrls: [],
-          currentIndex: 0,
-          currentImageUrl: imageUrls[0] ?? null,
-          generatedAt: new Date(),
-          showVideo: false,
-        });
-      }
-    } catch {
-      // Ignore parse errors
-    }
+  const slots = parseMediaAssetsToSlots(artifact.mediaAssets);
+  for (const slot of slots) {
+    const { imageUrls, currentImageUrl, currentPrompt } = await resolveSlotToUrls(slot);
+    resolvedMediaUrls.push(...imageUrls.filter(Boolean));
+    resolvedMediaBySlot.push({
+      imageUrls,
+      videoUrls: [],
+      currentIndex: slot.currentIndex,
+      currentImageUrl,
+      generatedAt: new Date(),
+      showVideo: false,
+      currentPrompt,
+    });
   }
 
   let contentForResponse: string = artifact.content;
@@ -213,6 +268,62 @@ export async function getChatAdArtifacts(chatId: string): Promise<AdArtifact[]> 
 }
 
 /**
+ * Update an existing artifact with new image version(s). Each media asset (slot) has its own
+ * currentIndex; we only append a new version and bump currentIndex for slots whose prompt
+ * changed, so each asset's version advances independently.
+ */
+export async function updateAdArtifactWithNewImageVersion(
+  artifactId: string,
+  content: string
+): Promise<AdArtifact | null> {
+  const existing = await db
+    .select()
+    .from(adArtifacts)
+    .where(eq(adArtifacts.id, artifactId))
+    .get();
+  if (!existing) return null;
+  await requireWorkspaceAccess(existing.workspaceId, "member");
+
+  let parsedContent: Record<string, unknown>;
+  try {
+    parsedContent = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+
+  const prompts = getPromptsFromContent(existing.platform, existing.templateType, parsedContent);
+  if (prompts.length === 0) return null;
+
+  const slots = parseMediaAssetsToSlots(existing.mediaAssets);
+
+  // Ensure we have at least as many slots as prompts (e.g. profile + content)
+  while (slots.length < prompts.length) {
+    slots.push({ currentIndex: 0, versions: [] });
+  }
+
+  for (let i = 0; i < prompts.length; i++) {
+    const slot = slots[i]!;
+    const newPrompt = (prompts[i] ?? "").trim();
+    const currentVersion = slot.versions[slot.currentIndex];
+    const currentPrompt = (currentVersion?.prompt ?? "").trim();
+    // Only append a new version for this media asset when its prompt changed
+    if (newPrompt !== currentPrompt) {
+      slot.versions.push({ prompt: newPrompt || undefined });
+      slot.currentIndex = slot.versions.length - 1;
+    }
+  }
+
+  const mediaAssetsJson = JSON.stringify(slots);
+  const [updated] = await db
+    .update(adArtifacts)
+    .set({ mediaAssets: mediaAssetsJson, updatedAt: new Date() })
+    .where(eq(adArtifacts.id, artifactId))
+    .returning();
+
+  return updated ?? null;
+}
+
+/**
  * Update ad artifact content (copy/text fields)
  */
 export async function updateAdArtifactContent(
@@ -233,31 +344,50 @@ export async function updateAdArtifactContent(
     .returning();
 
   if (updated) {
-    // Fire-and-forget: re-render any linked HTML attachment
-    refreshAdAttachment(artifactId).catch(() => {});
+    // Fire-and-forget: re-render HTML attachment only when all media are ready
+    refreshAdAttachmentIfMediaReady(artifactId).catch(() => {});
   }
 
   return updated ?? null;
 }
 
 /**
- * Update ad artifact media assets
+ * Update ad artifact media assets.
+ * When the payload is client-save shape (imageUrls per slot), merges with existing
+ * media so storageKeys from generate-image are preserved and the profile URL stays saved.
  */
 export async function updateAdArtifactMedia(
   artifactId: string,
   mediaAssets: string
 ): Promise<AdArtifact | null> {
-  const existing = await db
-    .select({ workspaceId: adArtifacts.workspaceId })
+  const row = await db
+    .select({
+      workspaceId: adArtifacts.workspaceId,
+      mediaAssets: adArtifacts.mediaAssets,
+    })
     .from(adArtifacts)
     .where(eq(adArtifacts.id, artifactId))
     .get();
-  if (!existing) return null;
-  await requireWorkspaceAccess(existing.workspaceId, "member");
+  if (!row) return null;
+  await requireWorkspaceAccess(row.workspaceId, "member");
+
+  let payload = mediaAssets;
+  if (isClientMediaShape(mediaAssets)) {
+    const existingSlots = parseMediaAssetsToSlots(row.mediaAssets);
+    let clientMedia: ClientMediaPayload;
+    try {
+      clientMedia = JSON.parse(mediaAssets) as ClientMediaPayload;
+    } catch {
+      clientMedia = [];
+    }
+    const merged = mergeClientMediaIntoSlots(existingSlots, clientMedia);
+    payload = JSON.stringify(merged);
+  }
+
   const [updated] = await db
     .update(adArtifacts)
     .set({
-      mediaAssets,
+      mediaAssets: payload,
       updatedAt: new Date(),
     })
     .where(eq(adArtifacts.id, artifactId))
@@ -268,6 +398,8 @@ export async function updateAdArtifactMedia(
 
 /**
  * Attach an ad artifact's HTML preview to an issue (on-demand).
+ * Only creates the attachment when all media for the current index are ready (no placeholders).
+ * HTML uses base64 data URLs for images so the document is self-contained and does not expire.
  */
 export async function attachAdArtifactToIssue(
   artifactId: string,
@@ -286,6 +418,24 @@ export async function attachAdArtifactToIssue(
 
     await requireWorkspaceAccess(artifact.workspaceId, "member");
 
+    const slots = parseMediaAssetsToSlots(artifact.mediaAssets);
+    if (!allCurrentMediaReady(slots)) {
+      return {
+        success: false,
+        error: "Not all media generated yet. Generate all images first, then attach.",
+      };
+    }
+
+    const dataUrls = await resolveMediaToBase64DataUrls(artifact.mediaAssets);
+    const resolvedMediaBySlotForHtml: ResolvedMediaBySlot = dataUrls.map((url) => ({
+      imageUrls: url ? [url] : [],
+      videoUrls: [],
+      currentIndex: 0,
+      currentImageUrl: url || null,
+      generatedAt: new Date(),
+      showVideo: false,
+    }));
+
     let parsedContent: unknown;
     try {
       parsedContent = JSON.parse(artifact.content);
@@ -293,34 +443,6 @@ export async function attachAdArtifactToIssue(
       parsedContent = artifact.content;
     }
 
-    // Resolve media URLs from R2 storage so the HTML includes actual images
-    const resolvedMediaBySlotForHtml: ResolvedMediaBySlot = [];
-    if (artifact.mediaAssets) {
-      try {
-        const assets = JSON.parse(artifact.mediaAssets) as Array<{
-          storageKey?: string;
-          imageUrls?: string[];
-        }>;
-        for (const asset of assets) {
-          const imageUrls: string[] = [];
-          if (asset.storageKey) {
-            const url = await generateDownloadUrl(asset.storageKey);
-            imageUrls.push(url);
-          }
-          if (asset.imageUrls) imageUrls.push(...asset.imageUrls);
-          resolvedMediaBySlotForHtml.push({
-            imageUrls,
-            videoUrls: [],
-            currentIndex: 0,
-            currentImageUrl: imageUrls[0] ?? null,
-            generatedAt: new Date(),
-            showVideo: false,
-          });
-        }
-      } catch {
-        // Ignore parse errors
-      }
-    }
     const { mergedContent: contentForHtml, contentMediaBySlot } = mergeProfileMediaIntoContent(
       parsedContent as Record<string, unknown>,
       resolvedMediaBySlotForHtml
@@ -355,8 +477,8 @@ export async function attachAdArtifactToIssue(
 }
 
 /**
- * Re-render and overwrite the HTML attachment for an ad artifact.
- * Called after media is generated so the attachment reflects current images.
+ * Re-render and overwrite the HTML attachment for an ad artifact using base64 data URLs.
+ * Only updates when the artifact has an existing attachment (e.g. after attach).
  */
 export async function refreshAdAttachment(artifactId: string): Promise<void> {
   const artifact = await db
@@ -377,34 +499,18 @@ export async function refreshAdAttachment(artifactId: string): Promise<void> {
 
   if (!attachment) return;
 
-  // Resolve current media URLs
-  const resolvedMediaBySlotForHtml: ResolvedMediaBySlot = [];
-  if (artifact.mediaAssets) {
-    try {
-      const assets = JSON.parse(artifact.mediaAssets) as Array<{
-        storageKey?: string;
-        imageUrls?: string[];
-      }>;
-      for (const asset of assets) {
-        const imageUrls: string[] = [];
-        if (asset.storageKey) {
-          const url = await generateDownloadUrl(asset.storageKey);
-          imageUrls.push(url);
-        }
-        if (asset.imageUrls) imageUrls.push(...asset.imageUrls);
-        resolvedMediaBySlotForHtml.push({
-          imageUrls,
-          videoUrls: [],
-          currentIndex: 0,
-          currentImageUrl: imageUrls[0] ?? null,
-          generatedAt: new Date(),
-          showVideo: false,
-        });
-      }
-    } catch {
-      // Ignore parse errors
-    }
-  }
+  const slots = parseMediaAssetsToSlots(artifact.mediaAssets);
+  if (!allCurrentMediaReady(slots)) return;
+
+  const dataUrls = await resolveMediaToBase64DataUrls(artifact.mediaAssets);
+  const resolvedMediaBySlotForHtml: ResolvedMediaBySlot = dataUrls.map((url) => ({
+    imageUrls: url ? [url] : [],
+    videoUrls: [],
+    currentIndex: 0,
+    currentImageUrl: url || null,
+    generatedAt: new Date(),
+    showVideo: false,
+  }));
 
   let parsedContent: unknown;
   try {
@@ -416,26 +522,41 @@ export async function refreshAdAttachment(artifactId: string): Promise<void> {
     parsedContent as Record<string, unknown>,
     resolvedMediaBySlotForHtml
   );
-  // Slot 0 = profile (already in contentForHtml); HTML templates expect mediaUrls[0] = first content image
   const contentOnlySlots = contentMediaBySlot.slice(1);
   const contentMediaUrls = contentOnlySlots.map((s) => s.currentImageUrl).filter(Boolean) as string[];
 
   const html = renderAdToHtml(artifact.platform, artifact.templateType, contentForHtml, contentMediaUrls);
   if (!html) return;
 
-  // Overwrite the R2 object at the same storage key
   await uploadContent(attachment.storageKey, html, "text/html");
 
-  // Update attachment size in DB
   const size = Buffer.byteLength(html, "utf-8");
   await db
     .update(attachments)
     .set({ size })
     .where(eq(attachments.id, attachment.id));
 
-  // Revalidate so the issue drawer picks up the updated attachment
   const slug = await getWorkspaceSlug(artifact.workspaceId);
   revalidatePath(slug ? `/w/${slug}` : "/");
+}
+
+/**
+ * Re-render and overwrite the HTML attachment only when all media for the current index are ready.
+ * Called after generate-image so the attachment is updated only when every slot has media (no placeholders).
+ */
+export async function refreshAdAttachmentIfMediaReady(artifactId: string): Promise<void> {
+  const artifact = await db
+    .select()
+    .from(adArtifacts)
+    .where(eq(adArtifacts.id, artifactId))
+    .get();
+
+  if (!artifact?.issueAttachmentId) return;
+
+  const slots = parseMediaAssetsToSlots(artifact.mediaAssets);
+  if (!allCurrentMediaReady(slots)) return;
+
+  await refreshAdAttachment(artifactId);
 }
 
 /**
@@ -452,19 +573,13 @@ export async function deleteAdArtifact(artifactId: string): Promise<void> {
 
   await requireWorkspaceAccess(artifact.workspaceId, "admin");
 
-  // Clean up R2 media assets
-  if (artifact.mediaAssets) {
-    try {
-      const assets = JSON.parse(artifact.mediaAssets) as Array<{
-        storageKey?: string;
-      }>;
-      for (const asset of assets) {
-        if (asset.storageKey) {
-          await deleteObject(asset.storageKey).catch(() => {});
-        }
+  // Clean up R2 media assets (versioned or legacy)
+  const slots = parseMediaAssetsToSlots(artifact.mediaAssets);
+  for (const slot of slots) {
+    for (const v of slot.versions) {
+      if (v.storageKey) {
+        await deleteObject(v.storageKey).catch(() => {});
       }
-    } catch {
-      // Ignore parse errors
     }
   }
 

@@ -41,6 +41,7 @@ export const useArtifactMedia = (mediaIndex: number = 0) => {
     imageUrls: mediaUrl.imageUrls,
     videoUrls: mediaUrl.videoUrls,
     currentImageUrl: mediaUrl.currentImageUrl,
+    currentPrompt: mediaUrl.currentPrompt,
     showVideo: mediaUrl.showVideo,
     generatedAt: mediaUrl.generatedAt,
     currentIndex: mediaUrl.showVideo ? Math.min(mediaUrl.videoUrls.length - 1, mediaUrl.currentIndex) : Math.min(mediaUrl.imageUrls.length - 1, mediaUrl.currentIndex),

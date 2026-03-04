@@ -4,8 +4,9 @@ import {
   createAdArtifact,
   attachAdArtifactToIssue,
   updateAdArtifactContent,
-  updateAdArtifactMedia,
+  updateAdArtifactWithNewImageVersion,
 } from "@/lib/actions/ad-artifacts";
+import { getPromptsFromContent } from "@/lib/actions/ad-artifacts-utils";
 import { getWorkspaceBrand } from "@/lib/actions/brand";
 import { getBrandForAdContent } from "@/lib/ads/merge-workspace-brand";
 
@@ -97,7 +98,7 @@ function createAdTool(
             ...((clean.properties as Record<string, unknown>) ?? {}),
             existingArtifactId: {
               type: "string",
-              description: "ID of an existing ad artifact to update in place. ONLY pass this for pure text/copy changes (e.g. 'change the headline', 'update the CTA', 'make the copy shorter'). NEVER pass this when the change involves the image in any way ('change the image', 'update the image', 'another image', 'different visual', 'try a different image') — image changes require a new artifact so the image regenerates from scratch. Also omit when creating any new ad.",
+              description: "ID of an existing ad artifact to update in place. Pass this when the user wants to change the same ad: for text/copy changes (e.g. 'change the headline', 'update the CTA') OR for image changes ('try a different image', 'regenerate the image', 'another image') — in both cases update this artifact instead of creating a new one. Only create a new artifact when the user explicitly asks for 'another ad' or 'a new ad'.",
             },
           },
         };
@@ -116,22 +117,33 @@ function createAdTool(
 
       try {
 
-        // UPDATE existing artifact in place
+        // UPDATE existing artifact in place (text and/or new image version)
         if (input.existingArtifactId) {
-          const updated = await updateAdArtifactContent(
+          const contentStr = JSON.stringify(input.content);
+          const contentObj = input.content as Record<string, unknown>;
+          const updatedContent = await updateAdArtifactContent(
             input.existingArtifactId,
-            JSON.stringify(input.content)
+            contentStr
           );
-          if (!updated) {
+          if (!updatedContent) {
             return { success: false, error: "Artifact not found or update failed" };
+          }
+          // Add new image version(s) from content so the client auto-generates with new prompt(s)
+          const prompts = getPromptsFromContent(
+            updatedContent.platform,
+            updatedContent.templateType,
+            contentObj
+          );
+          if (prompts.some((p) => p?.trim())) {
+            await updateAdArtifactWithNewImageVersion(input.existingArtifactId, contentStr);
           }
           return {
             success: true,
             updated: true,
-            artifactId: updated.id,
-            name: updated.name,
-            platform: updated.platform,
-            templateType: updated.templateType,
+            artifactId: updatedContent.id,
+            name: updatedContent.name,
+            platform: updatedContent.platform,
+            templateType: updatedContent.templateType,
             type: input.type,
           };
         }

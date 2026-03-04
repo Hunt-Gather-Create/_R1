@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { generateImage } from "@/lib/services/image-generation";
-import { updateAdArtifactMedia, refreshAdAttachment } from "@/lib/actions/ad-artifacts";
+import { updateAdArtifactMedia, refreshAdAttachmentIfMediaReady } from "@/lib/actions/ad-artifacts";
+import { parseMediaAssetsToSlots } from "@/lib/actions/ad-artifacts-utils";
 import { requireWorkspaceAccess } from "@/lib/actions/workspace";
 import { db } from "@/lib/db";
 import { adArtifacts } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 export const maxDuration = 60;
-
-type MediaAssetSlot = { storageKey?: string; imageUrls?: string[] };
 
 const generateImageSchema = z
   .object({
@@ -72,19 +71,25 @@ export async function POST(req: Request) {
       mediaIndex,
     });
 
-    // Persist storageKey to artifact so the image is available on chat reload
+    // Persist storageKey into the current version for this slot (versioned media)
     if (artifactId && artifactRow) {
-      const assets: MediaAssetSlot[] = artifactRow.mediaAssets
-        ? (JSON.parse(artifactRow.mediaAssets) as MediaAssetSlot[])
-        : [];
-      while (assets.length <= mediaIndex) {
-        assets.push({});
+      const slots = parseMediaAssetsToSlots(artifactRow.mediaAssets);
+      while (slots.length <= mediaIndex) {
+        slots.push({ currentIndex: 0, versions: [] });
       }
-      assets[mediaIndex] = { ...assets[mediaIndex], storageKey: result.storageKey };
-      await updateAdArtifactMedia(artifactId, JSON.stringify(assets));
+      const slot = slots[mediaIndex]!;
+      const versionIndex = slot.currentIndex;
+      while (slot.versions.length <= versionIndex) {
+        slot.versions.push({});
+      }
+      const ver = slot.versions[versionIndex]!;
+      ver.storageKey = result.storageKey;
+      ver.imageUrl = result.downloadUrl;
+      if (prompt && !ver.prompt) ver.prompt = prompt;
+      await updateAdArtifactMedia(artifactId, JSON.stringify(slots));
 
-      // Refresh the HTML attachment with new media
-      refreshAdAttachment(artifactId).catch((err) =>
+      // Refresh HTML attachment only when all media for current index are ready
+      refreshAdAttachmentIfMediaReady(artifactId).catch((err) =>
         console.error("Failed to refresh ad attachment:", err)
       );
     }

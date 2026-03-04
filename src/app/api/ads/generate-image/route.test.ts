@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockRequireWorkspaceAccess = vi.fn();
 const mockGenerateImage = vi.fn();
 const mockUpdateAdArtifactMedia = vi.fn();
-const mockRefreshAdAttachment = vi.fn();
+const mockRefreshAdAttachmentIfMediaReady = vi.fn();
 
 let mockDbGetResult: { workspaceId: string; mediaAssets: string | null } | undefined;
 
@@ -15,13 +15,17 @@ vi.mock("@/lib/services/image-generation", () => ({
   generateImage: (opts: unknown) => mockGenerateImage(opts),
 }));
 
-vi.mock("@/lib/actions/ad-artifacts", () => ({
-  updateAdArtifactMedia: (...args: unknown[]) => mockUpdateAdArtifactMedia(...args),
-  refreshAdAttachment: (...args: unknown[]) => {
-    mockRefreshAdAttachment(...args);
-    return Promise.resolve();
-  },
-}));
+vi.mock("@/lib/actions/ad-artifacts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/actions/ad-artifacts")>();
+  return {
+    ...actual,
+    updateAdArtifactMedia: (...args: unknown[]) => mockUpdateAdArtifactMedia(...args),
+    refreshAdAttachmentIfMediaReady: (...args: unknown[]) => {
+      mockRefreshAdAttachmentIfMediaReady(...args);
+      return Promise.resolve();
+    },
+  };
+});
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -152,6 +156,6 @@ describe("POST /api/ads/generate-image", () => {
     expect(res.status).toBe(200);
     expect(mockRequireWorkspaceAccess).toHaveBeenCalledWith("w1", "member");
     expect(mockUpdateAdArtifactMedia).toHaveBeenCalledWith("art-1", expect.any(String));
-    expect(mockRefreshAdAttachment).toHaveBeenCalledWith("art-1");
+    expect(mockRefreshAdAttachmentIfMediaReady).toHaveBeenCalledWith("art-1");
   });
 });

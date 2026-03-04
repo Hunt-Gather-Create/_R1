@@ -5,6 +5,22 @@ export interface ArtifactMediaUrls {
   currentImageUrl: string | null;
   generatedAt: Date;
   showVideo: boolean;
+  /** Prompt for the current version (for client-side generation when url is missing) */
+  currentPrompt?: string;
+}
+
+/** Per-slot versioned media: each version = one generated image for this slot */
+export interface MediaVersion {
+  prompt?: string;
+  storageKey?: string;
+  imageUrl?: string;
+}
+
+/** One slot = one media asset (e.g. profile image, or one content image). currentIndex is per slot. */
+export interface MediaSlot {
+  /** Which version is displayed for this media asset (0-based index into versions). */
+  currentIndex: number;
+  versions: MediaVersion[];
 }
 
 export interface ArtifactSaveData {

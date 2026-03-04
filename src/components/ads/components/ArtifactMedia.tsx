@@ -28,11 +28,13 @@ export const ArtifactMedia = ({
     addImageUrl,
     currentIndex,
     currentImageUrl,
+    currentPrompt,
     isGeneratingVideo,
     isRegenerating,
   } = useArtifactMedia(mediaIndex);
 
   const size = getSizeForAspectRatio(aspectRatio);
+  const effectivePrompt = (currentPrompt ?? prompt).trim() || prompt;
 
   return (
     <div className="w-full h-full">
@@ -55,7 +57,7 @@ export const ArtifactMedia = ({
       )}
       {mediaType === 'image' && !mediaUrl.showVideo && (
         <GeneratedImage
-          prompt={prompt}
+          prompt={effectivePrompt}
           alt={altText}
           className="w-full h-full object-cover"
           data-image-type="ad-image"
