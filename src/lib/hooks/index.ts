@@ -22,6 +22,8 @@ export {
   useWorkspaceMcpServers,
   useWorkspaceBrand,
   useWorkspaceMemories,
+  useWorkspaceApiKeys,
+  useWorkspaceWebhooks,
   useInvalidateSettings,
 } from "./use-settings-queries";
 

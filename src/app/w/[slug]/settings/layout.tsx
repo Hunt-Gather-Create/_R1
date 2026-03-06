@@ -2,7 +2,7 @@
 
 import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Building2, Columns3, Tag, Users, UsersRound, Sparkles, Plug, Heart, BarChart3, Palette, Activity, Brain } from "lucide-react";
+import { ArrowLeft, Building2, Columns3, Tag, Users, UsersRound, Sparkles, Plug, Heart, BarChart3, Palette, Activity, Brain, KeyRound, Webhook } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SettingsProvider, useSettingsContext } from "./context";
 
@@ -136,6 +136,18 @@ function SettingsSidebar() {
               icon={<Activity className="w-4 h-4" />}
               label="Background Jobs"
               isActive={pathname === `${baseSettingsPath}/jobs`}
+            />
+            <NavItem
+              href={`${baseSettingsPath}/api-keys`}
+              icon={<KeyRound className="w-4 h-4" />}
+              label="API Keys"
+              isActive={pathname === `${baseSettingsPath}/api-keys`}
+            />
+            <NavItem
+              href={`${baseSettingsPath}/webhooks`}
+              icon={<Webhook className="w-4 h-4" />}
+              label="Webhooks"
+              isActive={pathname === `${baseSettingsPath}/webhooks`}
             />
             <NavItem
               href={`${baseSettingsPath}/memories`}

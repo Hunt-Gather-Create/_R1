@@ -29,6 +29,8 @@ import type {
   knowledgeAssets,
   inviteCodes,
   inviteCodeClaims,
+  apiKeys,
+  webhooks,
 } from "./db/schema";
 import type { Status, Priority, CommunicationStyle } from "./design-tokens";
 
@@ -61,6 +63,27 @@ export type KnowledgeAsset = typeof knowledgeAssets.$inferSelect;
 // Invite codes
 export type InviteCode = typeof inviteCodes.$inferSelect;
 export type InviteCodeClaim = typeof inviteCodeClaims.$inferSelect;
+
+// API Keys
+export type ApiKey = typeof apiKeys.$inferSelect;
+export type CreateApiKeyInput = {
+  name: string;
+  expiresAt?: Date;
+};
+
+// Webhooks
+export type Webhook = typeof webhooks.$inferSelect;
+export type CreateWebhookInput = {
+  name: string;
+  prompt: string;
+  slug?: string;
+  defaultStatus?: string;
+  defaultPriority?: number;
+  defaultLabelIds?: string[];
+};
+export type UpdateWebhookInput = Partial<Omit<CreateWebhookInput, "slug">> & {
+  isActive?: boolean;
+};
 export type UserStatus = "waitlisted" | "active";
 
 // Workspace invitations

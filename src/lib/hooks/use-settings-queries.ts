@@ -13,6 +13,8 @@ import { getWorkspaceMcpServers } from "@/lib/actions/integrations";
 import { getWorkspaceBrand } from "@/lib/actions/brand";
 import { getWorkspaceJobs } from "@/lib/actions/background-jobs";
 import { getWorkspaceMemories } from "@/lib/actions/memories";
+import { listApiKeys } from "@/lib/actions/api-keys";
+import { listWebhooks } from "@/lib/actions/webhooks";
 import type { JobsQueryOptions } from "@/lib/types";
 
 export function useWorkspace(slug: string) {
@@ -108,6 +110,26 @@ export function useWorkspaceMemories(workspaceId: string | null) {
   });
 }
 
+export function useWorkspaceApiKeys(workspaceId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.settings.apiKeys(workspaceId ?? ""),
+    queryFn: () => listApiKeys(workspaceId!),
+    enabled: !!workspaceId,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+}
+
+export function useWorkspaceWebhooks(workspaceId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.settings.webhooks(workspaceId ?? ""),
+    queryFn: () => listWebhooks(workspaceId!),
+    enabled: !!workspaceId,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+}
+
 // Hook for invalidating settings queries
 export function useInvalidateSettings() {
   const queryClient = useQueryClient();
@@ -144,6 +166,14 @@ export function useInvalidateSettings() {
     invalidateMemories: (workspaceId: string) =>
       queryClient.invalidateQueries({
         queryKey: queryKeys.settings.memories(workspaceId),
+      }),
+    invalidateApiKeys: (workspaceId: string) =>
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.settings.apiKeys(workspaceId),
+      }),
+    invalidateWebhooks: (workspaceId: string) =>
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.settings.webhooks(workspaceId),
       }),
   };
 }

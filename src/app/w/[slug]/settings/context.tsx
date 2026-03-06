@@ -17,6 +17,8 @@ import {
   useWorkspaceMcpServers,
   useWorkspaceBrand,
   useWorkspaceMemories,
+  useWorkspaceApiKeys,
+  useWorkspaceWebhooks,
   useInvalidateSettings,
 } from "@/lib/hooks";
 import { getCurrentUserId } from "@/lib/auth";
@@ -28,6 +30,8 @@ import type {
   Column,
   WorkspaceSkill,
   WorkspaceMemory,
+  ApiKey,
+  Webhook,
 } from "@/lib/types";
 import type { McpServerWithStatus } from "@/lib/actions/integrations";
 import type { BrandWithLogoUrl } from "@/lib/actions/brand";
@@ -42,6 +46,8 @@ interface SettingsContextValue {
   mcpServers: McpServerWithStatus[];
   brand: BrandWithLogoUrl | null;
   memories: WorkspaceMemory[];
+  apiKeys: Omit<ApiKey, "keyHash">[];
+  webhooks: Webhook[];
 
   // Loading states
   isLoading: boolean;
@@ -62,6 +68,8 @@ interface SettingsContextValue {
   refreshMcpServers: () => Promise<void>;
   refreshBrand: () => Promise<void>;
   refreshMemories: () => Promise<void>;
+  refreshApiKeys: () => Promise<void>;
+  refreshWebhooks: () => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -135,6 +143,18 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     refetch: refetchMemories,
   } = useWorkspaceMemories(workspace?.id ?? null);
 
+  const {
+    data: apiKeysList = [],
+    isLoading: isApiKeysLoading,
+    refetch: refetchApiKeys,
+  } = useWorkspaceApiKeys(workspace?.id ?? null);
+
+  const {
+    data: webhooksList = [],
+    isLoading: isWebhooksLoading,
+    refetch: refetchWebhooks,
+  } = useWorkspaceWebhooks(workspace?.id ?? null);
+
   // Load current user ID
   useEffect(() => {
     getCurrentUserId().then(setCurrentUserId);
@@ -149,7 +169,9 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     isSkillsLoading ||
     isMcpServersLoading ||
     isBrandLoading ||
-    isMemoriesLoading;
+    isMemoriesLoading ||
+    isApiKeysLoading ||
+    isWebhooksLoading;
   const error = workspaceError
     ? workspaceError instanceof Error
       ? workspaceError.message
@@ -218,6 +240,20 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     }
   };
 
+  const refreshApiKeys = async () => {
+    if (workspace) {
+      invalidate.invalidateApiKeys(workspace.id);
+      await refetchApiKeys();
+    }
+  };
+
+  const refreshWebhooks = async () => {
+    if (workspace) {
+      invalidate.invalidateWebhooks(workspace.id);
+      await refetchWebhooks();
+    }
+  };
+
   const value: SettingsContextValue = {
     workspace: workspace ?? null,
     members,
@@ -227,6 +263,8 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     mcpServers,
     brand: brand ?? null,
     memories,
+    apiKeys: apiKeysList,
+    webhooks: webhooksList,
     isLoading,
     error,
     currentUserId,
@@ -241,6 +279,8 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     refreshMcpServers,
     refreshBrand,
     refreshMemories,
+    refreshApiKeys,
+    refreshWebhooks,
   };
 
   return (

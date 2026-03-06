@@ -516,6 +516,43 @@ export const issueKnowledgeDocuments = sqliteTable(
   })
 );
 
+// API Keys - workspace-scoped API keys for external integrations
+export const apiKeys = sqliteTable("api_keys", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  keyHash: text("key_hash").notNull(),
+  keyPrefix: text("key_prefix").notNull(), // first 8 chars, e.g. "ak_aBcD..."
+  lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
+  expiresAt: integer("expires_at", { mode: "timestamp" }),
+  createdBy: text("created_by")
+    .notNull()
+    .references(() => users.id),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
+// Webhooks - workspace-scoped webhook configurations
+export const webhooks = sqliteTable("webhooks", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  slug: text("slug").notNull(), // URL-safe identifier for the endpoint path
+  prompt: text("prompt").notNull(), // AI instructions for processing incoming data
+  defaultStatus: text("default_status"), // optional default status override
+  defaultPriority: integer("default_priority"), // optional default priority override
+  defaultLabelIds: text("default_label_ids"), // JSON array of default label IDs
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  createdBy: text("created_by")
+    .notNull()
+    .references(() => users.id),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
 // Knowledge assets (images embedded in markdown docs)
 export const knowledgeAssets = sqliteTable("knowledge_assets", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
