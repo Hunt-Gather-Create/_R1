@@ -1,0 +1,14 @@
+/* Subtle skeleton pulse — only for ad artifact image placeholder */
+@keyframes artifact-skeleton-subtle {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.88;
+  }
+}
+
+.artifact-skeleton-subtle {
+  animation: artifact-skeleton-subtle 2.5s ease-in-out infinite;
+}

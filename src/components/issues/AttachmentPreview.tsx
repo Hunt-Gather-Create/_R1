@@ -9,6 +9,7 @@ import {
   ZoomOut,
   RotateCw,
   File,
+  RefreshCw,
 } from "lucide-react";
 import { printElementAsPdf } from "@/lib/print-to-pdf";
 import { stripCiteTags } from "@/lib/utils";
@@ -36,6 +37,14 @@ function isMarkdownType(mimeType: string, filename: string): boolean {
   );
 }
 
+function isHtmlType(mimeType: string, filename: string): boolean {
+  return (
+    mimeType === "text/html" ||
+    filename.endsWith(".html") ||
+    filename.endsWith(".htm")
+  );
+}
+
 interface AttachmentPreviewProps {
   attachment: AttachmentWithUrl | null;
   open: boolean;
@@ -50,16 +59,30 @@ export function AttachmentPreview({
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [markdownContent, setMarkdownContent] = useState<string | null>(null);
+  const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const markdownRef = useRef<HTMLDivElement>(null);
+  const prevOpenRef = useRef(false);
 
   const isImage = attachment ? isImageType(attachment.mimeType) : false;
   const isPdf = attachment ? isPdfType(attachment.mimeType) : false;
   const isMarkdown = attachment
     ? isMarkdownType(attachment.mimeType, attachment.filename)
     : false;
+  const isHtml = attachment
+    ? isHtmlType(attachment.mimeType, attachment.filename)
+    : false;
+
+  // When opening the dialog for HTML, clear cached content so we refetch (e.g. after ad re-render).
+  useEffect(() => {
+    if (open && !prevOpenRef.current && isHtml && attachment) {
+      setHtmlContent(null);
+    }
+    prevOpenRef.current = open;
+  }, [open, isHtml, attachment?.id]);
 
   // Derive loading state: we're loading if we should show markdown but don't have content yet
   const isLoadingMarkdown = open && isMarkdown && markdownContent === null;
+  const isLoadingHtml = open && isHtml && htmlContent === null;
 
   // Fetch markdown content when opening a markdown file
   useEffect(() => {
@@ -84,6 +107,22 @@ export function AttachmentPreview({
       });
   }, [open, attachment, isMarkdown, markdownContent]);
 
+  // Fetch HTML content when opening an HTML file
+  useEffect(() => {
+    if (!open || !attachment || !isHtml) return;
+    if (htmlContent !== null) return;
+
+    fetch(attachment.url)
+      .then((res) => res.text())
+      .then((text) => {
+        setHtmlContent(text);
+      })
+      .catch((err) => {
+        console.error("Failed to load HTML:", err);
+        setHtmlContent("<p>Failed to load HTML content</p>");
+      });
+  }, [open, attachment, isHtml, htmlContent]);
+
   if (!attachment) return null;
 
   const handleDownload = () => {
@@ -106,6 +145,7 @@ export function AttachmentPreview({
     setZoom(1);
     setRotation(0);
     setMarkdownContent(null);
+    setHtmlContent(null);
     onOpenChange(false);
   };
 
@@ -175,6 +215,17 @@ export function AttachmentPreview({
                   <FileDown className="w-4 h-4" />
                 </Button>
               )}
+              {isHtml && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setHtmlContent(null)}
+                  disabled={isLoadingHtml}
+                  title="Refresh preview"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -239,7 +290,28 @@ export function AttachmentPreview({
             </div>
           )}
 
-          {!isImage && !isPdf && !isMarkdown && (
+          {isHtml && (
+            <div className="w-full h-full overflow-auto">
+              {isLoadingHtml ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                    <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    <span className="text-sm">Loading HTML preview...</span>
+                  </div>
+                </div>
+              ) : (
+                <iframe
+                  srcDoc={`<style>body{background:#111 !important;}</style>${htmlContent || ""}`}
+                  sandbox="allow-same-origin"
+                  title={attachment.filename}
+                  className="w-full h-full border-0"
+                  style={{ background: "#111" }}
+                />
+              )}
+            </div>
+          )}
+
+          {!isImage && !isPdf && !isMarkdown && !isHtml && (
             <div className="flex flex-col items-center justify-center gap-4 text-muted-foreground">
               <File className="w-16 h-16" />
               <div className="text-center">

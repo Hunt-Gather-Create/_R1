@@ -223,7 +223,7 @@ export function ChatPanel() {
       <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
         {displayMessages.map((message) => (
           <div key={message.id} data-message-role={message.role}>
-            <ChatMessage message={message} />
+            <ChatMessage message={message} allMessages={displayMessages} />
           </div>
         ))}
         {isLoading && <LoadingMessage />}

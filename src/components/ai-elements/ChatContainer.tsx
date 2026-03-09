@@ -66,8 +66,8 @@ export interface ChatContainerProps {
   onClearHistory?: () => void;
   /** Welcome message when no messages exist */
   welcomeMessage?: string | (() => ReactNode);
-  /** Custom tool call renderer */
-  renderToolCall?: (toolName: string, result: unknown, index: number, part: MessagePart) => ReactNode;
+  /** Custom tool call renderer; messageId and messageIndex identify the message in the list */
+  renderToolCall?: (toolName: string, result: unknown, index: number, part: MessagePart, messageId: string, messageIndex: number) => ReactNode;
   /** Input placeholder */
   inputPlaceholder?: string;
   /** Whether to show attachment button */
@@ -192,7 +192,7 @@ export function ChatContainer({
           welcomeMessage()}
 
         {/* Standard messages */}
-        {displayMessages.map((message) => (
+        {displayMessages.map((message, messageIndex) => (
           <div key={message.id} data-message-role={message.role}>
             <ChatMessageItem
               message={message}
@@ -202,7 +202,7 @@ export function ChatContainer({
                       // Extract tool name from type (e.g., "tool-fetchUrl" -> "fetchUrl")
                       const toolName = part.type?.replace("tool-", "") || "";
                       const toolPart = part as MessagePart & { output?: unknown };
-                      return renderToolCall(toolName, toolPart.output, index, part);
+                      return renderToolCall(toolName, toolPart.output, index, part, message.id, messageIndex);
                     }
                   : undefined
               }

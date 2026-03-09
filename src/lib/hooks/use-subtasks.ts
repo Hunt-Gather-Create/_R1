@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import {
@@ -153,12 +154,12 @@ export function useConvertToSubtask(workspaceId: string) {
 export function useInvalidateSubtasks(issueId: string) {
   const queryClient = useQueryClient();
 
-  return () => {
+  return useCallback(() => {
     queryClient.invalidateQueries({
       queryKey: queryKeys.issue.subtasks(issueId),
     });
     queryClient.invalidateQueries({
       queryKey: queryKeys.issue.subtaskCount(issueId),
     });
-  };
+  }, [queryClient, issueId]);
 }

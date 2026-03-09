@@ -4,6 +4,9 @@ import {
   suggestIssueSchema,
   updateDescriptionSchema,
   attachContentSchema,
+  listAttachmentsSchema,
+  readAttachmentSchema,
+  deleteAttachmentSchema,
 } from "./schemas";
 
 describe("planIssueSchema", () => {
@@ -208,6 +211,97 @@ describe("attachContentSchema", () => {
         content: { data: "test" },
         filename: "test.md",
       });
+      expect(result.success).toBe(false);
+    });
+  });
+});
+
+describe("listAttachmentsSchema", () => {
+  describe("valid inputs", () => {
+    it("accepts empty object (defaults includeSubtasks to false)", () => {
+      const result = listAttachmentsSchema.safeParse({});
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.includeSubtasks).toBe(false);
+      }
+    });
+
+    it("accepts includeSubtasks: true", () => {
+      const result = listAttachmentsSchema.safeParse({ includeSubtasks: true });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.includeSubtasks).toBe(true);
+      }
+    });
+
+    it("accepts includeSubtasks: false", () => {
+      const result = listAttachmentsSchema.safeParse({ includeSubtasks: false });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.includeSubtasks).toBe(false);
+      }
+    });
+  });
+
+  describe("invalid inputs", () => {
+    it("rejects non-boolean includeSubtasks", () => {
+      const result = listAttachmentsSchema.safeParse({ includeSubtasks: "yes" });
+      expect(result.success).toBe(false);
+    });
+  });
+});
+
+describe("readAttachmentSchema", () => {
+  describe("valid inputs", () => {
+    it("accepts a valid attachment ID", () => {
+      const result = readAttachmentSchema.safeParse({ attachmentId: "abc-123" });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.attachmentId).toBe("abc-123");
+      }
+    });
+  });
+
+  describe("invalid inputs", () => {
+    it("rejects missing attachmentId", () => {
+      const result = readAttachmentSchema.safeParse({});
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects non-string attachmentId", () => {
+      const result = readAttachmentSchema.safeParse({ attachmentId: 123 });
+      expect(result.success).toBe(false);
+    });
+  });
+});
+
+describe("deleteAttachmentSchema", () => {
+  describe("valid inputs", () => {
+    it("accepts attachmentId with reason", () => {
+      const result = deleteAttachmentSchema.safeParse({
+        attachmentId: "abc-123",
+        reason: "Outdated content",
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts attachmentId without reason", () => {
+      const result = deleteAttachmentSchema.safeParse({ attachmentId: "abc-123" });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.reason).toBeUndefined();
+      }
+    });
+  });
+
+  describe("invalid inputs", () => {
+    it("rejects missing attachmentId", () => {
+      const result = deleteAttachmentSchema.safeParse({});
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects non-string attachmentId", () => {
+      const result = deleteAttachmentSchema.safeParse({ attachmentId: 42 });
       expect(result.success).toBe(false);
     });
   });

@@ -2,14 +2,16 @@
 
 import { useState, useCallback } from "react";
 import { usePathname } from "next/navigation";
-import { Check, Copy, Sparkles, Trash2, X } from "lucide-react";
+import { Check, Copy, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useSendToAI } from "@/lib/hooks";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { AdArtifactDialog } from "@/components/ads/AdArtifactDialog";
 import { IssueChatPanel } from "./IssueChatPanel";
 import { IssueDetailForm } from "./IssueDetailForm";
-import type { Comment } from "@/lib/types";
+import { AttachmentPreview } from "./AttachmentPreview";
+import { getArtifactVersionAttachmentUrl } from "@/lib/actions/ad-artifacts";
+import type { AttachmentWithUrl } from "@/lib/types";
 
 interface IssueDetailDrawerProps {
   open: boolean;
@@ -22,24 +24,36 @@ export function IssueDetailDrawer({
 }: IssueDetailDrawerProps) {
   const { selectedIssue: issue, deleteSelectedIssue } = useBoardContext();
   const pathname = usePathname();
-  const { sendToAI } = useSendToAI();
-  const [comments, setComments] = useState<Comment[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  const [externalDescription, setExternalDescription] = useState<
-    string | undefined
-  >(undefined);
-  const [highlightDescription, setHighlightDescription] = useState(false);
+  const [selectedArtifact, setSelectedArtifact] = useState<{ id: string; version?: number } | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<AttachmentWithUrl | null>(null);
 
-  const handleCommentsLoad = useCallback((loadedComments: Comment[]) => {
-    setComments(loadedComments);
-  }, []);
+  const viewArtifact = useCallback(async (artifactId: string, version?: number) => {
+    setSelectedArtifact({ id: artifactId, version });
+    if (version !== undefined) {
+      const url = await getArtifactVersionAttachmentUrl(artifactId, version);
+      if (url) {
+        setPreviewAttachment({
+          id: `${artifactId}-v${version}`,
+          issueId: issue?.id ?? "",
+          userId: null,
+          filename: `Ad Preview v${version}.html`,
+          storageKey: "",
+          mimeType: "text/html",
+          size: 0,
+          createdAt: new Date(),
+          url,
+        });
+      }
+    } else {
+      setPreviewAttachment(null);
+    }
+  }, [issue?.id]);
 
-  const handleUpdateDescription = useCallback((description: string) => {
-    setExternalDescription(description);
-    setHighlightDescription(true);
-    // Reset highlight state after animation
-    setTimeout(() => setHighlightDescription(false), 2000);
+  const closeArtifact = useCallback(() => {
+    setSelectedArtifact(null);
+    setPreviewAttachment(null);
   }, []);
 
   const handleCopyLink = useCallback(() => {
@@ -64,7 +78,8 @@ export function IssueDetailDrawer({
   const handleClose = () => {
     onOpenChange(false);
     setIsDeleting(false);
-    setExternalDescription(undefined);
+    setSelectedArtifact(null);
+    setPreviewAttachment(null);
   };
 
   if (!issue) return null;
@@ -99,18 +114,6 @@ export function IssueDetailDrawer({
               )}
             </button>
             <button
-              onClick={() => sendToAI(issue.id)}
-              className={cn(
-                "p-1.5 rounded transition-colors",
-                issue.sentToAI
-                  ? "bg-blue-500/20 text-blue-500"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
-              )}
-              title="Send to AI"
-            >
-              <Sparkles className="w-4 h-4" />
-            </button>
-            <button
               onClick={handleDelete}
               className={cn(
                 "p-1.5 rounded text-muted-foreground transition-colors",
@@ -132,27 +135,38 @@ export function IssueDetailDrawer({
           </div>
         </div>
 
-        {/* Content - Two column layout */}
+        {/* Two-column layout */}
         <div className="flex flex-1 min-h-0">
           {/* Left: AI Chat */}
           <div className="w-[55%] border-r border-border">
             <IssueChatPanel
               issue={issue}
-              comments={comments}
-              onUpdateDescription={handleUpdateDescription}
+              onViewArtifact={viewArtifact}
             />
           </div>
 
-          {/* Right: Issue Form */}
+          {/* Right: Issue Detail Form */}
           <div className="w-[45%]">
-            <IssueDetailForm
-              issue={issue}
-              externalDescription={externalDescription}
-              highlightDescription={highlightDescription}
-              onCommentsLoad={handleCommentsLoad}
-            />
+            <IssueDetailForm issue={issue} />
           </div>
         </div>
+
+        {/* Current version: full-screen editable dialog */}
+        {selectedArtifact && !previewAttachment && (
+          <AdArtifactDialog
+            open={true}
+            onOpenChange={(open) => { if (!open) closeArtifact(); }}
+            artifactId={selectedArtifact.id}
+            issueId={issue.id}
+          />
+        )}
+
+        {/* Historical version: attachment preview dialog */}
+        <AttachmentPreview
+          attachment={previewAttachment}
+          open={!!previewAttachment}
+          onOpenChange={(open) => { if (!open) { setPreviewAttachment(null); setSelectedArtifact(null); } }}
+        />
       </SheetContent>
     </Sheet>
   );

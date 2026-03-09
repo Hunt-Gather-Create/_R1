@@ -412,6 +412,41 @@ export const workspaceMemories = sqliteTable("workspace_memories", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
+// Ad Artifacts - AI-generated ad content for marketing workspaces
+export const adArtifacts = sqliteTable("ad_artifacts", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  chatId: text("chat_id")
+    .references(() => workspaceChats.id, { onDelete: "set null" }),
+  messageId: text("message_id"),
+  platform: text("platform").notNull(), // "instagram" | "tiktok" | "linkedin" | "google" | "facebook"
+  templateType: text("template_type").notNull(), // "feed-post" | "carousel" | "story" | "reel" | etc.
+  name: text("name").notNull(),
+  content: text("content").notNull(), // JSON string of template-specific content
+  issueAttachmentId: text("issue_attachment_id"),
+  issueId: text("issue_id").references(() => issues.id, { onDelete: "set null" }),
+  brandId: text("brand_id").references(() => brands.id, { onDelete: "set null" }),
+  currentVersion: integer("current_version").default(0),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
+// Ad Artifact Versions - snapshots created after each Inngest image-generation run
+export const adArtifactVersions = sqliteTable("ad_artifact_versions", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  artifactId: text("artifact_id")
+    .notNull()
+    .references(() => adArtifacts.id, { onDelete: "cascade" }),
+  version: integer("version").notNull(), // 1-based
+  content: text("content").notNull(), // JSON snapshot of ad text/copy at time of generation
+  mediaAssets: text("media_assets"), // JSON snapshot of MediaSlot[] with storageKeys
+  messageId: text("message_id"), // nullable — linked when client polling resolves
+  issueAttachmentId: text("issue_attachment_id"), // nullable — set after HTML attachment created
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
 // AI Suggestions - ghost subtasks suggested by AI for issues
 export const aiSuggestions = sqliteTable("ai_suggestions", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),

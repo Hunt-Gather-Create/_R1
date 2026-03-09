@@ -106,7 +106,7 @@ export function ChatPanel() {
         icon: <Sparkles className="w-4 h-4 text-primary" />,
       }}
       welcomeMessage="Hi! I'm here to help you craft a great user story. What would you like to build today?"
-      renderToolCall={(toolName, result, index) => {
+      renderToolCall={(toolName, result, index, _part, _messageId, _messageIndex) => {
         // Only show custom messages for our form-related tools
         if (toolName === "suggestIssue") {
           return (

@@ -8,18 +8,21 @@ import {
   getPriorityLabel,
   buildContextualSystemPrompt,
   SUBTASK_INDEPENDENCE_GUIDELINES,
+  WORKSPACE_SKILL_MANIFEST,
+  AD_TOOLS_PROMPT,
 } from "@/lib/chat";
 import type { WorkspacePurpose } from "@/lib/design-tokens";
 import type { WorkspaceSoul, Brand, WorkspaceMemory } from "@/lib/types";
 import { loadWorkspaceContext } from "@/lib/brand-utils";
 import { createSkillTools } from "@/lib/chat/tools/skill-creator-tool";
+import { createAdTools } from "@/lib/chat/tools/ad-tools";
 import { getLastUserMessageText } from "@/lib/memory-utils";
 import {
   formatKnowledgeContextForPrompt,
   getKnowledgeContextForIssue,
 } from "@/lib/ai-search/knowledge-context";
 
-export const maxDuration = 30;
+export const maxDuration = 120;
 
 interface SubtaskContext {
   id: string;
@@ -94,7 +97,9 @@ When the user asks you to do something (research, write content, analyze, create
 2. **Instead, use suggestAITasks** to create subtasks that can be executed later
 3. Each subtask should be a single, focused, actionable piece of work
 4. Only perform work yourself if the user EXPLICITLY says "do it now", "execute this", "run it", or similar
+${purpose === "marketing" ? `5. **EXCEPTION: Ad creation tools** — when the user asks to create an ad or ad mockup, use the \`create_ad_*\` tools directly. These generate visual previews inline and should NOT be deferred to subtasks.
 
+` : ""}
 Example - User says "Help me with SEO for this blog post":
 - WRONG: Immediately searching the web and writing SEO recommendations
 - RIGHT: Call suggestAITasks with subtasks like:
@@ -134,9 +139,14 @@ ${issueContext.description ? `This issue already has a description. **Ask the us
 - **deleteSubtask**: Delete an existing subtask - use this to remove redundant or poorly-structured subtasks
 - **updateDescription**: Update the issue description${issueContext.description ? " (ask user first since one exists)" : " (use eagerly since none exists)"}
 - **attachContent**: Attach generated content as a file (only when explicitly asked to create something NOW)
+- **listAttachments**: List existing attachments on this issue (set includeSubtasks: true to see subtask outputs too)
+- **readAttachment**: Read the content of a text attachment by ID (use listAttachments first to find the ID)
+- **deleteAttachment**: Delete an attachment by ID (use to remove outdated content before re-attaching updated versions)
 - **create_skill**: Save a repeatable workflow or instruction set as a reusable skill for this workspace
 - **update_skill**: Modify an existing skill (MUST warn user it affects all users and get confirmation first)
 - Web search, code execution, web fetch: Only use when user explicitly asks you to execute immediately
+${purpose === "marketing" ? `${AD_TOOLS_PROMPT}
+- **Auto-attach**: Ads created in issue chat are automatically attached to the issue as HTML preview files. No extra tool call needed.` : ""}
 
 Be conversational and helpful. Ask clarifying questions when needed.`;
 
@@ -181,7 +191,7 @@ export async function POST(req: Request) {
 
   // Load skills - use workspace skills if workspaceId provided, otherwise just purpose-based
   const skills = workspaceId
-    ? await loadSkillsForWorkspace(workspaceId, purpose)
+    ? await loadSkillsForWorkspace(workspaceId, purpose, WORKSPACE_SKILL_MANIFEST)
     : await loadSkillsForPurpose(purpose);
 
   let knowledgeContext = "";
@@ -196,11 +206,16 @@ export async function POST(req: Request) {
     console.error("Failed to load knowledge context:", error);
   }
 
-  // Create tools with issue context, memory tools, and skill tools
+  // Create tools with issue context, memory tools, skill tools, and ad tools
   const issueTools = createIssueTools({ issueId: issueContext.id });
   const memoryTools = workspaceId ? createMemoryTools({ workspaceId }) : {};
   const skillTools = createSkillTools(workspaceId);
-  const tools = { ...issueTools, ...memoryTools, ...skillTools };
+  // Ad tools only for marketing workspaces. Omit chatId: issue chat uses issue id.
+  const adTools =
+    purpose === "marketing" && workspaceId
+      ? createAdTools({ workspaceId, brandId: brand?.id, issueId: issueContext.id })
+      : {};
+  const tools = { ...issueTools, ...memoryTools, ...skillTools, ...adTools };
 
   return createChatResponse(messages, {
     system: buildSystemPrompt(

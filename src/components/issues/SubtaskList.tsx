@@ -165,13 +165,13 @@ export function SubtaskList({ issue, className }: SubtaskListProps) {
   const handleRunAllAITasks = async () => {
     try {
       const result = await executeAllAITasks.mutateAsync();
-      if (result.runIds.length === 0) {
+      if (!result.runId) {
         toast.info("No tasks to run", {
           description: "All AI tasks are already completed or running.",
         });
       } else {
-        toast.success(`Started ${result.runIds.length} AI task(s)`, {
-          description: "Tasks are running in the background.",
+        toast.success("Started AI tasks", {
+          description: "Tasks are running sequentially in the background.",
         });
       }
     } catch (error) {

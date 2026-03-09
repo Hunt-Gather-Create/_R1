@@ -20,6 +20,7 @@ import type {
   audiences,
   audienceMembers,
   workspaceMemories,
+  adArtifacts,
   epics,
   knowledgeFolders,
   knowledgeDocuments,
@@ -351,6 +352,19 @@ export type AudienceGenerationStatus = "pending" | "processing" | "completed" | 
 export type AudienceWithMembers = Audience & {
   members: AudienceMember[];
 };
+
+// Ad Artifacts - AI-generated ad content
+export type AdArtifact = typeof adArtifacts.$inferSelect;
+export type AdPlatform = "instagram" | "tiktok" | "linkedin" | "google" | "facebook";
+export type AdTemplateType =
+  | "feed-post"
+  | "carousel"
+  | "story"
+  | "reel"
+  | "cta"
+  | "single-image"
+  | "search-ad"
+  | "in-stream-video";
 
 // Workspace Memories - AI-created contextual memories
 export type WorkspaceMemory = typeof workspaceMemories.$inferSelect;

@@ -38,9 +38,19 @@ interface ChatContextValue {
   viewAttachment: (attachmentId: string) => Promise<void>;
   closeAttachment: () => void;
   isPreviewOpen: boolean;
+
+  // Ad artifact preview
+  selectedArtifactId: string | null;
+  selectedArtifactVersion: number | undefined;
+  viewArtifact: (artifactId: string, version?: number) => void;
+  closeArtifact: () => void;
+
+  // Inline expanded artifact (collapsed from panel back to inline)
+  expandedInlineArtifactId: string | null;
+  collapseArtifactToInline: () => void;
 }
 
-const ChatContext = createContext<ChatContextValue | null>(null);
+export const ChatContext = createContext<ChatContextValue | null>(null);
 
 export function useChatContext() {
   const context = useContext(ChatContext);
@@ -73,6 +83,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [selectedAttachment, setSelectedAttachment] = useState<WorkspaceChatAttachment | null>(null);
   const [isLoadingAttachment, setIsLoadingAttachment] = useState(false);
   const hasLoadedAttachmentFromUrl = useRef(false);
+
+  // Ad artifact preview state
+  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
+  const [selectedArtifactVersion, setSelectedArtifactVersion] = useState<number | undefined>(undefined);
+  const [expandedInlineArtifactId, setExpandedInlineArtifactId] = useState<string | null>(null);
 
   // Load workspace data and soul on mount
   useEffect(() => {
@@ -213,6 +228,27 @@ export function ChatProvider({ children }: ChatProviderProps) {
     updateUrl(selectedChatId, null);
   }, [selectedChatId, updateUrl]);
 
+  const viewArtifact = useCallback(
+    (artifactId: string, version?: number) => {
+      setSelectedArtifactId(artifactId);
+      setSelectedArtifactVersion(version);
+      setExpandedInlineArtifactId(null);
+      setSelectedAttachment(null); // Close any open attachment
+    },
+    []
+  );
+
+  const closeArtifact = useCallback(() => {
+    setSelectedArtifactId(null);
+    setSelectedArtifactVersion(undefined);
+  }, []);
+
+  const collapseArtifactToInline = useCallback(() => {
+    // Move the artifact from panel to expanded inline
+    setExpandedInlineArtifactId(selectedArtifactId);
+    setSelectedArtifactId(null);
+  }, [selectedArtifactId]);
+
   // Computed values
   const validatedChatId =
     selectedChatId && chats.some((c) => c.id === selectedChatId) ? selectedChatId : null;
@@ -220,7 +256,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const workspacePurpose: WorkspacePurpose =
     workspace?.purpose === "marketing" ? "marketing" : "software";
 
-  const isPreviewOpen = !!(selectedAttachment || isLoadingAttachment);
+  const isPreviewOpen = !!(selectedAttachment || isLoadingAttachment || selectedArtifactId);
 
   const value: ChatContextValue = {
     workspace,
@@ -238,6 +274,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
     viewAttachment,
     closeAttachment,
     isPreviewOpen,
+    selectedArtifactId,
+    selectedArtifactVersion,
+    viewArtifact,
+    closeArtifact,
+    expandedInlineArtifactId,
+    collapseArtifactToInline,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

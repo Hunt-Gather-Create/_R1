@@ -4,6 +4,7 @@ import { db } from "../db";
 import {
   workspaceChats,
   workspaceChatAttachments,
+  adArtifacts,
 } from "../db/schema";
 import { eq, desc, asc } from "drizzle-orm";
 import type {
@@ -216,6 +217,61 @@ export async function getChatAttachment(
   await requireChatAccess(attachment.chatId);
 
   return attachment;
+}
+
+/**
+ * Save an ad artifact as a workspace chat attachment (JSON export).
+ * The attachment appears in the chat's attachment list and can be viewed or downloaded.
+ */
+export async function saveArtifactAsChatAttachment(
+  artifactId: string,
+  chatId: string
+): Promise<{ success: true; attachmentId: string; filename: string } | { success: false; error: string }> {
+  try {
+    const { workspaceId } = await requireChatAccess(chatId);
+
+    const artifact = await db
+      .select()
+      .from(adArtifacts)
+      .where(eq(adArtifacts.id, artifactId))
+      .get();
+
+    if (!artifact) {
+      return { success: false, error: "Artifact not found" };
+    }
+    if (artifact.workspaceId !== workspaceId) {
+      return { success: false, error: "Artifact does not belong to this workspace" };
+    }
+
+    const exportPayload = {
+      id: artifact.id,
+      name: artifact.name,
+      platform: artifact.platform,
+      templateType: artifact.templateType,
+      content: artifact.content,
+      brandId: artifact.brandId,
+      createdAt: artifact.createdAt,
+      updatedAt: artifact.updatedAt,
+    };
+    const content = JSON.stringify(exportPayload, null, 2);
+    const safeName = artifact.name.replace(/[^a-zA-Z0-9-_.\s]/g, "-").replace(/\s+/g, "-").slice(0, 80) || "artifact";
+    const filename = `${safeName}.json`;
+
+    const attachment = await createChatAttachment(
+      chatId,
+      filename,
+      content,
+      "application/json"
+    );
+
+    return { success: true, attachmentId: attachment.id, filename: attachment.filename };
+  } catch (err) {
+    console.error("[saveArtifactAsChatAttachment]", err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to save artifact as attachment",
+    };
+  }
 }
 
 export async function createChatAttachment(

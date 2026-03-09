@@ -73,7 +73,7 @@ export function PlanningChatPanel({ onPlanIssue, onSummarizeEpic }: PlanningChat
         title: "AI Planning Assistant",
       }}
       welcomeMessage={welcomeText}
-      renderToolCall={(toolName, result, index) => {
+      renderToolCall={(toolName, result, index, _part, _messageId, _messageIndex) => {
         if (toolName === "planIssue") {
           return (
             <div

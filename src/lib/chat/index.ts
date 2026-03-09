@@ -22,6 +22,7 @@ export {
   loadSkillsForPurpose,
   loadSkillsForWorkspace,
   loadAllSkills,
+  WORKSPACE_SKILL_MANIFEST,
 } from "./skills";
 export type { ParsedSkill, SkillManifest } from "./skills";
 
@@ -231,13 +232,40 @@ function addCacheControlToMessage(
 }
 
 /**
+ * Sanitize model messages so every tool-call part has a valid dict as args.
+ * Prevents AI_APICallError("tool_use.input: Input should be a valid dictionary")
+ * which occurs when context management clears inputs or the model generates non-object args
+ * that get stored in conversation history and replayed on the next API call.
+ */
+function sanitizeToolCallArgs(messages: ModelMessage[]): ModelMessage[] {
+  return messages.map((msg) => {
+    if (msg.role !== "assistant" || !Array.isArray(msg.content)) return msg;
+    const anyBad = (msg.content as ContentPart[]).some((part) => {
+      const p = part as ContentPart & { args?: unknown };
+      if (p.type !== "tool-call") return false;
+      const a = p.args;
+      return a === null || a === undefined || typeof a !== "object" || Array.isArray(a);
+    });
+    if (!anyBad) return msg;
+    const content = (msg.content as ContentPart[]).map((part) => {
+      const p = part as ContentPart & { args?: unknown };
+      if (p.type !== "tool-call") return part;
+      const a = p.args;
+      if (a !== null && a !== undefined && typeof a === "object" && !Array.isArray(a)) return part;
+      return { ...part, args: {} } as ContentPart;
+    });
+    return { ...msg, content } as ModelMessage;
+  });
+}
+
+/**
  * Creates a streaming chat response
  */
 export async function createChatResponse(
   messages: UIMessage[],
   config: ChatConfig
 ) {
-  const modelMessages = await convertToModelMessages(messages);
+  const modelMessages = sanitizeToolCallArgs(await convertToModelMessages(messages));
 
   // Merge custom tools with built-in Anthropic tools
   const allTools: ToolSet = { ...config.tools };
@@ -405,3 +433,10 @@ Each good task can be done in parallel because it produces its own standalone de
 - Keep titles concise and action-oriented (under 60 characters)
 - Never include timelines or phases ("Week 1", "Phase 2") - just the task itself
 - Each subtask should produce a concrete, reviewable deliverable`;
+
+/**
+ * Shared ad tools prompt for system prompts.
+ * Used by workspace chat and issue chat. Full tool list and guidelines live in the ad-campaign skill.
+ */
+export const AD_TOOLS_PROMPT = `
+**Ad creation:** When the user asks to create ads or ad mockups, call \`load_skill\` with skillName "ad-campaign" to get the full workflow, tool reference, and implementation guidelines, then use the ad tools as described there.`;

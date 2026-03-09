@@ -45,6 +45,15 @@ const DEFAULT_SKILL_MANIFEST: SkillManifest = {
 };
 
 /**
+ * Skill manifest for workspace chat. ad-campaign is marketing-only;
+ * workspace and issue chat only expose ad tools for marketing workspaces.
+ */
+export const WORKSPACE_SKILL_MANIFEST: SkillManifest = {
+  ...DEFAULT_SKILL_MANIFEST,
+  marketing: [...DEFAULT_SKILL_MANIFEST.marketing, "ad-campaign"],
+};
+
+/**
  * Load and parse a single skill from the skills directory
  */
 export async function loadSkill(

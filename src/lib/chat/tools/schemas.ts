@@ -220,6 +220,43 @@ export const summarizeEpicSchema = z.object({
 });
 
 export type SummarizeEpicInput = z.infer<typeof summarizeEpicSchema>;
+
+/**
+ * Schema for listing attachments on an issue
+ */
+export const listAttachmentsSchema = z.object({
+  includeSubtasks: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("If true, also list attachments from subtasks"),
+});
+
+/**
+ * Schema for reading attachment content
+ */
+export const readAttachmentSchema = z.object({
+  attachmentId: z
+    .string()
+    .describe("The ID of the attachment to read"),
+});
+
+/**
+ * Schema for deleting an attachment
+ */
+export const deleteAttachmentSchema = z.object({
+  attachmentId: z
+    .string()
+    .describe("The ID of the attachment to delete"),
+  reason: z
+    .string()
+    .optional()
+    .describe("Optional reason for deletion (for user context)"),
+});
+
+export type ListAttachmentsInput = z.infer<typeof listAttachmentsSchema>;
+export type ReadAttachmentInput = z.infer<typeof readAttachmentSchema>;
+export type DeleteAttachmentInput = z.infer<typeof deleteAttachmentSchema>;
 export type UpdateDescriptionInput = z.infer<typeof updateDescriptionSchema>;
 export type AttachContentInput = z.infer<typeof attachContentSchema>;
 export type PlanIssueInput = z.infer<typeof planIssueSchema>;

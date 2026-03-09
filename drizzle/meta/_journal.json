@@ -85,6 +85,41 @@
       "when": 1771617168394,
       "tag": "0011_majestic_thundra",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1771861714049,
+      "tag": "0012_premium_dark_beast",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1772651747460,
+      "tag": "0013_wild_jetstream",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1772828071164,
+      "tag": "0014_brown_sleepwalker",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1773079381473,
+      "tag": "0015_rare_kree",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1773082747372,
+      "tag": "0016_fancy_night_nurse",
+      "breakpoints": true
     }
   ]
 }

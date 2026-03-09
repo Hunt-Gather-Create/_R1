@@ -1,0 +1,1 @@
+ALTER TABLE `ad_artifacts` DROP COLUMN `media_assets`;

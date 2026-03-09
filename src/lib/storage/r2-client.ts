@@ -241,6 +241,40 @@ export async function uploadBinaryContent(
 }
 
 /**
+ * Generate R2 storage key for an ad media asset
+ * Format: ads/{workspaceId}/{artifactId}/{filename}
+ */
+export function generateAdMediaStorageKey(
+  workspaceId: string,
+  artifactId: string,
+  filename: string
+): string {
+  const sanitized = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return `ads/${workspaceId}/${artifactId}/${sanitized}`;
+}
+
+/**
+ * Upload binary data directly to R2 (for AI-generated images)
+ */
+export async function uploadBuffer(
+  storageKey: string,
+  buffer: Buffer,
+  contentType: string
+): Promise<void> {
+  const client = createS3Client();
+  const bucket = getBucketName();
+
+  const command = new PutObjectCommand({
+    Bucket: bucket,
+    Key: storageKey,
+    Body: buffer,
+    ContentType: contentType,
+  });
+
+  await client.send(command);
+}
+
+/**
  * Get content directly from R2
  * Returns null if the object doesn't exist
  */

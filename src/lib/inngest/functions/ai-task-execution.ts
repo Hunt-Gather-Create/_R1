@@ -113,13 +113,21 @@ async function attachContentFromBackgroundJob(
  * Returns two parts: static (cacheable) and dynamic (per-task).
  * The static part is placed first to maximize cache hits across parallel tasks.
  */
-function buildSystemPrompt(
+export interface PreviousTaskResult {
+  identifier: string;
+  title: string;
+  summary: string;
+}
+
+/** @internal Exported for testing */
+export function buildSystemPrompt(
   parentIssue: { identifier: string; title: string; description: string | null } | null,
   subtaskTitle: string,
   subtaskDescription: string | null,
   aiInstructions: string | null,
   soul?: WorkspaceSoul | null,
-  brand?: BrandPromptInput | null
+  brand?: BrandPromptInput | null,
+  previousResults?: PreviousTaskResult[]
 ): { staticPart: string; dynamicPart: string } {
   // Static part - same across all tasks in a workspace (cacheable)
   const staticParts: string[] = [];
@@ -151,6 +159,16 @@ Provide your complete response as well-formatted markdown. Be thorough but conci
   dynamicParts.push(`## Parent Issue Context
 ${parentIssue ? `**${parentIssue.identifier}: ${parentIssue.title}**
 ${parentIssue.description || "No description provided."}` : "No parent context available."}`);
+
+  if (previousResults && previousResults.length > 0) {
+    const resultsText = previousResults
+      .map((r) => `### ${r.identifier}: ${r.title}\n${r.summary}`)
+      .join("\n\n");
+    dynamicParts.push(`## Completed Prior Subtasks
+The following subtasks have already been completed (in order). Reference their outputs to avoid duplicating work and to build on their findings.
+
+${resultsText}`);
+  }
 
   dynamicParts.push(`## Your Subtask
 **Title:** ${subtaskTitle}
@@ -407,5 +425,290 @@ export const executeAITask = inngest.createFunction(
     });
 
     return finalResult;
+  }
+);
+
+/**
+ * Inngest function for executing AI tasks sequentially.
+ * Each subtask receives the outputs of all previously completed subtasks
+ * so it can build on prior work and avoid duplication.
+ */
+export const executeAllAITasksSequential = inngest.createFunction(
+  {
+    id: "ai-tasks-sequential-execution",
+    name: "AI Tasks Sequential Execution",
+    retries: 1,
+    // Lower concurrency — each invocation processes multiple subtasks in series
+    concurrency: { limit: 3 },
+    onFailure: async ({ event, error }) => {
+      const { parentIssueId, subtaskIds } = event.data.event.data;
+      const runId = event.data.run_id;
+      console.error(`[AI Tasks Sequential] Function failed for parent ${parentIssueId}:`, error);
+
+      try {
+        // Mark any subtasks still stuck in pending/running as failed
+        for (const subtaskId of subtaskIds) {
+          const subtask = await db.select({ status: issues.aiExecutionStatus }).from(issues).where(eq(issues.id, subtaskId)).get();
+          if (subtask && (subtask.status === "pending" || subtask.status === "running")) {
+            await db
+              .update(issues)
+              .set({
+                aiExecutionStatus: "failed",
+                aiExecutionSummary: `Sequential execution failed: ${error.message}`,
+                updatedAt: new Date(),
+              })
+              .where(eq(issues.id, subtaskId));
+          }
+        }
+
+        // Update job status
+        await db
+          .update(backgroundJobs)
+          .set({
+            status: "failed",
+            completedAt: new Date(),
+            error: error.message,
+          })
+          .where(eq(backgroundJobs.runId, runId));
+      } catch (dbError) {
+        console.error(`[AI Tasks Sequential] Failed to update status:`, dbError);
+      }
+    },
+  },
+  { event: "ai/tasks.executeSequential" },
+  async ({ event, step, runId }) => {
+    const { parentIssueId, workspaceId, subtaskIds } = event.data;
+
+    // Step 1: Load shared context (workspace, parent issue, soul, brand)
+    const sharedContext = await step.run("load-shared-context", async () => {
+      const parentIssue = await db
+        .select()
+        .from(issues)
+        .where(eq(issues.id, parentIssueId))
+        .get();
+
+      const workspace = await db
+        .select()
+        .from(workspaces)
+        .where(eq(workspaces.id, workspaceId))
+        .get();
+
+      let brand: Brand | null = null;
+      if (workspace?.brandId) {
+        brand = await db
+          .select()
+          .from(brands)
+          .where(eq(brands.id, workspace.brandId))
+          .get() ?? null;
+      }
+
+      const soul = workspace?.soul ? (JSON.parse(workspace.soul) as WorkspaceSoul) : null;
+
+      // Create a single job record for the whole sequential run
+      await db.insert(backgroundJobs).values({
+        id: crypto.randomUUID(),
+        workspaceId,
+        functionId: "ai-tasks-sequential-execution",
+        functionName: "AI Tasks Sequential Execution",
+        runId,
+        status: "running",
+        startedAt: new Date(),
+        metadata: JSON.stringify({
+          parentIssueId,
+          subtaskCount: subtaskIds.length,
+        }),
+        attempt: 1,
+        maxAttempts: 2,
+      }).onConflictDoNothing();
+
+      return { parentIssue: parentIssue ?? null, soul, brand };
+    });
+
+    // Step 2+: Execute each subtask sequentially, accumulating results.
+    // NOTE on Inngest replay safety: these mutable arrays live outside step.run()
+    // but are safe because on replay, the outer code re-executes and completed
+    // step.run() calls return their memoized results instantly, re-populating
+    // the arrays in order before the next step executes.
+    const completedResults: PreviousTaskResult[] = [];
+    const results: Array<{ issueId: string; status: string; summary: string }> = [];
+
+    for (let i = 0; i < subtaskIds.length; i++) {
+      const subtaskId = subtaskIds[i];
+
+      const taskResult = await step.run(`execute-subtask-${i}`, async () => {
+        // Load this specific subtask
+        const subtask = await db
+          .select()
+          .from(issues)
+          .where(eq(issues.id, subtaskId))
+          .get();
+
+        if (!subtask) {
+          return { issueId: subtaskId, status: "failed" as const, summary: "Subtask not found", content: null };
+        }
+
+        if (!subtask.aiAssignable) {
+          return { issueId: subtaskId, status: "failed" as const, summary: "Subtask is not AI-assignable", content: null };
+        }
+
+        // Mark as running
+        await db
+          .update(issues)
+          .set({ aiExecutionStatus: "running", updatedAt: new Date() })
+          .where(eq(issues.id, subtaskId));
+
+        // Build prompt with previous results for context chaining
+        const { staticPart, dynamicPart } = buildSystemPrompt(
+          sharedContext.parentIssue,
+          subtask.title,
+          subtask.description,
+          subtask.aiInstructions,
+          sharedContext.soul,
+          sharedContext.brand,
+          completedResults
+        );
+
+        const fullSystemPrompt = `${staticPart}\n\n${dynamicPart}`;
+        const cacheControl = { cacheControl: { type: "ephemeral" as const } };
+
+        try {
+          const result = await generateText({
+            model: anthropic(EXECUTION_MODEL),
+            messages: [
+              {
+                role: "system" as const,
+                content: fullSystemPrompt,
+                providerOptions: { anthropic: cacheControl },
+              },
+              {
+                role: "user" as const,
+                content: "Complete the subtask described above. Use web_search and web_fetch if you need current information. Provide your response as markdown.",
+              },
+            ],
+            tools: {
+              web_search: anthropic.tools.webSearch_20250305({ maxUses: MAX_TOOL_USES }),
+              web_fetch: anthropic.tools.webFetch_20250910({ maxUses: MAX_TOOL_USES }),
+            },
+            maxRetries: 0,
+          });
+
+          // Track token usage
+          const usage = result.usage as typeof result.usage & {
+            inputTokenDetails?: {
+              cacheReadTokens?: number;
+              cacheWriteTokens?: number;
+            };
+          };
+          const cacheDetails = usage.inputTokenDetails;
+
+          await recordTokenUsage({
+            workspaceId,
+            model: EXECUTION_MODEL,
+            inputTokens: usage.inputTokens ?? 0,
+            outputTokens: usage.outputTokens ?? 0,
+            cacheCreationInputTokens: cacheDetails?.cacheWriteTokens ?? 0,
+            cacheReadInputTokens: cacheDetails?.cacheReadTokens ?? 0,
+            source: "ai-task-execution",
+          });
+
+          // Save attachment to parent issue
+          let attached = false;
+          if (result.text) {
+            try {
+              await attachContentFromBackgroundJob(
+                parentIssueId,
+                result.text,
+                `${subtask.identifier}-output.md`,
+                "text/markdown"
+              );
+              attached = true;
+            } catch (attachErr) {
+              console.error(`[AI Tasks Sequential] Failed to attach content for ${subtaskId}:`, attachErr);
+            }
+          }
+
+          const hasContent = !!result.text;
+          const status = hasContent ? "completed" : "failed";
+          const summary = hasContent
+            ? `Task completed. Output saved as ${attached ? "attachment" : "text"}.`
+            : "Task failed - no content generated.";
+
+          // Update subtask status
+          await db
+            .update(issues)
+            .set({
+              aiExecutionStatus: status,
+              aiExecutionResult: JSON.stringify({ content: result.text }),
+              aiExecutionSummary: summary,
+              status: status === "completed" ? "done" : subtask.status,
+              updatedAt: new Date(),
+            })
+            .where(eq(issues.id, subtaskId));
+
+          return {
+            issueId: subtaskId,
+            identifier: subtask.identifier,
+            title: subtask.title,
+            status,
+            summary,
+            content: result.text,
+          };
+        } catch (execError) {
+          const errorMessage = execError instanceof Error ? execError.message : "Unknown error";
+          console.error(`[AI Tasks Sequential] Execution failed for ${subtaskId}:`, execError);
+
+          await db
+            .update(issues)
+            .set({
+              aiExecutionStatus: "failed",
+              aiExecutionSummary: `Execution failed: ${errorMessage}`,
+              updatedAt: new Date(),
+            })
+            .where(eq(issues.id, subtaskId));
+
+          return { issueId: subtaskId, status: "failed" as const, summary: `Failed: ${errorMessage}`, content: null };
+        }
+      });
+
+      // Accumulate results so next subtask can reference them
+      if (taskResult.status === "completed" && taskResult.content) {
+        completedResults.push({
+          identifier: (taskResult as { identifier: string }).identifier,
+          title: (taskResult as { title: string }).title,
+          // Pass a truncated version to avoid blowing up the context window
+          summary: taskResult.content.length > 2000
+            ? taskResult.content.substring(0, 2000) + "\n\n[Output truncated for brevity]"
+            : taskResult.content,
+        });
+      }
+
+      results.push({
+        issueId: taskResult.issueId,
+        status: taskResult.status,
+        summary: taskResult.summary,
+      });
+    }
+
+    // Final step: update the job record
+    await step.run("finalize-job", async () => {
+      const completedCount = results.filter((r) => r.status === "completed").length;
+      const failedCount = results.filter((r) => r.status === "failed").length;
+
+      await db
+        .update(backgroundJobs)
+        .set({
+          status: failedCount === results.length ? "failed" : "completed",
+          completedAt: new Date(),
+          result: JSON.stringify({
+            total: results.length,
+            completed: completedCount,
+            failed: failedCount,
+            results,
+          }),
+        })
+        .where(eq(backgroundJobs.runId, runId));
+    });
+
+    return { total: results.length, results };
   }
 );
