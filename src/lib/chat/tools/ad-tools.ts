@@ -4,6 +4,7 @@ import {
   createAdArtifact,
   updateAdArtifactContent,
   rollbackAdArtifactVersion,
+  refreshAdAttachment,
 } from "@/lib/actions/ad-artifacts";
 import { db } from "@/lib/db";
 import { adArtifacts, adArtifactVersions } from "@/lib/db/schema";
@@ -297,6 +298,28 @@ export function createAdTools(context: AdToolsContext) {
       }),
       execute: async ({ artifactId, targetVersion }) => {
         return rollbackAdArtifactVersion(artifactId, targetVersion);
+      },
+    }),
+    render_ad: tool({
+      description:
+        "Re-render an ad's HTML preview from its current version. Use when the user asks to render, re-render, or refresh a specific ad. Only works when the ad is already attached to an issue.",
+      inputSchema: z.object({
+        artifactId: z.string().describe("ID of the ad artifact to re-render"),
+      }),
+      execute: async ({ artifactId }) => {
+        const artifact = await db
+          .select({ id: adArtifacts.id })
+          .from(adArtifacts)
+          .where(eq(adArtifacts.id, artifactId))
+          .get();
+        if (!artifact) {
+          return { success: false, error: "Ad artifact not found" };
+        }
+        const result = await refreshAdAttachment(artifactId);
+        if (result.refreshed) {
+          return { success: true };
+        }
+        return { success: false, error: result.error };
       },
     }),
   };

@@ -9,6 +9,7 @@ import {
   ZoomOut,
   RotateCw,
   File,
+  RefreshCw,
 } from "lucide-react";
 import { printElementAsPdf } from "@/lib/print-to-pdf";
 import { stripCiteTags } from "@/lib/utils";
@@ -60,6 +61,7 @@ export function AttachmentPreview({
   const [markdownContent, setMarkdownContent] = useState<string | null>(null);
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const markdownRef = useRef<HTMLDivElement>(null);
+  const prevOpenRef = useRef(false);
 
   const isImage = attachment ? isImageType(attachment.mimeType) : false;
   const isPdf = attachment ? isPdfType(attachment.mimeType) : false;
@@ -69,6 +71,14 @@ export function AttachmentPreview({
   const isHtml = attachment
     ? isHtmlType(attachment.mimeType, attachment.filename)
     : false;
+
+  // When opening the dialog for HTML, clear cached content so we refetch (e.g. after ad re-render).
+  useEffect(() => {
+    if (open && !prevOpenRef.current && isHtml && attachment) {
+      setHtmlContent(null);
+    }
+    prevOpenRef.current = open;
+  }, [open, isHtml, attachment?.id]);
 
   // Derive loading state: we're loading if we should show markdown but don't have content yet
   const isLoadingMarkdown = open && isMarkdown && markdownContent === null;
@@ -203,6 +213,17 @@ export function AttachmentPreview({
                   title="Save as PDF"
                 >
                   <FileDown className="w-4 h-4" />
+                </Button>
+              )}
+              {isHtml && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setHtmlContent(null)}
+                  disabled={isLoadingHtml}
+                  title="Refresh preview"
+                >
+                  <RefreshCw className="w-4 h-4" />
                 </Button>
               )}
               <Button

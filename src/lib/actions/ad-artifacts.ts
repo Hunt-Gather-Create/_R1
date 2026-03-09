@@ -648,18 +648,24 @@ export async function attachAdArtifactToIssue(
   }
 }
 
+export type RefreshAdAttachmentResult =
+  | { refreshed: true }
+  | { refreshed: false; error: string };
+
 /**
  * Re-render and overwrite the HTML attachment for an ad artifact using base64 data URLs.
  * Only updates when the artifact has an existing attachment (e.g. after attach).
  */
-export async function refreshAdAttachment(artifactId: string): Promise<void> {
+export async function refreshAdAttachment(artifactId: string): Promise<RefreshAdAttachmentResult> {
   const artifact = await db
     .select()
     .from(adArtifacts)
     .where(eq(adArtifacts.id, artifactId))
     .get();
 
-  if (!artifact?.issueAttachmentId) return;
+  if (!artifact?.issueAttachmentId) {
+    return { refreshed: false, error: "Ad is not attached to an issue" };
+  }
 
   await requireWorkspaceAccess(artifact.workspaceId, "member");
 
@@ -669,7 +675,9 @@ export async function refreshAdAttachment(artifactId: string): Promise<void> {
     .where(eq(attachments.id, artifact.issueAttachmentId))
     .get();
 
-  if (!attachment) return;
+  if (!attachment) {
+    return { refreshed: false, error: "Attachment not found" };
+  }
 
   const currentVersionRow = await db
     .select({ mediaAssets: adArtifactVersions.mediaAssets })
@@ -682,7 +690,9 @@ export async function refreshAdAttachment(artifactId: string): Promise<void> {
   const mediaAssetsStr = currentVersionRow?.mediaAssets ?? null;
 
   const slots = parseMediaAssetsToSlots(mediaAssetsStr);
-  if (!allCurrentMediaReady(slots)) return;
+  if (!allCurrentMediaReady(slots)) {
+    return { refreshed: false, error: "Not all media is ready yet; generate or wait for images first" };
+  }
 
   const dataUrls = await resolveMediaToBase64DataUrls(mediaAssetsStr);
   const resolvedMediaBySlotForHtml: ResolvedMediaBySlot = dataUrls.map((url) => ({
@@ -708,7 +718,9 @@ export async function refreshAdAttachment(artifactId: string): Promise<void> {
   const contentMediaUrls = contentOnlySlots.map((s) => s.currentImageUrl).filter(Boolean) as string[];
 
   const html = renderAdToHtml(artifact.platform, artifact.templateType, contentForHtml, contentMediaUrls);
-  if (!html) return;
+  if (!html) {
+    return { refreshed: false, error: "Failed to render ad HTML" };
+  }
 
   await uploadContent(attachment.storageKey, html, "text/html");
 
@@ -720,6 +732,7 @@ export async function refreshAdAttachment(artifactId: string): Promise<void> {
 
   const slug = await getWorkspaceSlug(artifact.workspaceId);
   revalidatePath(slug ? `/w/${slug}` : "/");
+  return { refreshed: true };
 }
 
 /**
