@@ -362,6 +362,14 @@ export const generateAdImages = inngest.createFunction(
         .update(adArtifacts)
         .set({ issueAttachmentId: attachmentId, updatedAt: new Date() })
         .where(eq(adArtifacts.id, artifactId));
+
+      await db
+        .update(adArtifactVersions)
+        .set({ issueAttachmentId: attachmentId })
+        .where(and(
+          eq(adArtifactVersions.artifactId, artifactId),
+          eq(adArtifactVersions.version, newVersion)
+        ));
     });
   }
 );

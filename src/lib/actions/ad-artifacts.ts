@@ -6,7 +6,7 @@ import { eq, desc, and } from "drizzle-orm";
 import { generateDownloadUrl, deleteObject, uploadContent, getObjectBinary } from "../storage/r2-client";
 import { renderAdToHtml } from "../ad-html-templates";
 import { revalidatePath } from "next/cache";
-import { attachContentToIssue } from "./attachments";
+import { attachContentToIssue, getAttachmentWithUrl } from "./attachments";
 import { requireWorkspaceAccess } from "./workspace";
 import { getWorkspaceSlug } from "./helpers";
 import type { AdArtifact } from "../types";
@@ -765,6 +765,33 @@ export async function refreshAdAttachmentIfMediaReady(artifactId: string): Promi
 
     await attachAdArtifactToIssue(artifactId, artifact.issueId);
   }
+}
+
+/**
+ * Get the signed URL for the HTML attachment associated with a specific artifact version.
+ * Returns null if no attachment exists (e.g., pre-migration data or workspace-chat artifacts).
+ */
+export async function getArtifactVersionAttachmentUrl(
+  artifactId: string,
+  version: number
+): Promise<string | null> {
+  const artifact = await db
+    .select({ workspaceId: adArtifacts.workspaceId })
+    .from(adArtifacts)
+    .where(eq(adArtifacts.id, artifactId))
+    .get();
+  if (!artifact) return null;
+  await requireWorkspaceAccess(artifact.workspaceId);
+
+  const row = await db
+    .select({ issueAttachmentId: adArtifactVersions.issueAttachmentId })
+    .from(adArtifactVersions)
+    .where(and(eq(adArtifactVersions.artifactId, artifactId), eq(adArtifactVersions.version, version)))
+    .get();
+  if (!row?.issueAttachmentId) return null;
+
+  const attachment = await getAttachmentWithUrl(row.issueAttachmentId);
+  return attachment?.url ?? null;
 }
 
 /**

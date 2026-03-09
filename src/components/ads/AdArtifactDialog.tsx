@@ -31,6 +31,7 @@ interface AdArtifactPanelContentProps {
   saveError: string | null;
   onCollapseToInline?: () => void;
   onClose: () => void;
+  readOnly?: boolean;
 }
 
 function AdArtifactPanelContent({
@@ -48,6 +49,7 @@ function AdArtifactPanelContent({
   saveError,
   onCollapseToInline,
   onClose,
+  readOnly,
 }: AdArtifactPanelContentProps) {
   const { localContent, updateContent, saveContent, isSavingContent } = useArtifactContext();
   const [isEditing, setIsEditing] = useState(false);
@@ -126,35 +128,37 @@ function AdArtifactPanelContent({
               saveAttachmentTitle={saveAttachmentTitle}
             />
           )}
-          {isEditing ? (
-            <>
+          {!readOnly && (
+            isEditing ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  disabled={isSavingContent}
+                  className="px-2.5 py-1 text-xs rounded-md border border-border hover:bg-muted transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={isSavingContent}
+                  className="px-2.5 py-1 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1"
+                >
+                  {isSavingContent && <Loader2 className="w-3 h-3 animate-spin" />}
+                  Save
+                </button>
+              </>
+            ) : (
               <button
                 type="button"
-                onClick={handleCancel}
-                disabled={isSavingContent}
-                className="px-2.5 py-1 text-xs rounded-md border border-border hover:bg-muted transition-colors disabled:opacity-50"
+                onClick={handleEditStart}
+                className="p-1.5 rounded-md hover:bg-muted transition-colors"
+                title="Edit content"
               >
-                Cancel
+                <Pencil className="w-4 h-4 text-muted-foreground" />
               </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={isSavingContent}
-                className="px-2.5 py-1 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1"
-              >
-                {isSavingContent && <Loader2 className="w-3 h-3 animate-spin" />}
-                Save
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={handleEditStart}
-              className="p-1.5 rounded-md hover:bg-muted transition-colors"
-              title="Edit content"
-            >
-              <Pencil className="w-4 h-4 text-muted-foreground" />
-            </button>
+            )
           )}
           {onCollapseToInline && !isEditing && (
             <button
@@ -209,9 +213,10 @@ interface AdArtifactDialogProps {
   issueId?: string;
   initialVersion?: number;
   onCollapseToInline?: () => void;
+  readOnly?: boolean;
 }
 
-export function AdArtifactDialog({ open, onOpenChange, artifactId, issueId, initialVersion, onCollapseToInline }: AdArtifactDialogProps) {
+export function AdArtifactDialog({ open, onOpenChange, artifactId, issueId, initialVersion, onCollapseToInline, readOnly }: AdArtifactDialogProps) {
   const chatContext = useContext(ChatContext);
   const selectedChatId = chatContext?.selectedChatId ?? null;
   const viewAttachment = chatContext?.viewAttachment;
@@ -453,6 +458,7 @@ export function AdArtifactDialog({ open, onOpenChange, artifactId, issueId, init
                 : undefined
             }
             onClose={() => onOpenChange(false)}
+            readOnly={readOnly}
           />
         </ArtifactProvider>
       </DialogContent>

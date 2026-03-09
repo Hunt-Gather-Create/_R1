@@ -1,0 +1,1 @@
+ALTER TABLE `ad_artifact_versions` ADD `issue_attachment_id` text;

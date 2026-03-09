@@ -15,10 +15,11 @@ import {
   useInvalidateAISuggestions,
   useInvalidateSubtasks,
   useIssueSubtasks,
+  useIssueComments,
 } from "@/lib/hooks";
 import { useBoardContext } from "@/components/board/context/BoardProvider";
 import { persistedToUIMessagesBase, serializeMessageParts } from "@/lib/chat/message-persistence";
-import type { IssueWithLabels, Comment } from "@/lib/types";
+import type { IssueWithLabels } from "@/lib/types";
 
 interface SubtaskContext {
   id: string;
@@ -42,15 +43,11 @@ interface IssueContext {
 
 interface IssueChatPanelProps {
   issue: IssueWithLabels;
-  comments: Comment[];
-  onUpdateDescription: (description: string) => void;
   onViewArtifact?: (artifactId: string, version?: number) => void;
 }
 
 export function IssueChatPanel({
   issue,
-  comments,
-  onUpdateDescription,
   onViewArtifact,
 }: IssueChatPanelProps) {
   const { workspaceId, workspacePurpose } = useBoardContext();
@@ -63,8 +60,9 @@ export function IssueChatPanel({
   const invalidateAISuggestions = useInvalidateAISuggestions(issue.id);
   const invalidateSubtasks = useInvalidateSubtasks(issue.id);
 
-  // Fetch subtasks for context
+  // Fetch subtasks and comments for context
   const { data: subtasks = [] } = useIssueSubtasks(issue.id);
+  const { data: comments = [] } = useIssueComments(issue.id);
 
 
   // Build issue context for the API
@@ -95,8 +93,7 @@ export function IssueChatPanel({
     transportBody: { issueContext, workspaceId, workspacePurpose },
     onToolCall: ({ toolCall }) => {
       if (toolCall.toolName === "updateDescription") {
-        const args = toolCall.input as { description: string };
-        onUpdateDescription(args.description);
+        // Description update handled server-side; no form to push to
       }
       // Immediately invalidate relevant queries (best-effort for fast connections).
       // A second invalidation fires when streaming completes to guarantee freshness.
@@ -254,7 +251,7 @@ export function IssueChatPanel({
                 workspaceId={workspaceId ?? ""}
                 messageId={messageId}
                 showPreview={messageIndex !== lastMessageIndexWithArtifact}
-                onExpand={(version) => onViewArtifact?.(adResult.artifactId, version)}
+                onExpand={(version) => onViewArtifact?.(adResult.artifactId, messageIndex === lastMessageIndexWithArtifact ? undefined : version)}
                 onAttach={async () => {
                   await attachAdArtifactToIssue(adResult.artifactId, issue.id);
                   invalidateAttachments();

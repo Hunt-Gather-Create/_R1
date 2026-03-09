@@ -5,6 +5,7 @@ import { X, Copy, Check, Download, FileDown, FileText } from "lucide-react";
 import { printElementAsPdf } from "@/lib/print-to-pdf";
 import { MarkdownContent } from "@/components/ai-elements/MarkdownContent";
 import { AdArtifactDialog } from "@/components/ads/AdArtifactDialog";
+import { AdArtifactFullView } from "@/components/ads/AdArtifactFullView";
 import { useChatContext } from "./ChatContext";
 import { cn } from "@/lib/utils";
 
@@ -46,13 +47,24 @@ export function AttachmentPreviewPanel() {
 
   // If an ad artifact is selected (by id), render the full ad view
   if (selectedArtifactId) {
+    const isHistoricalVersion = selectedArtifactVersion !== undefined;
+    if (!isHistoricalVersion) {
+      return (
+        <AdArtifactFullView
+          artifactId={selectedArtifactId}
+          onClose={closeArtifact}
+          onCollapseToInline={collapseArtifactToInline}
+        />
+      );
+    }
+    // Historical version: use readOnly dialog (no HTML attachment for workspace chat)
     return (
       <AdArtifactDialog
         open={true}
         onOpenChange={(open) => { if (!open) closeArtifact(); }}
         artifactId={selectedArtifactId}
         initialVersion={selectedArtifactVersion}
-        onCollapseToInline={collapseArtifactToInline}
+        readOnly={true}
       />
     );
   }

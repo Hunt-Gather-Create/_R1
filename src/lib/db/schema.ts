@@ -443,6 +443,7 @@ export const adArtifactVersions = sqliteTable("ad_artifact_versions", {
   content: text("content").notNull(), // JSON snapshot of ad text/copy at time of generation
   mediaAssets: text("media_assets"), // JSON snapshot of MediaSlot[] with storageKeys
   messageId: text("message_id"), // nullable — linked when client polling resolves
+  issueAttachmentId: text("issue_attachment_id"), // nullable — set after HTML attachment created
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
