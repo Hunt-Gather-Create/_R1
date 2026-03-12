@@ -3,6 +3,7 @@ import {
   createChatResponse,
   createChatTools,
   createMemoryTools,
+  createPlatformTools,
   loadSkillsForPurpose,
   loadSkillsForWorkspace,
   buildContextualSystemPrompt,
@@ -13,6 +14,7 @@ import type { WorkspaceSoul, Brand, WorkspaceMemory } from "@/lib/types";
 import { loadWorkspaceContext } from "@/lib/brand-utils";
 import { createSkillTools } from "@/lib/chat/tools/skill-creator-tool";
 import { getLastUserMessageText } from "@/lib/memory-utils";
+import { getCurrentUserId } from "@/lib/auth";
 
 export const maxDuration = 30;
 
@@ -89,6 +91,11 @@ Focus on:
 - Web fetch: Read content from URLs
 - Create skill: Save a repeatable workflow or instruction set as a reusable skill for this workspace
 - Update skill: Modify an existing skill (MUST warn user it affects all users and get confirmation first)
+
+**Social media tools:**
+- get_platform_connections: Check which social platforms the user has connected
+- connect_platform: Initiate connecting a social platform (Instagram, LinkedIn, X/Twitter, Facebook)
+- Once connected, platform-specific tools become available for accessing posts and profile data
 
 Be conversational and helpful. Ask one or two questions at a time to gather context before suggesting an issue.
 
@@ -171,11 +178,15 @@ export async function POST(req: Request) {
     ? await loadSkillsForWorkspace(workspaceId, purpose)
     : await loadSkillsForPurpose(purpose);
 
+  // Get current user for platform connections
+  const userId = await getCurrentUserId();
+
   // Create tools for issue suggestion, memory management, and skill management
   const chatTools = createChatTools();
   const memoryTools = workspaceId ? createMemoryTools({ workspaceId }) : {};
   const skillTools = createSkillTools(workspaceId);
-  const tools = { ...chatTools, ...memoryTools, ...skillTools };
+  const platformTools = purpose === "marketing" ? createPlatformTools(workspaceId) : {};
+  const tools = { ...chatTools, ...memoryTools, ...skillTools, ...platformTools };
 
   return createChatResponse(messages, {
     system: getSystemPrompt(purpose, soul, brand, memories, suggestedSubtasks),
@@ -187,6 +198,7 @@ export async function POST(req: Request) {
     },
     skills,
     workspaceId,
+    userId: userId ?? undefined,
     usageSource: "chat",
   });
 }

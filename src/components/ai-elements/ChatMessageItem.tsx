@@ -26,9 +26,11 @@ interface Message {
 interface ChatMessageItemProps {
   message: Message;
   renderToolCall?: (part: MessagePart, index: number) => React.ReactNode;
+  /** Workspace ID for platform connection tool results */
+  workspaceId?: string;
 }
 
-export const ChatMessageItem = memo(function ChatMessageItem({ message, renderToolCall }: ChatMessageItemProps) {
+export const ChatMessageItem = memo(function ChatMessageItem({ message, renderToolCall, workspaceId }: ChatMessageItemProps) {
   // Skip system messages - they're not displayed in chat
   if (message.role === "system") {
     return null;
@@ -120,6 +122,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, renderTo
                   key={index}
                   toolName={toolName}
                   result={toolPart.output}
+                  workspaceId={workspaceId}
                 />
               );
             }

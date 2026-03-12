@@ -140,6 +140,7 @@ export function IssueChatPanel({
       input={chat.input}
       onInputChange={chat.setInput}
       onSubmit={chat.handleSubmit}
+      workspaceId={workspaceId}
       header={{
         title: "AI Assistant",
         showClearButton: true,

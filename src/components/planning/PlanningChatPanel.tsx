@@ -69,6 +69,7 @@ export function PlanningChatPanel({ onPlanIssue, onSummarizeEpic }: PlanningChat
       input={chat.input}
       onInputChange={chat.setInput}
       onSubmit={chat.handleSubmit}
+      workspaceId={workspaceId}
       header={{
         title: "AI Planning Assistant",
       }}

@@ -1,10 +1,12 @@
 "use client";
 
 import { Search, Code, Globe, Terminal, FileEdit, FileText, CheckCircle, XCircle } from "lucide-react";
+import { PlatformConnectResult } from "./PlatformConnectResult";
 
 interface ToolResultDisplayProps {
   toolName: string;
   result?: unknown;
+  workspaceId?: string;
 }
 
 // Extract useful info from tool result objects
@@ -33,7 +35,14 @@ function extractResultInfo(result: unknown): { success: boolean; message?: strin
   return { success: true };
 }
 
-export function ToolResultDisplay({ toolName, result }: ToolResultDisplayProps) {
+export function ToolResultDisplay({ toolName, result, workspaceId }: ToolResultDisplayProps) {
+  // Platform connection
+  if (toolName === "connect_platform" && result != null) {
+    const resultStr =
+      typeof result === "string" ? result : JSON.stringify(result);
+    return <PlatformConnectResult result={resultStr} workspaceId={workspaceId} />;
+  }
+
   // Web search
   if (toolName === "web_search") {
     return (

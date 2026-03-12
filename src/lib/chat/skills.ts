@@ -41,6 +41,7 @@ const DEFAULT_SKILL_MANIFEST: SkillManifest = {
     "aio-geo-optimizer",
     "marketing/video-content-strategy",
     "marketing/earned-media-strategy",
+    "marketing/connect-platforms",
   ],
 };
 

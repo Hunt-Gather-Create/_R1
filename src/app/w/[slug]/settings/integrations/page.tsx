@@ -3,11 +3,14 @@
 import { useSettingsContext } from "../context";
 import { IntegrationRow } from "./_components/IntegrationRow";
 import { ServerSearch } from "./_components/ServerSearch";
+import { PlatformConnectionsSection } from "./_components/PlatformConnectionsSection";
 import { GradientPage } from "@/components/ui/gradient-page";
 import { PageHeader } from "@/components/ui/page-header";
 
 export default function IntegrationsSettingsPage() {
-  const { mcpServers, brand } = useSettingsContext();
+  const { mcpServers, brand, workspace } = useSettingsContext();
+
+  const isMarketing = workspace?.purpose === "marketing";
 
   return (
     <GradientPage color={brand?.primaryColor ?? undefined}>
@@ -18,6 +21,11 @@ export default function IntegrationsSettingsPage() {
       />
 
       <section className="container space-y-8">
+        {/* Social Platforms - marketing workspaces only */}
+        {isMarketing && workspace && (
+          <PlatformConnectionsSection workspaceId={workspace.id} />
+        )}
+
         {/* Enabled Integrations */}
         {mcpServers.length > 0 && (
           <div>

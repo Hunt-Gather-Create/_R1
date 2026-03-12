@@ -1,12 +1,15 @@
 import { createMCPClient } from "@ai-sdk/mcp";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { workspaceMcpServers } from "@/lib/db/schema";
+import { workspaceMcpServers, platformConnections } from "@/lib/db/schema";
 import { MCP_SERVERS, type McpServerKey } from "./servers";
+import { type PlatformKey } from "./platforms";
+import { getToolsFromPlatformConnection } from "./connect";
 import type { ToolSet } from "ai";
 
 // Re-export server definitions
 export { MCP_SERVERS, type McpServerKey, getMcpServer, getAllMcpServers } from "./servers";
+export { SOCIAL_PLATFORMS, type PlatformKey } from "./platforms";
 
 /**
  * Get enabled MCP servers for a workspace from the database
@@ -86,24 +89,21 @@ export async function testServerConnection(serverKey: McpServerKey): Promise<{
 }
 
 /**
- * Aggregate all tools from enabled MCP servers for a workspace.
+ * Aggregate all tools from enabled MCP servers AND connected platforms for a workspace.
  * Used by the chat module to add MCP tools to the AI's tool set.
  */
-export async function getMcpToolsForWorkspace(workspaceId: string): Promise<ToolSet> {
-  // Fetch enabled servers from our DB
-  const enabledServers = await getEnabledMcpServers(workspaceId);
-
-  if (enabledServers.length === 0) {
-    return {};
-  }
-
-  // Aggregate tools from each connected server
+export async function getMcpToolsForWorkspace(
+  workspaceId: string,
+  userId?: string
+): Promise<ToolSet> {
   const allTools: ToolSet = {};
+
+  // Load workspace-level MCP server tools (e.g., Exa)
+  const enabledServers = await getEnabledMcpServers(workspaceId);
 
   for (const server of enabledServers) {
     const serverKey = server.serverKey as McpServerKey;
 
-    // Verify this is a valid server key
     if (!(serverKey in MCP_SERVERS)) {
       continue;
     }
@@ -111,12 +111,50 @@ export async function getMcpToolsForWorkspace(workspaceId: string): Promise<Tool
     try {
       const tools = await getToolsFromServer(serverKey);
 
-      // Merge tools, prefixing with server key to avoid conflicts
       for (const [toolName, tool] of Object.entries(tools)) {
         allTools[`${serverKey}_${toolName}`] = tool;
       }
     } catch (error) {
       console.error(`[MCP] Failed to get tools for ${serverKey}:`, error);
+    }
+  }
+
+  // Load user's connected platform tools (social media via Smithery Connect)
+  if (userId) {
+    const userConnections = await db
+      .select()
+      .from(platformConnections)
+      .where(
+        and(
+          eq(platformConnections.userId, userId),
+          eq(platformConnections.workspaceId, workspaceId),
+          eq(platformConnections.status, "connected")
+        )
+      );
+
+    const platformToolResults = await Promise.all(
+      userConnections.map(async (conn) => {
+        const platformKey = conn.platform as PlatformKey;
+        try {
+          const tools = await getToolsFromPlatformConnection(
+            userId,
+            platformKey
+          );
+          return { platform: platformKey, tools };
+        } catch (error) {
+          console.error(
+            `[MCP] Failed to get platform tools for ${platformKey}:`,
+            error
+          );
+          return { platform: platformKey, tools: {} as ToolSet };
+        }
+      })
+    );
+
+    for (const { platform, tools } of platformToolResults) {
+      for (const [toolName, tool] of Object.entries(tools)) {
+        allTools[`${platform}_${toolName}`] = tool;
+      }
     }
   }
 

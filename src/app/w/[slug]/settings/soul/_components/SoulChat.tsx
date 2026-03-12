@@ -217,6 +217,7 @@ export function SoulChat({
       input={input}
       onInputChange={setInput}
       onSubmit={handleSubmit}
+      workspaceId={workspaceId}
       header={{
         title: "Persona Configuration",
         subtitle:

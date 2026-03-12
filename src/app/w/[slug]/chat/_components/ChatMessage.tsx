@@ -80,7 +80,7 @@ function FileAttachmentCard({
 }
 
 export function ChatMessage({ message }: ChatMessageProps) {
-  const { viewAttachment } = useChatContext();
+  const { viewAttachment, workspace } = useChatContext();
   const isUser = message.role === "user";
 
   return (
@@ -191,6 +191,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
                   key={index}
                   toolName={toolName}
                   result={toolPart.output}
+                  workspaceId={workspace?.id}
                 />
               );
             }

@@ -82,6 +82,8 @@ export interface ChatContainerProps {
   isLoadingHistory?: boolean;
   /** Custom empty state (shown when no messages and no welcome message) */
   emptyState?: ReactNode;
+  /** Workspace ID for platform connection tool results */
+  workspaceId?: string;
 }
 
 /**
@@ -111,6 +113,7 @@ export function ChatContainer({
   LoadingIndicator = ChatLoadingIndicator,
   isLoadingHistory = false,
   emptyState,
+  workspaceId,
 }: ChatContainerProps) {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
@@ -196,6 +199,7 @@ export function ChatContainer({
           <div key={message.id} data-message-role={message.role}>
             <ChatMessageItem
               message={message}
+              workspaceId={workspaceId}
               renderToolCall={
                 renderToolCall
                   ? (part, index) => {

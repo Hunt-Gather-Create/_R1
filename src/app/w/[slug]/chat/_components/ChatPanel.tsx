@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { Trash2 } from "lucide-react";
+import { ChatPlatformConnections } from "./ChatPlatformConnections";
 import { useChatCore } from "@/lib/hooks";
 import { ChatMessage, LoadingMessage } from "./ChatMessage";
 import { ChatSpacer } from "@/components/ai-elements/ChatSpacer";
@@ -208,15 +209,21 @@ export function ChatPanel() {
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border shrink-0">
         <h3 className="text-sm font-medium">{soul?.name || "AI Assistant"}</h3>
-        {messages.length > 0 && (
-          <button
-            onClick={handleClearHistory}
-            className="p-0 rounded text-muted-foreground hover:text-red-500 cursor-pointer"
-            title="Clear chat history"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <ChatPlatformConnections
+            workspaceId={workspaceId}
+            workspacePurpose={workspacePurpose}
+          />
+          {messages.length > 0 && (
+            <button
+              onClick={handleClearHistory}
+              className="p-0 rounded text-muted-foreground hover:text-red-500 cursor-pointer"
+              title="Clear chat history"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}

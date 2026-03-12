@@ -100,6 +100,7 @@ export function ChatPanel() {
       input={chat.input}
       onInputChange={chat.setInput}
       onSubmit={chat.handleSubmit}
+      workspaceId={workspaceId}
       header={{
         title: "AI Assistant",
         subtitle: "Helping you write better user stories",

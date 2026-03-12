@@ -1,6 +1,6 @@
 import { type UIMessage, tool } from "ai";
 import { z } from "zod";
-import { createChatResponse, loadSkillsForWorkspace, buildContextualSystemPrompt, createMemoryTools } from "@/lib/chat";
+import { createChatResponse, loadSkillsForWorkspace, buildContextualSystemPrompt, createMemoryTools, createPlatformTools } from "@/lib/chat";
 import {
   createChatAttachment,
   getChatAttachment,
@@ -11,6 +11,7 @@ import type { WorkspaceSoul, Brand, WorkspaceMemory } from "@/lib/types";
 import { loadWorkspaceContext } from "@/lib/brand-utils";
 import { createSkillTools } from "@/lib/chat/tools/skill-creator-tool";
 import { getLastUserMessageText } from "@/lib/memory-utils";
+import { getCurrentUserId } from "@/lib/auth";
 
 export const maxDuration = 30;
 
@@ -59,6 +60,7 @@ const MARKETING_SYSTEM_PROMPT = `You are a helpful AI assistant for a marketing 
 - Read file: Read the contents of a previously created file attachment
 - Create skill: Save a repeatable workflow or instruction set as a reusable skill for this workspace
 - Update skill: Modify an existing skill (requires user confirmation since it affects all users)
+- Platform connections: Check and connect user social media accounts (Instagram, LinkedIn, X/Twitter, Facebook)
 
 When you generate substantial content like marketing briefs, reports, or copy documents, use the createFile tool to save it as an attachment so the user can easily access and download it.
 
@@ -67,6 +69,13 @@ If the user asks you to read or review a file, first use listFiles to see what f
 When the user wants to save a repeatable workflow, instruction set, or specialized capability, use the create_skill tool. Skills need a name (lowercase with hyphens), description, and markdown content with instructions.
 
 When updating a skill, ALWAYS warn the user first that the change will affect all users in the workspace and get their explicit confirmation before proceeding.
+
+**Social Media Platforms:**
+You can help users connect their social media accounts to access post and profile data.
+- Use get_platform_connections to check which platforms are connected
+- Use connect_platform to initiate OAuth when a user wants to connect a platform
+- Once connected, platform-specific MCP tools become available automatically
+- Available platforms: Instagram, LinkedIn, X (Twitter), Facebook
 
 Be conversational and helpful. Provide clear, actionable responses.`;
 
@@ -224,10 +233,12 @@ export async function POST(req: Request) {
     : [];
 
   // Create tools - attachment tools if chatId, memory tools and skill tools if workspaceId
+  const userId = await getCurrentUserId();
   const attachmentTools = chatId ? createWorkspaceChatTools(chatId) : {};
   const memoryTools = workspaceId ? createMemoryTools({ workspaceId }) : {};
   const skillTools = createSkillTools(workspaceId);
-  const tools = { ...attachmentTools, ...memoryTools, ...skillTools };
+  const platformTools = purpose === "marketing" ? createPlatformTools(workspaceId) : {};
+  const tools = { ...attachmentTools, ...memoryTools, ...skillTools, ...platformTools };
 
   return createChatResponse(messages, {
     system: getSystemPrompt(purpose, soul, brand, memories),
@@ -239,6 +250,7 @@ export async function POST(req: Request) {
     },
     skills,
     workspaceId,
+    userId: userId ?? undefined,
     usageSource: "workspace",
   });
 }

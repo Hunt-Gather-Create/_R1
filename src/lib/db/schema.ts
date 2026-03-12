@@ -300,6 +300,24 @@ export const workspaceMcpServers = sqliteTable("workspace_mcp_servers", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
+// Platform Connections - per-user social media connections via Smithery Connect
+export const platformConnections = sqliteTable("platform_connections", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  platform: text("platform").notNull(), // "instagram" | "linkedin" | "twitter" | "facebook"
+  connectionId: text("connection_id").notNull(), // Smithery Connect connection ID
+  status: text("status").notNull().default("pending"), // "pending" | "connected" | "auth_required" | "error"
+  displayName: text("display_name"), // e.g., "@mybrand" or account name
+  errorMessage: text("error_message"),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
 // Workspace Chats - conversation threads within a workspace
 export const workspaceChats = sqliteTable("workspace_chats", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),

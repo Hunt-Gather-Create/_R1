@@ -35,6 +35,7 @@ export {
   createChatTools,
   createSkillLoaderTool,
   createMemoryTools,
+  createPlatformTools,
   type IssueToolsContext,
   type MemoryToolsContext,
 } from "./tools";
@@ -110,6 +111,11 @@ export interface ChatConfig {
    */
   workspaceId?: string;
   /**
+   * User ID for loading per-user platform connection tools.
+   * If provided along with workspaceId, platform MCP tools will be loaded.
+   */
+  userId?: string;
+  /**
    * Source identifier for token usage tracking.
    * Examples: "chat", "planning", "issue", "soul"
    */
@@ -141,7 +147,7 @@ ${skillSummaries}`;
 }
 
 type ModelMessage = Awaited<ReturnType<typeof convertToModelMessages>>[number];
-type ContentPart = { type: string; text?: string; providerOptions?: Record<string, unknown> };
+type ContentPart = { type: string; text?: string; toolCallId?: string; providerOptions?: Record<string, unknown> };
 
 /**
  * Add cache breakpoints to messages for Anthropic prompt caching.
@@ -231,13 +237,59 @@ function addCacheControlToMessage(
 }
 
 /**
+ * Deduplicate tool_use IDs across model messages.
+ * When messages are restored from persistence after multi-step tool calling,
+ * convertToModelMessages can produce duplicate tool-call blocks. The Anthropic
+ * API rejects requests with non-unique tool_use IDs, so we strip duplicates
+ * along with their orphaned tool-result counterparts.
+ */
+function deduplicateToolUseIds(modelMessages: ModelMessage[]): ModelMessage[] {
+  const seenToolCallIds = new Set<string>();
+  const removedToolCallIds = new Set<string>();
+
+  return modelMessages
+    .map((msg) => {
+      if (
+        (msg.role !== "assistant" && msg.role !== "tool") ||
+        !Array.isArray(msg.content)
+      ) {
+        return msg;
+      }
+
+      const filteredContent = (msg.content as ContentPart[]).filter((part) => {
+        if (part.type === "tool-call" && part.toolCallId) {
+          if (seenToolCallIds.has(part.toolCallId)) {
+            removedToolCallIds.add(part.toolCallId);
+            return false; // drop duplicate tool-call
+          }
+          seenToolCallIds.add(part.toolCallId);
+        }
+        if (part.type === "tool-result" && part.toolCallId) {
+          if (removedToolCallIds.has(part.toolCallId)) {
+            return false; // drop orphaned tool-result
+          }
+        }
+        return true;
+      });
+
+      // Drop messages that became empty after filtering
+      if (filteredContent.length === 0) return null;
+
+      return { ...msg, content: filteredContent } as ModelMessage;
+    })
+    .filter((msg): msg is ModelMessage => msg !== null);
+}
+
+/**
  * Creates a streaming chat response
  */
 export async function createChatResponse(
   messages: UIMessage[],
   config: ChatConfig
 ) {
-  const modelMessages = await convertToModelMessages(messages);
+  const modelMessages = deduplicateToolUseIds(
+    await convertToModelMessages(messages)
+  );
 
   // Merge custom tools with built-in Anthropic tools
   const allTools: ToolSet = { ...config.tools };
@@ -245,7 +297,7 @@ export async function createChatResponse(
   // Add MCP tools from enabled integrations
   if (config.workspaceId) {
     try {
-      const mcpTools = await getMcpToolsForWorkspace(config.workspaceId);
+      const mcpTools = await getMcpToolsForWorkspace(config.workspaceId, config.userId);
       for (const [toolName, tool] of Object.entries(mcpTools)) {
         allTools[toolName] = tool;
       }
