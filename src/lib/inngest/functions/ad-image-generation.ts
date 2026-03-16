@@ -2,7 +2,7 @@ import { inngest } from "../client";
 import { db } from "@/lib/db";
 import { adArtifacts, adArtifactVersions, attachments, workspaceChatAttachments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { generateImage } from "@/lib/services/image-generation";
+import { generateImage, editImage } from "@/lib/services/image-generation";
 import {
   parseMediaAssetsToSlots,
   allCurrentMediaReady,
@@ -190,6 +190,25 @@ export const generateAdImages = inngest.createFunction(
       const generateTasks = slots.map((slot, i) => async () => {
         const ver = slot.versions[slot.currentIndex];
         if (!ver || ver.storageKey || !ver.prompt?.trim()) return null;
+
+        // Check if a previous version has an existing image we can edit
+        const prevVer = slot.currentIndex > 0
+          ? slot.versions[slot.currentIndex - 1]
+          : null;
+
+        if (prevVer?.storageKey) {
+          // Previous image exists — localized edit instead of full regeneration
+          return await editImage({
+            sourceStorageKey: prevVer.storageKey,
+            editPrompt: ver.prompt,
+            aspectRatio: aspectRatios[i] ?? "1:1",
+            workspaceId: artifact.workspaceId,
+            artifactId,
+            mediaIndex: i,
+          });
+        }
+
+        // No previous image — generate from scratch
         return await generateImage({
           prompt: ver.prompt,
           aspectRatio: aspectRatios[i] ?? "1:1",
