@@ -20,6 +20,7 @@ import {
   getWorkspaceSocialAccounts,
   disconnectSocialAccount,
 } from "@/lib/actions/social-accounts";
+import type { SocialAccountPublic } from "@/lib/actions/social-accounts";
 import {
   testGetProfile,
   testListPosts,
@@ -29,7 +30,7 @@ import {
   SUPPORTED_PLATFORMS,
   PLATFORM_CONFIG,
 } from "@/lib/social/constants";
-import type { SocialAccount, SocialPlatform } from "@/lib/types";
+import type { SocialPlatform } from "@/lib/types";
 
 interface TestResult {
   success: boolean;
@@ -44,7 +45,7 @@ export default function SocialSettingsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const [accounts, setAccounts] = useState<SocialAccount[]>([]);
+  const [accounts, setAccounts] = useState<SocialAccountPublic[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [testResults, setTestResults] = useState<Record<string, TestResult | null>>({});
   const [testLoading, setTestLoading] = useState<Record<string, boolean>>({});

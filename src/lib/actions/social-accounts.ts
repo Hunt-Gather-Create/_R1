@@ -8,13 +8,40 @@ import { encryptToken, decryptToken } from "@/lib/social/token-encryption";
 import { getPlatformAdapter } from "@/lib/social/adapters";
 import type { SocialAccount, SocialPlatform } from "@/lib/types";
 
-/** Get all connected social accounts for a workspace */
+/** Safe subset of social account data for client-side use (no tokens) */
+export type SocialAccountPublic = {
+  id: string;
+  workspaceId: string;
+  platform: string;
+  platformUserId: string | null;
+  platformUsername: string | null;
+  connectionStatus: string;
+  scopes: string;
+  tokenExpiresAt: Date | null;
+  lastError: string | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+/** Get all connected social accounts for a workspace (safe projection, no tokens) */
 export async function getWorkspaceSocialAccounts(
   workspaceId: string
-): Promise<SocialAccount[]> {
+): Promise<SocialAccountPublic[]> {
   await requireWorkspaceAccess(workspaceId);
   return db
-    .select()
+    .select({
+      id: socialAccounts.id,
+      workspaceId: socialAccounts.workspaceId,
+      platform: socialAccounts.platform,
+      platformUserId: socialAccounts.platformUserId,
+      platformUsername: socialAccounts.platformUsername,
+      connectionStatus: socialAccounts.connectionStatus,
+      scopes: socialAccounts.scopes,
+      tokenExpiresAt: socialAccounts.tokenExpiresAt,
+      lastError: socialAccounts.lastError,
+      createdAt: socialAccounts.createdAt,
+      updatedAt: socialAccounts.updatedAt,
+    })
     .from(socialAccounts)
     .where(eq(socialAccounts.workspaceId, workspaceId));
 }
