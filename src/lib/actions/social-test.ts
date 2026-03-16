@@ -4,7 +4,7 @@ import {
   getWorkspaceSocialAccount,
   ensureValidToken,
 } from "./social-accounts";
-import { requireAuth } from "./workspace";
+import { requireWorkspaceAccess } from "./workspace";
 import { getPlatformAdapter } from "@/lib/social/adapters";
 import type { SocialPlatform } from "@/lib/types";
 
@@ -20,7 +20,7 @@ export async function testGetProfile(
   workspaceId: string,
   platform: SocialPlatform
 ): Promise<TestResult> {
-  await requireAuth();
+  await requireWorkspaceAccess(workspaceId);
   const start = Date.now();
 
   try {
@@ -53,7 +53,7 @@ export async function testListPosts(
   platform: SocialPlatform,
   limit: number = 5
 ): Promise<TestResult> {
-  await requireAuth();
+  await requireWorkspaceAccess(workspaceId);
   const start = Date.now();
 
   try {
@@ -95,7 +95,7 @@ export async function testGetPost(
   platform: SocialPlatform,
   postId: string
 ): Promise<TestResult> {
-  await requireAuth();
+  await requireWorkspaceAccess(workspaceId);
   const start = Date.now();
 
   try {

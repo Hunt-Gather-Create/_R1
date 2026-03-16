@@ -3,7 +3,7 @@
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { socialAccounts } from "@/lib/db/schema";
-import { requireAuth } from "./workspace";
+import { requireWorkspaceAccess } from "./workspace";
 import { encryptToken, decryptToken } from "@/lib/social/token-encryption";
 import { getPlatformAdapter } from "@/lib/social/adapters";
 import type { SocialAccount, SocialPlatform } from "@/lib/types";
@@ -12,6 +12,7 @@ import type { SocialAccount, SocialPlatform } from "@/lib/types";
 export async function getWorkspaceSocialAccounts(
   workspaceId: string
 ): Promise<SocialAccount[]> {
+  await requireWorkspaceAccess(workspaceId);
   return db
     .select()
     .from(socialAccounts)
@@ -125,7 +126,7 @@ export async function disconnectSocialAccount(
   workspaceId: string,
   platform: SocialPlatform
 ): Promise<void> {
-  await requireAuth();
+  await requireWorkspaceAccess(workspaceId);
   await db
     .delete(socialAccounts)
     .where(

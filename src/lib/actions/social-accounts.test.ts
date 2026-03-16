@@ -19,7 +19,11 @@ const mockDb = {
 vi.mock("../db", () => ({ db: mockDb }));
 
 vi.mock("./workspace", () => ({
-  requireAuth: vi.fn().mockResolvedValue({ id: "user-1" }),
+  requireWorkspaceAccess: vi.fn().mockResolvedValue({
+    user: { id: "user-1" },
+    member: { role: "member" },
+    workspace: { id: "ws-1", slug: "test-workspace" },
+  }),
 }));
 
 const mockEncryptToken = vi.fn().mockResolvedValue("sealed-value");
