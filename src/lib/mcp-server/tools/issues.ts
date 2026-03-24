@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { formatToolError } from "@/lib/mcp-server/errors";
+import { requireMCPWorkspaceAccess } from "@/lib/mcp-server/auth/middleware";
 import type { MCPAuthContext } from "@/lib/mcp-server/services/auth-context";
 import {
   listIssues,
@@ -37,6 +38,7 @@ export function registerIssueTools(server: McpServer, ctx: MCPAuthContext) {
     },
     async (args) => {
       try {
+        await requireMCPWorkspaceAccess(ctx, "viewer");
         const result = await listIssues(ctx, args);
         return {
           content: [
@@ -81,6 +83,7 @@ export function registerIssueTools(server: McpServer, ctx: MCPAuthContext) {
     },
     async (args) => {
       try {
+        await requireMCPWorkspaceAccess(ctx, "member");
         const { dueDate, ...rest } = args;
         const result = await createIssue(ctx, {
           ...rest,
@@ -143,6 +146,7 @@ export function registerIssueTools(server: McpServer, ctx: MCPAuthContext) {
     },
     async (args) => {
       try {
+        await requireMCPWorkspaceAccess(ctx, "member");
         const { issueId, dueDate, ...rest } = args;
         await updateIssue(ctx, issueId, {
           ...rest,
@@ -181,6 +185,7 @@ export function registerIssueTools(server: McpServer, ctx: MCPAuthContext) {
     },
     async (args) => {
       try {
+        await requireMCPWorkspaceAccess(ctx, "member");
         const { parentIssueId, ...input } = args;
         const result = await createSubtask(ctx, parentIssueId, input);
         return {

@@ -54,7 +54,7 @@ export function assertWorkspaceInScope(
   }
 }
 
-const ROLE_HIERARCHY: Record<string, number> = {
+const ROLE_HIERARCHY: Record<WorkspaceRole, number> = {
   viewer: 0,
   member: 1,
   admin: 2,
@@ -66,7 +66,7 @@ const ROLE_HIERARCHY: Record<string, number> = {
  */
 export async function requireMCPWorkspaceAccess(
   ctx: MCPAuthContext,
-  minimumRole?: WorkspaceRole
+  minimumRole: WorkspaceRole = "viewer"
 ): Promise<{
   user: typeof users.$inferSelect;
   member: typeof workspaceMembers.$inferSelect;
@@ -114,15 +114,13 @@ export async function requireMCPWorkspaceAccess(
   }
 
   // Check role hierarchy
-  if (minimumRole) {
-    const userLevel = ROLE_HIERARCHY[member.role] ?? 0;
-    const requiredLevel = ROLE_HIERARCHY[minimumRole] ?? 0;
-    if (userLevel < requiredLevel) {
-      throw new McpToolError(
-        "FORBIDDEN",
-        `Requires ${minimumRole} role or higher`
-      );
-    }
+  const userLevel = ROLE_HIERARCHY[member.role as WorkspaceRole] ?? 0;
+  const requiredLevel = ROLE_HIERARCHY[minimumRole] ?? 0;
+  if (userLevel < requiredLevel) {
+    throw new McpToolError(
+      "FORBIDDEN",
+      `Requires ${minimumRole} role or higher`
+    );
   }
 
   const workspace = await db
