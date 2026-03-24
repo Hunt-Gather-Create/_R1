@@ -3,11 +3,26 @@ import { getSignInUrl } from "@workos-inc/authkit-nextjs";
 import { sealData } from "iron-session";
 
 const COOKIE_NAME = "mcp-oauth-params";
-const COOKIE_PASSWORD =
-  process.env.WORKOS_COOKIE_PASSWORD || "fallback-password-for-dev-only-32ch";
+
+function getOAuthCookiePassword(): string | null {
+  const password = process.env.WORKOS_COOKIE_PASSWORD;
+  return password && password.length >= 32 ? password : null;
+}
 
 export async function GET(request: NextRequest) {
   const url = request.nextUrl;
+  const cookiePassword = getOAuthCookiePassword();
+
+  if (!cookiePassword) {
+    return NextResponse.json(
+      {
+        error: "server_error",
+        error_description:
+          "MCP OAuth cookie secret is not configured. Set WORKOS_COOKIE_PASSWORD to a value with at least 32 characters.",
+      },
+      { status: 500 }
+    );
+  }
 
   const responseType = url.searchParams.get("response_type");
   const clientId = url.searchParams.get("client_id");
@@ -47,7 +62,7 @@ export async function GET(request: NextRequest) {
     codeChallengeMethod: codeChallengeMethod || "S256",
   };
 
-  const sealed = await sealData(oauthParams, { password: COOKIE_PASSWORD });
+  const sealed = await sealData(oauthParams, { password: cookiePassword });
 
   // Redirect to WorkOS sign-in with returnPathname encoded in state
   // so handleAuth() redirects back to our MCP callback after login.

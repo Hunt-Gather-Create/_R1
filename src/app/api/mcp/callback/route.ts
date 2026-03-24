@@ -7,10 +7,13 @@ import { eq } from "drizzle-orm";
 import { createAuthorizationCode } from "@/lib/mcp-server/auth/oauth-provider";
 
 const COOKIE_NAME = "mcp-oauth-params";
-const COOKIE_PASSWORD =
-  process.env.WORKOS_COOKIE_PASSWORD || "fallback-password-for-dev-only-32ch";
 const WORKOS_COOKIE_NAME = process.env.WORKOS_COOKIE_NAME || "wos-session";
 const WORKOS_COOKIE_PASSWORD = process.env.WORKOS_COOKIE_PASSWORD || "";
+
+function getOAuthCookiePassword(): string | null {
+  const password = process.env.WORKOS_COOKIE_PASSWORD;
+  return password && password.length >= 32 ? password : null;
+}
 
 interface WorkOSSession {
   accessToken: string;
@@ -43,6 +46,14 @@ interface OAuthParams {
  */
 export async function GET(request: NextRequest) {
   const cookieStore = await cookies();
+  const cookiePassword = getOAuthCookiePassword();
+
+  if (!cookiePassword) {
+    return new NextResponse(
+      "Server misconfiguration: MCP OAuth cookie secret is missing or too short",
+      { status: 500 }
+    );
+  }
 
   // Read WorkOS session
   const wosCookie = cookieStore.get(WORKOS_COOKIE_NAME);
@@ -74,7 +85,7 @@ export async function GET(request: NextRequest) {
   let oauthParams: OAuthParams;
   try {
     oauthParams = await unsealData<OAuthParams>(oauthCookie.value, {
-      password: COOKIE_PASSWORD,
+      password: cookiePassword,
     });
   } catch {
     return new NextResponse("OAuth flow expired: invalid parameters", {
