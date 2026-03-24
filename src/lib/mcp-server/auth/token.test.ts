@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { createAccessToken, verifyAccessToken } from "./token";
+import { createAccessToken, validateMcpConfig, verifyAccessToken } from "./token";
 
 beforeAll(() => {
   process.env.MCP_JWT_SECRET =
@@ -49,11 +49,15 @@ describe("verifyAccessToken", () => {
 });
 
 describe("getSigningKey", () => {
+  it("accepts a valid MCP_JWT_SECRET", () => {
+    expect(() => validateMcpConfig()).not.toThrow();
+  });
+
   it("throws if MCP_JWT_SECRET is not set", async () => {
     const original = process.env.MCP_JWT_SECRET;
     delete process.env.MCP_JWT_SECRET;
 
-    await expect(createAccessToken("user_1", null)).rejects.toThrow(
+    expect(() => validateMcpConfig()).toThrow(
       "MCP_JWT_SECRET must be set"
     );
 
@@ -64,7 +68,7 @@ describe("getSigningKey", () => {
     const original = process.env.MCP_JWT_SECRET;
     process.env.MCP_JWT_SECRET = "short";
 
-    await expect(createAccessToken("user_1", null)).rejects.toThrow(
+    expect(() => validateMcpConfig()).toThrow(
       "at least 32 characters"
     );
 

@@ -3,13 +3,18 @@ import { SignJWT, jwtVerify } from "jose";
 const JWT_ALGORITHM = "HS256";
 const ACCESS_TOKEN_EXPIRY = "1h";
 
-function getSigningKey(): Uint8Array {
+export function validateMcpConfig(): void {
   const secret = process.env.MCP_JWT_SECRET;
   if (!secret || secret.length < 32) {
     throw new Error(
       "MCP_JWT_SECRET must be set and at least 32 characters long"
     );
   }
+}
+
+function getSigningKey(): Uint8Array {
+  validateMcpConfig();
+  const secret = process.env.MCP_JWT_SECRET as string;
   return new TextEncoder().encode(secret);
 }
 
