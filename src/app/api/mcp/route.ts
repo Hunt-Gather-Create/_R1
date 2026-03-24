@@ -1,6 +1,7 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMCPServer } from "@/lib/mcp-server";
 import { authenticateMCPRequest } from "@/lib/mcp-server/auth/middleware";
+import { McpToolError } from "@/lib/mcp-server/errors";
 
 const APP_URL = process.env.APP_URL || "http://localhost:3000";
 
@@ -57,20 +58,26 @@ export async function POST(request: Request): Promise<Response> {
 
     return addCorsHeaders(response);
   } catch (error) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      (error as { code: string }).code === "UNAUTHORIZED"
-    ) {
-      return corsJson(
-        { error: "Unauthorized" },
-        {
-          status: 401,
-          headers: {
-            "WWW-Authenticate": `Bearer resource_metadata="${APP_URL}/.well-known/oauth-protected-resource/api/mcp"`,
-          },
-        }
-      );
+    if (error instanceof McpToolError) {
+      if (error.code === "UNAUTHORIZED") {
+        return corsJson(
+          { error: "Unauthorized" },
+          {
+            status: 401,
+            headers: {
+              "WWW-Authenticate": `Bearer resource_metadata="${APP_URL}/.well-known/oauth-protected-resource/api/mcp"`,
+            },
+          }
+        );
+      }
+
+      if (error.code === "FORBIDDEN") {
+        return corsJson({ error: error.message }, { status: 403 });
+      }
+
+      if (error.code === "NOT_FOUND") {
+        return corsJson({ error: error.message }, { status: 404 });
+      }
     }
 
     return corsJson({ error: "Internal server error" }, { status: 500 });

@@ -23,6 +23,18 @@ export function registerIssueResource(
     async (uri, { issueId }) => {
       const id = String(issueId);
 
+      if (!ctx.workspaceId) {
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ error: "No workspace connected" }),
+            },
+          ],
+        };
+      }
+
       const issue = await db
         .select()
         .from(issues)
@@ -42,24 +54,24 @@ export function registerIssueResource(
       }
 
       // Verify workspace access
-      if (ctx.workspaceId) {
-        const col = await db
-          .select({ workspaceId: columns.workspaceId })
-          .from(columns)
-          .where(eq(columns.id, issue.columnId))
-          .get();
+      const col = await db
+        .select({ workspaceId: columns.workspaceId })
+        .from(columns)
+        .where(eq(columns.id, issue.columnId))
+        .get();
 
-        if (col && col.workspaceId !== ctx.workspaceId) {
-          return {
-            contents: [
-              {
-                uri: uri.href,
-                mimeType: "application/json",
-                text: JSON.stringify({ error: "Issue does not belong to the connected workspace" }),
-              },
-            ],
-          };
-        }
+      if (!col || col.workspaceId !== ctx.workspaceId) {
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({
+                error: "Issue does not belong to the connected workspace",
+              }),
+            },
+          ],
+        };
       }
 
       // Fetch related data in parallel

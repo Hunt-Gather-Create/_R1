@@ -22,15 +22,23 @@ export async function authenticateMCPRequest(
 
   const token = authHeader.slice(7);
 
+  let payload: Awaited<ReturnType<typeof verifyAccessToken>>;
   try {
-    const payload = await verifyAccessToken(token);
-    return {
-      userId: payload.userId,
-      workspaceId: payload.workspaceId,
-    };
+    payload = await verifyAccessToken(token);
   } catch {
     throw new McpToolError("UNAUTHORIZED", "Invalid or expired access token");
   }
+
+  const ctx = {
+    userId: payload.userId,
+    workspaceId: payload.workspaceId,
+  };
+
+  if (ctx.workspaceId) {
+    await requireMCPWorkspaceAccess(ctx, "viewer");
+  }
+
+  return ctx;
 }
 
 /**
