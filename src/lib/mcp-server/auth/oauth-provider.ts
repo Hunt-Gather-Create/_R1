@@ -6,9 +6,18 @@ import { createAccessToken } from "./token";
 /**
  * Generate a cryptographically random string for codes and tokens.
  */
-function generateRandomString(length: number = 48): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(length));
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+function generateRandomString(length: number = 64): string {
+  let result = "";
+
+  while (result.length < length) {
+    const bytes = crypto.getRandomValues(new Uint8Array(length));
+    result += btoa(String.fromCharCode(...bytes))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  }
+
+  return result.slice(0, length);
 }
 
 /**
