@@ -10,6 +10,8 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, MCP-Protocol-Version",
   "Access-Control-Expose-Headers": "WWW-Authenticate",
+  // Keep this endpoint non-credentialed: wildcard origins cannot be combined
+  // with Access-Control-Allow-Credentials in browsers.
 };
 
 function addCorsHeaders(response: Response): Response {
