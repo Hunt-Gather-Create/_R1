@@ -26,7 +26,42 @@ export async function POST(request: NextRequest) {
     const text = await request.text();
     params = Object.fromEntries(new URLSearchParams(text));
   } else {
-    params = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse(
+        {
+          error: "invalid_request",
+          error_description: "Request body must be valid JSON",
+        },
+        400
+      );
+    }
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return jsonResponse(
+        {
+          error: "invalid_request",
+          error_description: "Request body must be a JSON object",
+        },
+        400
+      );
+    }
+
+    for (const [key, value] of Object.entries(body)) {
+      if (typeof value !== "string") {
+        return jsonResponse(
+          {
+            error: "invalid_request",
+            error_description: `Parameter "${key}" must be a string`,
+          },
+          400
+        );
+      }
+    }
+
+    params = body as Record<string, string>;
   }
 
   const grantType = params.grant_type;
