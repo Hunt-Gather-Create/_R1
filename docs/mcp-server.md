@@ -6,38 +6,6 @@ Each MCP connection is scoped to **one workspace** via OAuth. The workspace is i
 
 ## Quick Start
 
-### Claude Desktop
-
-Add to `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "insight": {
-      "url": "http://localhost:3000/api/mcp",
-      "transport": "streamable-http"
-    }
-  }
-}
-```
-
-On first use, Claude Desktop opens a browser for OAuth login and workspace selection.
-
-### Cursor
-
-Add to `.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "insight": {
-      "url": "http://localhost:3000/api/mcp",
-      "transport": "streamable-http"
-    }
-  }
-}
-```
-
 ### MCP Inspector
 
 ```bash
