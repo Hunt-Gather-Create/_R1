@@ -516,6 +516,33 @@ export const issueKnowledgeDocuments = sqliteTable(
   })
 );
 
+// MCP Authorization Codes - temporary codes for OAuth flow
+export const mcpAuthorizationCodes = sqliteTable("mcp_authorization_codes", {
+  code: text("code").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id"), // null if user has no workspaces
+  clientId: text("client_id").notNull(),
+  redirectUri: text("redirect_uri").notNull(),
+  codeChallenge: text("code_challenge").notNull(),
+  codeChallengeMethod: text("code_challenge_method").notNull().default("S256"),
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
+// MCP Refresh Tokens - long-lived tokens for refreshing access
+export const mcpRefreshTokens = sqliteTable("mcp_refresh_tokens", {
+  token: text("token").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id"), // null if user has no workspaces
+  clientId: text("client_id").notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
 // Knowledge assets (images embedded in markdown docs)
 export const knowledgeAssets = sqliteTable("knowledge_assets", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),

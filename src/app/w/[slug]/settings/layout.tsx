@@ -2,7 +2,7 @@
 
 import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Building2, Columns3, Tag, Users, UsersRound, Sparkles, Plug, Heart, BarChart3, Palette, Activity, Brain } from "lucide-react";
+import { ArrowLeft, Building2, Columns3, Tag, Users, UsersRound, Sparkles, Plug, Heart, BarChart3, Palette, Activity, Brain, Cable } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SettingsProvider, useSettingsContext } from "./context";
 
@@ -142,6 +142,12 @@ function SettingsSidebar() {
               icon={<Brain className="w-4 h-4" />}
               label="Memories"
               isActive={pathname === `${baseSettingsPath}/memories`}
+            />
+            <NavItem
+              href={`${baseSettingsPath}/mcp-api`}
+              icon={<Cable className="w-4 h-4" />}
+              label="MCP API"
+              isActive={pathname === `${baseSettingsPath}/mcp-api`}
             />
           </div>
         </div>
