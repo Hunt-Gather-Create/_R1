@@ -3,6 +3,7 @@
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { unsealData } from "iron-session";
+import { getDevUser } from "@/lib/dev-auth";
 
 // WorkOS uses these env vars
 const WORKOS_COOKIE_NAME = process.env.WORKOS_COOKIE_NAME || "wos-session";
@@ -55,6 +56,18 @@ async function getSessionFromCookie(): Promise<Session | null> {
  * Wrapped with React.cache() to deduplicate calls within a single request.
  */
 export const getCurrentUser = cache(async (): Promise<WorkOSUser | null> => {
+  // Dev bypass: skip WorkOS, resolve user by email from DB
+  const devUser = await getDevUser();
+  if (devUser) {
+    return {
+      id: devUser.id,
+      email: devUser.email,
+      firstName: devUser.firstName,
+      lastName: devUser.lastName,
+      profilePictureUrl: devUser.avatarUrl,
+    };
+  }
+
   const session = await getSessionFromCookie();
   return session?.user ?? null;
 });

@@ -5,6 +5,7 @@ import { verifyAccessToken } from "./token";
 import type { MCPAuthContext } from "../services/auth-context";
 import { McpToolError } from "../errors";
 import type { WorkspaceRole } from "@/lib/types";
+import { getDevUser, getDevWorkspaceId } from "@/lib/dev-auth";
 
 /**
  * Authenticate an MCP request by extracting and verifying the Bearer token.
@@ -12,6 +13,13 @@ import type { WorkspaceRole } from "@/lib/types";
 export async function authenticateMCPRequest(
   request: Request
 ): Promise<MCPAuthContext> {
+  // Dev bypass: skip JWT, resolve from env
+  const devUser = await getDevUser();
+  if (devUser) {
+    const workspaceId = await getDevWorkspaceId(devUser.id);
+    return { userId: devUser.id, workspaceId };
+  }
+
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     throw new McpToolError(
