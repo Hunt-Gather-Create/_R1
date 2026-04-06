@@ -13,6 +13,35 @@ import { PipelineRow } from "./components/pipeline-row";
 
 type View = "triage" | "accounts" | "pipeline";
 
+/**
+ * Merge adjacent Saturday/Sunday DayItems into a single "Weekend" column.
+ * If only one of Sat/Sun exists, it passes through unchanged.
+ */
+export function mergeWeekendDays(days: DayItem[]): DayItem[] {
+  const result: DayItem[] = [];
+  let i = 0;
+  while (i < days.length) {
+    const d = parseISODate(days[i].date);
+    const dayOfWeek = d.getDay();
+
+    if (dayOfWeek === 6 && i + 1 < days.length) {
+      const next = parseISODate(days[i + 1].date);
+      if (next.getDay() === 0) {
+        result.push({
+          date: days[i].date,
+          label: "Weekend",
+          items: [...days[i].items, ...days[i + 1].items],
+        });
+        i += 2;
+        continue;
+      }
+    }
+    result.push(days[i]);
+    i++;
+  }
+  return result;
+}
+
 interface RunwayBoardProps {
   thisWeek: DayItem[];
   upcoming: DayItem[];
@@ -63,11 +92,15 @@ export function RunwayBoard({
 
   const restOfWeek = useMemo(
     () =>
-      thisWeek.filter(
-        (day) => parseISODate(day.date).toDateString() !== todayStr
+      mergeWeekendDays(
+        thisWeek.filter(
+          (day) => parseISODate(day.date).toDateString() !== todayStr
+        )
       ),
     [thisWeek, todayStr]
   );
+
+  const upcomingMerged = useMemo(() => mergeWeekendDays(upcoming), [upcoming]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -117,7 +150,7 @@ export function RunwayBoard({
                 Upcoming
               </h2>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {upcoming.map((day) => (
+                {upcomingMerged.map((day) => (
                   <DayColumn key={day.date} day={day} isToday={false} />
                 ))}
               </div>
