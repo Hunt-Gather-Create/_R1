@@ -90,4 +90,15 @@ describe("TodaySection", () => {
     const cards = container.querySelectorAll(".border-sky-500\\/30");
     expect(cards.length).toBeGreaterThan(0);
   });
+
+  it("renders nothing when matching day has empty items array", () => {
+    const emptyDayWeek: DayItem[] = [
+      { date: "2026-04-06", label: "Mon 4/6", items: [] },
+    ];
+    render(<TodaySection thisWeek={emptyDayWeek} todayStr={TODAY_STR} />);
+    expect(screen.getByText("Today")).toBeInTheDocument();
+    // Grid container should not render
+    const section = screen.getByText("Today").closest("section")!;
+    expect(section.querySelectorAll(".grid")).toHaveLength(0);
+  });
 });

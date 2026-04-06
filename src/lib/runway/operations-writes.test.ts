@@ -146,4 +146,82 @@ describe("updateProjectStatus", () => {
     const insertCall = mockInsertValues.mock.calls[0][0];
     expect(insertCall.summary).toContain("Waiting on client feedback");
   });
+
+  it("omits notes from summary when not provided", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+    const { updateProjectStatus } = await import("./operations-writes");
+    await updateProjectStatus({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      newStatus: "awaiting-client",
+      updatedBy: "kathy",
+    });
+
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    // Summary should end without ". " appended notes
+    expect(insertCall.summary).toBe(
+      "Convergix / CDS Messaging: in-production -> awaiting-client"
+    );
+  });
+
+  it("returns data with status transition details on success", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+    const { updateProjectStatus } = await import("./operations-writes");
+    const result = await updateProjectStatus({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      newStatus: "completed",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual({
+        clientName: "Convergix",
+        projectName: "CDS Messaging",
+        previousStatus: "in-production",
+        newStatus: "completed",
+      });
+    }
+  });
+
+  it("sets updatedAt to a Date object", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+    const { updateProjectStatus } = await import("./operations-writes");
+    await updateProjectStatus({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      newStatus: "done",
+      updatedBy: "kathy",
+    });
+
+    const setCall = mockUpdateSet.mock.calls[0][0];
+    expect(setCall.updatedAt).toBeInstanceOf(Date);
+  });
+
+  it("logs correct update type and values in audit record", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+    const { updateProjectStatus } = await import("./operations-writes");
+    await updateProjectStatus({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      newStatus: "blocked",
+      updatedBy: "kathy",
+    });
+
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.updateType).toBe("status-change");
+    expect(insertCall.previousValue).toBe("in-production");
+    expect(insertCall.newValue).toBe("blocked");
+    expect(insertCall.clientId).toBe("c1");
+    expect(insertCall.projectId).toBe("p1");
+  });
 });

@@ -130,4 +130,70 @@ describe("handleDirectMessage", () => {
 
     expect(stepCountIs).toHaveBeenCalledWith(5);
   });
+
+  it("passes user message as content to AI", async () => {
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: "response",
+    });
+
+    const { handleDirectMessage } = await import("./bot");
+    await handleDirectMessage("U12345", "D67890", "CDS went to Daniel", "ts123");
+
+    const call = (generateText as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.messages).toEqual([
+      { role: "user", content: "CDS went to Daniel" },
+    ]);
+  });
+
+  it("passes tools to generateText", async () => {
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: "response",
+    });
+
+    const { handleDirectMessage } = await import("./bot");
+    await handleDirectMessage("U12345", "D67890", "hello", "ts123");
+
+    const call = (generateText as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.tools).toBeDefined();
+    expect(Object.keys(call.tools)).toContain("get_clients");
+    expect(Object.keys(call.tools)).toContain("update_project_status");
+  });
+
+  it("sets maxRetries to 1", async () => {
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: "response",
+    });
+
+    const { handleDirectMessage } = await import("./bot");
+    await handleDirectMessage("U12345", "D67890", "hello", "ts123");
+
+    const call = (generateText as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.maxRetries).toBe(1);
+  });
+});
+
+describe("buildBotSystemPrompt", () => {
+  it("includes the user's name", async () => {
+    const { buildBotSystemPrompt } = await import("./bot");
+    const prompt = buildBotSystemPrompt("Kathy Horn");
+    expect(prompt).toContain("Kathy Horn");
+  });
+
+  it("includes status values", async () => {
+    const { buildBotSystemPrompt } = await import("./bot");
+    const prompt = buildBotSystemPrompt("Jason");
+    expect(prompt).toContain("in-production");
+    expect(prompt).toContain("awaiting-client");
+    expect(prompt).toContain("blocked");
+    expect(prompt).toContain("completed");
+  });
+
+  it("prohibits em dashes", async () => {
+    const { buildBotSystemPrompt } = await import("./bot");
+    const prompt = buildBotSystemPrompt("Jason");
+    expect(prompt).toContain("Never use em dashes");
+  });
 });

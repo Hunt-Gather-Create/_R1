@@ -130,3 +130,57 @@ describe("getTeamMemberBySlackId", () => {
     expect(result).toBeNull();
   });
 });
+
+describe("getUpdatesData — edge cases", () => {
+  it("returns empty array when no updates exist", async () => {
+    mockSelectFrom.mockReturnValue(chainable([]));
+    const { getUpdatesData } = await import("./operations-context");
+    const result = await getUpdatesData();
+    expect(result).toEqual([]);
+  });
+
+  it("handles null clientId in update records", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: null, updatedBy: "Jason", updateType: "note", previousValue: null, newValue: null, summary: "General", createdAt: null },
+    ]));
+    const { getUpdatesData } = await import("./operations-context");
+    const result = await getUpdatesData();
+    expect(result[0].client).toBeNull();
+    expect(result[0].createdAt).toBeUndefined();
+  });
+
+  it("handles client that exists but has no updates", async () => {
+    mockGetClientBySlug.mockResolvedValue({ id: "c1" });
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "c2", updatedBy: "Jason", updateType: "note", summary: "Other", createdAt: null },
+    ]));
+    const { getUpdatesData } = await import("./operations-context");
+    const result = await getUpdatesData({ clientSlug: "convergix" });
+    expect(result).toEqual([]);
+  });
+});
+
+describe("getClientContacts — JSON edge cases", () => {
+  it("handles malformed JSON gracefully", async () => {
+    mockGetClientBySlug.mockResolvedValue({ name: "Test", clientContacts: "[unclosed" });
+    const { getClientContacts } = await import("./operations-context");
+    const result = await getClientContacts("test");
+    expect(result).toEqual({ client: "Test", contacts: ["[unclosed"] });
+  });
+
+  it("handles empty string contacts", async () => {
+    mockGetClientBySlug.mockResolvedValue({ name: "Test", clientContacts: "" });
+    const { getClientContacts } = await import("./operations-context");
+    const result = await getClientContacts("test");
+    expect(result).toEqual({ client: "Test", contacts: [] });
+  });
+});
+
+describe("getTeamMembersData — edge cases", () => {
+  it("returns empty array when no active members", async () => {
+    mockSelectFrom.mockReturnValue(chainable([]));
+    const { getTeamMembersData } = await import("./operations-context");
+    const result = await getTeamMembersData();
+    expect(result).toEqual([]);
+  });
+});

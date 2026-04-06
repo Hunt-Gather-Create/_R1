@@ -127,4 +127,65 @@ describe("createBotTools", () => {
       expect.objectContaining({ updatedBy: "Kathy Horn" })
     );
   });
+
+  it("update_project_status includes notes in update text", async () => {
+    mockOps.updateProjectStatus.mockResolvedValue({
+      ok: true, message: "Updated",
+      data: { clientName: "Convergix", projectName: "CDS", previousStatus: "active", newStatus: "done" },
+    });
+    await tools.update_project_status.execute(
+      { clientSlug: "convergix", projectName: "CDS", newStatus: "done", notes: "R1 approved" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockPostUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ updateText: "active -> done (R1 approved)" })
+    );
+  });
+
+  it("update_project_status skips postUpdate when result.data is undefined", async () => {
+    mockOps.updateProjectStatus.mockResolvedValue({ ok: true, message: "Updated" });
+    await tools.update_project_status.execute(
+      { clientSlug: "convergix", projectName: "CDS", newStatus: "done" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockPostUpdate).not.toHaveBeenCalled();
+  });
+
+  it("add_update swallows postUpdate errors", async () => {
+    mockOps.addUpdate.mockResolvedValue({
+      ok: true, message: "Logged",
+      data: { clientName: "Convergix", projectName: "CDS" },
+    });
+    mockPostUpdate.mockRejectedValueOnce(new Error("Slack down"));
+    const result = await tools.add_update.execute(
+      { clientSlug: "convergix", summary: "Test note" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(result).toEqual({ result: "Logged" });
+  });
+
+  it("add_update skips postUpdate when result.data is undefined", async () => {
+    mockOps.addUpdate.mockResolvedValue({ ok: true, message: "Logged" });
+    await tools.add_update.execute(
+      { clientSlug: "convergix", summary: "Test" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockPostUpdate).not.toHaveBeenCalled();
+  });
+
+  it("get_pipeline calls getPipelineData", async () => {
+    const result = await tools.get_pipeline.execute({}, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    expect(mockOps.getPipelineData).toHaveBeenCalledOnce();
+    expect(result).toEqual([]);
+  });
+
+  it("get_week_items passes weekOf parameter", async () => {
+    await tools.get_week_items.execute({ weekOf: "2026-04-06" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06");
+  });
+
+  it("get_week_items passes undefined when weekOf not given", async () => {
+    await tools.get_week_items.execute({}, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined);
+  });
 });
