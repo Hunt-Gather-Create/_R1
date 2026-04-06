@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { DayItem, Account, PipelineItem } from "./types";
-import { parseISODate } from "./date-utils";
+import { parseISODate, getMondayISODate } from "./date-utils";
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 import { DayColumn } from "./components/day-column";
@@ -40,6 +40,36 @@ export function mergeWeekendDays(days: DayItem[]): DayItem[] {
     i++;
   }
   return result;
+}
+
+export interface WeekGroup {
+  mondayDate: string;
+  label: string;
+  days: DayItem[];
+}
+
+/**
+ * Group days by their week's Monday, producing a "w/o M/D" label for each group.
+ */
+export function groupByWeek(days: DayItem[]): WeekGroup[] {
+  const groups: Map<string, DayItem[]> = new Map();
+  for (const day of days) {
+    const monday = getMondayISODate(parseISODate(day.date));
+    const existing = groups.get(monday);
+    if (existing) {
+      existing.push(day);
+    } else {
+      groups.set(monday, [day]);
+    }
+  }
+  return Array.from(groups.entries()).map(([monday, weekDays]) => {
+    const d = parseISODate(monday);
+    return {
+      mondayDate: monday,
+      label: `w/o ${d.getMonth() + 1}/${d.getDate()}`,
+      days: weekDays,
+    };
+  });
 }
 
 interface RunwayBoardProps {
@@ -100,7 +130,10 @@ export function RunwayBoard({
     [thisWeek, todayStr]
   );
 
-  const upcomingMerged = useMemo(() => mergeWeekendDays(upcoming), [upcoming]);
+  const upcomingWeeks = useMemo(
+    () => groupByWeek(mergeWeekendDays(upcoming)),
+    [upcoming]
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -145,16 +178,21 @@ export function RunwayBoard({
               </section>
             ) : null}
 
-            <section>
-              <h2 className="mb-4 font-display text-2xl font-bold text-foreground">
-                Upcoming
-              </h2>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {upcomingMerged.map((day) => (
-                  <DayColumn key={day.date} day={day} isToday={false} />
-                ))}
-              </div>
-            </section>
+            {upcomingWeeks.map((week) => (
+              <section key={week.mondayDate}>
+                <h2 className="mb-4 font-display text-2xl font-bold text-foreground">
+                  Upcoming{" "}
+                  <span className="text-lg font-normal text-muted-foreground">
+                    {week.label}
+                  </span>
+                </h2>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {week.days.map((day) => (
+                    <DayColumn key={day.date} day={day} isToday={false} />
+                  ))}
+                </div>
+              </section>
+            ))}
           </div>
         ) : null}
 

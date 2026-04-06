@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { RunwayBoard, mergeWeekendDays } from "./runway-board";
+import { RunwayBoard, mergeWeekendDays, groupByWeek } from "./runway-board";
 import { thisWeek, upcoming, accounts, pipeline } from "./runway-board-test-fixtures";
 import type { DayItem } from "./types";
 
@@ -19,7 +19,7 @@ describe("RunwayBoard", () => {
   it("shows This Week view by default", () => {
     render(<RunwayBoard {...defaultProps} />);
     expect(screen.getByText("Today")).toBeInTheDocument();
-    expect(screen.getByText("Upcoming")).toBeInTheDocument();
+    expect(screen.getByText(/Upcoming/)).toBeInTheDocument();
   });
 
   it("switches to accounts view when tab is clicked", () => {
@@ -58,7 +58,7 @@ describe("RunwayBoard", () => {
 
     fireEvent.click(screen.getByText("This Week"));
     expect(screen.getByText("Today")).toBeInTheDocument();
-    expect(screen.getByText("Upcoming")).toBeInTheDocument();
+    expect(screen.getByText(/Upcoming/)).toBeInTheDocument();
   });
 
   it("calculates pipeline total correctly, skipping TBD", () => {
@@ -193,5 +193,45 @@ describe("mergeWeekendDays", () => {
     expect(result).toHaveLength(1);
     expect(result[0].date).toBe("2026-04-11");
     expect(result[0].label).toBe("Weekend");
+  });
+});
+
+describe("groupByWeek", () => {
+  it("groups days from the same week together", () => {
+    const days: DayItem[] = [
+      { date: "2026-04-13", label: "Mon 4/13", items: [] },
+      { date: "2026-04-14", label: "Tue 4/14", items: [] },
+      { date: "2026-04-15", label: "Wed 4/15", items: [] },
+    ];
+    const result = groupByWeek(days);
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe("w/o 4/13");
+    expect(result[0].days).toHaveLength(3);
+  });
+
+  it("creates separate groups for different weeks", () => {
+    const days: DayItem[] = [
+      { date: "2026-04-13", label: "Mon 4/13", items: [] },
+      { date: "2026-04-20", label: "Mon 4/20", items: [] },
+      { date: "2026-04-21", label: "Tue 4/21", items: [] },
+    ];
+    const result = groupByWeek(days);
+    expect(result).toHaveLength(2);
+    expect(result[0].label).toBe("w/o 4/13");
+    expect(result[0].days).toHaveLength(1);
+    expect(result[1].label).toBe("w/o 4/20");
+    expect(result[1].days).toHaveLength(2);
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(groupByWeek([])).toEqual([]);
+  });
+
+  it("stores mondayDate as ISO string", () => {
+    const days: DayItem[] = [
+      { date: "2026-04-15", label: "Wed 4/15", items: [] },
+    ];
+    const result = groupByWeek(days);
+    expect(result[0].mondayDate).toBe("2026-04-13");
   });
 });
