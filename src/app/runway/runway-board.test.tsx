@@ -1,7 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { RunwayBoard } from "./runway-board";
+import { RunwayBoard, mergeWeekendDays, groupByWeek } from "./runway-board";
 import { thisWeek, upcoming, accounts, pipeline } from "./runway-board-test-fixtures";
+import type { DayItem } from "./types";
+
+const mockRefresh = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: mockRefresh }),
+}));
 
 const defaultProps = { thisWeek, upcoming, accounts, pipeline };
 
@@ -14,7 +20,7 @@ describe("RunwayBoard", () => {
   it("shows This Week view by default", () => {
     render(<RunwayBoard {...defaultProps} />);
     expect(screen.getByText("Today")).toBeInTheDocument();
-    expect(screen.getByText("Upcoming")).toBeInTheDocument();
+    expect(screen.getByText(/Upcoming/)).toBeInTheDocument();
   });
 
   it("switches to accounts view when tab is clicked", () => {
@@ -53,7 +59,7 @@ describe("RunwayBoard", () => {
 
     fireEvent.click(screen.getByText("This Week"));
     expect(screen.getByText("Today")).toBeInTheDocument();
-    expect(screen.getByText("Upcoming")).toBeInTheDocument();
+    expect(screen.getByText(/Upcoming/)).toBeInTheDocument();
   });
 
   it("calculates pipeline total correctly, skipping TBD", () => {
@@ -126,5 +132,120 @@ describe("RunwayBoard", () => {
     fireEvent.click(screen.getByText("By Account"));
     // Should not crash, just render empty
     expect(screen.queryByText("Convergix")).not.toBeInTheDocument();
+  });
+
+  it("calls router.refresh on 5-minute interval", () => {
+    vi.useFakeTimers();
+    mockRefresh.mockClear();
+    render(<RunwayBoard {...defaultProps} />);
+
+    expect(mockRefresh).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(5 * 60 * 1000);
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(5 * 60 * 1000);
+    expect(mockRefresh).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+});
+
+describe("mergeWeekendDays", () => {
+  it("merges adjacent Sat+Sun into a single Weekend column", () => {
+    const days: DayItem[] = [
+      { date: "2026-04-10", label: "Fri 4/10", items: [{ title: "Fri thing", account: "A", type: "delivery" }] },
+      { date: "2026-04-11", label: "Sat 4/11", items: [{ title: "Sat thing", account: "B", type: "review" }] },
+      { date: "2026-04-12", label: "Sun 4/12", items: [{ title: "Sun thing", account: "C", type: "kickoff" }] },
+      { date: "2026-04-13", label: "Mon 4/13", items: [{ title: "Mon thing", account: "D", type: "delivery" }] },
+    ];
+    const result = mergeWeekendDays(days);
+    expect(result).toHaveLength(3);
+    expect(result[0].label).toBe("Fri 4/10");
+    expect(result[1].label).toBe("Weekend");
+    expect(result[1].items).toHaveLength(2);
+    expect(result[1].items[0].title).toBe("Sat thing");
+    expect(result[1].items[1].title).toBe("Sun thing");
+    expect(result[2].label).toBe("Mon 4/13");
+  });
+
+  it("passes through Saturday alone (no Sunday follows)", () => {
+    const days: DayItem[] = [
+      { date: "2026-04-11", label: "Sat 4/11", items: [{ title: "Sat only", account: "A", type: "delivery" }] },
+      { date: "2026-04-13", label: "Mon 4/13", items: [{ title: "Mon thing", account: "B", type: "delivery" }] },
+    ];
+    const result = mergeWeekendDays(days);
+    expect(result).toHaveLength(2);
+    expect(result[0].label).toBe("Sat 4/11");
+  });
+
+  it("passes through Sunday alone", () => {
+    const days: DayItem[] = [
+      { date: "2026-04-12", label: "Sun 4/12", items: [{ title: "Sun only", account: "A", type: "delivery" }] },
+    ];
+    const result = mergeWeekendDays(days);
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe("Sun 4/12");
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(mergeWeekendDays([])).toEqual([]);
+  });
+
+  it("passes through weekdays unchanged", () => {
+    const days: DayItem[] = [
+      { date: "2026-04-06", label: "Mon 4/6", items: [] },
+      { date: "2026-04-07", label: "Tue 4/7", items: [] },
+    ];
+    const result = mergeWeekendDays(days);
+    expect(result).toHaveLength(2);
+  });
+
+  it("uses Saturday date for merged Weekend column", () => {
+    const days: DayItem[] = [
+      { date: "2026-04-11", label: "Sat 4/11", items: [{ title: "A", account: "X", type: "delivery" }] },
+      { date: "2026-04-12", label: "Sun 4/12", items: [{ title: "B", account: "Y", type: "review" }] },
+    ];
+    const result = mergeWeekendDays(days);
+    expect(result).toHaveLength(1);
+    expect(result[0].date).toBe("2026-04-11");
+    expect(result[0].label).toBe("Weekend");
+  });
+});
+
+describe("groupByWeek", () => {
+  it("groups days from the same week together", () => {
+    const days: DayItem[] = [
+      { date: "2026-04-13", label: "Mon 4/13", items: [] },
+      { date: "2026-04-14", label: "Tue 4/14", items: [] },
+      { date: "2026-04-15", label: "Wed 4/15", items: [] },
+    ];
+    const result = groupByWeek(days);
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe("w/o 4/13");
+    expect(result[0].days).toHaveLength(3);
+  });
+
+  it("creates separate groups for different weeks", () => {
+    const days: DayItem[] = [
+      { date: "2026-04-13", label: "Mon 4/13", items: [] },
+      { date: "2026-04-20", label: "Mon 4/20", items: [] },
+      { date: "2026-04-21", label: "Tue 4/21", items: [] },
+    ];
+    const result = groupByWeek(days);
+    expect(result).toHaveLength(2);
+    expect(result[0].label).toBe("w/o 4/13");
+    expect(result[0].days).toHaveLength(1);
+    expect(result[1].label).toBe("w/o 4/20");
+    expect(result[1].days).toHaveLength(2);
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(groupByWeek([])).toEqual([]);
+  });
+
+  it("stores mondayDate as ISO string", () => {
+    const days: DayItem[] = [
+      { date: "2026-04-15", label: "Wed 4/15", items: [] },
+    ];
+    const result = groupByWeek(days);
+    expect(result[0].mondayDate).toBe("2026-04-13");
   });
 });

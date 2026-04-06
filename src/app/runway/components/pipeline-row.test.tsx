@@ -31,9 +31,9 @@ describe("PipelineRow", () => {
     expect(screen.getByText("Drafting")).toBeInTheDocument();
   });
 
-  it("renders no-sow status", () => {
+  it("renders no-sow status as Drafting", () => {
     render(<PipelineRow item={createItem({ status: "no-sow" })} />);
-    expect(screen.getByText("No SOW")).toBeInTheDocument();
+    expect(screen.getByText("Drafting")).toBeInTheDocument();
   });
 
   it("renders verbal status", () => {
@@ -41,32 +41,43 @@ describe("PipelineRow", () => {
     expect(screen.getByText("Verbal")).toBeInTheDocument();
   });
 
-  it("renders waitingOn when present", () => {
+  it("renders waitingOn with person name when present", () => {
     render(
       <PipelineRow item={createItem({ waitingOn: "Daniel" })} />
     );
     expect(screen.getByText("Waiting on: Daniel")).toBeInTheDocument();
   });
 
-  it("does not render waitingOn when absent", () => {
-    render(<PipelineRow item={createItem()} />);
+  it("falls back to 'Client' for sow-sent without waitingOn", () => {
+    render(<PipelineRow item={createItem({ status: "sow-sent" })} />);
+    expect(screen.getByText("Waiting on: Client")).toBeInTheDocument();
+  });
+
+  it("falls back to 'Client' for verbal without waitingOn", () => {
+    render(<PipelineRow item={createItem({ status: "verbal" })} />);
+    expect(screen.getByText("Waiting on: Client")).toBeInTheDocument();
+  });
+
+  it("does not show waiting on for drafting status without waitingOn", () => {
+    render(<PipelineRow item={createItem({ status: "drafting", waitingOn: undefined })} />);
     expect(screen.queryByText(/Waiting on/)).not.toBeInTheDocument();
   });
 
-  it("renders notes when present", () => {
+  it("shows waitingOn for drafting when explicitly set", () => {
+    render(<PipelineRow item={createItem({ status: "drafting", waitingOn: "Jill" })} />);
+    expect(screen.getByText("Waiting on: Jill")).toBeInTheDocument();
+  });
+
+  it("renders notes with Next Steps label", () => {
     render(
-      <PipelineRow item={createItem({ notes: "Work active" })} />
+      <PipelineRow item={createItem({ notes: "Follow up Monday" })} />
     );
-    expect(screen.getByText("Work active")).toBeInTheDocument();
+    expect(screen.getByText("Next Steps: Follow up Monday")).toBeInTheDocument();
   });
 
   it("does not render notes when absent", () => {
     const { container } = render(<PipelineRow item={createItem()} />);
-    // Only account, title, status badge, and value should render
-    const textContent = container.textContent!;
-    expect(textContent).toContain("Convergix");
-    expect(textContent).toContain("New SOW");
-    expect(textContent).toContain("$50,000");
+    expect(container.textContent).not.toContain("Next Steps");
   });
 
   it("applies correct color class for sow-sent badge", () => {
@@ -95,13 +106,10 @@ describe("PipelineRow", () => {
         item={createItem({ status: "unknown" as PipelineItem["status"] })}
       />
     );
-    // Value and title still render
     expect(screen.getByText("$50,000")).toBeInTheDocument();
     expect(screen.getByText("New SOW")).toBeInTheDocument();
-    // No badge text from known statuses
     expect(screen.queryByText("SOW Sent")).not.toBeInTheDocument();
     expect(screen.queryByText("Drafting")).not.toBeInTheDocument();
-    expect(screen.queryByText("No SOW")).not.toBeInTheDocument();
     expect(screen.queryByText("Verbal")).not.toBeInTheDocument();
   });
 
@@ -112,12 +120,26 @@ describe("PipelineRow", () => {
       />
     );
     expect(screen.getByText("Waiting on: Daniel")).toBeInTheDocument();
-    expect(screen.getByText("Follow up Monday")).toBeInTheDocument();
+    expect(screen.getByText("Next Steps: Follow up Monday")).toBeInTheDocument();
   });
 
   it("renders empty account gracefully", () => {
     render(<PipelineRow item={createItem({ account: "" })} />);
-    // Title still visible, separator still renders
     expect(screen.getByText("New SOW")).toBeInTheDocument();
+  });
+
+  it("shows explicit waitingOn for no-sow status instead of fallback", () => {
+    render(
+      <PipelineRow item={createItem({ status: "no-sow", waitingOn: "Soundly to sign" })} />
+    );
+    expect(screen.getByText("Waiting on: Soundly to sign")).toBeInTheDocument();
+    expect(screen.queryByText("Waiting on: Client")).not.toBeInTheDocument();
+  });
+
+  it("does not show waiting on fallback for no-sow without waitingOn", () => {
+    render(
+      <PipelineRow item={createItem({ status: "no-sow", waitingOn: undefined })} />
+    );
+    expect(screen.queryByText(/Waiting on/)).not.toBeInTheDocument();
   });
 });

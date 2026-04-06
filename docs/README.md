@@ -13,7 +13,6 @@ Quick reference for working with this codebase. For commands and architecture ov
 | [Skills System](./skills.md) | Creating reusable AI instruction sets |
 | [UI Components](./ui-components.md) | shadcn/ui primitives, styling patterns, AI components |
 | [Runway System](./runway.md) | Runway triage board: DB, operations, MCP server, Slack bot, Inngest |
-| [AI Development Workflow](./ai-development-workflow.md) | End-to-end process for AI sessions building in this codebase |
 
 ## External Resources
 

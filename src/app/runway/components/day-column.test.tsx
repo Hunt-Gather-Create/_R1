@@ -51,8 +51,8 @@ describe("DayColumn", () => {
     expect(screen.getByText("Kathy")).toBeInTheDocument();
   });
 
-  it("does not render owner separator when owner absent", () => {
-    const { container } = render(
+  it("does not render owner when absent", () => {
+    render(
       <DayColumn
         day={createDay({
           items: [
@@ -61,12 +61,7 @@ describe("DayColumn", () => {
         })}
       />
     );
-    // The separator "/" should not appear as a standalone text node
-    const separators = container.querySelectorAll("span");
-    const slashSpans = Array.from(separators).filter(
-      (s) => s.textContent === "/"
-    );
-    expect(slashSpans).toHaveLength(0);
+    expect(screen.queryByText("Kathy")).not.toBeInTheDocument();
   });
 
   it("renders notes when present", () => {

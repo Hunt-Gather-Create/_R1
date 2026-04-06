@@ -25,12 +25,9 @@ describe("DayItemCard", () => {
     expect(screen.getByText("Kathy")).toBeInTheDocument();
   });
 
-  it("does not render owner separator when owner absent", () => {
-    const { container } = render(<DayItemCard item={createEntry()} />);
-    const slashSpans = Array.from(container.querySelectorAll("span")).filter(
-      (s) => s.textContent === "/"
-    );
-    expect(slashSpans).toHaveLength(0);
+  it("does not render owner when absent", () => {
+    render(<DayItemCard item={createEntry()} />);
+    expect(screen.queryByText("Kathy")).not.toBeInTheDocument();
   });
 
   it("renders notes when present", () => {

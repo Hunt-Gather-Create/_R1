@@ -13,7 +13,7 @@ const PIPELINE_STATUS: Record<string, { label: string; className: string }> = {
     className: "bg-violet-500/20 text-violet-400 border-violet-500/30",
   },
   "no-sow": {
-    label: "No SOW",
+    label: "Drafting",
     className: "bg-red-500/20 text-red-400 border-red-500/30",
   },
   verbal: {
@@ -22,8 +22,18 @@ const PIPELINE_STATUS: Record<string, { label: string; className: string }> = {
   },
 };
 
+/** Statuses where the item is inherently waiting on someone external. */
+const WAITING_STATUSES = new Set(["sow-sent", "verbal"]);
+
+function getWaitingOnDisplay(item: PipelineItem): string | null {
+  if (item.waitingOn) return item.waitingOn;
+  if (WAITING_STATUSES.has(item.status)) return "Client";
+  return null;
+}
+
 export function PipelineRow({ item }: { item: PipelineItem }) {
   const style = PIPELINE_STATUS[item.status];
+  const waitingOn = getWaitingOnDisplay(item);
 
   return (
     <div className="flex items-center gap-4 rounded-lg border border-border/50 bg-background/50 p-4">
@@ -36,12 +46,12 @@ export function PipelineRow({ item }: { item: PipelineItem }) {
           <span className="text-sm text-foreground/80">{item.title}</span>
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-          {item.waitingOn ? (
-            <MetadataLabel label="Waiting on" value={item.waitingOn} />
+          {waitingOn ? (
+            <MetadataLabel label="Waiting on" value={waitingOn} />
           ) : null}
           {item.notes ? (
             <span className="text-xs text-muted-foreground/60">
-              {item.notes}
+              Next Steps: {item.notes}
             </span>
           ) : null}
         </div>

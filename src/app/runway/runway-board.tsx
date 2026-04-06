@@ -1,14 +1,76 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import type { DayItem, Account, PipelineItem } from "./types";
-import { parseISODate } from "./date-utils";
+import { parseISODate, getMondayISODate } from "./date-utils";
 import { DayColumn } from "./components/day-column";
 import { TodaySection } from "./components/today-section";
 import { AccountSection } from "./components/account-section";
 import { PipelineRow } from "./components/pipeline-row";
 
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
 type View = "triage" | "accounts" | "pipeline";
+
+/**
+ * Merge adjacent Saturday/Sunday DayItems into a single "Weekend" column.
+ * If only one of Sat/Sun exists, it passes through unchanged.
+ */
+export function mergeWeekendDays(days: DayItem[]): DayItem[] {
+  const result: DayItem[] = [];
+  let i = 0;
+  while (i < days.length) {
+    const d = parseISODate(days[i].date);
+    const dayOfWeek = d.getDay();
+
+    if (dayOfWeek === 6 && i + 1 < days.length) {
+      const next = parseISODate(days[i + 1].date);
+      if (next.getDay() === 0) {
+        result.push({
+          date: days[i].date,
+          label: "Weekend",
+          items: [...days[i].items, ...days[i + 1].items],
+        });
+        i += 2;
+        continue;
+      }
+    }
+    result.push(days[i]);
+    i++;
+  }
+  return result;
+}
+
+export interface WeekGroup {
+  mondayDate: string;
+  label: string;
+  days: DayItem[];
+}
+
+/**
+ * Group days by their week's Monday, producing a "w/o M/D" label for each group.
+ */
+export function groupByWeek(days: DayItem[]): WeekGroup[] {
+  const groups: Map<string, DayItem[]> = new Map();
+  for (const day of days) {
+    const monday = getMondayISODate(parseISODate(day.date));
+    const existing = groups.get(monday);
+    if (existing) {
+      existing.push(day);
+    } else {
+      groups.set(monday, [day]);
+    }
+  }
+  return Array.from(groups.entries()).map(([monday, weekDays]) => {
+    const d = parseISODate(monday);
+    return {
+      mondayDate: monday,
+      label: `w/o ${d.getMonth() + 1}/${d.getDate()}`,
+      days: weekDays,
+    };
+  });
+}
 
 interface RunwayBoardProps {
   thisWeek: DayItem[];
@@ -29,7 +91,13 @@ export function RunwayBoard({
   accounts,
   pipeline,
 }: RunwayBoardProps) {
+  const router = useRouter();
   const [view, setView] = useState<View>("triage");
+
+  useEffect(() => {
+    const id = setInterval(() => router.refresh(), REFRESH_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [router]);
 
   const pipelineTotal = useMemo(
     () =>
@@ -54,24 +122,26 @@ export function RunwayBoard({
 
   const restOfWeek = useMemo(
     () =>
-      thisWeek.filter(
-        (day) => parseISODate(day.date).toDateString() !== todayStr
+      mergeWeekendDays(
+        thisWeek.filter(
+          (day) => parseISODate(day.date).toDateString() !== todayStr
+        )
       ),
     [thisWeek, todayStr]
+  );
+
+  const upcomingWeeks = useMemo(
+    () => groupByWeek(mergeWeekendDays(upcoming)),
+    [upcoming]
   );
 
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between px-6 py-4 2xl:px-10">
-          <div>
-            <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
-              Civilization Runway
-            </h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Live from database
-            </p>
-          </div>
+          <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
+            Civilization Runway
+          </h1>
           <nav className="flex gap-1 rounded-lg border border-border bg-card/50 p-1">
             {TABS.map((tab) => (
               <button
@@ -108,16 +178,21 @@ export function RunwayBoard({
               </section>
             ) : null}
 
-            <section>
-              <h2 className="mb-4 font-display text-2xl font-bold text-foreground">
-                Upcoming
-              </h2>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {upcoming.map((day) => (
-                  <DayColumn key={day.date} day={day} isToday={false} />
-                ))}
-              </div>
-            </section>
+            {upcomingWeeks.map((week) => (
+              <section key={week.mondayDate}>
+                <h2 className="mb-4 font-display text-2xl font-bold text-foreground">
+                  Upcoming{" "}
+                  <span className="text-lg font-normal text-muted-foreground">
+                    {week.label}
+                  </span>
+                </h2>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {week.days.map((day) => (
+                    <DayColumn key={day.date} day={day} isToday={false} />
+                  ))}
+                </div>
+              </section>
+            ))}
           </div>
         ) : null}
 
