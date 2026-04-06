@@ -47,7 +47,7 @@ export async function getProjectsFiltered(opts?: {
 }) {
   const db = getRunwayDb();
   const allClients = await getAllClients();
-  const clientNameById = new Map(allClients.map((c) => [c.id, c.name]));
+  const clientNameById = await getClientNameMap();
   const clientBySlug = new Map(allClients.map((c) => [c.slug, c]));
 
   let projectList = await db

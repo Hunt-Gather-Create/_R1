@@ -13,6 +13,14 @@ import {
   addUpdate,
 } from "@/lib/runway/operations";
 
+async function safePostUpdate(update: Parameters<typeof postUpdate>[0]) {
+  try {
+    await postUpdate(update);
+  } catch (err) {
+    console.error("[Runway Bot] Failed to post to updates channel:", err);
+  }
+}
+
 export function createBotTools(userName: string) {
   return {
     get_clients: tool({
@@ -82,19 +90,12 @@ export function createBotTools(userName: string) {
         // Post to updates channel (bot-specific behavior)
         if (result.data) {
           const updateText = `${result.data.previousStatus} -> ${result.data.newStatus}${notes ? ` (${notes})` : ""}`;
-          try {
-            await postUpdate({
-              clientName: result.data.clientName as string,
-              projectName: result.data.projectName as string,
-              updateText,
-              updatedBy: userName,
-            });
-          } catch (err) {
-            console.error(
-              "[Runway Bot] Failed to post to updates channel:",
-              err
-            );
-          }
+          await safePostUpdate({
+            clientName: result.data.clientName as string,
+            projectName: result.data.projectName as string,
+            updateText,
+            updatedBy: userName,
+          });
         }
 
         return { result: result.message };
@@ -125,19 +126,12 @@ export function createBotTools(userName: string) {
 
         // Post to updates channel (bot-specific behavior)
         if (result.data) {
-          try {
-            await postUpdate({
-              clientName: result.data.clientName as string,
-              projectName: result.data.projectName as string | undefined,
-              updateText: summary,
-              updatedBy: userName,
-            });
-          } catch (err) {
-            console.error(
-              "[Runway Bot] Failed to post to updates channel:",
-              err
-            );
-          }
+          await safePostUpdate({
+            clientName: result.data.clientName as string,
+            projectName: result.data.projectName as string | undefined,
+            updateText: summary,
+            updatedBy: userName,
+          });
         }
 
         return { result: result.message };
