@@ -7,28 +7,9 @@ import {
   teamMembers,
 } from "@/lib/db/runway-schema";
 import { eq, asc } from "drizzle-orm";
-
-export type ClientWithProjects = typeof clients.$inferSelect & {
-  items: (typeof projects.$inferSelect)[];
-};
-
-type DayItemType = "delivery" | "review" | "kickoff" | "deadline" | "approval" | "launch";
-
-export type WeekDay = {
-  date: string;
-  label: string;
-  items: {
-    title: string;
-    account: string;
-    owner?: string;
-    type: DayItemType;
-    notes?: string;
-  }[];
-};
-
-export type PipelineRow = typeof pipelineItems.$inferSelect & {
-  accountName: string | null;
-};
+import type { ClientWithProjects, DayItemType, PipelineRow, WeekDay } from "./types";
+import { parseISODate } from "./date-utils";
+import { getClientNameMap } from "@/lib/runway/operations";
 
 export async function getClientsWithProjects(): Promise<ClientWithProjects[]> {
   const db = getRunwayDb();
@@ -60,13 +41,7 @@ export async function getClientsWithProjects(): Promise<ClientWithProjects[]> {
 export async function getWeekItems(weekOf?: string): Promise<WeekDay[]> {
   const db = getRunwayDb();
 
-  const allClients = await db.select().from(clients);
-  const clientNameById = new Map(allClients.map((c) => [c.id, c.name]));
-
-  let query = db
-    .select()
-    .from(weekItems)
-    .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
+  const clientNameById = await getClientNameMap();
 
   const items = weekOf
     ? await db
@@ -74,7 +49,10 @@ export async function getWeekItems(weekOf?: string): Promise<WeekDay[]> {
         .from(weekItems)
         .where(eq(weekItems.weekOf, weekOf))
         .orderBy(asc(weekItems.date), asc(weekItems.sortOrder))
-    : await query;
+    : await db
+        .select()
+        .from(weekItems)
+        .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
 
   // Group by date
   const dayMap = new Map<
@@ -99,7 +77,7 @@ export async function getWeekItems(weekOf?: string): Promise<WeekDay[]> {
   const sortedDates = [...dayMap.keys()].sort();
 
   return sortedDates.map((dateStr) => {
-    const d = new Date(dateStr + "T12:00:00");
+    const d = parseISODate(dateStr);
     const dayNum = d.getDate();
     const month = d.getMonth() + 1;
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -116,8 +94,7 @@ export async function getWeekItems(weekOf?: string): Promise<WeekDay[]> {
 export async function getPipeline(): Promise<PipelineRow[]> {
   const db = getRunwayDb();
 
-  const allClients = await db.select().from(clients);
-  const clientNameById = new Map(allClients.map((c) => [c.id, c.name]));
+  const clientNameById = await getClientNameMap();
 
   const items = await db
     .select()

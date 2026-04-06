@@ -1,7 +1,9 @@
 // TODO: Re-enable auth when deployed to Vercel
 // import { requireActiveUser } from "@/lib/actions/workspace";
 import { getClientsWithProjects, getWeekItems, getPipeline } from "./queries";
+import type { ItemStatus, ItemCategory } from "./types";
 import { RunwayBoard } from "./runway-board";
+import { getMondayISODate, parseISODate } from "./date-utils";
 
 export const metadata = {
   title: "Runway — Civilization Agency",
@@ -19,29 +21,20 @@ export default async function RunwayPage() {
     getPipeline(),
   ]);
 
-  // Split week items into thisWeek (current week) and upcoming
-  const now = new Date();
-  const day = now.getDay();
-  const mondayOffset = day === 0 ? -6 : 1 - day;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() + mondayOffset);
-  const currentWeekOf = monday.toISOString().split("T")[0];
+  // Split week items into thisWeek and upcoming in a single pass
+  const currentWeekOf = getMondayISODate(new Date());
 
-  const thisWeek = allWeekItems.filter((d) => {
-    const itemDate = new Date(d.date + "T12:00:00");
-    const itemMonday = new Date(itemDate);
-    const iday = itemDate.getDay();
-    itemMonday.setDate(itemDate.getDate() - iday + (iday === 0 ? -6 : 1));
-    return itemMonday.toISOString().split("T")[0] === currentWeekOf;
-  });
+  const thisWeek: typeof allWeekItems = [];
+  const upcoming: typeof allWeekItems = [];
 
-  const upcoming = allWeekItems.filter((d) => {
-    const itemDate = new Date(d.date + "T12:00:00");
-    const itemMonday = new Date(itemDate);
-    const iday = itemDate.getDay();
-    itemMonday.setDate(itemDate.getDate() - iday + (iday === 0 ? -6 : 1));
-    return itemMonday.toISOString().split("T")[0] > currentWeekOf;
-  });
+  for (const day of allWeekItems) {
+    const itemMonday = getMondayISODate(parseISODate(day.date));
+    if (itemMonday === currentWeekOf) {
+      thisWeek.push(day);
+    } else if (itemMonday > currentWeekOf) {
+      upcoming.push(day);
+    }
+  }
 
   // Map DB shape to component props
   const accounts = clientsWithProjects.map((client) => ({
@@ -57,8 +50,8 @@ export default async function RunwayPage() {
     items: client.items.map((p) => ({
       id: p.id,
       title: p.name,
-      status: (p.status ?? "not-started") as import("./data").ItemStatus,
-      category: (p.category ?? "active") as import("./data").ItemCategory,
+      status: (p.status ?? "not-started") as ItemStatus,
+      category: (p.category ?? "active") as ItemCategory,
       owner: p.owner ?? undefined,
       waitingOn: p.waitingOn ?? undefined,
       target: p.target ?? undefined,
