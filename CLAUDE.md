@@ -223,22 +223,16 @@ When executing a plan that involves code changes:
 
 ### During Development
 
-1. **Run code review frequently** by invoking `/code-review` to:
-   - Catch DRY violations early (extract utilities and components)
-   - Detect prop drilling (use Context and hooks instead)
-   - Ensure proper hooks/context patterns
-   - **Verify tests exist for all changes** (this is critical!)
+1. **Tests are part of each step, not a separate step.** If you're building `operations.ts`, the plan includes `operations.test.ts` in the same step. Not "Step 7: write tests for everything."
+2. **Cross-check data consistency** — types, enums, and status values must match across all files that reference them. If a bot prompt lists a status value the type system doesn't include, that's a bug.
+3. **If you can't state the full workflow from memory after reading these rules, you haven't internalized them.** Go back and re-read.
 
-### After Completing the Plan
+### Common Failure Modes
 
-1. **Update documentation** by invoking `/update-docs` to:
-   - Check if code changes affect documented patterns
-   - Update `/docs` knowledge base (AI SDK, UI components, MCP, skills)
-   - Keep package versions and code examples in sync
+These are real failures that have occurred in this codebase. Check yourself against each one.
 
-2. **Run the PR readiness check** by invoking `/pr-ready` to:
-   - Remove any debug statements (console.log, debugger)
-   - Clean up unused imports and dead code
-   - Final check for any remaining issues
-
-3. **Address any critical issues** found by the checks before considering the task complete
+- **"I'll write tests later"** — Tests are not a separate step. If your plan has a "write tests" step at the end, your plan is wrong. Rewrite it with tests woven into each build step.
+- **"I read the rules"** — Reading is not synthesizing. If you read a skill file and came away with a summary instead of a multi-step methodology, you skimmed.
+- **Cherry-picking from skills** — Each skill has a defined number of steps. `/code-review` has 5. `/pr-ready` has 7. Run all of them or you haven't run the skill.
+- **"The code works, ship it"** — Working code that duplicates logic, lacks tests, has unused imports, and bypasses the project's architectural patterns is not done. Functionality is necessary but not sufficient.
+- **Inconsistent data across files** — Types defined in one file, status values in another, enum-like strings in a third. Cross-check them before considering anything complete.
