@@ -29,7 +29,7 @@ export function DayColumn({
         ) : null}
         {day.label}
       </h3>
-      <div className="space-y-2">
+      <div className="max-h-[60vh] space-y-2 overflow-y-auto">
         {day.items.map((item, i) => (
           <DayItemCard
             key={`${day.date}-${item.title.slice(0, 20)}-${i}`}
