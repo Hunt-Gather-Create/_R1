@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import type { Account } from "../types";
-import { StatusBadge, StaleBadge, ContractBadge } from "./status-badge";
+import { StatusBadge, StaleBadge, ContractBadge, MetadataLabel } from "./status-badge";
 
 export function AccountSection({ account }: { account: Account }) {
   const activeItems = useMemo(
@@ -56,19 +56,13 @@ export function AccountSection({ account }: { account: Account }) {
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 {item.owner ? (
-                  <span className="text-xs text-muted-foreground">
-                    Owner: {item.owner}
-                  </span>
+                  <MetadataLabel label="Owner" value={item.owner} />
                 ) : null}
                 {item.waitingOn ? (
-                  <span className="text-xs text-amber-400/80">
-                    Waiting on: {item.waitingOn}
-                  </span>
+                  <MetadataLabel label="Waiting on" value={item.waitingOn} className="text-xs text-amber-400/80" />
                 ) : null}
                 {item.target ? (
-                  <span className="text-xs text-sky-400/80">
-                    Target: {item.target}
-                  </span>
+                  <MetadataLabel label="Target" value={item.target} className="text-xs text-sky-400/80" />
                 ) : null}
               </div>
               {item.notes ? (

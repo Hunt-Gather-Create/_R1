@@ -40,12 +40,13 @@ import {
   upcoming,
   pipeline,
 } from "../src/app/runway/data";
+import { getMondayISODate, parseISODate } from "../src/app/runway/date-utils";
 
 const url = process.env.RUNWAY_DATABASE_URL ?? "file:runway-local.db";
 const client = createClient({ url, authToken: process.env.RUNWAY_AUTH_TOKEN });
 const db = drizzle(client);
 
-function cuid() {
+function generateId() {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 25);
 }
 
@@ -76,7 +77,7 @@ async function seed() {
   const clientMap = new Map<string, string>(); // slug -> id
 
   for (const account of accounts) {
-    const id = cuid();
+    const id = generateId();
     clientMap.set(account.slug, id);
     // Also map by name for week items / pipeline matching
     clientMap.set(account.name.toLowerCase(), id);
@@ -102,7 +103,7 @@ async function seed() {
 
     for (let i = 0; i < account.items.length; i++) {
       const item = account.items[i];
-      const id = cuid();
+      const id = generateId();
       projectMap.set(`${account.slug}:${item.title}`, id);
 
       await db.insert(projects).values({
@@ -131,23 +132,14 @@ async function seed() {
     return clientMap.get(accountName.toLowerCase()) ?? null;
   }
 
-  // Helper to get weekOf (Monday of the week containing date)
-  function getWeekOf(dateStr: string): string {
-    const d = new Date(dateStr + "T12:00:00");
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday
-    const monday = new Date(d.setDate(diff));
-    return monday.toISOString().split("T")[0];
-  }
-
   for (const dayItems of [...thisWeek, ...upcoming]) {
-    const weekOf = getWeekOf(dayItems.date);
-    const dayDate = new Date(dayItems.date + "T12:00:00");
+    const weekOf = getMondayISODate(parseISODate(dayItems.date));
+    const dayDate = parseISODate(dayItems.date);
     const dayOfWeek = DAY_NAMES[dayDate.getDay().toString()];
 
     for (let i = 0; i < dayItems.items.length; i++) {
       const item = dayItems.items[i];
-      const id = cuid();
+      const id = generateId();
       const clientId = findClientId(item.account);
 
       await db.insert(weekItems).values({
@@ -170,7 +162,7 @@ async function seed() {
   // ── 4. Pipeline ─────────────────────────────────────────────
   for (let i = 0; i < pipeline.length; i++) {
     const item = pipeline[i];
-    const id = cuid();
+    const id = generateId();
 
     // Match client by account name
     const clientId = findClientId(item.account);
@@ -202,7 +194,7 @@ async function seed() {
 
   for (const member of team) {
     await db.insert(teamMembers).values({
-      id: cuid(),
+      id: generateId(),
       name: member.name,
       title: member.title,
       channelPurpose: member.channelPurpose,

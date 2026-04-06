@@ -73,6 +73,18 @@ export function ContractBadge({ status }: { status: string }) {
   return <StyledBadge label={style.label} className={style.className} extraClassName="mt-1" />;
 }
 
+export function MetadataLabel({
+  label,
+  value,
+  className = "text-xs text-muted-foreground",
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return <span className={className}>{label}: {value}</span>;
+}
+
 export function StaleBadge({ days }: { days: number }) {
   if (days < 7) return null;
   const weeks = Math.floor(days / 7);
