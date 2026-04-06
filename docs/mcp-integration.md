@@ -378,7 +378,7 @@ Bearer token via `RUNWAY_MCP_API_KEY` environment variable. No workspace-scoped 
 
 ### Tool Registration
 
-Tools are registered in `/src/lib/mcp/runway-tools.ts` using the MCP SDK's `server.tool()` API with Zod schemas. Each tool is a thin formatting layer over the shared operations in `src/lib/runway/operations`:
+Tools are registered in `/src/lib/mcp/runway-tools.ts` using the MCP SDK's `server.tool()` API with Zod schemas. Each tool is a thin formatting layer over the shared operations layer in `src/lib/runway/` (split across `operations.ts`, `operations-reads.ts`, `operations-writes.ts`, `operations-add.ts`, `operations-context.ts`):
 
 ```typescript
 server.tool("get_projects", "List projects filtered by client or status", {
@@ -411,4 +411,4 @@ To create a new standalone MCP server (not a workspace-connected external server
 ## Related Documentation
 
 - [AI SDK Integration](./ai-sdk.md) - How MCP tools integrate with chat
-- [Runway Phase 0](./brain/brain-PHASE0-RUNWAY.md) - Runway product spec and architecture
+- [Runway System](./runway.md) - Full Runway architecture: DB, operations, board UI, Slack bot, Inngest

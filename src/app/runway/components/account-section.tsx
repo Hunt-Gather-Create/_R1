@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import type { Account } from "../types";
-import { StatusBadge, StaleBadge, ContractBadge } from "./status-badge";
+import { StatusBadge, StaleBadge, ContractBadge, MetadataLabel } from "./status-badge";
 
 export function AccountSection({ account }: { account: Account }) {
   const activeItems = useMemo(
@@ -48,9 +48,6 @@ export function AccountSection({ account }: { account: Account }) {
           >
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-muted-foreground/50">
-                  {item.id}
-                </span>
                 <StatusBadge status={item.status} />
                 {item.staleDays ? <StaleBadge days={item.staleDays} /> : null}
               </div>
@@ -59,19 +56,13 @@ export function AccountSection({ account }: { account: Account }) {
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 {item.owner ? (
-                  <span className="text-xs text-muted-foreground">
-                    Owner: {item.owner}
-                  </span>
+                  <MetadataLabel label="Owner" value={item.owner} />
                 ) : null}
                 {item.waitingOn ? (
-                  <span className="text-xs text-amber-400/80">
-                    Waiting on: {item.waitingOn}
-                  </span>
+                  <MetadataLabel label="Waiting on" value={item.waitingOn} className="text-xs text-amber-400/80" />
                 ) : null}
                 {item.target ? (
-                  <span className="text-xs text-sky-400/80">
-                    Target: {item.target}
-                  </span>
+                  <MetadataLabel label="Target" value={item.target} className="text-xs text-sky-400/80" />
                 ) : null}
               </div>
               {item.notes ? (
@@ -94,7 +85,6 @@ export function AccountSection({ account }: { account: Account }) {
               key={item.id}
               className="flex items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground/60"
             >
-              <span className="font-mono">{item.id}</span>
               <span>{item.title}</span>
               {item.notes ? <span>— {item.notes}</span> : null}
             </div>

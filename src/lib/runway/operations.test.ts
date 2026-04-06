@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateIdempotencyKey, generateId } from "./operations";
+import { generateIdempotencyKey, generateId, clientNotFoundError, groupBy } from "./operations";
 
 describe("generateIdempotencyKey", () => {
   it("returns a 40-char hex string", () => {
@@ -48,5 +48,57 @@ describe("generateId", () => {
   it("generates unique IDs", () => {
     const ids = new Set(Array.from({ length: 100 }, () => generateId()));
     expect(ids.size).toBe(100);
+  });
+});
+
+describe("clientNotFoundError", () => {
+  it("returns ok: false with slug in error message", () => {
+    const result = clientNotFoundError("convergix");
+    expect(result).toEqual({
+      ok: false,
+      error: "Client 'convergix' not found.",
+    });
+  });
+
+  it("includes the slug exactly as provided", () => {
+    const result = clientNotFoundError("some-slug");
+    expect(result.error).toContain("some-slug");
+  });
+});
+
+describe("groupBy", () => {
+  it("groups items by key function", () => {
+    const items = [
+      { name: "a", group: 1 },
+      { name: "b", group: 2 },
+      { name: "c", group: 1 },
+    ];
+    const result = groupBy(items, (i) => i.group);
+    expect(result.get(1)).toEqual([
+      { name: "a", group: 1 },
+      { name: "c", group: 1 },
+    ]);
+    expect(result.get(2)).toEqual([{ name: "b", group: 2 }]);
+  });
+
+  it("returns empty map for empty input", () => {
+    const result = groupBy([], (i: string) => i);
+    expect(result.size).toBe(0);
+  });
+
+  it("handles single-item groups", () => {
+    const items = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    const result = groupBy(items, (i) => i.id);
+    expect(result.size).toBe(3);
+    for (const [, group] of result) {
+      expect(group).toHaveLength(1);
+    }
+  });
+
+  it("works with string keys", () => {
+    const items = ["apple", "avocado", "banana"];
+    const result = groupBy(items, (s) => s[0]);
+    expect(result.get("a")).toEqual(["apple", "avocado"]);
+    expect(result.get("b")).toEqual(["banana"]);
   });
 });

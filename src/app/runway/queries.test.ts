@@ -32,6 +32,16 @@ vi.mock("@/lib/runway/operations", () => ({
     // We reuse convergixClient from helpers to build the map
     return new Map([["c1", "Convergix"]]);
   },
+  groupBy: <T, K>(items: T[], keyFn: (item: T) => K) => {
+    const map = new Map<K, T[]>();
+    for (const item of items) {
+      const key = keyFn(item);
+      const list = map.get(key) ?? [];
+      list.push(item);
+      map.set(key, list);
+    }
+    return map;
+  },
 }));
 
 describe("getClientsWithProjects", () => {

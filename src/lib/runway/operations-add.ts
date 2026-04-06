@@ -13,6 +13,7 @@ import {
   getClientBySlug,
   findProjectByFuzzyName,
   checkIdempotency,
+  clientNotFoundError,
 } from "./operations";
 import type { OperationResult } from "./operations-writes";
 
@@ -48,9 +49,7 @@ export async function addProject(
   const db = getRunwayDb();
 
   const client = await getClientBySlug(clientSlug);
-  if (!client) {
-    return { ok: false, error: `Client '${clientSlug}' not found.` };
-  }
+  if (!client) return clientNotFoundError(clientSlug);
 
   const idemKey = generateIdempotencyKey(
     "add-project",
@@ -100,9 +99,7 @@ export async function addUpdate(
   const db = getRunwayDb();
 
   const client = await getClientBySlug(clientSlug);
-  if (!client) {
-    return { ok: false, error: `Client '${clientSlug}' not found.` };
-  }
+  if (!client) return clientNotFoundError(clientSlug);
 
   let projectId: string | null = null;
   let projectMatch: string | undefined;

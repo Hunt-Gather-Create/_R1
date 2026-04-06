@@ -70,7 +70,7 @@ describe("PipelineRow", () => {
   });
 
   it("applies correct color class for sow-sent badge", () => {
-    const { container } = render(
+    render(
       <PipelineRow item={createItem({ status: "sow-sent" })} />
     );
     const badge = screen.getByText("SOW Sent");
@@ -87,5 +87,37 @@ describe("PipelineRow", () => {
   it("renders TBD value correctly", () => {
     render(<PipelineRow item={createItem({ value: "TBD" })} />);
     expect(screen.getByText("TBD")).toBeInTheDocument();
+  });
+
+  it("renders no badge for unknown status", () => {
+    render(
+      <PipelineRow
+        item={createItem({ status: "unknown" as PipelineItem["status"] })}
+      />
+    );
+    // Value and title still render
+    expect(screen.getByText("$50,000")).toBeInTheDocument();
+    expect(screen.getByText("New SOW")).toBeInTheDocument();
+    // No badge text from known statuses
+    expect(screen.queryByText("SOW Sent")).not.toBeInTheDocument();
+    expect(screen.queryByText("Drafting")).not.toBeInTheDocument();
+    expect(screen.queryByText("No SOW")).not.toBeInTheDocument();
+    expect(screen.queryByText("Verbal")).not.toBeInTheDocument();
+  });
+
+  it("renders both waitingOn and notes together", () => {
+    render(
+      <PipelineRow
+        item={createItem({ waitingOn: "Daniel", notes: "Follow up Monday" })}
+      />
+    );
+    expect(screen.getByText("Waiting on: Daniel")).toBeInTheDocument();
+    expect(screen.getByText("Follow up Monday")).toBeInTheDocument();
+  });
+
+  it("renders empty account gracefully", () => {
+    render(<PipelineRow item={createItem({ account: "" })} />);
+    // Title still visible, separator still renders
+    expect(screen.getByText("New SOW")).toBeInTheDocument();
   });
 });

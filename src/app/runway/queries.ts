@@ -9,7 +9,7 @@ import {
 import { eq, asc } from "drizzle-orm";
 import type { ClientWithProjects, DayItemType, PipelineRow, WeekDay } from "./types";
 import { parseISODate } from "./date-utils";
-import { getClientNameMap } from "@/lib/runway/operations";
+import { getClientNameMap, groupBy } from "@/lib/runway/operations";
 
 export async function getClientsWithProjects(): Promise<ClientWithProjects[]> {
   const db = getRunwayDb();
@@ -25,12 +25,7 @@ export async function getClientsWithProjects(): Promise<ClientWithProjects[]> {
     .orderBy(asc(projects.sortOrder));
 
   // Group projects by clientId using Map for O(1) lookups
-  const projectsByClient = new Map<string, (typeof projects.$inferSelect)[]>();
-  for (const project of allProjects) {
-    const list = projectsByClient.get(project.clientId) ?? [];
-    list.push(project);
-    projectsByClient.set(project.clientId, list);
-  }
+  const projectsByClient = groupBy(allProjects, (p) => p.clientId);
 
   return allClients.map((client) => ({
     ...client,
@@ -54,23 +49,20 @@ export async function getWeekItems(weekOf?: string): Promise<WeekDay[]> {
         .from(weekItems)
         .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
 
-  // Group by date
-  const dayMap = new Map<
-    string,
-    WeekDay["items"]
-  >();
-
-  for (const item of items) {
-    const dateKey = item.date ?? "";
-    const list = dayMap.get(dateKey) ?? [];
-    list.push({
-      title: item.title,
-      account: item.clientId ? (clientNameById.get(item.clientId) ?? "") : "",
-      ...(item.owner ? { owner: item.owner } : {}),
-      type: (item.category ?? "delivery") as DayItemType,
-      ...(item.notes ? { notes: item.notes } : {}),
-    });
-    dayMap.set(dateKey, list);
+  // Group by date and map to UI shape
+  const grouped = groupBy(items, (item) => item.date ?? "");
+  const dayMap = new Map<string, WeekDay["items"]>();
+  for (const [dateKey, dayItems] of grouped) {
+    dayMap.set(
+      dateKey,
+      dayItems.map((item) => ({
+        title: item.title,
+        account: item.clientId ? (clientNameById.get(item.clientId) ?? "") : "",
+        ...(item.owner ? { owner: item.owner } : {}),
+        type: (item.category ?? "delivery") as DayItemType,
+        ...(item.notes ? { notes: item.notes } : {}),
+      }))
+    );
   }
 
   // Sort dates and format labels

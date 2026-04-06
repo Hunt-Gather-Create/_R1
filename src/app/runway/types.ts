@@ -23,7 +23,8 @@ export type DayItemType =
   | "kickoff"
   | "deadline"
   | "approval"
-  | "launch";
+  | "launch"
+  | "blocked";
 
 export interface TriageItem {
   id: string;

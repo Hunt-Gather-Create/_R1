@@ -17,6 +17,7 @@ import {
   findProjectByFuzzyName,
   getProjectsForClient,
   checkIdempotency,
+  clientNotFoundError,
 } from "./operations";
 
 // ── Types ────────────────────────────────────────────────
@@ -42,9 +43,7 @@ export async function updateProjectStatus(
   const db = getRunwayDb();
 
   const client = await getClientBySlug(clientSlug);
-  if (!client) {
-    return { ok: false, error: `Client '${clientSlug}' not found.` };
-  }
+  if (!client) return clientNotFoundError(clientSlug);
 
   const project = await findProjectByFuzzyName(client.id, projectName);
   if (!project) {

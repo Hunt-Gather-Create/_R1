@@ -1,7 +1,18 @@
 "use client";
 
-import type { DayItemEntry } from "../types";
+import type { DayItemEntry, DayItemType } from "../types";
 import { TYPE_INDICATORS } from "./status-badge";
+
+const HOLD_PATTERN = /\b(hold[s]?\s+until|on\s+hold|blocked|not\s+starting\s+until)\b/i;
+
+/**
+ * Override the display type to "blocked" if notes contain hold/blocked language.
+ */
+export function getEffectiveType(item: DayItemEntry): DayItemType {
+  if (item.type === "blocked") return "blocked";
+  if (item.notes && HOLD_PATTERN.test(item.notes)) return "blocked";
+  return item.type;
+}
 
 interface DayItemCardProps {
   item: DayItemEntry;
@@ -31,6 +42,7 @@ const SIZE_CLASSES = {
 
 export function DayItemCard({ item, size = "sm" }: DayItemCardProps) {
   const s = SIZE_CLASSES[size];
+  const displayType = getEffectiveType(item);
 
   return (
     <div className={s.card}>
@@ -50,10 +62,10 @@ export function DayItemCard({ item, size = "sm" }: DayItemCardProps) {
         </div>
         <span
           className={`mt-0.5 shrink-0 text-xs font-medium uppercase tracking-wider ${
-            TYPE_INDICATORS[item.type] ?? "text-muted-foreground"
+            TYPE_INDICATORS[displayType] ?? "text-muted-foreground"
           }`}
         >
-          {item.type}
+          {displayType}
         </span>
       </div>
     </div>

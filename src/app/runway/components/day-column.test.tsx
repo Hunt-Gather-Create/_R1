@@ -113,6 +113,29 @@ describe("DayColumn", () => {
     expect(dot).not.toBeNull();
   });
 
+  it("defaults to non-today styling when isToday omitted", () => {
+    const { container } = render(<DayColumn day={createDay()} />);
+    const wrapper = container.firstElementChild!;
+    expect(wrapper.className).toContain("border-border");
+    expect(wrapper.className).not.toContain("border-sky-500");
+  });
+
+  it("does not show today dot when isToday is false", () => {
+    const { container } = render(
+      <DayColumn day={createDay()} isToday={false} />
+    );
+    const dot = container.querySelector(".bg-sky-400.rounded-full");
+    expect(dot).toBeNull();
+  });
+
+  it("renders empty day with no items", () => {
+    const { container } = render(<DayColumn day={createDay({ items: [] })} />);
+    expect(screen.getByText("Mon 4/6")).toBeInTheDocument();
+    // space-y-2 container exists but is empty
+    const itemsContainer = container.querySelector(".space-y-2");
+    expect(itemsContainer?.children).toHaveLength(0);
+  });
+
   it("renders multiple items", () => {
     render(
       <DayColumn

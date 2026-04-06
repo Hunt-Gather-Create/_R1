@@ -39,6 +39,7 @@ export const TYPE_INDICATORS: Record<string, string> = {
   deadline: "text-amber-400",
   approval: "text-amber-400",
   launch: "text-rose-400",
+  blocked: "text-red-400",
 };
 
 export function StyledBadge({ label, className, extraClassName }: { label: string; className: string; extraClassName?: string }) {
@@ -71,6 +72,18 @@ export function ContractBadge({ status }: { status: string }) {
   const style = CONTRACT_BADGE_STYLES[status];
   if (!style) return null;
   return <StyledBadge label={style.label} className={style.className} extraClassName="mt-1" />;
+}
+
+export function MetadataLabel({
+  label,
+  value,
+  className = "text-xs text-muted-foreground",
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return <span className={className}>{label}: {value}</span>;
 }
 
 export function StaleBadge({ days }: { days: number }) {

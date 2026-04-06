@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { StatusBadge, StaleBadge, ContractBadge, STATUS_STYLES, TYPE_INDICATORS } from "./status-badge";
+import { StatusBadge, StaleBadge, ContractBadge, MetadataLabel, STATUS_STYLES, TYPE_INDICATORS } from "./status-badge";
 import type { ItemStatus } from "../types";
 
 describe("StatusBadge", () => {
@@ -98,9 +98,31 @@ describe("ContractBadge", () => {
   });
 });
 
+describe("MetadataLabel", () => {
+  it("renders label and value", () => {
+    render(<MetadataLabel label="Owner" value="Kathy" />);
+    expect(screen.getByText("Owner: Kathy")).toBeInTheDocument();
+  });
+
+  it("applies default muted-foreground styling", () => {
+    const { container } = render(<MetadataLabel label="Owner" value="Kathy" />);
+    const span = container.querySelector("span")!;
+    expect(span.className).toContain("text-muted-foreground");
+  });
+
+  it("applies custom className when provided", () => {
+    const { container } = render(
+      <MetadataLabel label="Waiting on" value="Daniel" className="text-xs text-amber-400/80" />
+    );
+    const span = container.querySelector("span")!;
+    expect(span.className).toContain("text-amber-400/80");
+    expect(span.className).not.toContain("text-muted-foreground");
+  });
+});
+
 describe("TYPE_INDICATORS", () => {
   it("has entries for all expected categories", () => {
-    const expected = ["delivery", "review", "kickoff", "deadline", "approval", "launch"];
+    const expected = ["delivery", "review", "kickoff", "deadline", "approval", "launch", "blocked"];
     for (const key of expected) {
       expect(TYPE_INDICATORS[key]).toBeDefined();
     }

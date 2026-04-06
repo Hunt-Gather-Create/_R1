@@ -2,24 +2,13 @@
 
 import { useMemo } from "react";
 import type { DayItem } from "../types";
-import { parseISODate } from "../date-utils";
 import { DayItemCard } from "./day-item-card";
 
 export function TodaySection({
-  thisWeek,
-  todayStr,
+  todayColumn,
 }: {
-  thisWeek: DayItem[];
-  todayStr: string;
+  todayColumn: DayItem | null;
 }) {
-  const todayColumn = useMemo(
-    () =>
-      thisWeek.find(
-        (day) => parseISODate(day.date).toDateString() === todayStr
-      ),
-    [thisWeek, todayStr]
-  );
-
   const todayFormatted = useMemo(
     () =>
       new Date().toLocaleDateString("en-US", {

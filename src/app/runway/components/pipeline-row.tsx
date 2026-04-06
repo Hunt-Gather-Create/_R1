@@ -1,7 +1,7 @@
 "use client";
 
 import type { PipelineItem } from "../types";
-import { StyledBadge } from "./status-badge";
+import { StyledBadge, MetadataLabel } from "./status-badge";
 
 const PIPELINE_STATUS: Record<string, { label: string; className: string }> = {
   "sow-sent": {
@@ -37,9 +37,7 @@ export function PipelineRow({ item }: { item: PipelineItem }) {
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
           {item.waitingOn ? (
-            <span className="text-xs text-muted-foreground">
-              Waiting on: {item.waitingOn}
-            </span>
+            <MetadataLabel label="Waiting on" value={item.waitingOn} />
           ) : null}
           {item.notes ? (
             <span className="text-xs text-muted-foreground/60">

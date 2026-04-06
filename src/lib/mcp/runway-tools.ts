@@ -23,6 +23,10 @@ function textMessage(message: string) {
   return { content: [{ type: "text" as const, text: message }] };
 }
 
+function operationResultMessage(result: { ok: boolean; message?: string; error?: string }) {
+  return textMessage(result.ok ? result.message! : result.error!);
+}
+
 export function registerRunwayTools(server: McpServer) {
   server.tool("get_clients", "List all clients with project counts", {},
     async () => textResult(await getClientsWithCounts()));
@@ -50,10 +54,7 @@ export function registerRunwayTools(server: McpServer) {
     newStatus: z.string().describe("New status value"),
     updatedBy: z.string().describe("Person making the update"),
     notes: z.string().optional().describe("Additional context"),
-  }, async (params) => {
-    const result = await updateProjectStatus(params);
-    return textMessage(result.ok ? result.message : result.error);
-  });
+  }, async (params) => operationResultMessage(await updateProjectStatus(params)));
 
   server.tool("add_project", "Create a new project under a client", {
     clientSlug: z.string().describe("Client slug"),
@@ -63,20 +64,14 @@ export function registerRunwayTools(server: McpServer) {
     owner: z.string().optional(),
     notes: z.string().optional(),
     updatedBy: z.string().describe("Person adding the project"),
-  }, async (params) => {
-    const result = await addProject(params);
-    return textMessage(result.ok ? result.message : result.error);
-  });
+  }, async (params) => operationResultMessage(await addProject(params)));
 
   server.tool("add_update", "Log a free-form update for a client or project", {
     clientSlug: z.string().describe("Client slug"),
     projectName: z.string().optional().describe("Project name (fuzzy match)"),
     summary: z.string().describe("The update text"),
     updatedBy: z.string().describe("Person making the update"),
-  }, async (params) => {
-    const result = await addUpdate(params);
-    return textMessage(result.ok ? result.message : result.error);
-  });
+  }, async (params) => operationResultMessage(await addUpdate(params)));
 
   server.tool("get_team_members", "List team members, roles, and what they track", {},
     async () => textResult(await getTeamMembersData()));

@@ -44,6 +44,14 @@ export function RunwayBoard({
 
   const todayStr = useMemo(() => new Date().toDateString(), []);
 
+  const todayColumn = useMemo(
+    () =>
+      thisWeek.find(
+        (day) => parseISODate(day.date).toDateString() === todayStr
+      ) ?? null,
+    [thisWeek, todayStr]
+  );
+
   const restOfWeek = useMemo(
     () =>
       thisWeek.filter(
@@ -85,7 +93,7 @@ export function RunwayBoard({
       <main className="mx-auto max-w-[1600px] px-6 py-6 2xl:px-10">
         {view === "triage" ? (
           <div className="space-y-10">
-            <TodaySection thisWeek={thisWeek} todayStr={todayStr} />
+            <TodaySection todayColumn={todayColumn} />
 
             {restOfWeek.length > 0 ? (
               <section>

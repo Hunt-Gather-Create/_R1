@@ -15,6 +15,7 @@ vi.mock("./operations", () => ({
   getClientBySlug: (...args: unknown[]) => mockGetClientBySlug(...args),
   findProjectByFuzzyName: (...args: unknown[]) => mockFindProjectByFuzzyName(...args),
   checkIdempotency: (...args: unknown[]) => mockCheckIdempotency(...args),
+  clientNotFoundError: (slug: string) => ({ ok: false, error: `Client '${slug}' not found.` }),
 }));
 
 const client = { id: "c1", name: "Convergix", slug: "convergix" };
@@ -64,6 +65,79 @@ describe("addProject", () => {
     const projectInsert = mockInsertValues.mock.calls[0][0];
     expect(projectInsert.status).toBe("not-started");
     expect(projectInsert.category).toBe("active");
+  });
+
+  it("sets owner and notes to null when not provided", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    const { addProject } = await import("./operations-add");
+    await addProject({ clientSlug: "convergix", name: "Minimal", updatedBy: "jason" });
+    const projectInsert = mockInsertValues.mock.calls[0][0];
+    expect(projectInsert.owner).toBeNull();
+    expect(projectInsert.notes).toBeNull();
+  });
+
+  it("returns data with clientName and projectName on success", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    const { addProject } = await import("./operations-add");
+    const result = await addProject({
+      clientSlug: "convergix", name: "New Thing", updatedBy: "jason",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual({ clientName: "Convergix", projectName: "New Thing" });
+    }
+  });
+
+  it("logs audit record with correct fields", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    const { addProject } = await import("./operations-add");
+    await addProject({
+      clientSlug: "convergix", name: "Audit Test", updatedBy: "jason",
+    });
+    // Second insert is the audit update
+    const auditInsert = mockInsertValues.mock.calls[1][0];
+    expect(auditInsert.updateType).toBe("new-item");
+    expect(auditInsert.newValue).toBe("Audit Test");
+    expect(auditInsert.clientId).toBe("c1");
+    expect(auditInsert.summary).toContain("Convergix");
+    expect(auditInsert.summary).toContain("Audit Test");
+  });
+});
+
+describe("addUpdate — edge cases", () => {
+  it("sets projectId to null when projectName not provided", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    const { addUpdate } = await import("./operations-add");
+    await addUpdate({
+      clientSlug: "convergix", summary: "General note", updatedBy: "kathy",
+    });
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.projectId).toBeNull();
+  });
+
+  it("sets projectId to null when project not found by fuzzy name", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(null);
+    const { addUpdate } = await import("./operations-add");
+    const result = await addUpdate({
+      clientSlug: "convergix", projectName: "nonexistent", summary: "Note", updatedBy: "kathy",
+    });
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.projectId).toBeNull();
+  });
+
+  it("returns undefined projectName in data when project not matched", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(null);
+    const { addUpdate } = await import("./operations-add");
+    const result = await addUpdate({
+      clientSlug: "convergix", projectName: "nonexistent", summary: "Note", updatedBy: "kathy",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.projectName).toBeUndefined();
+    }
   });
 });
 

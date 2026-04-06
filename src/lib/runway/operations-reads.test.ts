@@ -12,6 +12,16 @@ vi.mock("drizzle-orm", () => ({ eq: vi.fn((a, b) => ({ eq: [a, b] })), asc: vi.f
 vi.mock("./operations", () => ({
   getAllClients: (...args: unknown[]) => mockGetAllClients(...args),
   getClientNameMap: (...args: unknown[]) => mockGetClientNameMap(...args),
+  groupBy: <T, K>(items: T[], keyFn: (item: T) => K) => {
+    const map = new Map<K, T[]>();
+    for (const item of items) {
+      const key = keyFn(item);
+      const list = map.get(key) ?? [];
+      list.push(item);
+      map.set(key, list);
+    }
+    return map;
+  },
 }));
 
 function chainable(data: unknown[]) {
@@ -123,6 +133,70 @@ describe("getWeekItemsData", () => {
     const { getWeekItemsData } = await import("./operations-reads");
     const result = await getWeekItemsData();
     expect(result).toEqual([]);
+  });
+});
+
+describe("getProjectsFiltered — combined filters", () => {
+  it("filters by both clientSlug and status", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "c1", name: "CDS", status: "in-production" },
+      { clientId: "c1", name: "Website", status: "blocked" },
+      { clientId: "c2", name: "SEO", status: "in-production" },
+    ]));
+    const { getProjectsFiltered } = await import("./operations-reads");
+    const result = await getProjectsFiltered({ clientSlug: "convergix", status: "blocked" });
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("Website");
+  });
+
+  it("returns empty when filters match nothing", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "c1", name: "CDS", status: "in-production" },
+    ]));
+    const { getProjectsFiltered } = await import("./operations-reads");
+    const result = await getProjectsFiltered({ clientSlug: "convergix", status: "completed" });
+    expect(result).toEqual([]);
+  });
+
+  it("ignores unknown clientSlug filter gracefully", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "c1", name: "CDS", status: "active" },
+    ]));
+    const { getProjectsFiltered } = await import("./operations-reads");
+    // Unknown slug means clientBySlug.get returns undefined, so no filtering happens
+    const result = await getProjectsFiltered({ clientSlug: "nonexistent" });
+    expect(result).toHaveLength(1);
+  });
+});
+
+describe("getWeekItemsData — weekOf parameter", () => {
+  it("passes weekOf to query when provided", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { date: "2026-04-06", dayOfWeek: "monday", title: "Review", clientId: "c1", category: "review", owner: null, notes: null },
+    ]));
+    const { getWeekItemsData } = await import("./operations-reads");
+    const result = await getWeekItemsData("2026-04-06");
+    expect(result).toHaveLength(1);
+  });
+
+  it("returns empty when weekOf matches no items", async () => {
+    mockSelectFrom.mockReturnValue(chainable([]));
+    const { getWeekItemsData } = await import("./operations-reads");
+    const result = await getWeekItemsData("2030-01-01");
+    expect(result).toEqual([]);
+  });
+});
+
+describe("getClientsWithCounts — edge cases", () => {
+  it("handles projects with unknown clientId", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "unknown-id" },
+    ]));
+    const { getClientsWithCounts } = await import("./operations-reads");
+    const result = await getClientsWithCounts();
+    // Both known clients get 0 because the project's clientId doesn't match
+    expect(result[0].projectCount).toBe(0);
+    expect(result[1].projectCount).toBe(0);
   });
 });
 

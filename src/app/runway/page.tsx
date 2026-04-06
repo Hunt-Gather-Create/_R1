@@ -1,5 +1,4 @@
-// TODO: Re-enable auth when deployed to Vercel
-// import { requireActiveUser } from "@/lib/actions/workspace";
+// TODO: Re-enable auth when deployed to Vercel (WorkOS callback is port-bound)
 import { getClientsWithProjects, getWeekItems, getPipeline } from "./queries";
 import type { ItemStatus, ItemCategory } from "./types";
 import { RunwayBoard } from "./runway-board";
@@ -12,9 +11,6 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function RunwayPage() {
-  // Auth disabled for local dev (WorkOS callback is port-bound to 3000)
-  // await requireActiveUser();
-
   const [clientsWithProjects, allWeekItems, pipelineData] = await Promise.all([
     getClientsWithProjects(),
     getWeekItems(),

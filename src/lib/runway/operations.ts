@@ -35,6 +35,32 @@ export function generateId(): string {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 25);
 }
 
+/**
+ * Standard "client not found" error result.
+ * Used by operations-writes.ts and operations-add.ts.
+ */
+export function clientNotFoundError(clientSlug: string) {
+  return { ok: false as const, error: `Client '${clientSlug}' not found.` };
+}
+
+/**
+ * Group an array of items by a key function.
+ * Returns a Map of key -> items[].
+ */
+export function groupBy<T, K>(
+  items: T[],
+  keyFn: (item: T) => K
+): Map<K, T[]> {
+  const map = new Map<K, T[]>();
+  for (const item of items) {
+    const key = keyFn(item);
+    const list = map.get(key) ?? [];
+    list.push(item);
+    map.set(key, list);
+  }
+  return map;
+}
+
 // ── Request-scoped client cache ──────────────────────────
 // Avoids repeated DB round-trips for clients within a single
 // MCP tool call or bot tool call. Expires after 5 seconds
