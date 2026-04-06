@@ -48,9 +48,6 @@ export function AccountSection({ account }: { account: Account }) {
           >
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-muted-foreground/50">
-                  {item.id}
-                </span>
                 <StatusBadge status={item.status} />
                 {item.staleDays ? <StaleBadge days={item.staleDays} /> : null}
               </div>
@@ -94,7 +91,6 @@ export function AccountSection({ account }: { account: Account }) {
               key={item.id}
               className="flex items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground/60"
             >
-              <span className="font-mono">{item.id}</span>
               <span>{item.title}</span>
               {item.notes ? <span>— {item.notes}</span> : null}
             </div>

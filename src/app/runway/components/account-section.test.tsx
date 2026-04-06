@@ -134,6 +134,42 @@ describe("AccountSection", () => {
     expect(screen.getByText("Gate for content")).toBeInTheDocument();
   });
 
+  it("does not render database IDs in active items", () => {
+    const { container } = render(
+      <AccountSection
+        account={createAccount({
+          items: [
+            {
+              id: "969fcb4e145e4cb4b3e118c59",
+              title: "Test Project",
+              status: "in-production",
+              category: "active",
+            },
+          ],
+        })}
+      />
+    );
+    expect(container.textContent).not.toContain("969fcb4e145e4cb4b3e118c59");
+  });
+
+  it("does not render database IDs in on-hold items", () => {
+    const { container } = render(
+      <AccountSection
+        account={createAccount({
+          items: [
+            {
+              id: "abc123def456ghi789jkl0000",
+              title: "Hold Project",
+              status: "on-hold",
+              category: "on-hold",
+            },
+          ],
+        })}
+      />
+    );
+    expect(container.textContent).not.toContain("abc123def456ghi789jkl0000");
+  });
+
   it("renders empty state when no items", () => {
     const { container } = render(
       <AccountSection account={createAccount({ items: [] })} />
