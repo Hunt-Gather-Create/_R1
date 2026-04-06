@@ -25,7 +25,7 @@ interface UpdatePost {
  * Format a timestamp for the updates channel.
  * Example: "Apr. 5 2026 at 10:14 AM"
  */
-function formatTimestamp(date: Date): string {
+export function formatTimestamp(date: Date): string {
   const months = [
     "Jan.", "Feb.", "Mar.", "Apr.", "May", "Jun.",
     "Jul.", "Aug.", "Sep.", "Oct.", "Nov.", "Dec.",
