@@ -109,6 +109,10 @@ page.tsx (RSC)
 - `StaleBadge` — stale-days indicator
 - `MetadataLabel` — "Label: Value" pattern with configurable color (used by AccountSection and PipelineRow)
 
+### Blocked Override
+
+`DayItemCard` uses `getEffectiveType(item)` to override the display type to `"blocked"` (red) when notes contain hold/blocked language ("holds until", "on hold", "blocked", "not starting until"). This prevents items like "AARP API meeting" from showing as KICKOFF when they're actually held pending SOW signature.
+
 ### Types
 
 UI types are in `src/app/runway/types.ts`. DB types are inferred from Drizzle schema. `page.tsx` maps between them to keep schema imports out of client components.
