@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { requireAuth } from "@/lib/actions/workspace";
 
+export const dynamic = "force-dynamic";
+
 /**
  * Home page - redirects authenticated users to the projects listing.
  * Handles returnTo cookie for invite code claim flow.

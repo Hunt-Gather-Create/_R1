@@ -10,6 +10,7 @@ import {
   executeAITask,
   generateAudienceMembers,
   generateSoul,
+  processRunwaySlackMessage,
 } from "@/lib/inngest/functions";
 
 export const { GET, POST, PUT } = serve({
@@ -24,5 +25,6 @@ export const { GET, POST, PUT } = serve({
     executeAITask,
     generateAudienceMembers,
     generateSoul,
+    processRunwaySlackMessage,
   ],
 });

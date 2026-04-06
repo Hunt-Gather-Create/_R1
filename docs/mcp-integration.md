@@ -341,13 +341,74 @@ https://server.smithery.ai/{qualifiedName}/sse
 | `/src/lib/hooks/use-server-search.ts` | Client-side search hook |
 | `/src/app/w/[slug]/settings/integrations/_components/` | Search UI components |
 
+## Standalone MCP Servers (Runway)
+
+The workspace MCP pattern above connects to _external_ servers. Runway uses a different pattern: a standalone MCP server _hosted inside this app_ at `/api/mcp/runway`, consumed by external clients (Claude Code, Slack bot, Open Brain).
+
+### Architecture
+
+```
+External Client (Claude Code, Open Brain)
+  → POST /api/mcp/runway (Bearer token auth)
+    → WebStandardStreamableHTTPServerTransport
+      → McpServer with registered tools
+        → Shared operations layer (src/lib/runway/operations)
+```
+
+### Transport
+
+Next.js API routes use `WebStandardStreamableHTTPServerTransport` from `@modelcontextprotocol/sdk`, not the Node.js adapter:
+
+```typescript
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+
+const server = createRunwayMcpServer();
+const transport = new WebStandardStreamableHTTPServerTransport({
+  sessionIdGenerator: undefined,
+});
+
+await server.connect(transport);
+return transport.handleRequest(request, { parsedBody: body });
+```
+
+### Authentication
+
+Bearer token via `RUNWAY_MCP_API_KEY` environment variable. No workspace-scoped auth — this is a single shared endpoint.
+
+### Tool Registration
+
+Tools are registered in `/src/lib/mcp/runway-tools.ts` using the MCP SDK's `server.tool()` API with Zod schemas. Each tool is a thin formatting layer over the shared operations in `src/lib/runway/operations`:
+
+```typescript
+server.tool("get_projects", "List projects filtered by client or status", {
+  clientSlug: z.string().optional(),
+  status: z.string().optional(),
+}, async ({ clientSlug, status }) => textResult(await getProjectsFiltered({ clientSlug, status })));
+```
+
+Available tools: `get_clients`, `get_projects`, `get_week_items`, `get_pipeline`, `get_updates`, `update_project_status`, `add_project`, `add_update`, `get_team_members`, `get_client_contacts`.
+
+### Adding a Standalone MCP Server
+
+To create a new standalone MCP server (not a workspace-connected external server):
+
+1. Create tool registrations in `/src/lib/mcp/<name>-tools.ts`
+2. Create server factory in `/src/lib/mcp/<name>-server.ts`
+3. Create API route at `/src/app/api/mcp/<name>/route.ts` using `WebStandardStreamableHTTPServerTransport`
+4. Add bearer token auth with a dedicated env var
+
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `/src/lib/mcp/index.ts` | Core MCP functions |
-| `/src/lib/mcp/servers.ts` | Server definitions |
+| `/src/lib/mcp/index.ts` | Core MCP functions (workspace servers) |
+| `/src/lib/mcp/servers.ts` | Workspace server definitions |
+| `/src/lib/mcp/runway-server.ts` | Runway MCP server factory |
+| `/src/lib/mcp/runway-tools.ts` | Runway tool registrations |
+| `/src/app/api/mcp/runway/route.ts` | Runway MCP HTTP endpoint |
 
 ## Related Documentation
 
 - [AI SDK Integration](./ai-sdk.md) - How MCP tools integrate with chat
+- [Runway Phase 0](./brain/brain-PHASE0-RUNWAY.md) - Runway product spec and architecture

@@ -12,6 +12,7 @@ Quick reference for working with this codebase. For commands and architecture ov
 | [Knowledge Base](./knowledge-base.md) | R2-backed docs, issue links, and AI Search retrieval |
 | [Skills System](./skills.md) | Creating reusable AI instruction sets |
 | [UI Components](./ui-components.md) | shadcn/ui primitives, styling patterns, AI components |
+| [AI Development Workflow](./ai-development-workflow.md) | End-to-end process for AI sessions building in this codebase |
 
 ## External Resources
 

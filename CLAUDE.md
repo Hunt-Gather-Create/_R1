@@ -210,6 +210,8 @@ Uses @dnd-kit with custom collision detection in `src/lib/collision-detection.ts
 
 ## Plan Execution Workflow
 
+**Full workflow documented in [`docs/ai-development-workflow.md`](docs/ai-development-workflow.md).** Read it before your first code change in any session. The summary below is not a substitute.
+
 When executing a plan that involves code changes:
 
 ### Before Starting

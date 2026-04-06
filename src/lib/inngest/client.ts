@@ -56,6 +56,14 @@ export type Events = {
       workspaceName: string;
     };
   };
+  "runway/slack.message": {
+    data: {
+      slackUserId: string;
+      channelId: string;
+      messageText: string;
+      messageTs: string;
+    };
+  };
 };
 
 export const inngest = new Inngest({

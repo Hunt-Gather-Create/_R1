@@ -64,6 +64,26 @@ async function main() {
     }
   }
 
+  // Runway database (separate Turso instance) — uses schema push, not file-based migrations
+  const runwayDatabaseUrl = process.env.RUNWAY_DATABASE_URL?.trim() ?? "";
+  const shouldRunRunwayMigrations =
+    !shouldSkipMigrations &&
+    runwayDatabaseUrl.length > 0 &&
+    (forceRunMigrations || isVercelBuild);
+
+  if (shouldRunRunwayMigrations) {
+    if (!(process.env.RUNWAY_AUTH_TOKEN?.trim() ?? "")) {
+      throw new Error(
+        "RUNWAY_AUTH_TOKEN is required when RUNWAY_DATABASE_URL is set for deployment migrations"
+      );
+    }
+
+    console.log("Pushing Runway database schema...");
+    await run("npx", ["drizzle-kit", "push", "--config", "drizzle-runway.config.ts", "--force"]);
+  } else {
+    console.log("Skipping Runway database schema push.");
+  }
+
   console.log("Running Next.js build...");
   await run(command, [...runArgs, "build:next"]);
 }
