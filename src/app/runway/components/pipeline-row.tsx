@@ -4,21 +4,29 @@ import type { PipelineItem } from "../types";
 import { StyledBadge, MetadataLabel } from "./status-badge";
 
 const PIPELINE_STATUS: Record<string, { label: string; className: string }> = {
-  "sow-sent": {
-    label: "SOW Sent",
-    className: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  scoping: {
+    label: "Scoping",
+    className: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
   },
   drafting: {
     label: "Drafting",
     className: "bg-violet-500/20 text-violet-400 border-violet-500/30",
   },
-  "no-sow": {
-    label: "Drafting",
-    className: "bg-red-500/20 text-red-400 border-red-500/30",
+  "sow-sent": {
+    label: "SOW Sent",
+    className: "bg-amber-500/20 text-amber-400 border-amber-500/30",
   },
   verbal: {
     label: "Verbal",
     className: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+  },
+  signed: {
+    label: "Signed",
+    className: "bg-sky-500/20 text-sky-400 border-sky-500/30",
+  },
+  "at-risk": {
+    label: "At Risk",
+    className: "bg-red-500/20 text-red-400 border-red-500/30",
   },
 };
 

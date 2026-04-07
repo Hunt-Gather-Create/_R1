@@ -73,7 +73,7 @@ export const pipelineItems = sqliteTable("pipeline_items", {
   clientId: text("client_id").references(() => clients.id),
   name: text("name").notNull(),
   owner: text("owner"),
-  status: text("status"), // sow-sent, drafting, no-sow, verbal
+  status: text("status"), // scoping, drafting, sow-sent, verbal, signed, at-risk
   estimatedValue: text("estimated_value"), // display string like "$55,000" or "TBD"
   waitingOn: text("waiting_on"),
   notes: text("notes"),

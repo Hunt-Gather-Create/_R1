@@ -211,6 +211,12 @@ export function buildBotSystemPrompt(
 ## Status values
 Projects use these statuses: in-production, awaiting-client, not-started, blocked, on-hold, completed
 
+## Pipeline statuses
+Pipeline items (unsigned SOWs / new business) use: scoping, drafting, sow-sent, verbal, signed, at-risk
+- scoping = figuring out scope, pre-SOW
+- at-risk = work happening with no SOW movement or formal agreement
+- signed = deal done, work authorized
+
 ## When making updates
 1. First use get_clients and/or get_projects to find the right project
 2. Call update_project_status or add_update to make the change

@@ -62,11 +62,13 @@ export default async function RunwayPage() {
     account: p.accountName ?? "",
     title: p.name,
     value: p.estimatedValue ?? "TBD",
-    status: (p.status ?? "no-sow") as
-      | "sow-sent"
+    status: (p.status ?? "drafting") as
+      | "scoping"
       | "drafting"
-      | "no-sow"
-      | "verbal",
+      | "sow-sent"
+      | "verbal"
+      | "signed"
+      | "at-risk",
     owner: p.owner ?? undefined,
     waitingOn: p.waitingOn ?? undefined,
     notes: p.notes ?? undefined,

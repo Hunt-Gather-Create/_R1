@@ -68,7 +68,7 @@ export interface PipelineItem {
   account: string;
   title: string;
   value: string;
-  status: "sow-sent" | "drafting" | "no-sow" | "verbal";
+  status: "scoping" | "drafting" | "sow-sent" | "verbal" | "signed" | "at-risk";
   owner?: string;
   waitingOn?: string;
   notes?: string;
