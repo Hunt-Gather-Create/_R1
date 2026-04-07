@@ -141,7 +141,6 @@ export function ListView({ onIssueSelect }: ListViewProps) {
         sortDirection={sortDirection}
         onSort={handleSort}
         selectedCount={selectedIds.size}
-        totalCount={flatIssues.length}
         onSelectAll={selectAll}
         isAllSelected={
           selectedIds.size === flatIssues.length && flatIssues.length > 0

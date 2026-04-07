@@ -100,16 +100,8 @@ export function QuickActions({
 
 // Kebab menu for more actions
 export function IssueMenu({
-  onEdit,
-  onCopyId,
-  onCopyLink,
-  onDelete,
   className,
 }: {
-  onEdit?: () => void;
-  onCopyId?: () => void;
-  onCopyLink?: () => void;
-  onDelete?: () => void;
   className?: string;
 }) {
   return (

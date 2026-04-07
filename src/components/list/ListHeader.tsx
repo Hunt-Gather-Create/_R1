@@ -20,7 +20,6 @@ interface ListHeaderProps {
   sortDirection?: SortDirection;
   onSort?: (field: SortField) => void;
   selectedCount?: number;
-  totalCount?: number;
   onSelectAll?: () => void;
   isAllSelected?: boolean;
 }
@@ -76,7 +75,6 @@ export function ListHeader({
   sortDirection,
   onSort,
   selectedCount = 0,
-  totalCount = 0,
   onSelectAll,
   isAllSelected = false,
 }: ListHeaderProps) {

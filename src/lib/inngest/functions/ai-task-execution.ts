@@ -174,7 +174,7 @@ export const executeAITask = inngest.createFunction(
     retries: 1,
     concurrency: { limit: 5 },
     onFailure: async ({ event, error }) => {
-      const { issueId, workspaceId } = event.data.event.data;
+      const { issueId } = event.data.event.data;
       const runId = event.data.run_id;
       console.error(`[AI Task] Function failed for ${issueId}:`, error);
 

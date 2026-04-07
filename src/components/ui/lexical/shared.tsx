@@ -83,8 +83,8 @@ export class ImageNode extends DecoratorNode<ReactElement> {
   }
 
   decorate(): ReactElement {
-    // eslint-disable-next-line @next/next/no-img-element
     return (
+      // eslint-disable-next-line @next/next/no-img-element -- Lexical node, not a Next.js component
       <img
         src={this.__src}
         alt={this.__altText}

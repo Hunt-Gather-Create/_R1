@@ -69,7 +69,6 @@ function MainContent() {
   } = useAppShell();
 
   const {
-    board,
     selectedIssue,
     selectIssue,
     closeDetailPanel,

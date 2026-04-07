@@ -36,6 +36,7 @@ const AvatarImage = React.forwardRef<HTMLImageElement, AvatarImageProps>(
     }
 
     return (
+      // eslint-disable-next-line @next/next/no-img-element -- avatars use dynamic src with error fallback
       <img
         ref={ref}
         src={src}
