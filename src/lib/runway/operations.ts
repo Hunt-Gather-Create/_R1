@@ -44,6 +44,18 @@ export function clientNotFoundError(clientSlug: string) {
 }
 
 /**
+ * Case-insensitive substring match.
+ * Returns true if `value` contains `search` (ignoring case).
+ */
+export function matchesSubstring(
+  value: string | null | undefined,
+  search: string
+): boolean {
+  if (!value) return false;
+  return value.toLowerCase().includes(search.toLowerCase());
+}
+
+/**
  * Group an array of items by a key function.
  * Returns a Map of key -> items[].
  */

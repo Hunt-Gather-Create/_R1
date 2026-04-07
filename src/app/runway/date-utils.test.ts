@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getMondayISODate, parseISODate } from "./date-utils";
+import { getMonday, getMondayISODate, parseISODate } from "./date-utils";
 
 describe("parseISODate", () => {
   it("returns a Date object at noon", () => {
@@ -20,6 +20,29 @@ describe("parseISODate", () => {
     expect(d.getFullYear()).toBe(2025);
     expect(d.getMonth()).toBe(11);
     expect(d.getDate()).toBe(31);
+  });
+});
+
+describe("getMonday", () => {
+  it("returns a Date object (not a string)", () => {
+    const result = getMonday(new Date("2026-04-08T12:00:00"));
+    expect(result).toBeInstanceOf(Date);
+  });
+
+  it("returns Monday for a Wednesday input", () => {
+    const result = getMonday(new Date("2026-04-08T12:00:00"));
+    expect(result.getDay()).toBe(1); // Monday
+    expect(result.getDate()).toBe(6);
+  });
+
+  it("returns same day for a Monday input", () => {
+    const result = getMonday(new Date("2026-04-06T12:00:00"));
+    expect(result.getDate()).toBe(6);
+  });
+
+  it("returns previous Monday for a Sunday", () => {
+    const result = getMonday(new Date("2026-04-12T12:00:00"));
+    expect(result.getDate()).toBe(6);
   });
 });
 

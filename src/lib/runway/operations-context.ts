@@ -10,6 +10,11 @@ import { updates, teamMembers } from "@/lib/db/runway-schema";
 import { eq, desc } from "drizzle-orm";
 import { getClientBySlug, getClientNameMap } from "./operations";
 
+function parseAccountsLed(json: string | null): string[] {
+  if (!json) return [];
+  return JSON.parse(json) as string[];
+}
+
 export async function getUpdatesData(opts?: {
   clientSlug?: string;
   limit?: number;
@@ -54,7 +59,7 @@ export async function getTeamMembersData() {
     firstName: m.firstName,
     title: m.title,
     roleCategory: m.roleCategory,
-    accountsLed: m.accountsLed ? JSON.parse(m.accountsLed) as string[] : [],
+    accountsLed: parseAccountsLed(m.accountsLed),
     channelPurpose: m.channelPurpose,
   }));
 }
@@ -110,6 +115,6 @@ export async function getTeamMemberRecordBySlackId(
     firstName: member.firstName,
     title: member.title,
     roleCategory: member.roleCategory,
-    accountsLed: member.accountsLed ? JSON.parse(member.accountsLed) as string[] : [],
+    accountsLed: parseAccountsLed(member.accountsLed),
   };
 }

@@ -8,6 +8,7 @@
 
 import { TEAM_REFERENCES } from "./reference/team";
 import { CLIENT_REFERENCES } from "./reference/clients";
+import { getMonday } from "@/app/runway/date-utils";
 import type { TeamMemberRecord } from "./operations-context";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -23,14 +24,6 @@ function formatDate(date: Date): string {
   const year = date.getFullYear();
   const iso = date.toISOString().slice(0, 10);
   return `${day}, ${month} ${dateNum}, ${year} (${iso})`;
-}
-
-function getMonday(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  return d;
 }
 
 function addDays(date: Date, days: number): Date {

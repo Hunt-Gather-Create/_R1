@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateIdempotencyKey, generateId, clientNotFoundError, groupBy } from "./operations";
+import { generateIdempotencyKey, generateId, clientNotFoundError, groupBy, matchesSubstring } from "./operations";
 
 describe("generateIdempotencyKey", () => {
   it("returns a 40-char hex string", () => {
@@ -100,5 +100,31 @@ describe("groupBy", () => {
     const result = groupBy(items, (s) => s[0]);
     expect(result.get("a")).toEqual(["apple", "avocado"]);
     expect(result.get("b")).toEqual(["banana"]);
+  });
+});
+
+describe("matchesSubstring", () => {
+  it("matches case-insensitively", () => {
+    expect(matchesSubstring("Kathy/Lane", "kathy")).toBe(true);
+  });
+
+  it("matches partial strings", () => {
+    expect(matchesSubstring("Kathy/Lane", "Lane")).toBe(true);
+  });
+
+  it("returns false for null value", () => {
+    expect(matchesSubstring(null, "Kathy")).toBe(false);
+  });
+
+  it("returns false for undefined value", () => {
+    expect(matchesSubstring(undefined, "Kathy")).toBe(false);
+  });
+
+  it("returns false when no match", () => {
+    expect(matchesSubstring("Leslie", "Kathy")).toBe(false);
+  });
+
+  it("matches exact string", () => {
+    expect(matchesSubstring("Daniel", "Daniel")).toBe(true);
   });
 });

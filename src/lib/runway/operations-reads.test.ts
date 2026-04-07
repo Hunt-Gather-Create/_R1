@@ -12,6 +12,10 @@ vi.mock("drizzle-orm", () => ({ eq: vi.fn((a, b) => ({ eq: [a, b] })), asc: vi.f
 vi.mock("./operations", () => ({
   getAllClients: (...args: unknown[]) => mockGetAllClients(...args),
   getClientNameMap: (...args: unknown[]) => mockGetClientNameMap(...args),
+  matchesSubstring: (value: string | null | undefined, search: string) => {
+    if (!value) return false;
+    return value.toLowerCase().includes(search.toLowerCase());
+  },
   groupBy: <T, K>(items: T[], keyFn: (item: T) => K) => {
     const map = new Map<K, T[]>();
     for (const item of items) {

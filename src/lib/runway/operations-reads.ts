@@ -16,6 +16,7 @@ import {
   getAllClients,
   getClientNameMap,
   groupBy,
+  matchesSubstring,
 } from "./operations";
 
 export async function getClientsWithCounts() {
@@ -67,17 +68,11 @@ export async function getProjectsFiltered(opts?: {
   }
 
   if (opts?.owner) {
-    const ownerLower = opts.owner.toLowerCase();
-    projectList = projectList.filter(
-      (p) => p.owner && p.owner.toLowerCase().includes(ownerLower)
-    );
+    projectList = projectList.filter((p) => matchesSubstring(p.owner, opts.owner!));
   }
 
   if (opts?.waitingOn) {
-    const waitLower = opts.waitingOn.toLowerCase();
-    projectList = projectList.filter(
-      (p) => p.waitingOn && p.waitingOn.toLowerCase().includes(waitLower)
-    );
+    projectList = projectList.filter((p) => matchesSubstring(p.waitingOn, opts.waitingOn!));
   }
 
   return projectList.map((p) => ({
@@ -109,10 +104,7 @@ export async function getWeekItemsData(weekOf?: string, owner?: string) {
         .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
 
   if (owner) {
-    const ownerLower = owner.toLowerCase();
-    items = items.filter(
-      (item) => item.owner && item.owner.toLowerCase().includes(ownerLower)
-    );
+    items = items.filter((item) => matchesSubstring(item.owner, owner));
   }
 
   return items.map((item) => ({
@@ -129,15 +121,13 @@ export async function getWeekItemsData(weekOf?: string, owner?: string) {
 export async function getPersonWorkload(personName: string) {
   const db = getRunwayDb();
   const clientNameById = await getClientNameMap();
-  const nameLower = personName.toLowerCase();
-
   const allProjects = await db
     .select()
     .from(projects)
     .orderBy(asc(projects.sortOrder));
 
   const matchingProjects = allProjects.filter(
-    (p) => p.owner && p.owner.toLowerCase().includes(nameLower)
+    (p) => matchesSubstring(p.owner, personName)
   );
 
   const allWeekItems = await db
@@ -146,7 +136,7 @@ export async function getPersonWorkload(personName: string) {
     .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
 
   const matchingWeekItems = allWeekItems.filter(
-    (item) => item.owner && item.owner.toLowerCase().includes(nameLower)
+    (item) => matchesSubstring(item.owner, personName)
   );
 
   // Group projects by client
