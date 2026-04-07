@@ -32,6 +32,7 @@ export interface TriageItem {
   status: ItemStatus;
   category: ItemCategory;
   owner?: string;
+  resources?: string;
   waitingOn?: string;
   target?: string;
   notes?: string;
@@ -42,6 +43,7 @@ export interface DayItemEntry {
   title: string;
   account: string;
   owner?: string;
+  resources?: string;
   type: DayItemType;
   notes?: string;
 }
@@ -67,6 +69,7 @@ export interface PipelineItem {
   title: string;
   value: string;
   status: "sow-sent" | "drafting" | "no-sow" | "verbal";
+  owner?: string;
   waitingOn?: string;
   notes?: string;
 }
