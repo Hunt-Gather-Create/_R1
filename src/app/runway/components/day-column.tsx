@@ -12,7 +12,7 @@ export function DayColumn({
 }) {
   return (
     <div
-      className={`rounded-xl border p-4 ${
+      className={`rounded-xl border p-3 sm:p-4 ${
         isToday
           ? "border-sky-500/40 bg-sky-500/5"
           : "border-border bg-card/50"

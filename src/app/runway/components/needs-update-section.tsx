@@ -24,7 +24,7 @@ export function NeedsUpdateSection({ staleItems }: NeedsUpdateSectionProps) {
       <p className="mb-4 text-sm text-muted-foreground">
         These items haven&apos;t been updated. DM the bot to clear them.
       </p>
-      <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+      <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 sm:p-4">
         <div className="space-y-4">
           {staleItems.map((day) => (
             <div key={day.date}>

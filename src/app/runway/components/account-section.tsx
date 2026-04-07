@@ -77,17 +77,17 @@ export function AccountSection({ account }: { account: Account }) {
   const displayTerm = formatContractTerm(account.contractTerm);
 
   return (
-    <div className="rounded-xl border border-border bg-card/30 p-5">
-      <div className="mb-4 flex items-start justify-between">
+    <div className="rounded-xl border border-border bg-card/30 p-3 sm:p-5">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className="text-xl font-bold text-foreground">{account.name}</h3>
+          <h3 className="text-lg font-bold text-foreground sm:text-xl">{account.name}</h3>
           {account.team ? (
             <p className="mt-0.5 text-xs text-muted-foreground">
               {account.team}
             </p>
           ) : null}
         </div>
-        <div className="text-right">
+        <div className="sm:text-right">
           {account.contractValue ? (
             <p className="text-sm font-medium text-foreground">
               {account.contractValue}

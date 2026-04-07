@@ -145,8 +145,8 @@ export function RunwayBoard({
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1800px] items-center justify-between px-6 py-4 2xl:px-10">
-          <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
+        <div className="mx-auto flex max-w-[1800px] items-center justify-between px-4 py-3 sm:px-6 sm:py-4 2xl:px-10">
+          <h1 className="font-display text-xl font-bold tracking-tight text-foreground sm:text-3xl">
             Civilization Runway
           </h1>
           <nav className="flex gap-1 rounded-lg border border-border bg-card/50 p-1">
@@ -154,7 +154,7 @@ export function RunwayBoard({
               <button
                 key={tab.key}
                 onClick={() => setView(tab.key)}
-                className={`rounded-md px-5 py-2.5 text-sm font-medium transition-colors ${
+                className={`rounded-md px-3 py-2 text-xs font-medium transition-colors sm:px-5 sm:py-2.5 sm:text-sm ${
                   view === tab.key
                     ? "bg-foreground/10 text-foreground"
                     : "text-muted-foreground hover:text-foreground"
@@ -167,11 +167,11 @@ export function RunwayBoard({
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1800px] px-6 py-6 2xl:px-10">
-        <div className="flex gap-6">
+      <main className="mx-auto max-w-[1800px] px-4 py-4 sm:px-6 sm:py-6 2xl:px-10">
+        <div className="flex xl:gap-6">
           <div className="min-w-0 flex-1">
             {view === "triage" ? (
-              <div className="space-y-10">
+              <div className="space-y-6 sm:space-y-10">
                 <NeedsUpdateSection staleItems={staleItems} />
                 <TodaySection todayColumn={todayColumn} />
 
@@ -216,13 +216,13 @@ export function RunwayBoard({
 
             {view === "pipeline" ? (
               <div className="space-y-6">
-                <div className="flex items-end justify-between">
-                  <h2 className="font-display text-2xl font-bold text-foreground">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <h2 className="font-display text-xl font-bold text-foreground sm:text-2xl">
                     Unsigned SOWs &amp; New Business
                   </h2>
-                  <div className="text-right">
+                  <div className="sm:text-right">
                     <p className="text-sm text-muted-foreground">Total Pipeline</p>
-                    <p className="font-mono text-3xl font-bold text-foreground">
+                    <p className="font-mono text-2xl font-bold text-foreground sm:text-3xl">
                       ${pipelineTotal.toLocaleString()}+
                     </p>
                   </div>
