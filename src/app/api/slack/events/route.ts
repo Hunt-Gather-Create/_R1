@@ -93,10 +93,16 @@ export async function POST(request: NextRequest) {
 
       const slackUserId = event.user as string;
       const channelId = event.channel as string;
-      const messageText = event.text as string;
+      const messageText = (event.text as string) ?? "";
       const messageTs = event.ts as string;
 
-      if (!slackUserId || !channelId || !messageText || !messageTs) {
+      // Extract image attachments from Slack file uploads
+      const files = event.files as Array<{ mimetype?: string; url_private?: string; name?: string }> | undefined;
+      const imageFiles = files?.filter(f =>
+        f.url_private && f.mimetype?.startsWith("image/")
+      ).map(f => ({ url: f.url_private!, mimetype: f.mimetype!, name: f.name })) ?? [];
+
+      if (!slackUserId || !channelId || !messageTs || (!messageText && imageFiles.length === 0)) {
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -111,6 +117,7 @@ export async function POST(request: NextRequest) {
           channelId,
           messageText,
           messageTs,
+          imageFiles: imageFiles.length > 0 ? imageFiles : undefined,
         },
       });
     }

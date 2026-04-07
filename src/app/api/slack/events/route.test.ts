@@ -74,3 +74,145 @@ describe("POST /api/slack/events — validation", () => {
     expect(json.challenge).toBe("test_challenge_token");
   });
 });
+
+describe("POST /api/slack/events — image attachments", () => {
+  const SIGNING_SECRET = "test_secret";
+
+  beforeEach(() => {
+    vi.resetModules();
+    process.env.SLACK_SIGNING_SECRET = SIGNING_SECRET;
+  });
+
+  it("includes imageFiles in Inngest event when message has image attachments", async () => {
+    const { POST } = await import("./route");
+    const { inngest } = await import("@/lib/inngest/client");
+
+    const body = JSON.stringify({
+      type: "event_callback",
+      event: {
+        type: "message",
+        channel_type: "im",
+        user: "U12345",
+        channel: "D67890",
+        text: "check this out",
+        ts: "1234567890.123456",
+        files: [
+          { mimetype: "image/png", url_private: "https://files.slack.com/img.png", name: "screenshot.png" },
+        ],
+      },
+    });
+    const req = makeRequest(body);
+    const res = await POST(req as never);
+
+    expect(res.status).toBe(200);
+    expect(inngest.send).toHaveBeenCalledWith({
+      name: "runway/slack.message",
+      data: {
+        slackUserId: "U12345",
+        channelId: "D67890",
+        messageText: "check this out",
+        messageTs: "1234567890.123456",
+        imageFiles: [
+          { url: "https://files.slack.com/img.png", mimetype: "image/png", name: "screenshot.png" },
+        ],
+      },
+    });
+  });
+
+  it("filters out non-image files", async () => {
+    const { POST } = await import("./route");
+    const { inngest } = await import("@/lib/inngest/client");
+
+    const body = JSON.stringify({
+      type: "event_callback",
+      event: {
+        type: "message",
+        channel_type: "im",
+        user: "U12345",
+        channel: "D67890",
+        text: "here's a file",
+        ts: "1234567890.123456",
+        files: [
+          { mimetype: "application/pdf", url_private: "https://files.slack.com/doc.pdf", name: "doc.pdf" },
+          { mimetype: "image/jpeg", url_private: "https://files.slack.com/photo.jpg", name: "photo.jpg" },
+        ],
+      },
+    });
+    const req = makeRequest(body);
+    await POST(req as never);
+
+    expect(inngest.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          imageFiles: [
+            { url: "https://files.slack.com/photo.jpg", mimetype: "image/jpeg", name: "photo.jpg" },
+          ],
+        }),
+      })
+    );
+  });
+
+  it("dispatches image-only messages (no text)", async () => {
+    const { POST } = await import("./route");
+    const { inngest } = await import("@/lib/inngest/client");
+
+    const body = JSON.stringify({
+      type: "event_callback",
+      event: {
+        type: "message",
+        channel_type: "im",
+        user: "U12345",
+        channel: "D67890",
+        text: "",
+        ts: "1234567890.123456",
+        files: [
+          { mimetype: "image/webp", url_private: "https://files.slack.com/img.webp", name: "img.webp" },
+        ],
+      },
+    });
+    const req = makeRequest(body);
+    const res = await POST(req as never);
+
+    expect(res.status).toBe(200);
+    expect(inngest.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          messageText: "",
+          imageFiles: [
+            { url: "https://files.slack.com/img.webp", mimetype: "image/webp", name: "img.webp" },
+          ],
+        }),
+      })
+    );
+  });
+
+  it("does not include imageFiles when there are no image attachments", async () => {
+    const { POST } = await import("./route");
+    const { inngest } = await import("@/lib/inngest/client");
+
+    const body = JSON.stringify({
+      type: "event_callback",
+      event: {
+        type: "message",
+        channel_type: "im",
+        user: "U12345",
+        channel: "D67890",
+        text: "just text",
+        ts: "1234567890.123456",
+      },
+    });
+    const req = makeRequest(body);
+    await POST(req as never);
+
+    expect(inngest.send).toHaveBeenCalledWith({
+      name: "runway/slack.message",
+      data: {
+        slackUserId: "U12345",
+        channelId: "D67890",
+        messageText: "just text",
+        messageTs: "1234567890.123456",
+        imageFiles: undefined,
+      },
+    });
+  });
+});

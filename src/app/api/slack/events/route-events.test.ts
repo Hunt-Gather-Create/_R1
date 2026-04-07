@@ -88,6 +88,7 @@ describe("POST /api/slack/events — event handling", () => {
         channelId: "D67890",
         messageText: "Convergix CDS went to Daniel",
         messageTs: "1234567890.123456",
+        imageFiles: undefined,
       },
     });
   });

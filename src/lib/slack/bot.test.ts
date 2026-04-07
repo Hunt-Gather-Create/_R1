@@ -161,6 +161,54 @@ describe("handleDirectMessage", () => {
     ]);
   });
 
+  it("sends images as content blocks when images are provided", async () => {
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: "I see the image",
+    });
+
+    const { handleDirectMessage } = await import("./bot");
+    await handleDirectMessage("U12345", "D67890", "what is this?", "ts123", [
+      { mimetype: "image/png", base64: "iVBORw0KGgo=" },
+    ]);
+
+    const call = (generateText as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.messages[0].content).toEqual([
+      { type: "text", text: "what is this?" },
+      { type: "image", image: "iVBORw0KGgo=", mediaType: "image/png" },
+    ]);
+  });
+
+  it("sends image-only message as content blocks (no text)", async () => {
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: "That's a screenshot",
+    });
+
+    const { handleDirectMessage } = await import("./bot");
+    await handleDirectMessage("U12345", "D67890", "", "ts123", [
+      { mimetype: "image/jpeg", base64: "/9j/4AAQ=" },
+    ]);
+
+    const call = (generateText as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.messages[0].content).toEqual([
+      { type: "image", image: "/9j/4AAQ=", mediaType: "image/jpeg" },
+    ]);
+  });
+
+  it("sends plain string content when no images", async () => {
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: "response",
+    });
+
+    const { handleDirectMessage } = await import("./bot");
+    await handleDirectMessage("U12345", "D67890", "just text", "ts123", []);
+
+    const call = (generateText as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.messages[0].content).toBe("just text");
+  });
+
   it("passes tools to generateText", async () => {
     const { generateText } = await import("ai");
     (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
