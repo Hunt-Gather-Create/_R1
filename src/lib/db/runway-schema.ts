@@ -31,6 +31,7 @@ export const projects = sqliteTable("projects", {
   status: text("status"), // in-production, awaiting-client, not-started, blocked, on-hold, completed
   category: text("category"), // active, awaiting-client, pipeline, on-hold, completed
   owner: text("owner"),
+  resources: text("resources"), // comma-separated list of people doing the work
   waitingOn: text("waiting_on"),
   target: text("target"),
   dueDate: text("due_date"),
@@ -56,6 +57,7 @@ export const weekItems = sqliteTable("week_items", {
   status: text("status"),
   category: text("category"), // delivery, review, kickoff, deadline, approval, launch
   owner: text("owner"),
+  resources: text("resources"), // comma-separated list of people doing the work
   notes: text("notes"),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: integer("created_at", { mode: "timestamp" })
@@ -70,6 +72,7 @@ export const pipelineItems = sqliteTable("pipeline_items", {
   id: text("id").primaryKey(),
   clientId: text("client_id").references(() => clients.id),
   name: text("name").notNull(),
+  owner: text("owner"),
   status: text("status"), // sow-sent, drafting, no-sow, verbal
   estimatedValue: text("estimated_value"), // display string like "$55,000" or "TBD"
   waitingOn: text("waiting_on"),
@@ -105,7 +108,7 @@ export const teamMembers = sqliteTable("team_members", {
   firstName: text("first_name"),
   title: text("title"),
   slackUserId: text("slack_user_id").unique(),
-  roleCategory: text("role_category"), // creative, dev, am, pm, leadership, community
+  roleCategory: text("role_category"), // creative, dev, am, pm, leadership, community, contractor
   accountsLed: text("accounts_led"), // JSON array of client slugs
   channelPurpose: text("channel_purpose"),
   isActive: integer("is_active").notNull().default(1),
