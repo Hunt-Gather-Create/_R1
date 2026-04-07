@@ -190,14 +190,14 @@ describe("createBotTools", () => {
     expect(result).toEqual([]);
   });
 
-  it("get_week_items passes weekOf and owner parameters", async () => {
-    await tools.get_week_items.execute({ weekOf: "2026-04-06", owner: "Kathy" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", "Kathy");
+  it("get_week_items passes weekOf, owner, and resource parameters", async () => {
+    await tools.get_week_items.execute({ weekOf: "2026-04-06", owner: "Kathy", resource: "Roz" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", "Kathy", "Roz");
   });
 
   it("get_week_items passes undefined when no params given", async () => {
     await tools.get_week_items.execute({}, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined);
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined, undefined);
   });
 
   it("get_person_workload calls getPersonWorkload", async () => {

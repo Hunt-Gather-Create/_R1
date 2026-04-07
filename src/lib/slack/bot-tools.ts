@@ -51,7 +51,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
     }),
 
     get_week_items: tool({
-      description: `Get calendar items for a given week, optionally filtered by owner. The weekOf parameter defaults to the current week (${currentMonday}) — do not ask the user for a date.`,
+      description: `Get calendar items for a given week, optionally filtered by owner or resource. Owner = who is accountable. Resource = who is doing the work. The weekOf parameter defaults to the current week (${currentMonday}) — do not ask the user for a date.`,
       inputSchema: z.object({
         weekOf: z
           .string()
@@ -60,10 +60,14 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         owner: z
           .string()
           .optional()
-          .describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
+          .describe("Filter by owner name (person accountable, case-insensitive substring, e.g. 'Kathy')"),
+        resource: z
+          .string()
+          .optional()
+          .describe("Filter by resource name (person doing the work, case-insensitive substring, e.g. 'Roz')"),
       }),
-      execute: async ({ weekOf, owner }) => {
-        return getWeekItemsData(weekOf, owner);
+      execute: async ({ weekOf, owner, resource }) => {
+        return getWeekItemsData(weekOf, owner, resource);
       },
     }),
 
@@ -141,7 +145,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
 
     get_person_workload: tool({
       description:
-        "Get all week items and projects assigned to a person, grouped by client. Powers 'what's on X's plate?' questions.",
+        "Get all week items and projects where a person is owner OR resource, grouped by client. Powers 'what's on X's plate?' questions.",
       inputSchema: z.object({
         personName: z.string().describe("Person's name (e.g. 'Kathy', 'Roz')"),
       }),

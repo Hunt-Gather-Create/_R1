@@ -90,7 +90,7 @@ export async function getProjectsFiltered(opts?: {
   }));
 }
 
-export async function getWeekItemsData(weekOf?: string, owner?: string) {
+export async function getWeekItemsData(weekOf?: string, owner?: string, resource?: string) {
   const db = getRunwayDb();
   const clientNameById = await getClientNameMap();
 
@@ -109,6 +109,10 @@ export async function getWeekItemsData(weekOf?: string, owner?: string) {
     items = items.filter((item) => matchesSubstring(item.owner, owner));
   }
 
+  if (resource) {
+    items = items.filter((item) => matchesSubstring(item.resources, resource));
+  }
+
   return items.map((item) => ({
     date: item.date,
     dayOfWeek: item.dayOfWeek,
@@ -116,6 +120,7 @@ export async function getWeekItemsData(weekOf?: string, owner?: string) {
     account: item.clientId ? clientNameById.get(item.clientId) ?? null : null,
     category: item.category,
     owner: item.owner,
+    resources: item.resources,
     notes: item.notes,
   }));
 }
@@ -129,7 +134,7 @@ export async function getPersonWorkload(personName: string) {
     .orderBy(asc(projects.sortOrder));
 
   const matchingProjects = allProjects.filter(
-    (p) => matchesSubstring(p.owner, personName)
+    (p) => matchesSubstring(p.owner, personName) || matchesSubstring(p.resources, personName)
   );
 
   const allWeekItems = await db
@@ -138,7 +143,7 @@ export async function getPersonWorkload(personName: string) {
     .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
 
   const matchingWeekItems = allWeekItems.filter(
-    (item) => matchesSubstring(item.owner, personName)
+    (item) => matchesSubstring(item.owner, personName) || matchesSubstring(item.resources, personName)
   );
 
   // Group projects by client

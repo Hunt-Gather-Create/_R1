@@ -136,7 +136,7 @@ describe("handleDirectMessage", () => {
     await handleDirectMessage("U12345", "D67890", "hello", "ts123");
 
     const { anthropic } = await import("@ai-sdk/anthropic");
-    expect(anthropic).toHaveBeenCalledWith("claude-haiku-4-5-20251001");
+    expect(anthropic).toHaveBeenCalledWith("claude-sonnet-4-6");
   });
 
   it("limits AI to MAX_STEPS tool calls", async () => {

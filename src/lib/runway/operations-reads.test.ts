@@ -307,6 +307,39 @@ describe("getWeekItemsData — owner filter", () => {
   });
 });
 
+describe("getWeekItemsData — resource filter", () => {
+  it("filters by resource (case-insensitive substring)", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { date: "2026-04-06", dayOfWeek: "monday", title: "CDS Review", clientId: "c1", category: "review", owner: "Kathy", resources: "Roz, Lane", notes: null },
+      { date: "2026-04-06", dayOfWeek: "monday", title: "Map R2", clientId: "c2", category: "delivery", owner: "Ronan", resources: "Leslie", notes: null },
+    ]));
+    const { getWeekItemsData } = await import("./operations-reads");
+    const result = await getWeekItemsData(undefined, undefined, "Roz");
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toBe("CDS Review");
+  });
+
+  it("combines owner and resource filters", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { date: "2026-04-06", dayOfWeek: "monday", title: "CDS Review", clientId: "c1", category: "review", owner: "Kathy", resources: "Roz, Lane", notes: null },
+      { date: "2026-04-06", dayOfWeek: "monday", title: "Map R2", clientId: "c2", category: "delivery", owner: "Kathy", resources: "Leslie", notes: null },
+    ]));
+    const { getWeekItemsData } = await import("./operations-reads");
+    const result = await getWeekItemsData(undefined, "Kathy", "Leslie");
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toBe("Map R2");
+  });
+
+  it("includes resources in returned data", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { date: "2026-04-06", dayOfWeek: "monday", title: "CDS Review", clientId: "c1", category: "review", owner: "Kathy", resources: "Roz, Lane", notes: null },
+    ]));
+    const { getWeekItemsData } = await import("./operations-reads");
+    const result = await getWeekItemsData();
+    expect(result[0].resources).toBe("Roz, Lane");
+  });
+});
+
 describe("getPersonWorkload", () => {
   it("returns projects and week items for a person", async () => {
     // First call = projects, second call = weekItems
@@ -315,13 +348,13 @@ describe("getPersonWorkload", () => {
       callCount++;
       if (callCount === 1) {
         return chainable([
-          { clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy/Lane", target: "4/7", notes: "Gate" },
-          { clientId: "c1", name: "Website", status: "active", owner: "Leslie", target: null, notes: null },
+          { clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy/Lane", resources: null, target: "4/7", notes: "Gate" },
+          { clientId: "c1", name: "Website", status: "active", owner: "Leslie", resources: null, target: null, notes: null },
         ]);
       }
       return chainable([
-        { date: "2026-04-06", clientId: "c1", title: "CDS Review", owner: "Kathy", category: "review", notes: null },
-        { date: "2026-04-07", clientId: "c2", title: "Map R2", owner: "Leslie", category: "delivery", notes: null },
+        { date: "2026-04-06", clientId: "c1", title: "CDS Review", owner: "Kathy", resources: null, category: "review", notes: null },
+        { date: "2026-04-07", clientId: "c2", title: "Map R2", owner: "Leslie", resources: null, category: "delivery", notes: null },
       ]);
     });
 
@@ -332,6 +365,26 @@ describe("getPersonWorkload", () => {
     expect(result.totalWeekItems).toBe(1);
     expect(result.projects[0].client).toBe("Convergix");
     expect(result.weekItems[0].client).toBe("Convergix");
+  });
+
+  it("finds items where person is resource but not owner", async () => {
+    let callCount = 0;
+    mockSelectFrom.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return chainable([
+          { clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy", resources: "Roz, Lane", target: null, notes: null },
+        ]);
+      }
+      return chainable([
+        { date: "2026-04-06", clientId: "c1", title: "CDS Review", owner: "Kathy", resources: "Roz", category: "review", notes: null },
+      ]);
+    });
+
+    const { getPersonWorkload } = await import("./operations-reads");
+    const result = await getPersonWorkload("Roz");
+    expect(result.totalProjects).toBe(1);
+    expect(result.totalWeekItems).toBe(1);
   });
 
   it("returns empty results for person with no assignments", async () => {

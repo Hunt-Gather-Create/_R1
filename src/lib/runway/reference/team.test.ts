@@ -8,8 +8,8 @@ import {
 } from "./team";
 
 describe("TEAM_REFERENCES", () => {
-  it("contains 8 team members", () => {
-    expect(TEAM_REFERENCES).toHaveLength(8);
+  it("contains 11 team members", () => {
+    expect(TEAM_REFERENCES).toHaveLength(11);
   });
 
   it("has unique full names", () => {
@@ -31,7 +31,7 @@ describe("TEAM_REFERENCES", () => {
   });
 
   it("every member has a valid roleCategory", () => {
-    const validRoles = new Set(["creative", "dev", "am", "pm", "leadership", "community"]);
+    const validRoles = new Set(["creative", "dev", "am", "pm", "leadership", "community", "contractor"]);
     for (const member of TEAM_REFERENCES) {
       expect(validRoles.has(member.roleCategory)).toBe(true);
     }
