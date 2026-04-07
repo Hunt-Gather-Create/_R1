@@ -5,13 +5,14 @@ import { z } from "zod";
 import { postUpdate } from "./updates-channel";
 import {
   getClientsWithCounts,
-  getProjectsForClient,
+  getProjectsFiltered,
   getPipelineData,
   getWeekItemsData,
-  getClientBySlug,
+  getPersonWorkload,
   updateProjectStatus,
   addUpdate,
 } from "@/lib/runway/operations";
+import { getClientContactsRef } from "@/lib/runway/reference/clients";
 
 async function safePostUpdate(update: Parameters<typeof postUpdate>[0]) {
   try {
@@ -30,22 +31,14 @@ export function createBotTools(userName: string) {
     }),
 
     get_projects: tool({
-      description: "List projects for a client",
+      description: "List projects, optionally filtered by client, owner, or waitingOn",
       inputSchema: z.object({
-        clientSlug: z.string().describe("Client slug (e.g. 'convergix')"),
+        clientSlug: z.string().optional().describe("Client slug (e.g. 'convergix')"),
+        owner: z.string().optional().describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
+        waitingOn: z.string().optional().describe("Filter by waitingOn name (case-insensitive substring, e.g. 'Daniel')"),
       }),
-      execute: async ({ clientSlug }) => {
-        const client = await getClientBySlug(clientSlug);
-        if (!client) return { error: `Client '${clientSlug}' not found` };
-
-        const projectList = await getProjectsForClient(client.id);
-        return projectList.map((p) => ({
-          name: p.name,
-          status: p.status,
-          owner: p.owner,
-          waitingOn: p.waitingOn,
-          notes: p.notes,
-        }));
+      execute: async ({ clientSlug, owner, waitingOn }) => {
+        return getProjectsFiltered({ clientSlug, owner, waitingOn });
       },
     }),
 
@@ -56,14 +49,18 @@ export function createBotTools(userName: string) {
     }),
 
     get_week_items: tool({
-      description: "Get this week's calendar items",
+      description: "Get this week's calendar items, optionally filtered by owner",
       inputSchema: z.object({
         weekOf: z
           .string()
           .optional()
           .describe("ISO date of the Monday (e.g. '2026-04-06')"),
+        owner: z
+          .string()
+          .optional()
+          .describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
       }),
-      execute: async ({ weekOf }) => getWeekItemsData(weekOf),
+      execute: async ({ weekOf, owner }) => getWeekItemsData(weekOf, owner),
     }),
 
     update_project_status: tool({
@@ -135,6 +132,30 @@ export function createBotTools(userName: string) {
         }
 
         return { result: result.message };
+      },
+    }),
+
+    get_person_workload: tool({
+      description:
+        "Get all week items and projects assigned to a person, grouped by client. Powers 'what's on X's plate?' questions.",
+      inputSchema: z.object({
+        personName: z.string().describe("Person's name (e.g. 'Kathy', 'Roz')"),
+      }),
+      execute: async ({ personName }) => getPersonWorkload(personName),
+    }),
+
+    get_client_contacts: tool({
+      description:
+        "Get client-side contacts for a given client. Powers 'who's holding things up at X?' questions.",
+      inputSchema: z.object({
+        clientSlug: z.string().describe("Client slug (e.g. 'convergix')"),
+      }),
+      execute: async ({ clientSlug }) => {
+        const contacts = getClientContactsRef(clientSlug);
+        if (contacts.length === 0) {
+          return { client: clientSlug, contacts: [], note: "No contacts on file for this client" };
+        }
+        return { client: clientSlug, contacts };
       },
     }),
   };

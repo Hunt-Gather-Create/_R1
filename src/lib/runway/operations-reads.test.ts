@@ -200,6 +200,130 @@ describe("getClientsWithCounts — edge cases", () => {
   });
 });
 
+describe("getProjectsFiltered — owner filter", () => {
+  it("filters by owner (case-insensitive substring)", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy/Lane", waitingOn: null, target: null, notes: null, staleDays: null },
+      { clientId: "c1", name: "Website", status: "active", owner: "Leslie", waitingOn: null, target: null, notes: null, staleDays: null },
+    ]));
+    const { getProjectsFiltered } = await import("./operations-reads");
+    const result = await getProjectsFiltered({ owner: "Kathy" });
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("CDS");
+  });
+
+  it("matches partial owner names (e.g. 'Kathy' in 'Kathy/Lane')", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy/Lane", waitingOn: null, target: null, notes: null, staleDays: null },
+    ]));
+    const { getProjectsFiltered } = await import("./operations-reads");
+    const result = await getProjectsFiltered({ owner: "lane" });
+    expect(result).toHaveLength(1);
+  });
+
+  it("returns empty when owner matches nothing", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy", waitingOn: null, target: null, notes: null, staleDays: null },
+    ]));
+    const { getProjectsFiltered } = await import("./operations-reads");
+    const result = await getProjectsFiltered({ owner: "Nobody" });
+    expect(result).toEqual([]);
+  });
+});
+
+describe("getProjectsFiltered — waitingOn filter", () => {
+  it("filters by waitingOn (case-insensitive substring)", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "c1", name: "Brochure", status: "awaiting-client", owner: null, waitingOn: "Daniel", target: null, notes: null, staleDays: null },
+      { clientId: "c1", name: "Website", status: "active", owner: null, waitingOn: null, target: null, notes: null, staleDays: null },
+    ]));
+    const { getProjectsFiltered } = await import("./operations-reads");
+    const result = await getProjectsFiltered({ waitingOn: "daniel" });
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("Brochure");
+  });
+
+  it("matches partial waitingOn (e.g. 'Daniel' in 'Daniel/Nicole')", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "c1", name: "Templates", status: "awaiting-client", owner: null, waitingOn: "Daniel/Nicole", target: null, notes: null, staleDays: null },
+    ]));
+    const { getProjectsFiltered } = await import("./operations-reads");
+    const result = await getProjectsFiltered({ waitingOn: "Nicole" });
+    expect(result).toHaveLength(1);
+  });
+});
+
+describe("getWeekItemsData — owner filter", () => {
+  it("filters week items by owner", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { date: "2026-04-06", dayOfWeek: "monday", title: "CDS Review", clientId: "c1", category: "review", owner: "Kathy", notes: null },
+      { date: "2026-04-06", dayOfWeek: "monday", title: "Map R2", clientId: "c2", category: "delivery", owner: "Leslie", notes: null },
+    ]));
+    const { getWeekItemsData } = await import("./operations-reads");
+    const result = await getWeekItemsData(undefined, "Kathy");
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toBe("CDS Review");
+  });
+
+  it("returns empty when owner filter matches nothing", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { date: "2026-04-06", dayOfWeek: "monday", title: "CDS Review", clientId: "c1", category: "review", owner: "Kathy", notes: null },
+    ]));
+    const { getWeekItemsData } = await import("./operations-reads");
+    const result = await getWeekItemsData(undefined, "Nobody");
+    expect(result).toEqual([]);
+  });
+
+  it("combines weekOf and owner filters", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { date: "2026-04-06", dayOfWeek: "monday", title: "CDS Review", clientId: "c1", category: "review", owner: "Kathy", notes: null },
+      { date: "2026-04-06", dayOfWeek: "monday", title: "Map R2", clientId: "c2", category: "delivery", owner: "Leslie", notes: null },
+    ]));
+    const { getWeekItemsData } = await import("./operations-reads");
+    const result = await getWeekItemsData("2026-04-06", "Kathy");
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toBe("CDS Review");
+  });
+});
+
+describe("getPersonWorkload", () => {
+  it("returns projects and week items for a person", async () => {
+    // First call = projects, second call = weekItems
+    let callCount = 0;
+    mockSelectFrom.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return chainable([
+          { clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy/Lane", target: "4/7", notes: "Gate" },
+          { clientId: "c1", name: "Website", status: "active", owner: "Leslie", target: null, notes: null },
+        ]);
+      }
+      return chainable([
+        { date: "2026-04-06", clientId: "c1", title: "CDS Review", owner: "Kathy", category: "review", notes: null },
+        { date: "2026-04-07", clientId: "c2", title: "Map R2", owner: "Leslie", category: "delivery", notes: null },
+      ]);
+    });
+
+    const { getPersonWorkload } = await import("./operations-reads");
+    const result = await getPersonWorkload("Kathy");
+    expect(result.person).toBe("Kathy");
+    expect(result.totalProjects).toBe(1);
+    expect(result.totalWeekItems).toBe(1);
+    expect(result.projects[0].client).toBe("Convergix");
+    expect(result.weekItems[0].client).toBe("Convergix");
+  });
+
+  it("returns empty results for person with no assignments", async () => {
+    mockSelectFrom.mockReturnValue(chainable([]));
+    const { getPersonWorkload } = await import("./operations-reads");
+    const result = await getPersonWorkload("Nobody");
+    expect(result.totalProjects).toBe(0);
+    expect(result.totalWeekItems).toBe(0);
+    expect(result.projects).toEqual([]);
+    expect(result.weekItems).toEqual([]);
+  });
+});
+
 describe("getPipelineData", () => {
   it("maps client names to pipeline items", async () => {
     mockSelectFrom.mockReturnValue(chainable([

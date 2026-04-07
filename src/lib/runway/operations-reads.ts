@@ -42,6 +42,8 @@ export async function getClientsWithCounts() {
 export async function getProjectsFiltered(opts?: {
   clientSlug?: string;
   status?: string;
+  owner?: string;
+  waitingOn?: string;
 }) {
   const db = getRunwayDb();
   const allClients = await getAllClients();
@@ -64,6 +66,20 @@ export async function getProjectsFiltered(opts?: {
     projectList = projectList.filter((p) => p.status === opts.status);
   }
 
+  if (opts?.owner) {
+    const ownerLower = opts.owner.toLowerCase();
+    projectList = projectList.filter(
+      (p) => p.owner && p.owner.toLowerCase().includes(ownerLower)
+    );
+  }
+
+  if (opts?.waitingOn) {
+    const waitLower = opts.waitingOn.toLowerCase();
+    projectList = projectList.filter(
+      (p) => p.waitingOn && p.waitingOn.toLowerCase().includes(waitLower)
+    );
+  }
+
   return projectList.map((p) => ({
     name: p.name,
     client: clientNameById.get(p.clientId) ?? "Unknown",
@@ -77,11 +93,11 @@ export async function getProjectsFiltered(opts?: {
   }));
 }
 
-export async function getWeekItemsData(weekOf?: string) {
+export async function getWeekItemsData(weekOf?: string, owner?: string) {
   const db = getRunwayDb();
   const clientNameById = await getClientNameMap();
 
-  const items = weekOf
+  let items = weekOf
     ? await db
         .select()
         .from(weekItems)
@@ -92,6 +108,13 @@ export async function getWeekItemsData(weekOf?: string) {
         .from(weekItems)
         .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
 
+  if (owner) {
+    const ownerLower = owner.toLowerCase();
+    items = items.filter(
+      (item) => item.owner && item.owner.toLowerCase().includes(ownerLower)
+    );
+  }
+
   return items.map((item) => ({
     date: item.date,
     dayOfWeek: item.dayOfWeek,
@@ -101,6 +124,62 @@ export async function getWeekItemsData(weekOf?: string) {
     owner: item.owner,
     notes: item.notes,
   }));
+}
+
+export async function getPersonWorkload(personName: string) {
+  const db = getRunwayDb();
+  const clientNameById = await getClientNameMap();
+  const nameLower = personName.toLowerCase();
+
+  const allProjects = await db
+    .select()
+    .from(projects)
+    .orderBy(asc(projects.sortOrder));
+
+  const matchingProjects = allProjects.filter(
+    (p) => p.owner && p.owner.toLowerCase().includes(nameLower)
+  );
+
+  const allWeekItems = await db
+    .select()
+    .from(weekItems)
+    .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
+
+  const matchingWeekItems = allWeekItems.filter(
+    (item) => item.owner && item.owner.toLowerCase().includes(nameLower)
+  );
+
+  // Group projects by client
+  const projectsByClient = groupBy(matchingProjects, (p) => p.clientId);
+  const projectGroups = [...projectsByClient.entries()].map(([clientId, items]) => ({
+    client: clientNameById.get(clientId) ?? "Unknown",
+    projects: items.map((p) => ({
+      name: p.name,
+      status: p.status,
+      target: p.target,
+      notes: p.notes,
+    })),
+  }));
+
+  // Group week items by client
+  const weekByClient = groupBy(matchingWeekItems, (item) => item.clientId ?? "none");
+  const weekGroups = [...weekByClient.entries()].map(([clientId, items]) => ({
+    client: clientId === "none" ? "Unassigned" : (clientNameById.get(clientId) ?? "Unknown"),
+    items: items.map((item) => ({
+      date: item.date,
+      title: item.title,
+      category: item.category,
+      notes: item.notes,
+    })),
+  }));
+
+  return {
+    person: personName,
+    projects: projectGroups,
+    weekItems: weekGroups,
+    totalProjects: matchingProjects.length,
+    totalWeekItems: matchingWeekItems.length,
+  };
 }
 
 export async function getPipelineData() {

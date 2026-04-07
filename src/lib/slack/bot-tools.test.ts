@@ -4,11 +4,13 @@ const { mockPostUpdate, mockOps } = vi.hoisted(() => {
   const mockPostUpdate = vi.fn().mockResolvedValue("ts123");
   const mockOps = {
     getClientsWithCounts: vi.fn().mockResolvedValue([{ name: "Convergix" }]),
-    getProjectsForClient: vi.fn().mockResolvedValue([
-      { name: "CDS", status: "in-production", owner: "Kathy", waitingOn: null, notes: null },
+    getProjectsFiltered: vi.fn().mockResolvedValue([
+      { name: "CDS", status: "in-production", client: "Convergix", owner: "Kathy", waitingOn: null, notes: null },
     ]),
+    getProjectsForClient: vi.fn().mockResolvedValue([]),
     getPipelineData: vi.fn().mockResolvedValue([]),
     getWeekItemsData: vi.fn().mockResolvedValue([]),
+    getPersonWorkload: vi.fn().mockResolvedValue({ person: "Kathy", projects: [], weekItems: [], totalProjects: 0, totalWeekItems: 0 }),
     getClientBySlug: vi.fn(),
     updateProjectStatus: vi.fn(),
     addUpdate: vi.fn(),
@@ -16,11 +18,18 @@ const { mockPostUpdate, mockOps } = vi.hoisted(() => {
   return { mockPostUpdate, mockOps };
 });
 
+const { mockGetClientContactsRef } = vi.hoisted(() => ({
+  mockGetClientContactsRef: vi.fn().mockReturnValue([{ name: "Daniel", role: "Marketing Director" }]),
+}));
+
 vi.mock("./updates-channel", () => ({
   postUpdate: (...args: unknown[]) => mockPostUpdate(...args),
 }));
 vi.mock("ai", () => ({ tool: vi.fn((config) => config) }));
 vi.mock("@/lib/runway/operations", () => mockOps);
+vi.mock("@/lib/runway/reference/clients", () => ({
+  getClientContactsRef: (...args: unknown[]) => mockGetClientContactsRef(...args),
+}));
 
 import { createBotTools } from "./bot-tools";
 
@@ -32,9 +41,12 @@ describe("createBotTools", () => {
     tools = createBotTools("Kathy Horn");
   });
 
-  it("creates all 6 tools", () => {
+  it("creates all 8 tools", () => {
     const names = Object.keys(tools);
-    expect(names).toEqual(["get_clients", "get_projects", "get_pipeline", "get_week_items", "update_project_status", "add_update"]);
+    expect(names).toEqual([
+      "get_clients", "get_projects", "get_pipeline", "get_week_items",
+      "update_project_status", "add_update", "get_person_workload", "get_client_contacts",
+    ]);
   });
 
   it("get_clients calls getClientsWithCounts", async () => {
@@ -43,17 +55,16 @@ describe("createBotTools", () => {
     expect(result).toEqual([{ name: "Convergix" }]);
   });
 
-  it("get_projects returns error when client not found", async () => {
-    mockOps.getClientBySlug.mockResolvedValue(null);
-    const result = await tools.get_projects.execute({ clientSlug: "unknown" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(result).toEqual({ error: "Client 'unknown' not found" });
-  });
-
-  it("get_projects returns project list when client found", async () => {
-    mockOps.getClientBySlug.mockResolvedValue({ id: "c1" });
-    const result = await tools.get_projects.execute({ clientSlug: "convergix" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
+  it("get_projects calls getProjectsFiltered with params", async () => {
+    const result = await tools.get_projects.execute({ clientSlug: "convergix", owner: "Kathy" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: "convergix", owner: "Kathy", waitingOn: undefined });
     expect(result).toHaveLength(1);
     expect((result as Record<string, unknown>[])[0].name).toBe("CDS");
+  });
+
+  it("get_projects passes waitingOn filter", async () => {
+    await tools.get_projects.execute({ waitingOn: "Daniel" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: undefined, owner: undefined, waitingOn: "Daniel" });
   });
 
   it("update_project_status posts to updates channel on success", async () => {
@@ -179,13 +190,31 @@ describe("createBotTools", () => {
     expect(result).toEqual([]);
   });
 
-  it("get_week_items passes weekOf parameter", async () => {
-    await tools.get_week_items.execute({ weekOf: "2026-04-06" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06");
+  it("get_week_items passes weekOf and owner parameters", async () => {
+    await tools.get_week_items.execute({ weekOf: "2026-04-06", owner: "Kathy" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", "Kathy");
   });
 
-  it("get_week_items passes undefined when weekOf not given", async () => {
+  it("get_week_items passes undefined when no params given", async () => {
     await tools.get_week_items.execute({}, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined);
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined);
+  });
+
+  it("get_person_workload calls getPersonWorkload", async () => {
+    const result = await tools.get_person_workload.execute({ personName: "Kathy" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    expect(mockOps.getPersonWorkload).toHaveBeenCalledWith("Kathy");
+    expect(result).toEqual(expect.objectContaining({ person: "Kathy" }));
+  });
+
+  it("get_client_contacts returns contacts from reference data", async () => {
+    const result = await tools.get_client_contacts.execute({ clientSlug: "convergix" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    expect(mockGetClientContactsRef).toHaveBeenCalledWith("convergix");
+    expect(result).toEqual(expect.objectContaining({ client: "convergix", contacts: [{ name: "Daniel", role: "Marketing Director" }] }));
+  });
+
+  it("get_client_contacts returns note when no contacts found", async () => {
+    mockGetClientContactsRef.mockReturnValueOnce([]);
+    const result = await tools.get_client_contacts.execute({ clientSlug: "lppc" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    expect(result).toEqual(expect.objectContaining({ note: "No contacts on file for this client" }));
   });
 });

@@ -11,6 +11,7 @@ vi.mock("@/lib/runway/operations", () => ({
   getClientsWithCounts: vi.fn().mockResolvedValue([]),
   getProjectsFiltered: vi.fn().mockResolvedValue([]),
   getWeekItemsData: vi.fn().mockResolvedValue([]),
+  getPersonWorkload: vi.fn().mockResolvedValue({ person: "Kathy", projects: [], weekItems: [], totalProjects: 0, totalWeekItems: 0 }),
   getPipelineData: vi.fn().mockResolvedValue([]),
   getUpdatesData: vi.fn().mockResolvedValue([]),
   getTeamMembersData: vi.fn().mockResolvedValue([]),
@@ -18,6 +19,10 @@ vi.mock("@/lib/runway/operations", () => ({
   updateProjectStatus: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
   addProject: vi.fn().mockResolvedValue({ ok: true, message: "Added" }),
   addUpdate: vi.fn().mockResolvedValue({ ok: true, message: "Logged" }),
+}));
+
+vi.mock("@/lib/runway/reference/clients", () => ({
+  getClientContactsRef: vi.fn().mockReturnValue([]),
 }));
 
 vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
@@ -47,6 +52,7 @@ describe("createRunwayMcpServer", () => {
       "add_project",
       "add_update",
       "get_team_members",
+      "get_person_workload",
       "get_client_contacts",
     ];
     for (const name of expectedTools) {

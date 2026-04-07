@@ -6,6 +6,7 @@ import {
   getClientsWithCounts,
   getProjectsFiltered,
   getWeekItemsData,
+  getPersonWorkload,
   getPipelineData,
   getUpdatesData,
   getTeamMembersData,
@@ -31,14 +32,17 @@ export function registerRunwayTools(server: McpServer) {
   server.tool("get_clients", "List all clients with project counts", {},
     async () => textResult(await getClientsWithCounts()));
 
-  server.tool("get_projects", "List projects, optionally filtered by client slug or status", {
+  server.tool("get_projects", "List projects, optionally filtered by client, status, owner, or waitingOn", {
     clientSlug: z.string().optional().describe("Filter by client slug (e.g. 'convergix')"),
     status: z.string().optional().describe("Filter by status (e.g. 'in-production', 'blocked')"),
-  }, async ({ clientSlug, status }) => textResult(await getProjectsFiltered({ clientSlug, status })));
+    owner: z.string().optional().describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
+    waitingOn: z.string().optional().describe("Filter by waitingOn name (case-insensitive substring, e.g. 'Daniel')"),
+  }, async ({ clientSlug, status, owner, waitingOn }) => textResult(await getProjectsFiltered({ clientSlug, status, owner, waitingOn })));
 
-  server.tool("get_week_items", "Get calendar items for a specific week", {
+  server.tool("get_week_items", "Get calendar items for a specific week, optionally filtered by owner", {
     weekOf: z.string().optional().describe("ISO date of the Monday (e.g. '2026-04-06')"),
-  }, async ({ weekOf }) => textResult(await getWeekItemsData(weekOf)));
+    owner: z.string().optional().describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
+  }, async ({ weekOf, owner }) => textResult(await getWeekItemsData(weekOf, owner)));
 
   server.tool("get_pipeline", "List all pipeline/unsigned SOWs", {},
     async () => textResult(await getPipelineData()));
@@ -75,6 +79,10 @@ export function registerRunwayTools(server: McpServer) {
 
   server.tool("get_team_members", "List team members, roles, and what they track", {},
     async () => textResult(await getTeamMembersData()));
+
+  server.tool("get_person_workload", "Get all week items and projects assigned to a person, grouped by client", {
+    personName: z.string().describe("Person's name (e.g. 'Kathy', 'Roz')"),
+  }, async ({ personName }) => textResult(await getPersonWorkload(personName)));
 
   server.tool("get_client_contacts", "Get client-side contacts for a given client",
     { clientSlug: z.string().describe("Client slug") },
