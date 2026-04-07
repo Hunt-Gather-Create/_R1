@@ -13,6 +13,7 @@ import {
   addUpdate,
 } from "@/lib/runway/operations";
 import { getClientContactsRef } from "@/lib/runway/reference/clients";
+import { getMonday } from "@/app/runway/date-utils";
 
 async function safePostUpdate(update: Parameters<typeof postUpdate>[0]) {
   try {
@@ -49,18 +50,22 @@ export function createBotTools(userName: string) {
     }),
 
     get_week_items: tool({
-      description: "Get this week's calendar items, optionally filtered by owner",
+      description: "Get this week's calendar items, optionally filtered by owner. If weekOf is omitted, defaults to the current week. Never ask the user for a date — use the date context from your system prompt.",
       inputSchema: z.object({
         weekOf: z
           .string()
           .optional()
-          .describe("ISO date of the Monday (e.g. '2026-04-06')"),
+          .describe("ISO date of the Monday. Omit to use current week — do NOT ask the user for this."),
         owner: z
           .string()
           .optional()
           .describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
       }),
-      execute: async ({ weekOf, owner }) => getWeekItemsData(weekOf, owner),
+      execute: async ({ weekOf, owner }) => {
+        // Default to current week if not provided — never require user to supply a date
+        const effectiveWeekOf = weekOf ?? getMonday(new Date()).toISOString().slice(0, 10);
+        return getWeekItemsData(effectiveWeekOf, owner);
+      },
     }),
 
     update_project_status: tool({
