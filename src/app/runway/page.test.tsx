@@ -5,10 +5,13 @@ const mockGetClientsWithProjects = vi.fn();
 const mockGetWeekItems = vi.fn();
 const mockGetPipeline = vi.fn();
 
+const mockGetStaleWeekItems = vi.fn().mockResolvedValue([]);
+
 vi.mock("./queries", () => ({
   getClientsWithProjects: () => mockGetClientsWithProjects(),
   getWeekItems: () => mockGetWeekItems(),
   getPipeline: () => mockGetPipeline(),
+  getStaleWeekItems: () => mockGetStaleWeekItems(),
 }));
 
 vi.mock("@/lib/runway/flags", () => ({

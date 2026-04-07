@@ -10,6 +10,7 @@ import { TodaySection } from "./components/today-section";
 import { AccountSection } from "./components/account-section";
 import { PipelineRow } from "./components/pipeline-row";
 import { FlagsPanel } from "./components/flags-panel";
+import { NeedsUpdateSection } from "./components/needs-update-section";
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -80,6 +81,7 @@ interface RunwayBoardProps {
   accounts: Account[];
   pipeline: PipelineItem[];
   flags?: RunwayFlag[];
+  staleItems?: DayItem[];
 }
 
 const TABS = [
@@ -94,6 +96,7 @@ export function RunwayBoard({
   accounts,
   pipeline,
   flags = [],
+  staleItems = [],
 }: RunwayBoardProps) {
   const router = useRouter();
   const [view, setView] = useState<View>("triage");
@@ -169,6 +172,7 @@ export function RunwayBoard({
           <div className="min-w-0 flex-1">
             {view === "triage" ? (
               <div className="space-y-10">
+                <NeedsUpdateSection staleItems={staleItems} />
                 <TodaySection todayColumn={todayColumn} />
 
                 {restOfWeek.length > 0 ? (

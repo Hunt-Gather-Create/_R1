@@ -42,3 +42,40 @@ export const orphanPipelineRow = {
   id: "pl1", clientId: null, name: "Orphan SOW", status: "no-sow",
   estimatedValue: "TBD",
 };
+
+// ── Stale Week Items Fixtures ──────────────────────────────
+
+export function createWeekItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "wi1",
+    projectId: "p1",
+    clientId: "c1",
+    dayOfWeek: "monday",
+    weekOf: "2026-04-06",
+    date: "2026-04-06",
+    title: "CDS Review",
+    status: null,
+    category: "review",
+    owner: "Kathy",
+    notes: null,
+    sortOrder: 0,
+    ...overrides,
+  };
+}
+
+export function createUpdate(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "u1",
+    idempotencyKey: "key1",
+    projectId: "p1",
+    clientId: "c1",
+    updatedBy: "Kathy",
+    updateType: "status-change",
+    previousValue: null,
+    newValue: "completed",
+    summary: "Done",
+    slackMessageTs: null,
+    createdAt: new Date("2026-04-06T14:00:00"),
+    ...overrides,
+  };
+}

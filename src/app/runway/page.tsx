@@ -1,4 +1,4 @@
-import { getClientsWithProjects, getWeekItems, getPipeline } from "./queries";
+import { getClientsWithProjects, getWeekItems, getPipeline, getStaleWeekItems } from "./queries";
 import type { ItemStatus, ItemCategory } from "./types";
 import { RunwayBoard } from "./runway-board";
 import { getMondayISODate, parseISODate } from "./date-utils";
@@ -11,10 +11,11 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function RunwayPage() {
-  const [clientsWithProjects, allWeekItems, pipelineData] = await Promise.all([
+  const [clientsWithProjects, allWeekItems, pipelineData, staleItems] = await Promise.all([
     getClientsWithProjects(),
     getWeekItems(),
     getPipeline(),
+    getStaleWeekItems(),
   ]);
 
   // Split week items into thisWeek and upcoming in a single pass
@@ -78,6 +79,7 @@ export default async function RunwayPage() {
       accounts={accounts}
       pipeline={pipelineProps}
       flags={flags}
+      staleItems={staleItems}
     />
   );
 }

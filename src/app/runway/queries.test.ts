@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   mockResults, resetMocks, createChainable,
   convergixClient, lppcClient, weekItemRows, pipelineRow, orphanPipelineRow,
+  createWeekItem, createUpdate,
 } from "./queries-test-helpers";
 
 vi.mock("@/lib/db/runway", () => ({
@@ -16,6 +17,7 @@ vi.mock("@/lib/db/runway-schema", () => ({
   weekItems: { weekOf: "weekOf", date: "date", sortOrder: "sortOrder" },
   pipelineItems: { sortOrder: "sortOrder", clientId: "clientId" },
   teamMembers: { isActive: "isActive" },
+  updates: { createdAt: "createdAt" },
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -127,5 +129,89 @@ describe("getPipeline", () => {
     const { getPipeline } = await import("./queries");
     const result = await getPipeline();
     expect(result[0].accountName).toBeNull();
+  });
+});
+
+describe("getStaleWeekItems", () => {
+  beforeEach(() => resetMocks());
+
+  it("returns items from yesterday with no updates", async () => {
+    // Fix date to 2026-04-07 (Tuesday)
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    // First query: week items for current week (weekOf = 2026-04-06)
+    mockResults.push([createWeekItem({ date: "2026-04-06" })]);
+    // Second query: updates
+    mockResults.push([]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].date).toBe("2026-04-06");
+    expect(result[0].items[0].title).toBe("CDS Review");
+    expect(result[0].items[0].account).toBe("Convergix");
+
+    vi.useRealTimers();
+  });
+
+  it("excludes items from yesterday that HAVE updates", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    mockResults.push([createWeekItem({ date: "2026-04-06", projectId: "p1" })]);
+    mockResults.push([createUpdate({ projectId: "p1", createdAt: new Date("2026-04-06T14:00:00") })]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    expect(result).toHaveLength(0);
+
+    vi.useRealTimers();
+  });
+
+  it("excludes items from today", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    // Only today's items, no past items
+    mockResults.push([createWeekItem({ date: "2026-04-07" })]);
+    // updates won't be queried since pastItems is empty
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    expect(result).toHaveLength(0);
+
+    vi.useRealTimers();
+  });
+
+  it("excludes future items", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    mockResults.push([createWeekItem({ date: "2026-04-09" })]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    expect(result).toHaveLength(0);
+
+    vi.useRealTimers();
+  });
+
+  it("returns empty array when no week items exist", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    mockResults.push([]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    expect(result).toEqual([]);
+
+    vi.useRealTimers();
   });
 });
