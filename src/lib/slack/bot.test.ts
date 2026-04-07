@@ -33,6 +33,17 @@ vi.mock("@/lib/runway/operations", () => ({
     .mockResolvedValue({ ok: true, message: "Updated" }),
   addUpdate: vi.fn().mockResolvedValue({ ok: true, message: "Logged" }),
   getTeamMemberBySlackId: vi.fn().mockResolvedValue("Kathy Horn"),
+  getTeamMemberRecordBySlackId: vi.fn().mockResolvedValue({
+    name: "Kathy Horn",
+    firstName: "Kathy",
+    title: "Creative Director / Copywriter",
+    roleCategory: "leadership",
+    accountsLed: ["convergix"],
+  }),
+}));
+
+vi.mock("@/lib/runway/bot-context", () => ({
+  buildBotSystemPrompt: vi.fn().mockReturnValue("mocked system prompt"),
 }));
 
 describe("handleDirectMessage", () => {
@@ -97,13 +108,17 @@ describe("handleDirectMessage", () => {
     (ops.getTeamMemberBySlackId as ReturnType<typeof vi.fn>).mockResolvedValue(
       null
     );
+    (ops.getTeamMemberRecordBySlackId as ReturnType<typeof vi.fn>).mockResolvedValue(
+      null
+    );
+
+    const botContext = await import("@/lib/runway/bot-context");
 
     const { handleDirectMessage } = await import("./bot");
     await handleDirectMessage("U_UNKNOWN", "D67890", "hello", "ts123");
 
-    // Check that generateText was called with system prompt containing "Unknown team member"
-    const call = (generateText as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(call.system).toContain("Unknown team member");
+    // Check that buildBotSystemPrompt was called with null team member
+    expect(botContext.buildBotSystemPrompt).toHaveBeenCalledWith(null, expect.any(Date));
   });
 
   it("uses Haiku model", async () => {
@@ -175,25 +190,50 @@ describe("handleDirectMessage", () => {
   });
 });
 
-describe("buildBotSystemPrompt", () => {
-  it("includes the user's name", async () => {
-    const { buildBotSystemPrompt } = await import("./bot");
-    const prompt = buildBotSystemPrompt("Kathy Horn");
-    expect(prompt).toContain("Kathy Horn");
+describe("buildBotSystemPrompt integration", () => {
+  it("calls buildBotSystemPrompt with team member record and date", async () => {
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: "response",
+    });
+
+    const ops = await import("@/lib/runway/operations");
+    // Ensure mock returns a record (may have been overridden by prior tests)
+    (ops.getTeamMemberRecordBySlackId as ReturnType<typeof vi.fn>).mockResolvedValue({
+      name: "Kathy Horn",
+      firstName: "Kathy",
+      title: "Creative Director / Copywriter",
+      roleCategory: "leadership",
+      accountsLed: ["convergix"],
+    });
+
+    const botContext = await import("@/lib/runway/bot-context");
+
+    const { handleDirectMessage } = await import("./bot");
+    await handleDirectMessage("U12345", "D67890", "hello", "ts123");
+
+    expect(botContext.buildBotSystemPrompt).toHaveBeenCalledWith(
+      {
+        name: "Kathy Horn",
+        firstName: "Kathy",
+        title: "Creative Director / Copywriter",
+        roleCategory: "leadership",
+        accountsLed: ["convergix"],
+      },
+      expect.any(Date)
+    );
   });
 
-  it("includes status values", async () => {
-    const { buildBotSystemPrompt } = await import("./bot");
-    const prompt = buildBotSystemPrompt("Jason");
-    expect(prompt).toContain("in-production");
-    expect(prompt).toContain("awaiting-client");
-    expect(prompt).toContain("blocked");
-    expect(prompt).toContain("completed");
-  });
+  it("uses the prompt returned by buildBotSystemPrompt", async () => {
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: "response",
+    });
 
-  it("prohibits em dashes", async () => {
-    const { buildBotSystemPrompt } = await import("./bot");
-    const prompt = buildBotSystemPrompt("Jason");
-    expect(prompt).toContain("Never use em dashes");
+    const { handleDirectMessage } = await import("./bot");
+    await handleDirectMessage("U12345", "D67890", "hello", "ts123");
+
+    const call = (generateText as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.system).toBe("mocked system prompt");
   });
 });
