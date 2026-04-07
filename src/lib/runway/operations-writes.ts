@@ -13,11 +13,10 @@ import { eq } from "drizzle-orm";
 import {
   generateIdempotencyKey,
   generateId,
-  getClientBySlug,
+  getClientOrFail,
   findProjectByFuzzyName,
   getProjectsForClient,
   checkIdempotency,
-  clientNotFoundError,
 } from "./operations";
 
 // ── Types ────────────────────────────────────────────────
@@ -42,8 +41,9 @@ export async function updateProjectStatus(
   const { clientSlug, projectName, newStatus, updatedBy, notes } = params;
   const db = getRunwayDb();
 
-  const client = await getClientBySlug(clientSlug);
-  if (!client) return clientNotFoundError(clientSlug);
+  const lookup = await getClientOrFail(clientSlug);
+  if (!lookup.ok) return lookup;
+  const { client } = lookup;
 
   const project = await findProjectByFuzzyName(client.id, projectName);
   if (!project) {

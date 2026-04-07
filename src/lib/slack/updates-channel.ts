@@ -13,6 +13,7 @@
  */
 
 import { getSlackClient, getUpdatesChannelId } from "./client";
+import { MONTH_NAMES_SHORT } from "@/lib/runway/date-constants";
 
 interface UpdatePost {
   clientName: string;
@@ -26,11 +27,7 @@ interface UpdatePost {
  * Example: "Apr. 5 2026 at 10:14 AM"
  */
 export function formatTimestamp(date: Date): string {
-  const months = [
-    "Jan.", "Feb.", "Mar.", "Apr.", "May", "Jun.",
-    "Jul.", "Aug.", "Sep.", "Oct.", "Nov.", "Dec.",
-  ];
-  const month = months[date.getMonth()];
+  const month = MONTH_NAMES_SHORT[date.getMonth()];
   const day = date.getDate();
   const year = date.getFullYear();
   const hours = date.getHours();

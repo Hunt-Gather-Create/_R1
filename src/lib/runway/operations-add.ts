@@ -10,10 +10,9 @@ import { projects, updates } from "@/lib/db/runway-schema";
 import {
   generateIdempotencyKey,
   generateId,
-  getClientBySlug,
+  getClientOrFail,
   findProjectByFuzzyName,
   checkIdempotency,
-  clientNotFoundError,
 } from "./operations";
 import type { OperationResult } from "./operations-writes";
 
@@ -48,8 +47,9 @@ export async function addProject(
   } = params;
   const db = getRunwayDb();
 
-  const client = await getClientBySlug(clientSlug);
-  if (!client) return clientNotFoundError(clientSlug);
+  const lookup = await getClientOrFail(clientSlug);
+  if (!lookup.ok) return lookup;
+  const { client } = lookup;
 
   const idemKey = generateIdempotencyKey(
     "add-project",
@@ -98,8 +98,9 @@ export async function addUpdate(
   const { clientSlug, projectName, summary, updatedBy } = params;
   const db = getRunwayDb();
 
-  const client = await getClientBySlug(clientSlug);
-  if (!client) return clientNotFoundError(clientSlug);
+  const lookup = await getClientOrFail(clientSlug);
+  if (!lookup.ok) return lookup;
+  const { client } = lookup;
 
   let projectId: string | null = null;
   let projectMatch: string | undefined;

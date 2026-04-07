@@ -9,13 +9,8 @@
 import { TEAM_REFERENCES } from "./reference/team";
 import { CLIENT_REFERENCES } from "./reference/clients";
 import { getMonday } from "@/app/runway/date-utils";
+import { DAY_NAMES, MONTH_NAMES } from "./date-constants";
 import type { TeamMemberRecord } from "./operations-context";
-
-const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
 
 function formatDate(date: Date): string {
   const day = DAY_NAMES[date.getDay()];

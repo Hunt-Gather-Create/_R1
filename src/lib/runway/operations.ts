@@ -44,6 +44,21 @@ export function clientNotFoundError(clientSlug: string) {
 }
 
 /**
+ * Look up a client by slug, returning the row or a standard error result.
+ * Replaces the repeated `getClientBySlug(slug) + if (!client) return clientNotFoundError(slug)` pattern.
+ */
+export async function getClientOrFail(
+  clientSlug: string
+): Promise<
+  | { ok: true; client: ClientRow }
+  | { ok: false; error: string }
+> {
+  const client = await getClientBySlug(clientSlug);
+  if (!client) return clientNotFoundError(clientSlug);
+  return { ok: true, client };
+}
+
+/**
  * Case-insensitive substring match.
  * Returns true if `value` contains `search` (ignoring case).
  */

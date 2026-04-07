@@ -35,13 +35,16 @@ const mockCheckIdempotency = vi.fn();
 vi.mock("./operations", () => ({
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
   generateId: () => "mock-id-12345678901234",
-  getClientBySlug: (...args: unknown[]) => mockGetClientBySlug(...args),
+  getClientOrFail: async (slug: string) => {
+    const client = await mockGetClientBySlug(slug);
+    if (!client) return { ok: false, error: `Client '${slug}' not found.` };
+    return { ok: true, client };
+  },
   findProjectByFuzzyName: (...args: unknown[]) =>
     mockFindProjectByFuzzyName(...args),
   getProjectsForClient: (...args: unknown[]) =>
     mockGetProjectsForClient(...args),
   checkIdempotency: (...args: unknown[]) => mockCheckIdempotency(...args),
-  clientNotFoundError: (slug: string) => ({ ok: false, error: `Client '${slug}' not found.` }),
 }));
 
 const client = { id: "c1", name: "Convergix", slug: "convergix" };
