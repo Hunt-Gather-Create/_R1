@@ -32,6 +32,7 @@ export interface WeekDayData {
     title: string;
     account: string;
     owner?: string;
+    resources?: string;
     type: string;
     notes?: string;
   }[];
@@ -42,6 +43,7 @@ export interface PipelineData {
   title: string;
   value: string;
   status: string;
+  owner?: string;
   waitingOn?: string;
   notes?: string;
 }
@@ -252,48 +254,48 @@ export const thisWeek: WeekDayData[] = [
   {
     date: "2026-04-06", // Monday
     items: [
-      { title: "CDS Messaging & Pillars R1", account: "Convergix", owner: "Kathy/Lane", type: "delivery", notes: "Gate for all CDS content. R1 goes to Daniel Tue 4/7." },
-      { title: "CDS Creative Wrapper R1", account: "Convergix", owner: "Roz/Lane", type: "delivery", notes: "Independent track, on target" },
-      { title: "New Capacity — JJ Revisions", account: "Convergix", owner: "Roz/Lane", type: "review", notes: "Lay in JJ feedback, 2 slides left" },
-      { title: "Events Page — Kathy starts copy", account: "Convergix", owner: "Kathy", type: "delivery", notes: "AIST first week of May most urgent" },
-      { title: "Social: Slack Daniel for 4/7-4/9 approvals", account: "Convergix", owner: "Ronan", type: "approval" },
-      { title: "Chase Daniel: Rockwell + TI articles", account: "Convergix", owner: "Kathy", type: "review" },
-      { title: "AARP API meeting", account: "Soundly", type: "kickoff", notes: "Holds until SOW signed" },
-      { title: "AARP Creative KO", account: "Soundly", type: "kickoff", notes: "Holds until SOW signed" },
-      { title: "TAP Travel Invoice — Allie to send", account: "TAP", owner: "Jason", type: "deadline", notes: "$2,723 actuals. Jason approved." },
+      { title: "CDS Messaging & Pillars R1 (Gate for all CDS content)", account: "Convergix", owner: "Kathy", resources: "Kathy, Lane", type: "delivery", notes: "Next Step: R1 goes to Daniel Tue 4/7." },
+      { title: "CDS Creative Wrapper R1", account: "Convergix", owner: "Kathy", resources: "Roz", type: "delivery", notes: "Next Step: Design Creative Wrapper - Due 4/7" },
+      { title: "New Capacity — JJ Revisions", account: "Convergix", owner: "Kathy", resources: "Roz", type: "review", notes: "Next Step: Creative to lay in JJ feedback, 2 slides left" },
+      { title: "Events Page Copy", account: "Convergix", owner: "Kathy", resources: "Kathy", type: "delivery", notes: "Next Step: Write Copy. AIST first week of May most urgent" },
+      { title: "Social Post Approval", account: "Convergix", owner: "Kathy", resources: "Ronan", type: "approval", notes: "Next Step: Slack Daniel for 4/7-4/9 approvals" },
+      { title: "Rockwell + TI Articles", account: "Convergix", owner: "Kathy", resources: "Kathy", type: "review", notes: "Next Step: Follow up with Daniel" },
+      { title: "AARP API meeting", account: "Soundly", owner: "Jill", resources: "Josefina", type: "kickoff", notes: "Next Step: Blocked - On Hold until SOW signed" },
+      { title: "AARP Creative KO", account: "Soundly", owner: "Jill", resources: "Lane", type: "kickoff", notes: "Next Step: Blocked - On Hold until SOW signed" },
+      { title: "TAP Travel Invoice", account: "TAP", owner: "Jason", resources: "Allie", type: "deadline", notes: "Next Step: Allie to send Travel Actuals to Client" },
     ],
   },
   {
     date: "2026-04-07", // Tuesday
     items: [
-      { title: "CDS Messaging R1 to Daniel", account: "Convergix", owner: "Kathy", type: "deadline", notes: "Daniel reviews, feedback by 4/11" },
-      { title: "New Capacity — deliver to JJ", account: "Convergix", owner: "Roz/Lane", type: "delivery" },
-      { title: "LPPC copy expected (Permitting + FEMA)", account: "LPPC", type: "deadline", notes: "Design + dev starts after copy arrives" },
-      { title: "TAP Requirements Doc (SRD) to client", account: "TAP", owner: "Tim/Jason", type: "delivery", notes: "Tim merging two versions into final" },
+      { title: "CDS Messaging", account: "Convergix", owner: "Kathy", resources: "Kathy", type: "deadline", notes: "Next Step: Send R1 to Daniel to review, feedback by 4/11" },
+      { title: "New Capacity Content", account: "Convergix", owner: "Kathy", resources: "Roz", type: "delivery", notes: "Next Step: Deliver to JJ" },
+      { title: "LPPC copy expected (Permitting + FEMA)", account: "LPPC", owner: "Ronan", resources: "Lane, Leslie", type: "deadline", notes: "Next Step: Design + dev starts after copy arrives" },
+      { title: "Route TAP Requirements Doc", account: "TAP", owner: "Jason", resources: "Tim", type: "delivery", notes: "Next Step: Tim merging two versions into final, deliver to Kim" },
     ],
   },
   {
     date: "2026-04-08", // Wednesday
     items: [
-      { title: "Social designs back from Roz", account: "Convergix", owner: "Roz", type: "delivery", notes: "For Thursday status review" },
-      { title: "New Capacity finalizes → Brand Guide v2 unblocked", account: "Convergix", owner: "Lane", type: "review" },
-      { title: "Events Page copy to Leslie", account: "Convergix", owner: "Kathy", type: "deadline", notes: "Kathy writing Mon-Wed, handoff to dev" },
-      { title: "Bonterra — Paige presenting designs", account: "Bonterra", owner: "Paige", type: "delivery", notes: "Impact Report design presentation" },
-      { title: "HDL Site Copy Review", account: "High Desert Law", type: "review", notes: "HDL to review site copy" },
+      { title: "Route Social designs", account: "Convergix", owner: "Kathy", resources: "Roz", type: "delivery", notes: "Next Step: Show client on Thursday status review" },
+      { title: "New Capacity", account: "Convergix", owner: "Kathy", resources: "Lane", type: "review", notes: "Next Step: Finalize then → Brand Guide v2 unblocked" },
+      { title: "Copy Updates for Events Page", account: "Convergix", owner: "Kathy", resources: "Kathy, Leslie", type: "deadline", notes: "Next Step: Kathy writing Mon-Wed, handoff to Leslie to lay into Dev" },
+      { title: "Bonterra — Paige presenting designs", account: "Bonterra", owner: "Jill", resources: "Paige", type: "delivery", notes: "Next Step: Impact Report design presentation" },
+      { title: "HDL Site Copy Review", account: "High Desert Law", owner: "Jill", resources: "Chris", type: "review", notes: "Next Step: HDL to review site copy (Risk: Very behind schedule, blocking delivery)" },
     ],
   },
   {
     date: "2026-04-09", // Thursday
     items: [
-      { title: "Weekly Status Call", account: "Convergix", owner: "Ronan", type: "review", notes: "Raise stale items: Corp Brochure, Life Sci, Templates, Playbook" },
-      { title: "Social posts reviewed at status", account: "Convergix", owner: "Roz/Ronan", type: "review" },
+      { title: "Raise stale items: Corp Brochure, Life Sci, Templates, Playbook", account: "Convergix", owner: "Kathy", resources: "Ronan", type: "review", notes: "Next Step: After status call with client, what is the update on these?" },
+      { title: "Social posts reviewed at status", account: "Convergix", owner: "Ronan", resources: "Roz", type: "review", notes: "Next Step: Awaiting client approval" },
     ],
   },
   {
     date: "2026-04-10", // Friday
     items: [
-      { title: "Daniel feedback deadline on CDS Messaging", account: "Convergix", type: "deadline", notes: "Daniel may miss Friday — follow up Monday if needed" },
-      { title: "Bonterra approval needed", account: "Bonterra", type: "deadline", notes: "Impact Report designs. Dev window starts after approval." },
+      { title: "Daniel feedback deadline on CDS Messaging", account: "Convergix", owner: "Kathy", resources: "Kathy", type: "deadline", notes: "Next Step: Awaiting copy approval (Risk: Daniel may miss Friday — follow up Monday 4/6 if needed)" },
+      { title: "Bonterra approval needed", account: "Bonterra", owner: "Jill", resources: "Lane", type: "deadline", notes: "Next Step: Client feedback on Impact Report designs. Dev window starts after approval." },
     ],
   },
 ];
@@ -304,83 +306,83 @@ export const upcoming: WeekDayData[] = [
   {
     date: "2026-04-14", // Monday w/o 4/14
     items: [
-      { title: "LPPC Map R2", account: "LPPC", owner: "Roz/Leslie", type: "delivery", notes: "Based on minor R1 feedback" },
-      { title: "CDS Messaging R2 (if feedback received)", account: "Convergix", type: "delivery" },
+      { title: "LPPC Map R2", account: "LPPC", owner: "Ronan", resources: "Roz, Leslie", type: "delivery", notes: "Next Step: Implement feedback based on minor R1 feedback" },
+      { title: "CDS Messaging R2 (if feedback received)", account: "Convergix", owner: "Kathy", resources: "Kathy", type: "delivery", notes: "Next Step: Write Copy (Risk: Waiting on Feedback)" },
     ],
   },
   {
     date: "2026-04-15", // Tuesday
     items: [
-      { title: "HDL Full Site Design — Civ delivers", account: "High Desert Law", type: "delivery", notes: "Civilization delivers full site design" },
-      { title: "HDL Photo Shoot Prep", account: "High Desert Law", type: "delivery", notes: "Production book + shot list" },
+      { title: "HDL Full Site Design — Civ delivers", account: "High Desert Law", owner: "Jill", resources: "Lane", type: "delivery", notes: "Next Step: Civilization delivers full site design (Risk: Blocked by copy edits)" },
+      { title: "HDL Photo Shoot Prep", account: "High Desert Law", owner: "Jill", resources: "Unknown", type: "delivery", notes: "Next Step: Production book + shot list (Risk: Shoot in May, outside SOW Timeline)" },
     ],
   },
   {
     date: "2026-04-20", // Monday w/o 4/20
     items: [
-      { title: "Fanuc Award Article enters schedule", account: "Convergix", owner: "Lane/Kathy", type: "kickoff", notes: "Event 4/28" },
-      { title: "CDS Social Posts KO", account: "Convergix", type: "kickoff", notes: "If messaging approved" },
+      { title: "Fanuc Award Article enters schedule", account: "Convergix", owner: "Kathy", resources: "Lane, Kathy", type: "kickoff", notes: "Next Step: Write article (Risk: event is 4/28)" },
+      { title: "CDS Social Posts KO", account: "Convergix", owner: "Kathy", resources: "Kathy, Lane", type: "kickoff", notes: "Next Step: Waiting on messaging to be approved." },
     ],
   },
   {
     date: "2026-04-21", // Tuesday
     items: [
-      { title: "Soundly iFrame launch (evening)", account: "Soundly", owner: "Leslie", type: "launch", notes: "Live 4/22. Risk is on UHG timeline." },
+      { title: "Soundly iFrame launch (evening)", account: "Soundly", owner: "Jill", resources: "Leslie", type: "launch", notes: "Next Step: Waiting on client for feedback. Goes Live 4/22 (Risk: On UHG timeline)" },
     ],
   },
   {
     date: "2026-04-22", // Wednesday
     items: [
-      { title: "HDL Full Site Design Approval", account: "High Desert Law", type: "deadline", notes: "HDL approves. Copy revisions to move to dev." },
+      { title: "HDL Full Site Design Approval", account: "High Desert Law", owner: "Jill", resources: "Chris, Lane, Leslie", type: "deadline", notes: "Next Step: Lock on copy and move to development" },
     ],
   },
   {
     date: "2026-04-23", // Thursday
     items: [
-      { title: "Bonterra Impact Report — code handoff", account: "Bonterra", type: "deadline", notes: "Hard deadline. Client was 3 weeks late on content." },
+      { title: "Bonterra Impact Report — code handoff", account: "Bonterra", owner: "Jill", resources: "Leslie", type: "deadline", notes: "Next Step: Impact Report K/O to Dev (Risk: Hard client deadline. Client was 3 weeks late on content)" },
     ],
   },
   {
     date: "2026-04-25", // Friday
     items: [
-      { title: "CDS Landing Page KO", account: "Convergix", type: "kickoff", notes: "If messaging approved" },
+      { title: "CDS Landing Page KO", account: "Convergix", owner: "Kathy", resources: "Lane", type: "kickoff", notes: "Next Step: Kick of Landing Page (Risk: If messaging is approved)" },
     ],
   },
   {
     date: "2026-04-29", // Tuesday
     items: [
-      { title: "Disconnect Google Sheet from Dave ManyChat", account: "Dave Asprey", owner: "Jason", type: "deadline", notes: "Clean cutoff task" },
+      { title: "Disconnect Google Sheet from Dave ManyChat", account: "Dave Asprey", owner: "Jason", resources: "Jason", type: "deadline", notes: "Next Step: Disconnect Drive integration from Dave's ManyChat" },
     ],
   },
   {
     date: "2026-04-30", // Wed — end of April
     items: [
-      { title: "Hopdoddy Brand Refresh Website launch", account: "Hopdoddy", owner: "Leslie", type: "launch", notes: "National Burger Day timing" },
+      { title: "Hopdoddy Brand Refresh Website launch", account: "Hopdoddy", owner: "Ronan", resources: "Leslie", type: "launch", notes: "Next Step: Launch Hopdoddy Brand Refresh updates (Risk: Hard deadline for National Burger Day)" },
     ],
   },
   {
     date: "2026-05-01", // Thursday
     items: [
-      { title: "HDL Start Development", account: "High Desert Law", type: "kickoff", notes: "After design approval" },
+      { title: "HDL Start Development", account: "High Desert Law", owner: "Jill", resources: "Leslie", type: "kickoff", notes: "Next Step: Development K/O (Risk: Blocked by design approval)" },
     ],
   },
   {
     date: "2026-05-04", // Monday w/o 5/4
     items: [
-      { title: "LPPC Map + Website Launch", account: "LPPC", owner: "Leslie", type: "launch" },
-      { title: "AIST tradeshow (Convergix)", account: "Convergix", type: "deadline", notes: "Events page must be live" },
+      { title: "LPPC Map + Website Launch", account: "LPPC", owner: "Ronan", resources: "Leslie", type: "launch", notes: "Next Step: Launch LPPC Map + Website" },
+      { title: "AIST tradeshow", account: "Convergix", owner: "Kathy", resources: "Leslie", type: "deadline", notes: "Next Step: Launch Events page (Risk: must be live by ???)" },
     ],
   },
   {
     date: "2026-05-05", // Tuesday
     items: [
-      { title: "CDS Case Study + Brochure KO", account: "Convergix", type: "kickoff", notes: "If messaging approved" },
+      { title: "CDS Case Study + Brochure KO", account: "Convergix", owner: "Kathy", resources: "Lane", type: "kickoff", notes: "Next Step: Kickoff Creative (Risk: If messaging approved)" },
     ],
   },
   {
     date: "2026-05-11", // Sunday
     items: [
-      { title: "Bonterra Impact Report — publish", account: "Bonterra", type: "deadline", notes: "Tight given compressed timeline" },
+      { title: "Bonterra Impact Report — Go Live", account: "Bonterra", owner: "Jill", resources: "Leslie", type: "deadline", notes: "Next Step: Launch Impact Report (Risk: tight given compressed timeline)" },
     ],
   },
 ];

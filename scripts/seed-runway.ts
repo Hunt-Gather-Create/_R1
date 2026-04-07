@@ -151,6 +151,7 @@ async function seed() {
         title: item.title,
         category: item.type,
         owner: item.owner ?? null,
+        resources: item.resources ?? null,
         notes: item.notes ?? null,
         sortOrder: i,
       });
@@ -182,15 +183,18 @@ async function seed() {
 
   // ── 5. Team Members ─────────────────────────────────────────
   const team = [
-    { name: "Kathy Horn", firstName: "Kathy", title: "Creative Director / Copywriter", roleCategory: "leadership", accountsLed: ["convergix"], channelPurpose: "Creative, copy, client relationships" },
-    { name: "Jason Burks", firstName: "Jason", title: "TAP / Strategy", roleCategory: "leadership", accountsLed: ["tap"], channelPurpose: "Strategy, operations, account management" },
-    { name: "Jill Runyon", firstName: "Jill", title: "Director of Client Experience", roleCategory: "am", accountsLed: ["beyond-petro", "bonterra", "ag1", "edf", "abm"], channelPurpose: "Beyond Petro, AM accounts" },
-    { name: "Allison Shannon", firstName: "Allison", title: "Account Manager", roleCategory: "am", accountsLed: ["wilsonart", "dave-asprey"], channelPurpose: "Wilsonart, AM accounts" },
-    { name: "Lane Jordan", firstName: "Lane", title: "Creative Director", roleCategory: "creative", accountsLed: [], channelPurpose: "Brand, design direction" },
-    { name: "Roz", firstName: "Roz", title: "Designer", roleCategory: "creative", accountsLed: [], channelPurpose: "Design execution" },
-    { name: "Leslie Crosby", firstName: "Leslie", title: "Developer", roleCategory: "dev", accountsLed: [], channelPurpose: "Dev, web builds" },
-    { name: "Ronan Lane", firstName: "Ronan", title: "Senior PM", roleCategory: "pm", accountsLed: ["hopdoddy", "lppc", "soundly"], channelPurpose: "Project management, status tracking" },
-    { name: "Sami Blumenthal", firstName: "Sami", title: "Community Manager", roleCategory: "community", accountsLed: [], channelPurpose: "Community management" },
+    { name: "Kathy Horn", firstName: "Kathy", slackUserId: "U11NL4SBS", title: "Co-Founder / Executive Creative Director", roleCategory: "leadership", accountsLed: ["convergix"], channelPurpose: "Creative, copy, client relationships" },
+    { name: "Jason Burks", firstName: "Jason", slackUserId: "U1HH41TFX", title: "Co-Founder / Development Director", roleCategory: "leadership", accountsLed: ["tap"], channelPurpose: "Strategy, operations, account management" },
+    { name: "Jill Runyon", firstName: "Jill", slackUserId: "U08TZ6ZDEUF", title: "Director of Client Experience", roleCategory: "am", accountsLed: ["beyond-petro", "bonterra", "ag1", "edf", "abm"], channelPurpose: "Beyond Petro, AM accounts" },
+    { name: "Allison Shannon", firstName: "Allison", slackUserId: "U06BA311N92", title: "Strategy Director / Sr. Account Manager", roleCategory: "am", accountsLed: ["wilsonart", "dave-asprey"], channelPurpose: "Wilsonart, AM accounts" },
+    { name: "Lane Jordan", firstName: "Lane", slackUserId: "U03F7MED8F8", title: "Creative Director", roleCategory: "creative", accountsLed: [], channelPurpose: "Brand, design direction" },
+    { name: "Roz", firstName: "Roz", slackUserId: "", title: "Designer", roleCategory: "creative", accountsLed: [], channelPurpose: "Design execution" },
+    { name: "Leslie Crosby", firstName: "Leslie", slackUserId: "U01LJGMC1GV", title: "Sr. Frontend Dev / Technical PM", roleCategory: "dev", accountsLed: [], channelPurpose: "Dev, web builds" },
+    { name: "Ronan Lane", firstName: "Ronan", slackUserId: "", title: "Senior PM", roleCategory: "pm", accountsLed: ["hopdoddy", "lppc", "soundly"], channelPurpose: "Project management, status tracking" },
+    { name: "Sami Blumenthal", firstName: "Sami", slackUserId: "U0AFM4FG87P", title: "Community Manager", roleCategory: "community", accountsLed: [], channelPurpose: "Community management" },
+    { name: "Tim Warren", firstName: "Tim", slackUserId: "U016N17D9KR", title: "Director of AI", roleCategory: "dev", accountsLed: [], channelPurpose: "AI, development" },
+    { name: "Chris", firstName: "Chris", slackUserId: "", title: "Copywriter (HDL)", roleCategory: "contractor", accountsLed: [], channelPurpose: "HDL copy" },
+    { name: "Josefina", firstName: "Josefina", slackUserId: "", title: "Contractor (Soundly)", roleCategory: "contractor", accountsLed: [], channelPurpose: "Soundly contractor" },
   ];
 
   for (const member of team) {
@@ -198,6 +202,7 @@ async function seed() {
       id: generateId(),
       name: member.name,
       firstName: member.firstName,
+      slackUserId: member.slackUserId || undefined,
       title: member.title,
       roleCategory: member.roleCategory,
       accountsLed: JSON.stringify(member.accountsLed),
