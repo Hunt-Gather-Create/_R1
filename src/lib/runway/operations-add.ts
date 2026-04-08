@@ -119,7 +119,11 @@ export async function addUpdate(
   );
 
   if (await checkIdempotency(idemKey)) {
-    return { ok: true, message: "Update already logged (duplicate request)." };
+    return {
+      ok: true,
+      message: "Update already logged (duplicate request).",
+      data: { clientName: client.name, projectName: projectMatch },
+    };
   }
 
   await db.insert(updates).values({
