@@ -44,6 +44,73 @@ const DAY_NAMES: Record<string, string> = {
   "6": "saturday",
 };
 
+/**
+ * Extract the "base name" of a title — the part before any parenthetical,
+ * em dash, or special delimiter. E.g.:
+ * "New Capacity (PPT, brochure, one-pager)" → "new capacity"
+ * "CDS Messaging & Pillars R1" → "cds messaging & pillars r1"
+ */
+function baseName(s: string): string {
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/\s*[(\u2014—].*$/, "") // strip from first ( or em dash onwards
+    .trim();
+}
+
+/**
+ * Find a matching projectId for a week item by fuzzy-matching its title
+ * against the client's projects.
+ *
+ * Match strategies (tried in order, first match wins):
+ * 1. Full project name is contained in the week item title
+ * 2. Week item title is contained in the full project name (min 8 chars to avoid false positives)
+ * 3. Base name of the project (before parenthetical) matches the start of the week item base name
+ *
+ * Returns null for standalone tasks with no project match.
+ */
+export function findProjectIdForWeekItem(
+  clientId: string,
+  title: string,
+  projectsByClient: Map<string, { id: string; name: string }[]>
+): string | null {
+  const clientProjects = projectsByClient.get(clientId);
+  if (!clientProjects) return null;
+
+  const normalizedTitle = title.toLowerCase().trim();
+  const titleBase = baseName(title);
+
+  // Try each project — longest name first to prefer more specific matches
+  const sorted = [...clientProjects].sort(
+    (a, b) => b.name.length - a.name.length
+  );
+
+  for (const project of sorted) {
+    const normalizedName = project.name.toLowerCase().trim();
+
+    // Strategy 1: Full project name contained in week item title
+    if (normalizedTitle.includes(normalizedName)) {
+      return project.id;
+    }
+
+    // Strategy 2: Week item title contained in project name (min 8 chars)
+    if (normalizedTitle.length >= 8 && normalizedName.includes(normalizedTitle)) {
+      return project.id;
+    }
+
+    // Strategy 3: Base name prefix match (min 8 chars to avoid "CDS" matching everything)
+    const projectBase = baseName(project.name);
+    if (
+      projectBase.length >= 8 &&
+      (titleBase.startsWith(projectBase) || projectBase.startsWith(titleBase))
+    ) {
+      return project.id;
+    }
+  }
+
+  return null;
+}
+
 async function seed() {
   console.log("Seeding Runway database...");
   console.log(`Database: ${url}`);
@@ -81,6 +148,7 @@ async function seed() {
   // ── 2. Projects ─────────────────────────────────────────────
   let projectCount = 0;
   const projectMap = new Map<string, string>(); // "slug:projectTitle" -> id
+  const projectsByClient = new Map<string, { id: string; name: string }[]>(); // clientId -> [{id, name}]
 
   for (const account of accounts) {
     const clientId = clientMap.get(account.slug)!;
@@ -89,6 +157,11 @@ async function seed() {
       const item = account.items[i];
       const id = generateId();
       projectMap.set(`${account.slug}:${item.title}`, id);
+
+      // Build lookup for week item linking
+      const list = projectsByClient.get(clientId) ?? [];
+      list.push({ id, name: item.title });
+      projectsByClient.set(clientId, list);
 
       await db.insert(projects).values({
         id,
@@ -110,6 +183,8 @@ async function seed() {
 
   // ── 3. Week Items ───────────────────────────────────────────
   let weekItemCount = 0;
+  let linkedCount = 0;
+  let unlinkedCount = 0;
 
   // Helper to find client ID by account name
   function findClientId(accountName: string): string | null {
@@ -126,9 +201,21 @@ async function seed() {
       const id = generateId();
       const clientId = findClientId(item.account);
 
+      // Try to link to a parent project
+      const projectId = clientId
+        ? findProjectIdForWeekItem(clientId, item.title, projectsByClient)
+        : null;
+
+      if (projectId) {
+        linkedCount++;
+      } else {
+        unlinkedCount++;
+      }
+
       await db.insert(weekItems).values({
         id,
         clientId,
+        projectId,
         dayOfWeek,
         weekOf,
         date: dayItems.date,
@@ -142,7 +229,7 @@ async function seed() {
       weekItemCount++;
     }
   }
-  console.log(`  Week Items: ${weekItemCount} inserted`);
+  console.log(`  Week Items: ${weekItemCount} inserted (${linkedCount} linked to projects, ${unlinkedCount} unlinked)`);
 
   // ── 4. Pipeline ─────────────────────────────────────────────
   for (let i = 0; i < pipeline.length; i++) {
@@ -198,7 +285,15 @@ async function seed() {
   console.log("\nSeed complete.");
 }
 
-seed().catch((err) => {
-  console.error("Seed failed:", err);
-  process.exit(1);
-});
+// Only run when executed directly (not when imported by tests)
+const isDirectExecution =
+  typeof process !== "undefined" &&
+  process.argv[1] &&
+  (process.argv[1].endsWith("seed-runway.ts") || process.argv[1].endsWith("seed-runway"));
+
+if (isDirectExecution) {
+  seed().catch((err) => {
+    console.error("Seed failed:", err);
+    process.exit(1);
+  });
+}
