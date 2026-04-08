@@ -59,9 +59,9 @@ All database reads and writes go through `src/lib/runway/operations*.ts`. No con
 | `operations.ts` | Shared queries (client cache, name map, fuzzy match), utilities (`groupBy`, `matchesSubstring`, `getClientOrFail`), re-exports from split modules |
 | `operations-reads.ts` | Barrel re-export for read operations (split into clients, week, pipeline modules) |
 | `operations-reads-clients.ts` | Client/project queries: clients with counts, filtered projects |
-| `operations-reads-week.ts` | Week items (filterable by owner/resource) and person workload |
+| `operations-reads-week.ts` | Week items (filterable by owner/resource), person workload, and `getLinkedWeekItems(projectId)` |
 | `operations-reads-pipeline.ts` | Pipeline data and stale items detection |
-| `operations-writes.ts` | Status updates with idempotency and audit logging |
+| `operations-writes.ts` | Status updates with idempotency, audit logging, and cascade to linked week items |
 | `operations-add.ts` | New projects and free-form updates |
 | `operations-context.ts` | Team members (with roleCategory/accountsLed), client contacts, update history |
 
@@ -77,6 +77,14 @@ All database reads and writes go through `src/lib/runway/operations*.ts`. No con
 - `matchesSubstring(value, search)` — case-insensitive substring match (used by read operations for owner/waitingOn filters)
 - `groupBy(items, keyFn)` — generic array grouping (used by reads and board queries)
 - `clientNotFoundError(slug)` — standard error result for missing clients
+- `CASCADE_STATUSES` — statuses that cascade from projects to linked week items: `completed`, `blocked`, `on-hold`
+- `TERMINAL_ITEM_STATUSES` — week item statuses that block cascade: `completed`, `canceled`
+
+### Status Cascade
+
+When a project status changes to a cascade status (`completed`, `blocked`, `on-hold`), linked week items automatically update to match. Week items already in a terminal state (`completed`, `canceled`) are left alone. Non-terminal project statuses (`in-production`, `awaiting-client`) do NOT cascade because individual week items may be at different stages.
+
+The cascade is implemented in `operations-writes.ts` using `getLinkedWeekItems(projectId)` from `operations-reads-week.ts`. The result includes a `cascadedItems: string[]` field listing which week item titles were updated. The bot surfaces this in its response and in the updates channel post.
 
 ### Idempotency
 
@@ -239,7 +247,7 @@ Defined in `src/lib/slack/bot-tools.ts`. Same operations as MCP but wrapped as A
 | `get_week_items` | Calendar items for a week, filterable by owner (accountable) or resource (doing the work) |
 | `get_person_workload` | Cross-client view of a person's projects and week items (searches both owner and resource fields) |
 | `get_client_contacts` | Contact names and roles for a client (from reference data) |
-| `update_project_status` | Change status + post to updates channel |
+| `update_project_status` | Change status + cascade to linked week items + post to updates channel |
 | `add_update` | Log free-form update + post to updates channel |
 
 ### Updates Channel
@@ -329,7 +337,7 @@ Requires `pnpm dev:inngest` (or `pnpm dev:all`) running alongside the dev server
 | `src/app/runway/components/needs-update-section.tsx` | Stale items urgency section |
 | `src/app/runway/components/status-badge.tsx` | Shared badge and label components |
 | `src/app/runway/data.ts` | Seed data (13 clients, typed exports) |
-| `scripts/seed-runway.ts` | Seed script (imports from date-utils) |
+| `scripts/seed-runway.ts` | Seed script (imports from date-utils, links week items to projects via `projectId` FK) |
 
 ## Related Documentation
 

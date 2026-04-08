@@ -1,7 +1,7 @@
 # brain-SESSION-START.md
 ## Round One: Project Management + Resource View
 **Civilization Agency — Internal Build**
-*Last updated: April 7, 2026*
+*Last updated: April 7, 2026 (evening)*
 
 ---
 
@@ -32,7 +32,7 @@ Full product intent lives in `brain-PRODUCT-VISION.md`.
 
 ## §2 Current Status and Next Actions
 
-**Status as of April 7, 2026:**
+**Status as of April 7, 2026 (evening):**
 
 | Item | Status |
 |---|---|
@@ -48,21 +48,24 @@ Full product intent lives in `brain-PRODUCT-VISION.md`.
 | **Phase 0: Deploy** | **Done** — Live at `runway.startround1.com/runway`. Tim deployed from `runway` branch (not main). Separate Vercel project. |
 | **Phase 0: Battle test** | **Done** — TV audit, 3 bugs fixed, BLOCKED styling added. PR #78 merged. 736 tests. |
 | **Phase 0: Data intake (Jill)** | **Done** — 6 new clients, existing clients updated, account leads mapped, DB re-seeded (13 clients, 77 projects, 39 week items, 7 pipeline items). |
-| **Phase 0: Slack integration** | **Done** — Event subscriptions configured, bot responds to DMs in production. Tested "what is due today for Convergix?" successfully. |
+| **Phase 0: Slack integration** | **Done** — Event subscriptions configured, bot responds to DMs in production. |
 | **Phase 0: UI improvements** | **Done** — PR #79 merged. Week dividers, card hierarchy, day column scrolling, By Account project grouping, Pipeline cleanup, auto-refresh, weekend merge. |
-| **Phase 0: Bot intelligence** | **Built** — on `feature/runway-bot-context`. Dynamic system prompt, reference data (clients.ts, team.ts), tool filters (owner, waitingOn), workload/contacts tools. Sonnet 4.6 model + query recipes. |
-| **Phase 0: AI flags panel** | **Built** — Fixed right sidebar: resource conflicts, stale items, deadlines, bottlenecks. Severity grouping (critical/warning/info). |
-| **Phase 0: Updates queue** | **Built** — Needs Update section above Today. Stale items from previous days that lack updates. |
-| **Phase 0: Account leads** | **Built** — Proactive follow-up after bot processes an update. Checks stale items on accounts the person leads. |
-| **Phase 0: Card standardization** | **Built** — DayItemCard uses MetadataLabel, consistent layout across views. Unlabeled dates removed from By Account. |
-| **Phase 0: Slack image support** | **Built** — Bot can receive image attachments from DMs, download via Slack API, pass as content blocks to Claude. |
-| **Phase 0: Owner/resource separation** | **In progress** — CC prompt written. Schema adds `resources` to weekItems/projects, `owner` to pipeline. All 39 week items triaged. |
-| **Phase 0: Bot testing** | **In progress** — Identity works, "my plate today" works (Sonnet). Date bug fixed. Remaining: nickname resolution, contacts, pipeline, writes, images, re-test with resource filters. |
+| **Phase 0: Bot intelligence** | **Done** — Dynamic system prompt with query recipes, reference data (clients.ts, team.ts), tool filters (owner, resource, waitingOn), workload/contacts tools. Sonnet 4.6 model. Morning briefing pattern. |
+| **Phase 0: AI flags panel** | **Done** — Fixed right sidebar: resource conflicts, stale items, deadlines, bottlenecks. Severity grouping (critical/warning/info). |
+| **Phase 0: Updates queue** | **Done** — Needs Update section above Today. Stale items from previous days that lack updates. |
+| **Phase 0: Account leads** | **Done** — Proactive follow-up after bot processes an update. Checks stale items on accounts the person leads. |
+| **Phase 0: Card standardization** | **Done** — DayItemCard uses MetadataLabel, consistent layout across views. Unlabeled dates removed from By Account. |
+| **Phase 0: Slack image support** | **Done** — Bot receives image attachments from DMs, downloads via Slack API, passes as content blocks to Claude. `files:read` scope added. |
+| **Phase 0: Owner/resource separation** | **Done** — Schema has `resources` on weekItems/projects, `owner` on pipeline. All 39 week items triaged with owner/resource assignments. Bot tools and query recipes updated. |
+| **Phase 0: Updates channel** | **Done** — Formatted posts to private Slack channel on every write. Fixed idempotency bug that was swallowing `data` on retries. Bot added to channel. |
+| **Phase 0: Bot testing** | **Done** — Full QA pass: identity, date context, "my plate" morning briefing, CGX queries, pipeline, writes with updates channel post, image attachments, client contacts. All passing on Sonnet 4.6. |
+| **Phase 0: Pipeline status overhaul** | **Done** — CC ran prompt. Lifecycle: scoping, drafting, sow-sent, verbal, signed + at-risk flag. |
+| **Phase 0: Status cascade** | **In progress** — CC running prompt. Project status changes cascade to linked week items (completed/blocked/on-hold). Seed script links weekItems to projects via fuzzy matching. |
 | Phase 0: Data intake (Allison, Ronan, Jason) | Not started — QA questions stockpiled. |
 | User stories (4-pass) | Not started — next after Phase 0 ships |
 | Full product `/plan` | Not started |
 
-**Immediate next action:** Run CC prompt for owner/resource separation (docs/tmp/cc-prompt-resources.md). After CC completes, restart dev server and re-test Slack bot locally (ngrok still running). Then continue bot test plan: nickname resolution, contacts, pipeline, writes, images, proactive follow-up. Create PR for `feature/runway-bot-context` targeting `upstream/runway`. Swap Slack Event URL back to prod when testing done.
+**Immediate next action:** Verify status cascade CC output. Test cascade locally. Swap Slack Event URL back to production (`https://runway.startround1.com/api/slack/events`). Create PR for `feature/runway-bot-context` targeting `upstream/runway`. Remaining QA sessions: Allison, Ronan, Jason. Thursday 4/9: review client reference data.
 
 ---
 
@@ -83,7 +86,7 @@ Runway is Civilization Agency's triage tool. It puts everything in flight, waiti
 All three access paths (Slack bot, MCP server, board) share a single operations layer. No duplicated DB logic.
 
 ```
-Slack DM → webhook → HMAC verify → Inngest → AI bot (Haiku) → shared operations → Turso DB
+Slack DM → webhook → HMAC verify → Inngest → AI bot (Sonnet) → shared operations → Turso DB
                                                                          ↑
 MCP clients (Claude Code, Open Brain) → bearer auth → MCP server → shared operations
                                                                          ↓
@@ -149,19 +152,23 @@ Daniel (Convergix, primary), Nicole (Convergix), Tom (LPPC), Blake Cadwell (Soun
 
 **Step 6: Deploy** — Done. Live at `runway.startround1.com/runway`. Tim deployed from `runway` branch as a separate Vercel project (not main). PRs target `runway` branch on `Hunt-Gather-Create/_R1`. `upstream` remote configured locally.
 
-**Step 6.5: Slack integration** — Done. Event Subscriptions configured, bot responds in production. Currently pointed at ngrok for local testing.
+**Step 6.5: Slack integration** — Done. Event Subscriptions configured, bot responds in production. Event URL currently pointed at ngrok for local testing -- swap back to production before closing out.
 
-**Step 7: Data intake** — Jill's intake done (PR #78). Remaining: Allison (Wilsonart, Dave wind-down), Ronan (Hopdoddy retainer burn, LPPC, Soundly AARP signing urgency), Jason (TAP deeper interview). QA questions stockpiled for each.
+**Step 7: Data intake** — Jill's intake done (PR #78). Remaining: Allison (Wilsonart, Dave wind-down), Ronan (Hopdoddy retainer burn, LPPC, Soundly AARP signing urgency), Jason (TAP deeper interview). QA questions stockpiled for each. Thursday 4/9: review client reference data.
 
-**Step 8.5-8.8:** All built on `feature/runway-bot-context` (21 commits, 950 tests). Bot intelligence, AI flags panel, updates queue, account leads, card standardization, Slack image support, responsive cleanup. Testing in progress. PR pending.
+**Step 8-8.8:** All built and tested on `feature/runway-bot-context` (40+ commits, 1017+ tests). PR pending.
 
-**Step 8: UI improvements** — 18 items from TV audit: week dividers in Upcoming, card hierarchy reorder, By Account project grouping, Pipeline structure (Drafting label, Next Steps, Waiting On specificity), auto-refresh, kiosk mode, remove "Live from database" subtitle.
-
-**Step 8.5: AI Flags Panel** — Fixed sidebar on TV showing AI-generated flags: resource conflicts, stale items, upcoming deadlines, bottlenecks. Phase 0 proof of concept for the full product's resourcing layer.
-
-**Step 8.6: Updates Queue** — Day rollover: unupdated items from yesterday bubble up as "Needs Update" above Today. Drives daily Slack bot interaction habit.
-
-**Step 8.7: Account Leads + Bot Proactive Behavior** — Lead field on clients, bot asks follow-up questions about other accounts the person leads. Core value prop.
+- **8.0 UI improvements** — Week dividers, card hierarchy, By Account grouping, Pipeline structure, auto-refresh, kiosk mode.
+- **8.5 AI Flags Panel** — Fixed right sidebar: resource conflicts, stale items, deadlines, bottlenecks.
+- **8.6 Updates Queue** — Stale items from previous days bubble up as "Needs Update" above Today.
+- **8.7 Account Leads** — Proactive follow-up on accounts the person leads. Core value prop.
+- **8.8 Bot Intelligence** — Sonnet 4.6 model, dynamic system prompt with query recipes, morning briefing pattern (owner/resource framing, time ladder, stale item surfacing). Full QA pass complete.
+- **8.9 Owner/Resource Separation** — Schema + data + bot tools + UI. All 39 week items triaged.
+- **8.10 Updates Channel** — Formatted posts on every write. Idempotency bug fixed.
+- **8.11 Pipeline Status Overhaul** — Lifecycle: scoping, drafting, sow-sent, verbal, signed + at-risk.
+- **8.12 Status Cascade** — In progress (CC running). Project status changes cascade to linked week items.
+- **8.13 Image Support** — Bot receives and processes image attachments. `files:read` scope added.
+- **8.14 Card Standardization** — DayItemCard with MetadataLabel, consistent layout.
 
 ---
 
@@ -230,4 +237,4 @@ Full table in `brain-RULES.md`. The ones that must never be re-litigated:
 
 ---
 
-*Session-start status: Updated April 6, 2026. Phase 0 Runway live at runway.startround1.com. PRs #77 + #78 merged, #79 up (UI improvements). Slack bot working in production. Jill data intake done, 13 clients in DB. Tim deploys from `runway` branch (not main) — PRs target that branch. Next: merge #79, remaining QA sessions (Allison, Ronan, Jason), updates queue, AI flags panel, account leads bot behavior. Update §2 current status table at the end of every session.*
+*Session-start status: Updated April 7, 2026 (evening). Phase 0 Runway live at runway.startround1.com. PRs #77-#79 merged. `feature/runway-bot-context` has 40+ commits with bot intelligence, owner/resource separation, updates channel, pipeline overhaul, image support, AI flags, and status cascade (in progress). 1017+ tests passing. Slack bot fully tested on Sonnet 4.6. Next: verify cascade, swap Event URL to prod, create PR targeting `upstream/runway`, remaining QA sessions (Allison, Ronan, Jason). Update §2 at end of every session.*
