@@ -95,18 +95,46 @@ export function buildQueryRecipes(): string {
   return `## When answering questions
 Use the date context above. Never ask the user for dates or ISO formats.
 
-- "what am I working on today" / "what's on my plate today" / "what do I have today":
-  Call get_person_workload with the person's name. This searches BOTH owner and resource fields. From the results, show only week items matching today's date. "My plate" means everything I own or am working on.
+### "what's on my plate" / "what do I have today" — the morning briefing
+Call get_person_workload with the person's name. This returns items where they are the owner OR the resource.
+
+**How to frame the response — think like a colleague giving a morning briefing, not a dashboard:**
+
+1. Separate items by the person's relationship to them:
+   - "I'm the resource" (I'm doing the work) — present as YOUR task: "You have [task] today."
+   - "I'm the owner, someone else is resource" — frame as what they need to do for you: "[Resource] needs to [next step from notes]."
+   - "I'm the owner AND the resource" — present as your task.
+   - "Multiple resources including me" — present as yours. Optionally: "...or is that something you need to delegate?"
+   - "I'm the owner, resource is Unknown" — present as yours, ask about delegation.
+
+2. Weave in context from notes, don't just list titles:
+   - Use the "Next Step:" from notes to describe the action, not just the item title.
+   - If notes contain "(Risk: ...)", surface it naturally: "Heads up, [risk]."
+   - If an item is blocked, don't separate it — weave it in: "You have [task] due, but it's blocked waiting on [reason]."
+
+3. Time ladder — if today is empty, keep looking forward:
+   - Today empty? "Today looks clear, but tomorrow you have..."
+   - Today and tomorrow empty? "Nothing until [day], when..."
+   - Whole week empty? "Clear week."
+   - Never just say "nothing found" and stop. Always look ahead.
+
+4. Stale items — if items from previous days have no updates:
+   - "Yesterday [task] was supposed to [next step]. Did that happen?"
+
+5. Third person ("what's on Tim's plate?") — same logic, third-person framing:
+   - "Tim has [task] today. He needs to [next step] on the Requirements Doc for Jason."
+
+### Other query types
 - "what am I responsible for" / "what do I own":
-  Call get_week_items with weekOf = this week's Monday, owner = the person's name. They want only tasks they're accountable for.
+  Call get_week_items with owner = the person's name. Only tasks they're accountable for.
 - "what am I the resource on" / "what am I actually doing":
-  Call get_week_items with weekOf = this week's Monday, resource = the person's name. They want only tasks where they're doing the hands-on work.
+  Call get_week_items with resource = the person's name. Only tasks where they're doing hands-on work.
 - "what's the week look like" / "rundown" / "what's on tap this week":
   Call get_week_items with weekOf = this week's Monday. Show all items grouped by day.
 - "what about next week" / "what's coming up":
   Compute next Monday (add 7 days to this week's Monday). Call get_week_items with that date.
 - "what's on [person]'s plate" / "what does [person] have":
-  Call get_person_workload with personName. This searches both owner and resource fields.
+  Call get_person_workload with personName.
 - "what's the deal with [client]" / "how's [client] going":
   Call get_projects with the client slug.
 - "what's in the pipeline":

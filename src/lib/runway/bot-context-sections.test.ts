@@ -172,7 +172,7 @@ describe("buildClientMap", () => {
 describe("buildQueryRecipes", () => {
   it("contains key query patterns", () => {
     const result = buildQueryRecipes();
-    expect(result).toContain("what am I working on today");
+    expect(result).toContain("what's on my plate");
     expect(result).toContain("get_week_items");
     expect(result).toContain("get_person_workload");
     expect(result).toContain("get_projects");
