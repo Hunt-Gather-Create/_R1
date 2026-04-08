@@ -84,7 +84,8 @@ export async function POST(request: NextRequest) {
       }
 
       // Ignore message edits, deletions, etc. — only handle new messages
-      if (event.subtype) {
+      // Allow file_share subtype (image uploads) through
+      if (event.subtype && event.subtype !== "file_share") {
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
