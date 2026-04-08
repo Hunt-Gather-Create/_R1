@@ -9,6 +9,7 @@ import { TEAM_REFERENCES } from "./reference/team";
 import { CLIENT_REFERENCES } from "./reference/clients";
 import { getMonday, toISODateString } from "@/app/runway/date-utils";
 import { DAY_NAMES, MONTH_NAMES } from "./date-constants";
+import { CASCADE_STATUSES } from "./operations-utils";
 import type { TeamMemberRecord } from "./operations-context";
 
 export function formatDate(date: Date): string {
@@ -140,5 +141,12 @@ Call get_person_workload with the person's name. This returns items where they a
 - "what's in the pipeline":
   Call get_pipeline.
 - "who's holding things up at [client]":
-  Call get_client_contacts with the client slug, then cross-reference with get_projects filtered by waitingOn.`;
+  Call get_client_contacts with the client slug, then cross-reference with get_projects filtered by waitingOn.
+
+### Status cascade behavior
+When you update a project status to ${CASCADE_STATUSES.join(", ")}, linked week items
+automatically cascade. The response will tell you which items were updated.
+Non-terminal status changes (in-production, awaiting-client) do NOT cascade —
+week items may be at different stages than the project overall.
+If you're unsure whether to cascade, tell the user what would happen and ask.`;
 }

@@ -92,9 +92,11 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           return { error: result.error, available: result.available };
         }
 
+        const cascaded = result.data?.cascadedItems as string[] | undefined;
+
         // Post to updates channel (bot-specific behavior)
         if (result.data) {
-          const updateText = `${result.data.previousStatus} -> ${result.data.newStatus}${notes ? ` (${notes})` : ""}`;
+          const updateText = `${result.data.previousStatus} -> ${result.data.newStatus}${notes ? ` (${notes})` : ""}${cascaded?.length ? ` [+${cascaded.length} week items]` : ""}`;
           await safePostUpdate({
             clientName: result.data.clientName as string,
             projectName: result.data.projectName as string,
@@ -103,7 +105,11 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           });
         }
 
-        return { result: result.message };
+        const cascadeNote = cascaded?.length
+          ? ` Also updated ${cascaded.length} linked week item(s): ${cascaded.join(", ")}.`
+          : "";
+
+        return { result: result.message + cascadeNote };
       },
     }),
 

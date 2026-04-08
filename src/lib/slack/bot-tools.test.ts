@@ -217,4 +217,56 @@ describe("createBotTools", () => {
     const result = await tools.get_client_contacts.execute({ clientSlug: "lppc" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
     expect(result).toEqual(expect.objectContaining({ note: "No contacts on file for this client" }));
   });
+
+  it("update_project_status includes cascade info in response when items cascaded", async () => {
+    mockOps.updateProjectStatus.mockResolvedValue({
+      ok: true, message: "Updated Convergix / CDS: in-production -> completed",
+      data: {
+        clientName: "Convergix", projectName: "CDS",
+        previousStatus: "in-production", newStatus: "completed",
+        cascadedItems: ["CDS Review", "CDS Delivery"],
+      },
+    });
+    const result = await tools.update_project_status.execute(
+      { clientSlug: "convergix", projectName: "CDS", newStatus: "completed" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect((result as Record<string, string>).result).toContain("Also updated 2 linked week item(s)");
+    expect((result as Record<string, string>).result).toContain("CDS Review");
+    expect((result as Record<string, string>).result).toContain("CDS Delivery");
+  });
+
+  it("update_project_status includes cascade count in updates channel post", async () => {
+    mockOps.updateProjectStatus.mockResolvedValue({
+      ok: true, message: "Updated",
+      data: {
+        clientName: "Convergix", projectName: "CDS",
+        previousStatus: "active", newStatus: "completed",
+        cascadedItems: ["Item A", "Item B"],
+      },
+    });
+    await tools.update_project_status.execute(
+      { clientSlug: "convergix", projectName: "CDS", newStatus: "completed" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockPostUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ updateText: "active -> completed [+2 week items]" })
+    );
+  });
+
+  it("update_project_status omits cascade note when no items cascaded", async () => {
+    mockOps.updateProjectStatus.mockResolvedValue({
+      ok: true, message: "Updated",
+      data: {
+        clientName: "Convergix", projectName: "CDS",
+        previousStatus: "active", newStatus: "completed",
+        cascadedItems: [],
+      },
+    });
+    const result = await tools.update_project_status.execute(
+      { clientSlug: "convergix", projectName: "CDS", newStatus: "completed" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect((result as Record<string, string>).result).toBe("Updated");
+  });
 });

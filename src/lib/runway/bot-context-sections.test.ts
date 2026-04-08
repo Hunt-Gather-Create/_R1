@@ -184,4 +184,11 @@ describe("buildQueryRecipes", () => {
     expect(result).toContain("resource");
     expect(result).toContain("owner");
   });
+
+  it("contains status cascade behavior section", () => {
+    const result = buildQueryRecipes();
+    expect(result).toContain("Status cascade behavior");
+    expect(result).toContain("completed, blocked, on-hold");
+    expect(result).toContain("linked week items");
+  });
 });
