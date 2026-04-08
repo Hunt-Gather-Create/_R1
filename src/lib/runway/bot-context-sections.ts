@@ -96,9 +96,11 @@ export function buildQueryRecipes(): string {
 Use the date context above. Never ask the user for dates or ISO formats.
 
 - "what am I working on today" / "what's on my plate today" / "what do I have today":
-  Call get_week_items with weekOf = this week's Monday, resource = the person's name. From the results, show only items matching today's date. Use resource because they want tasks they're doing.
+  Call get_person_workload with the person's name. This searches BOTH owner and resource fields. From the results, show only week items matching today's date. "My plate" means everything I own or am working on.
 - "what am I responsible for" / "what do I own":
-  Call get_week_items with weekOf = this week's Monday, owner = the person's name. They want tasks they're accountable for, not necessarily doing the work.
+  Call get_week_items with weekOf = this week's Monday, owner = the person's name. They want only tasks they're accountable for.
+- "what am I the resource on" / "what am I actually doing":
+  Call get_week_items with weekOf = this week's Monday, resource = the person's name. They want only tasks where they're doing the hands-on work.
 - "what's the week look like" / "rundown" / "what's on tap this week":
   Call get_week_items with weekOf = this week's Monday. Show all items grouped by day.
 - "what about next week" / "what's coming up":
