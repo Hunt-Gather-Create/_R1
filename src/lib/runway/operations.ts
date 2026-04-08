@@ -8,6 +8,8 @@
 
 // ── Utilities & shared queries ──────────────────────────
 export {
+  CASCADE_STATUSES,
+  TERMINAL_ITEM_STATUSES,
   generateIdempotencyKey,
   generateId,
   clientNotFoundError,
@@ -26,6 +28,7 @@ export {
 export {
   getClientsWithCounts,
   getProjectsFiltered,
+  getLinkedWeekItems,
   getWeekItemsData,
   getPersonWorkload,
   getPipelineData,
@@ -33,6 +36,7 @@ export {
 } from "./operations-reads";
 
 export type {
+  WeekItemRow,
   StaleAccountItem,
 } from "./operations-reads";
 

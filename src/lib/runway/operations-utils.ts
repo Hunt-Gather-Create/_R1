@@ -15,6 +15,21 @@ import {
 import { eq, asc } from "drizzle-orm";
 import { createHash } from "crypto";
 
+// ── Constants ────────────────────────────────────────────
+
+/**
+ * Statuses that cascade from a project to its linked week items.
+ * Terminal or blocking states propagate down; non-terminal statuses don't
+ * because individual week items may be at different stages.
+ */
+export const CASCADE_STATUSES = ["completed", "blocked", "on-hold"] as const;
+
+/**
+ * Week item statuses that should not be overwritten by cascade.
+ * Items already in a terminal state are left alone.
+ */
+export const TERMINAL_ITEM_STATUSES = ["completed", "canceled"] as const;
+
 // ── Utilities ─────────────────────────────────────────────
 
 /**
