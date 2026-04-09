@@ -10,6 +10,11 @@
 export {
   CASCADE_STATUSES,
   TERMINAL_ITEM_STATUSES,
+  PROJECT_FIELDS,
+  PROJECT_FIELD_TO_COLUMN,
+  WEEK_ITEM_FIELDS,
+  WEEK_ITEM_FIELD_TO_COLUMN,
+  UNDO_FIELDS,
   generateIdempotencyKey,
   generateId,
   clientNotFoundError,
@@ -22,18 +27,22 @@ export {
   findProjectByFuzzyName,
   findProjectByFuzzyNameWithDisambiguation,
   resolveProjectOrFail,
+  normalizeForMatch,
   fuzzyMatch,
   fuzzyMatchProject,
   getProjectsForClient,
   checkIdempotency,
+  checkDuplicate,
+  insertAuditRecord,
   validateField,
   findWeekItemByFuzzyTitle,
   findWeekItemByFuzzyTitleWithDisambiguation,
+  resolveWeekItemOrFail,
   fuzzyMatchWeekItem,
   getWeekItemsForWeek,
 } from "./operations-utils";
 
-export type { FuzzyMatchResult } from "./operations-utils";
+export type { FuzzyMatchResult, ProjectField, WeekItemField } from "./operations-utils";
 
 // ── Read operations ─────────────────────────────────────
 export {

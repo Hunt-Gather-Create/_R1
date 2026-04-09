@@ -159,7 +159,7 @@ export type FuzzyMatchResult<T> =
  */
 
 /** Normalize dashes and whitespace for fuzzy comparison */
-function normalizeForMatch(text: string): string {
+export function normalizeForMatch(text: string): string {
   return text
     .replace(/[\u2014\u2013\-]+/g, " ")  // em dash, en dash, hyphen → space
     .replace(/\s+/g, " ")                 // collapse whitespace
@@ -282,6 +282,52 @@ export async function checkIdempotency(idemKey: string): Promise<boolean> {
   return existing.length > 0;
 }
 
+// ── Field Constants ──────────────────────────────────────
+
+/** Editable fields on a project (excludes status — that uses updateProjectStatus). */
+export const PROJECT_FIELDS = [
+  "name", "dueDate", "owner", "resources", "waitingOn", "target", "notes",
+] as const;
+
+export type ProjectField = (typeof PROJECT_FIELDS)[number];
+
+export const PROJECT_FIELD_TO_COLUMN: Record<ProjectField, keyof typeof projects.$inferSelect> = {
+  name: "name",
+  dueDate: "dueDate",
+  owner: "owner",
+  resources: "resources",
+  waitingOn: "waitingOn",
+  target: "target",
+  notes: "notes",
+};
+
+/** Editable fields on a week item. */
+export const WEEK_ITEM_FIELDS = [
+  "title", "status", "date", "dayOfWeek", "owner", "resources", "notes", "category",
+] as const;
+
+export type WeekItemField = (typeof WEEK_ITEM_FIELDS)[number];
+
+export const WEEK_ITEM_FIELD_TO_COLUMN: Record<WeekItemField, keyof typeof weekItems.$inferSelect> = {
+  title: "title",
+  status: "status",
+  date: "date",
+  dayOfWeek: "dayOfWeek",
+  owner: "owner",
+  resources: "resources",
+  notes: "notes",
+  category: "category",
+};
+
+/**
+ * Fields that undo can revert — union of project fields + status + category.
+ * Derived from PROJECT_FIELDS so additions to the project schema automatically
+ * become undoable without maintaining a separate list.
+ */
+export const UNDO_FIELDS = [
+  ...PROJECT_FIELDS, "status", "category",
+] as const;
+
 // ── Field Validation ─────────────────────────────────────
 
 /**
@@ -298,6 +344,53 @@ export function validateField(
       error: `Invalid field '${field}'. Allowed fields: ${allowedFields.join(", ")}`,
     };
   }
+  return null;
+}
+
+// ── Audit & Idempotency Helpers ─────────────────────────
+
+type OperationResult =
+  | { ok: true; message: string; data?: Record<string, unknown> }
+  | { ok: false; error: string; available?: string[] };
+
+export interface AuditRecordParams {
+  idempotencyKey: string;
+  projectId?: string | null;
+  clientId?: string | null;
+  updatedBy: string;
+  updateType: string;
+  previousValue?: string | null;
+  newValue?: string | null;
+  summary: string;
+  metadata?: string;
+}
+
+/** Insert an audit record into the updates table. */
+export async function insertAuditRecord(params: AuditRecordParams): Promise<void> {
+  const db = getRunwayDb();
+  await db.insert(updates).values({
+    id: generateId(),
+    idempotencyKey: params.idempotencyKey,
+    projectId: params.projectId ?? null,
+    clientId: params.clientId ?? null,
+    updatedBy: params.updatedBy,
+    updateType: params.updateType,
+    previousValue: params.previousValue ?? null,
+    newValue: params.newValue ?? null,
+    summary: params.summary,
+    metadata: params.metadata,
+  });
+}
+
+/**
+ * Check idempotency and return a duplicate result if already applied.
+ * Returns the duplicate OperationResult if the key exists, null otherwise.
+ */
+export async function checkDuplicate(
+  idemKey: string,
+  duplicateResult: OperationResult
+): Promise<OperationResult | null> {
+  if (await checkIdempotency(idemKey)) return duplicateResult;
   return null;
 }
 
@@ -346,4 +439,34 @@ export async function getWeekItemsForWeek(weekOf: string) {
     .from(weekItems)
     .where(eq(weekItems.weekOf, weekOf))
     .orderBy(asc(weekItems.sortOrder));
+}
+
+/**
+ * Resolve a week item by fuzzy title with full disambiguation error handling.
+ * Mirrors resolveProjectOrFail for week items.
+ */
+export async function resolveWeekItemOrFail(
+  weekOf: string,
+  weekItemTitle: string
+): Promise<
+  | { ok: true; item: typeof weekItems.$inferSelect }
+  | { ok: false; error: string; available?: string[] }
+> {
+  const fuzzyResult = await findWeekItemByFuzzyTitleWithDisambiguation(weekOf, weekItemTitle);
+  if (fuzzyResult.kind === "ambiguous") {
+    return {
+      ok: false,
+      error: `Multiple week items match '${weekItemTitle}': ${fuzzyResult.options.map((i) => i.title).join(", ")}. Which one?`,
+      available: fuzzyResult.options.map((i) => i.title),
+    };
+  }
+  if (fuzzyResult.kind === "none") {
+    const weekItemsList = await getWeekItemsForWeek(weekOf);
+    return {
+      ok: false,
+      error: `Week item '${weekItemTitle}' not found for week of ${weekOf}.`,
+      available: weekItemsList.map((i) => i.title),
+    };
+  }
+  return { ok: true, item: fuzzyResult.value };
 }
