@@ -49,9 +49,12 @@ vi.mock("drizzle-orm", () => ({
 const mockCheckIdempotency = vi.fn();
 
 vi.mock("./operations-utils", () => ({
+  UNDO_FIELDS: ["name", "dueDate", "owner", "resources", "waitingOn", "target", "notes", "status", "category"],
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
-  generateId: () => "mock-id-12345678901234",
   checkIdempotency: (...args: unknown[]) => mockCheckIdempotency(...args),
+  insertAuditRecord: async (params: Record<string, unknown>) => {
+    mockInsertValues(params);
+  },
 }));
 
 beforeEach(() => {
@@ -254,6 +257,32 @@ describe("undoLastChange", () => {
     if (!result.ok) {
       expect(result.error).toContain("unable to determine which field");
     }
+  });
+
+  it("returns error when field name in metadata is not recognized", async () => {
+    mockSelectOrderBy.mockResolvedValue([
+      {
+        id: "u-bogus",
+        updateType: "field-change",
+        projectId: "p1",
+        clientId: "c1",
+        previousValue: "old",
+        newValue: "new",
+        metadata: JSON.stringify({ field: "maliciousField" }),
+        summary: "test",
+        updatedBy: "kathy",
+      },
+    ]);
+
+    const { undoLastChange } = await import("./operations-writes-undo");
+    const result = await undoLastChange({ updatedBy: "kathy" });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("maliciousField");
+      expect(result.error).toContain("not a recognized");
+    }
+    expect(mockUpdateSet).not.toHaveBeenCalled();
   });
 
   it("reverts status to not-started when previousValue was null", async () => {

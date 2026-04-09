@@ -8,16 +8,16 @@
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
-import { projects, updates, weekItems } from "@/lib/db/runway-schema";
+import { projects, weekItems } from "@/lib/db/runway-schema";
 import { eq } from "drizzle-orm";
 import {
   CASCADE_STATUSES,
   TERMINAL_ITEM_STATUSES,
   generateIdempotencyKey,
-  generateId,
   getClientOrFail,
   resolveProjectOrFail,
-  checkIdempotency,
+  checkDuplicate,
+  insertAuditRecord,
   getLinkedWeekItems,
 } from "./operations";
 
@@ -59,27 +59,19 @@ export async function updateProjectStatus(
     updatedBy
   );
 
-  if (await checkIdempotency(idemKey)) {
-    return {
-      ok: true,
-      message: "Update already applied (duplicate request).",
-      data: {
-        clientName: client.name,
-        projectName: project.name,
-        previousStatus,
-        newStatus,
-      },
-    };
-  }
+  const dup = await checkDuplicate(idemKey, {
+    ok: true,
+    message: "Update already applied (duplicate request).",
+    data: { clientName: client.name, projectName: project.name, previousStatus, newStatus },
+  });
+  if (dup) return dup;
 
   await db
     .update(projects)
     .set({ status: newStatus, updatedAt: new Date() })
     .where(eq(projects.id, project.id));
 
-  const summary = `${client.name} / ${project.name}: ${previousStatus} -> ${newStatus}${notes ? `. ${notes}` : ""}`;
-  await db.insert(updates).values({
-    id: generateId(),
+  await insertAuditRecord({
     idempotencyKey: idemKey,
     projectId: project.id,
     clientId: client.id,
@@ -87,7 +79,7 @@ export async function updateProjectStatus(
     updateType: "status-change",
     previousValue: previousStatus,
     newValue: newStatus,
-    summary,
+    summary: `${client.name} / ${project.name}: ${previousStatus} -> ${newStatus}${notes ? `. ${notes}` : ""}`,
   });
 
   // Cascade to linked week items for terminal/blocking statuses

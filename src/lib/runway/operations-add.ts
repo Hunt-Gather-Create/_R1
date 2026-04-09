@@ -6,14 +6,16 @@
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
-import { projects, updates } from "@/lib/db/runway-schema";
+import { projects } from "@/lib/db/runway-schema";
 import {
   generateIdempotencyKey,
   generateId,
   getClientOrFail,
   findProjectByFuzzyName,
-  findProjectByFuzzyNameWithDisambiguation,
-  checkIdempotency,
+  resolveProjectOrFail,
+  normalizeForMatch,
+  checkDuplicate,
+  insertAuditRecord,
 } from "./operations";
 import type { OperationResult } from "./operations-writes";
 
@@ -62,7 +64,7 @@ export async function addProject(
 
   // Check for duplicate project name (exact case-insensitive match)
   const existing = await findProjectByFuzzyName(client.id, name);
-  if (existing && existing.name.toLowerCase() === name.toLowerCase()) {
+  if (existing && normalizeForMatch(existing.name) === normalizeForMatch(name)) {
     return {
       ok: false,
       error: `A project named '${existing.name}' already exists under ${client.name}. Did you mean to update it?`,
@@ -76,9 +78,10 @@ export async function addProject(
     updatedBy
   );
 
-  if (await checkIdempotency(idemKey)) {
-    return { ok: true, message: "Project already added (duplicate request)." };
-  }
+  const dup = await checkDuplicate(idemKey, {
+    ok: true, message: "Project already added (duplicate request).",
+  });
+  if (dup) return dup;
 
   const projectId = generateId();
   await db.insert(projects).values({
@@ -96,8 +99,7 @@ export async function addProject(
     sortOrder: 999,
   });
 
-  await db.insert(updates).values({
-    id: generateId(),
+  await insertAuditRecord({
     idempotencyKey: idemKey,
     projectId,
     clientId: client.id,
@@ -118,7 +120,6 @@ export async function addUpdate(
   params: AddUpdateParams
 ): Promise<OperationResult> {
   const { clientSlug, projectName, summary, updatedBy } = params;
-  const db = getRunwayDb();
 
   const lookup = await getClientOrFail(clientSlug);
   if (!lookup.ok) return lookup;
@@ -127,19 +128,15 @@ export async function addUpdate(
   let projectId: string | null = null;
   let projectMatch: string | undefined;
   if (projectName) {
-    const fuzzyResult = await findProjectByFuzzyNameWithDisambiguation(client.id, projectName);
-    if (fuzzyResult.kind === "ambiguous") {
-      return {
-        ok: false,
-        error: `Multiple projects match '${projectName}': ${fuzzyResult.options.map((p) => p.name).join(", ")}. Which one?`,
-        available: fuzzyResult.options.map((p) => p.name),
-      };
+    const resolved = await resolveProjectOrFail(client.id, client.name, projectName);
+    if (resolved.ok) {
+      projectId = resolved.project.id;
+      projectMatch = resolved.project.name;
+    } else if (resolved.error.startsWith("Multiple")) {
+      // Ambiguous match — return error so user can disambiguate
+      return resolved;
     }
-    if (fuzzyResult.kind === "match") {
-      projectId = fuzzyResult.value.id;
-      projectMatch = fuzzyResult.value.name;
-    }
-    // kind === "none": leave projectId null, note is client-level
+    // Not found — leave projectId null, note is client-level
   }
 
   const idemKey = generateIdempotencyKey(
@@ -150,16 +147,14 @@ export async function addUpdate(
     new Date().toISOString().slice(0, 16)
   );
 
-  if (await checkIdempotency(idemKey)) {
-    return {
-      ok: true,
-      message: "Update already logged (duplicate request).",
-      data: { clientName: client.name, projectName: projectMatch },
-    };
-  }
+  const dup = await checkDuplicate(idemKey, {
+    ok: true,
+    message: "Update already logged (duplicate request).",
+    data: { clientName: client.name, projectName: projectMatch },
+  });
+  if (dup) return dup;
 
-  await db.insert(updates).values({
-    id: generateId(),
+  await insertAuditRecord({
     idempotencyKey: idemKey,
     projectId,
     clientId: client.id,

@@ -32,8 +32,12 @@ const mockGetProjectsForClient = vi.fn();
 const mockCheckIdempotency = vi.fn();
 
 vi.mock("./operations-utils", () => ({
+  PROJECT_FIELDS: ["name", "dueDate", "owner", "resources", "waitingOn", "target", "notes"],
+  PROJECT_FIELD_TO_COLUMN: {
+    name: "name", dueDate: "dueDate", owner: "owner", resources: "resources",
+    waitingOn: "waitingOn", target: "target", notes: "notes",
+  },
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
-  generateId: () => "mock-id-12345678901234",
   getClientOrFail: async (slug: string) => {
     const client = await mockGetClientBySlug(slug);
     if (!client) return { ok: false, error: `Client '${slug}' not found.` };
@@ -47,7 +51,13 @@ vi.mock("./operations-utils", () => ({
     }
     return { ok: true, project: result };
   },
-  checkIdempotency: (...args: unknown[]) => mockCheckIdempotency(...args),
+  checkDuplicate: async (idemKey: string, dupResult: unknown) => {
+    if (await mockCheckIdempotency(idemKey)) return dupResult;
+    return null;
+  },
+  insertAuditRecord: async (params: Record<string, unknown>) => {
+    mockInsertValues(params);
+  },
   validateField: (field: string, allowed: readonly string[]) => {
     if (!allowed.includes(field)) {
       return { ok: false, error: `Invalid field '${field}'. Allowed fields: ${allowed.join(", ")}` };

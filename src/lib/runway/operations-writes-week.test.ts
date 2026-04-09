@@ -33,6 +33,11 @@ const mockGetWeekItemsForWeek = vi.fn();
 const mockCheckIdempotency = vi.fn();
 
 vi.mock("./operations-utils", () => ({
+  WEEK_ITEM_FIELDS: ["title", "status", "date", "dayOfWeek", "owner", "resources", "notes", "category"],
+  WEEK_ITEM_FIELD_TO_COLUMN: {
+    title: "title", status: "status", date: "date", dayOfWeek: "dayOfWeek",
+    owner: "owner", resources: "resources", notes: "notes", category: "category",
+  },
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
   generateId: () => "mock-id-12345678901234",
   getClientOrFail: async (slug: string) => {
@@ -42,15 +47,32 @@ vi.mock("./operations-utils", () => ({
   },
   findProjectByFuzzyName: (...args: unknown[]) =>
     mockFindProjectByFuzzyName(...args),
-  findWeekItemByFuzzyTitleWithDisambiguation: async (...args: unknown[]) => {
-    const result = await mockFindWeekItemByFuzzyTitle(...args);
-    if (!result) return { kind: "none" };
-    if (result === "__AMBIGUOUS__") return { kind: "ambiguous", options: [{ title: "CDS Review" }, { title: "CDS Delivery" }] };
-    return { kind: "match", value: result };
+  resolveWeekItemOrFail: async (weekOf: string, title: string) => {
+    const result = await mockFindWeekItemByFuzzyTitle(weekOf, title);
+    if (!result) {
+      const items = await mockGetWeekItemsForWeek(weekOf);
+      return {
+        ok: false,
+        error: `Week item '${title}' not found for week of ${weekOf}.`,
+        available: items?.map((i: { title: string }) => i.title),
+      };
+    }
+    if (result === "__AMBIGUOUS__") {
+      return {
+        ok: false,
+        error: `Multiple week items match '${title}': CDS Review, CDS Delivery. Which one?`,
+        available: ["CDS Review", "CDS Delivery"],
+      };
+    }
+    return { ok: true, item: result };
   },
-  getWeekItemsForWeek: (...args: unknown[]) =>
-    mockGetWeekItemsForWeek(...args),
-  checkIdempotency: (...args: unknown[]) => mockCheckIdempotency(...args),
+  checkDuplicate: async (idemKey: string, dupResult: unknown) => {
+    if (await mockCheckIdempotency(idemKey)) return dupResult;
+    return null;
+  },
+  insertAuditRecord: async (params: Record<string, unknown>) => {
+    mockInsertValues(params);
+  },
   validateField: (field: string, allowed: readonly string[]) => {
     if (!allowed.includes(field)) {
       return { ok: false, error: `Invalid field '${field}'. Allowed fields: ${allowed.join(", ")}` };
@@ -234,6 +256,22 @@ describe("updateWeekItemField", () => {
     if (!result.ok) {
       expect(result.error).toContain("Multiple week items match");
     }
+  });
+
+  it("includes metadata with field name in audit record", async () => {
+    mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+    const { updateWeekItemField } = await import("./operations-writes-week");
+    await updateWeekItemField({
+      weekOf: "2026-04-06",
+      weekItemTitle: "CDS Review",
+      field: "status",
+      newValue: "completed",
+      updatedBy: "kathy",
+    });
+
+    const auditInsert = mockInsertValues.mock.calls[0][0];
+    expect(auditInsert.metadata).toBe(JSON.stringify({ field: "status" }));
   });
 
   it("rejects invalid field name", async () => {

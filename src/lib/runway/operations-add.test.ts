@@ -8,7 +8,7 @@ vi.mock("@/lib/db/runway-schema", () => ({ projects: {}, updates: {} }));
 
 const mockGetClientBySlug = vi.fn();
 const mockFindProjectByFuzzyName = vi.fn();
-const mockFindProjectByFuzzyNameWithDisambiguation = vi.fn();
+const mockResolveProjectOrFail = vi.fn();
 const mockCheckIdempotency = vi.fn();
 vi.mock("./operations", () => ({
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
@@ -19,8 +19,16 @@ vi.mock("./operations", () => ({
     return { ok: true, client };
   },
   findProjectByFuzzyName: (...args: unknown[]) => mockFindProjectByFuzzyName(...args),
-  findProjectByFuzzyNameWithDisambiguation: (...args: unknown[]) => mockFindProjectByFuzzyNameWithDisambiguation(...args),
-  checkIdempotency: (...args: unknown[]) => mockCheckIdempotency(...args),
+  resolveProjectOrFail: (...args: unknown[]) => mockResolveProjectOrFail(...args),
+  normalizeForMatch: (text: string) =>
+    text.replace(/[\u2014\u2013\-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase(),
+  checkDuplicate: async (idemKey: string, dupResult: unknown) => {
+    if (await mockCheckIdempotency(idemKey)) return dupResult;
+    return null;
+  },
+  insertAuditRecord: async (params: Record<string, unknown>) => {
+    mockInsertValues(params);
+  },
 }));
 
 const client = { id: "c1", name: "Convergix", slug: "convergix" };
@@ -108,6 +116,20 @@ describe("addProject", () => {
     expect(mockInsertValues).not.toHaveBeenCalled();
   });
 
+  it("detects duplicate when existing name uses em dash", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue({ id: "p1", name: "Impact Report \u2014 Dev" });
+    const { addProject } = await import("./operations-add");
+    const result = await addProject({
+      clientSlug: "convergix", name: "Impact Report Dev", updatedBy: "jason",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("already exists");
+    }
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+
   it("allows project creation when fuzzy match finds similar but not exact name", async () => {
     mockGetClientBySlug.mockResolvedValue(client);
     mockFindProjectByFuzzyName.mockResolvedValue({ id: "p1", name: "Chester Claws" });
@@ -147,7 +169,10 @@ describe("addUpdate — edge cases", () => {
 
   it("sets projectId to null when project not found by fuzzy name", async () => {
     mockGetClientBySlug.mockResolvedValue(client);
-    mockFindProjectByFuzzyNameWithDisambiguation.mockResolvedValue({ kind: "none" });
+    mockResolveProjectOrFail.mockResolvedValue({
+      ok: false, error: "Project 'nonexistent' not found for Convergix.",
+      available: ["CDS Messaging"],
+    });
     const { addUpdate } = await import("./operations-add");
     const result = await addUpdate({
       clientSlug: "convergix", projectName: "nonexistent", summary: "Note", updatedBy: "kathy",
@@ -159,7 +184,9 @@ describe("addUpdate — edge cases", () => {
 
   it("returns undefined projectName in data when project not matched", async () => {
     mockGetClientBySlug.mockResolvedValue(client);
-    mockFindProjectByFuzzyNameWithDisambiguation.mockResolvedValue({ kind: "none" });
+    mockResolveProjectOrFail.mockResolvedValue({
+      ok: false, error: "Project 'nonexistent' not found for Convergix.",
+    });
     const { addUpdate } = await import("./operations-add");
     const result = await addUpdate({
       clientSlug: "convergix", projectName: "nonexistent", summary: "Note", updatedBy: "kathy",
@@ -172,9 +199,10 @@ describe("addUpdate — edge cases", () => {
 
   it("returns disambiguation error when multiple projects match", async () => {
     mockGetClientBySlug.mockResolvedValue(client);
-    mockFindProjectByFuzzyNameWithDisambiguation.mockResolvedValue({
-      kind: "ambiguous",
-      options: [{ id: "p1", name: "Impact Report Dev" }, { id: "p2", name: "Impact Report Design" }],
+    mockResolveProjectOrFail.mockResolvedValue({
+      ok: false,
+      error: "Multiple projects match 'Impact Report': Impact Report Dev, Impact Report Design. Which one?",
+      available: ["Impact Report Dev", "Impact Report Design"],
     });
     const { addUpdate } = await import("./operations-add");
     const result = await addUpdate({
@@ -204,7 +232,7 @@ describe("addUpdate", () => {
 
   it("resolves project name when provided", async () => {
     mockGetClientBySlug.mockResolvedValue(client);
-    mockFindProjectByFuzzyNameWithDisambiguation.mockResolvedValue({ kind: "match", value: project });
+    mockResolveProjectOrFail.mockResolvedValue({ ok: true, project });
     const { addUpdate } = await import("./operations-add");
     const result = await addUpdate({
       clientSlug: "convergix", projectName: "CDS", summary: "Feedback received", updatedBy: "kathy",

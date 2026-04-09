@@ -8,9 +8,10 @@ import { getRunwayDb } from "@/lib/db/runway";
 import { projects, updates } from "@/lib/db/runway-schema";
 import { eq, desc } from "drizzle-orm";
 import {
+  UNDO_FIELDS,
   generateIdempotencyKey,
-  generateId,
   checkIdempotency,
+  insertAuditRecord,
 } from "./operations-utils";
 import type { OperationResult } from "./operations-writes";
 
@@ -76,6 +77,9 @@ export async function undoLastChange(params: {
     if (!fieldName) {
       return { ok: false, error: "Cannot undo: unable to determine which field was changed." };
     }
+    if (!UNDO_FIELDS.includes(fieldName as typeof UNDO_FIELDS[number])) {
+      return { ok: false, error: `Cannot undo: field '${fieldName}' is not a recognized project field.` };
+    }
     await db
       .update(projects)
       .set({ [fieldName]: lastChange.previousValue || null, updatedAt: new Date() })
@@ -83,8 +87,7 @@ export async function undoLastChange(params: {
   }
 
   // Insert audit record for the undo
-  await db.insert(updates).values({
-    id: generateId(),
+  await insertAuditRecord({
     idempotencyKey: idemKey,
     projectId: lastChange.projectId,
     clientId: lastChange.clientId,

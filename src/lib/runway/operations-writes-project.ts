@@ -6,40 +6,20 @@
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
-import { projects, updates } from "@/lib/db/runway-schema";
+import { projects } from "@/lib/db/runway-schema";
 import { eq } from "drizzle-orm";
 import {
+  PROJECT_FIELDS,
+  PROJECT_FIELD_TO_COLUMN,
   generateIdempotencyKey,
-  generateId,
   getClientOrFail,
   resolveProjectOrFail,
-  checkIdempotency,
+  checkDuplicate,
+  insertAuditRecord,
   validateField,
 } from "./operations-utils";
+import type { ProjectField } from "./operations-utils";
 import type { OperationResult } from "./operations-writes";
-
-const ALLOWED_FIELDS = [
-  "name",
-  "dueDate",
-  "owner",
-  "resources",
-  "waitingOn",
-  "target",
-  "notes",
-] as const;
-
-type ProjectField = (typeof ALLOWED_FIELDS)[number];
-
-// Map field names to Drizzle column references
-const FIELD_TO_COLUMN: Record<ProjectField, keyof typeof projects.$inferSelect> = {
-  name: "name",
-  dueDate: "dueDate",
-  owner: "owner",
-  resources: "resources",
-  waitingOn: "waitingOn",
-  target: "target",
-  notes: "notes",
-};
 
 export interface UpdateProjectFieldParams {
   clientSlug: string;
@@ -55,7 +35,7 @@ export async function updateProjectField(
   const { clientSlug, projectName, field, newValue, updatedBy } = params;
   const db = getRunwayDb();
 
-  const fieldError = validateField(field, ALLOWED_FIELDS);
+  const fieldError = validateField(field, PROJECT_FIELDS);
   if (fieldError) return fieldError;
 
   const typedField = field as ProjectField;
@@ -68,7 +48,7 @@ export async function updateProjectField(
   if (!projectLookup.ok) return projectLookup;
   const project = projectLookup.project;
 
-  const columnKey = FIELD_TO_COLUMN[typedField];
+  const columnKey = PROJECT_FIELD_TO_COLUMN[typedField];
   const previousValue = String(project[columnKey] ?? "");
 
   const idemKey = generateIdempotencyKey(
@@ -79,28 +59,19 @@ export async function updateProjectField(
     updatedBy
   );
 
-  if (await checkIdempotency(idemKey)) {
-    return {
-      ok: true,
-      message: "Update already applied (duplicate request).",
-      data: {
-        clientName: client.name,
-        projectName: project.name,
-        field,
-        previousValue,
-        newValue,
-      },
-    };
-  }
+  const dup = await checkDuplicate(idemKey, {
+    ok: true,
+    message: "Update already applied (duplicate request).",
+    data: { clientName: client.name, projectName: project.name, field, previousValue, newValue },
+  });
+  if (dup) return dup;
 
   await db
     .update(projects)
     .set({ [columnKey]: newValue, updatedAt: new Date() })
     .where(eq(projects.id, project.id));
 
-  const summary = `${client.name} / ${project.name}: ${field} changed from "${previousValue}" to "${newValue}"`;
-  await db.insert(updates).values({
-    id: generateId(),
+  await insertAuditRecord({
     idempotencyKey: idemKey,
     projectId: project.id,
     clientId: client.id,
@@ -108,7 +79,7 @@ export async function updateProjectField(
     updateType: "field-change",
     previousValue,
     newValue,
-    summary,
+    summary: `${client.name} / ${project.name}: ${field} changed from "${previousValue}" to "${newValue}"`,
     metadata: JSON.stringify({ field }),
   });
 

@@ -38,7 +38,6 @@ vi.mock("./operations", () => ({
   CASCADE_STATUSES: ["completed", "blocked", "on-hold"],
   TERMINAL_ITEM_STATUSES: ["completed", "canceled"],
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
-  generateId: () => "mock-id-12345678901234",
   getClientOrFail: async (slug: string) => {
     const client = await mockGetClientBySlug(slug);
     if (!client) return { ok: false, error: `Client '${slug}' not found.` };
@@ -54,7 +53,13 @@ vi.mock("./operations", () => ({
   },
   getProjectsForClient: (...args: unknown[]) =>
     mockGetProjectsForClient(...args),
-  checkIdempotency: (...args: unknown[]) => mockCheckIdempotency(...args),
+  checkDuplicate: async (idemKey: string, dupResult: unknown) => {
+    if (await mockCheckIdempotency(idemKey)) return dupResult;
+    return null;
+  },
+  insertAuditRecord: async (params: Record<string, unknown>) => {
+    mockInsertValues(params);
+  },
   getLinkedWeekItems: (...args: unknown[]) => mockGetLinkedWeekItems(...args),
 }));
 

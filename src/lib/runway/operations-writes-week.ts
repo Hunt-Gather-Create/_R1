@@ -6,18 +6,21 @@
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
-import { weekItems, updates } from "@/lib/db/runway-schema";
+import { weekItems } from "@/lib/db/runway-schema";
 import { eq } from "drizzle-orm";
 import {
+  WEEK_ITEM_FIELDS,
+  WEEK_ITEM_FIELD_TO_COLUMN,
   generateIdempotencyKey,
   generateId,
   getClientOrFail,
   findProjectByFuzzyName,
-  findWeekItemByFuzzyTitleWithDisambiguation,
-  getWeekItemsForWeek,
-  checkIdempotency,
+  resolveWeekItemOrFail,
+  checkDuplicate,
+  insertAuditRecord,
   validateField,
 } from "./operations-utils";
+import type { WeekItemField } from "./operations-utils";
 import type { OperationResult } from "./operations-writes";
 
 // ── Create Week Item ─────────────────────────────────────
@@ -83,13 +86,12 @@ export async function createWeekItem(
     updatedBy
   );
 
-  if (await checkIdempotency(idemKey)) {
-    return {
-      ok: true,
-      message: "Week item already created (duplicate request).",
-      data: { clientName, title },
-    };
-  }
+  const dup = await checkDuplicate(idemKey, {
+    ok: true,
+    message: "Week item already created (duplicate request).",
+    data: { clientName, title },
+  });
+  if (dup) return dup;
 
   const itemId = generateId();
   await db.insert(weekItems).values({
@@ -108,8 +110,7 @@ export async function createWeekItem(
     sortOrder: 999,
   });
 
-  await db.insert(updates).values({
-    id: generateId(),
+  await insertAuditRecord({
     idempotencyKey: idemKey,
     clientId,
     updatedBy,
@@ -127,33 +128,6 @@ export async function createWeekItem(
 
 // ── Update Week Item Field ───────────────────────────────
 
-const ALLOWED_WEEK_FIELDS = [
-  "title",
-  "status",
-  "date",
-  "dayOfWeek",
-  "owner",
-  "resources",
-  "notes",
-  "category",
-] as const;
-
-type WeekItemField = (typeof ALLOWED_WEEK_FIELDS)[number];
-
-const FIELD_TO_COLUMN: Record<
-  WeekItemField,
-  keyof typeof weekItems.$inferSelect
-> = {
-  title: "title",
-  status: "status",
-  date: "date",
-  dayOfWeek: "dayOfWeek",
-  owner: "owner",
-  resources: "resources",
-  notes: "notes",
-  category: "category",
-};
-
 export interface UpdateWeekItemFieldParams {
   weekOf: string;
   weekItemTitle: string;
@@ -168,30 +142,16 @@ export async function updateWeekItemField(
   const { weekOf, weekItemTitle, field, newValue, updatedBy } = params;
   const db = getRunwayDb();
 
-  const fieldError = validateField(field, ALLOWED_WEEK_FIELDS);
+  const fieldError = validateField(field, WEEK_ITEM_FIELDS);
   if (fieldError) return fieldError;
 
   const typedField = field as WeekItemField;
 
-  const fuzzyResult = await findWeekItemByFuzzyTitleWithDisambiguation(weekOf, weekItemTitle);
-  if (fuzzyResult.kind === "ambiguous") {
-    return {
-      ok: false,
-      error: `Multiple week items match '${weekItemTitle}': ${fuzzyResult.options.map((i) => i.title).join(", ")}. Which one?`,
-      available: fuzzyResult.options.map((i) => i.title),
-    };
-  }
-  if (fuzzyResult.kind === "none") {
-    const weekItemsList = await getWeekItemsForWeek(weekOf);
-    return {
-      ok: false,
-      error: `Week item '${weekItemTitle}' not found for week of ${weekOf}.`,
-      available: weekItemsList.map((i) => i.title),
-    };
-  }
-  const item = fuzzyResult.value;
+  const itemLookup = await resolveWeekItemOrFail(weekOf, weekItemTitle);
+  if (!itemLookup.ok) return itemLookup;
+  const item = itemLookup.item;
 
-  const columnKey = FIELD_TO_COLUMN[typedField];
+  const columnKey = WEEK_ITEM_FIELD_TO_COLUMN[typedField];
   const previousValue = String(item[columnKey] ?? "");
 
   const idemKey = generateIdempotencyKey(
@@ -202,21 +162,19 @@ export async function updateWeekItemField(
     updatedBy
   );
 
-  if (await checkIdempotency(idemKey)) {
-    return {
-      ok: true,
-      message: "Update already applied (duplicate request).",
-      data: { weekItemTitle: item.title, field, previousValue, newValue },
-    };
-  }
+  const dup = await checkDuplicate(idemKey, {
+    ok: true,
+    message: "Update already applied (duplicate request).",
+    data: { weekItemTitle: item.title, field, previousValue, newValue },
+  });
+  if (dup) return dup;
 
   await db
     .update(weekItems)
     .set({ [columnKey]: newValue, updatedAt: new Date() })
     .where(eq(weekItems.id, item.id));
 
-  await db.insert(updates).values({
-    id: generateId(),
+  await insertAuditRecord({
     idempotencyKey: idemKey,
     clientId: item.clientId,
     updatedBy,
@@ -224,6 +182,7 @@ export async function updateWeekItemField(
     previousValue,
     newValue,
     summary: `Week item '${item.title}': ${field} changed from "${previousValue}" to "${newValue}"`,
+    metadata: JSON.stringify({ field }),
   });
 
   return {
