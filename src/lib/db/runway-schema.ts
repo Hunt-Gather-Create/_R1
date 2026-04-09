@@ -96,6 +96,7 @@ export const updates = sqliteTable("updates", {
   previousValue: text("previous_value"),
   newValue: text("new_value"),
   summary: text("summary"),
+  metadata: text("metadata"),
   slackMessageTs: text("slack_message_ts"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
