@@ -38,7 +38,7 @@ const SAFE_INPUT_FIELDS = [
   "category", "since", "limit",
 ];
 
-function sanitizeToolInput(input: unknown): Record<string, unknown> {
+export function sanitizeToolInput(input: unknown): Record<string, unknown> {
   const raw = input as Record<string, unknown>;
   const sanitized: Record<string, unknown> = {};
   for (const key of SAFE_INPUT_FIELDS) {
@@ -111,7 +111,7 @@ async function handleProactiveFollowUp(
 
   const updatedProjects: string[] = [];
   for (const step of result.steps) {
-    for (const call of step.toolCalls) {
+    for (const call of step.toolCalls ?? []) {
       if (
         MUTATION_TOOLS.includes(call.toolName as typeof MUTATION_TOOLS[number]) &&
         call.input &&

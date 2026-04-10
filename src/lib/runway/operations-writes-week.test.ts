@@ -1,30 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createMockDb } from "./operations-writes-test-helpers";
 
 // ── Mock state ──────────────────────────────────────────
-const mockInsertValues = vi.fn();
-const mockUpdateSet = vi.fn();
-const mockUpdateWhere = vi.fn();
-
-const mockTx = {
-  update: vi.fn(() => ({
-    set: vi.fn((...args: unknown[]) => {
-      mockUpdateSet(...args);
-      return { where: mockUpdateWhere };
-    }),
-  })),
-};
+const { db: mockDb, mockInsertValues, mockUpdateSet } = createMockDb();
 
 vi.mock("@/lib/db/runway", () => ({
-  getRunwayDb: () => ({
-    insert: vi.fn(() => ({ values: mockInsertValues })),
-    update: vi.fn(() => ({
-      set: vi.fn((...args: unknown[]) => {
-        mockUpdateSet(...args);
-        return { where: mockUpdateWhere };
-      }),
-    })),
-    transaction: vi.fn(async (cb: (tx: typeof mockTx) => Promise<void>) => cb(mockTx)),
-  }),
+  getRunwayDb: () => mockDb,
 }));
 
 vi.mock("@/lib/db/runway-schema", () => ({

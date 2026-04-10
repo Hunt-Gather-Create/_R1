@@ -506,4 +506,80 @@ describe("createBotTools", () => {
     );
     expect(mockPostUpdate).not.toHaveBeenCalled();
   });
+
+  it("update_project_field posts when field unchanged but cascades happened", async () => {
+    mockOps.updateProjectField.mockResolvedValue({
+      ok: true, message: "Updated dueDate for Convergix / CDS.",
+      data: {
+        clientName: "Convergix", projectName: "CDS", field: "dueDate",
+        previousValue: "2026-04-28", newValue: "2026-04-28",
+        cascadedItems: ["Code handoff", "Go live"],
+      },
+    });
+    await tools.update_project_field.execute(
+      { clientSlug: "convergix", projectName: "CDS", field: "dueDate", newValue: "2026-04-28" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockPostUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ updateText: expect.stringContaining("Cascaded dueDate to 2 calendar item(s)") })
+    );
+  });
+
+  it("update_project_field skips postUpdate when value unchanged and no cascades", async () => {
+    mockOps.updateProjectField.mockResolvedValue({
+      ok: true, message: "Updated dueDate for Convergix / CDS.",
+      data: {
+        clientName: "Convergix", projectName: "CDS", field: "dueDate",
+        previousValue: "2026-04-28", newValue: "2026-04-28",
+        cascadedItems: [],
+      },
+    });
+    await tools.update_project_field.execute(
+      { clientSlug: "convergix", projectName: "CDS", field: "dueDate", newValue: "2026-04-28" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockPostUpdate).not.toHaveBeenCalled();
+  });
+
+  it("update_project_status posts when status unchanged but notes provided", async () => {
+    mockOps.updateProjectStatus.mockResolvedValue({
+      ok: true, message: "Updated",
+      data: { clientName: "Convergix", projectName: "CDS", previousStatus: "done", newStatus: "done" },
+    });
+    await tools.update_project_status.execute(
+      { clientSlug: "convergix", projectName: "CDS", newStatus: "done", notes: "Client confirmed delivery" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockPostUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ updateText: expect.stringContaining("Client confirmed delivery") })
+    );
+  });
+
+  it("update_week_item posts with reverse cascade note", async () => {
+    mockOps.updateWeekItemField.mockResolvedValue({
+      ok: true, message: "Updated date for 'CDS Deadline'.",
+      data: { weekItemTitle: "CDS Deadline", field: "date", previousValue: "2026-04-15", newValue: "2026-04-28", reverseCascaded: true },
+    });
+    await tools.update_week_item.execute(
+      { weekOf: "2026-04-06", weekItemTitle: "CDS Deadline", field: "date", newValue: "2026-04-28" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockPostUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ updateText: expect.stringContaining("also updated project dueDate") })
+    );
+  });
+
+  it("update_week_item posts on reverse cascade even when value unchanged", async () => {
+    mockOps.updateWeekItemField.mockResolvedValue({
+      ok: true, message: "Updated date for 'CDS Deadline'.",
+      data: { weekItemTitle: "CDS Deadline", field: "date", previousValue: "2026-04-28", newValue: "2026-04-28", reverseCascaded: true },
+    });
+    await tools.update_week_item.execute(
+      { weekOf: "2026-04-06", weekItemTitle: "CDS Deadline", field: "date", newValue: "2026-04-28" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockPostUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ updateText: expect.stringContaining("also updated project dueDate") })
+    );
+  });
 });
