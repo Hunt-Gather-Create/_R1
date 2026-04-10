@@ -397,7 +397,7 @@ describe("createBotTools", () => {
   it("update_week_item calls updateWeekItemField", async () => {
     mockOps.updateWeekItemField.mockResolvedValue({
       ok: true, message: "Updated status for 'CDS Review'.",
-      data: { weekItemTitle: "CDS Review", field: "status", previousValue: "", newValue: "completed" },
+      data: { weekItemTitle: "CDS Review", field: "status", previousValue: "", newValue: "completed", reverseCascaded: false },
     });
     const result = await tools.update_week_item.execute(
       { weekOf: "2026-04-06", weekItemTitle: "CDS Review", field: "status", newValue: "completed" },
@@ -447,7 +447,7 @@ describe("createBotTools", () => {
   it("update_week_item posts to updates channel on success", async () => {
     mockOps.updateWeekItemField.mockResolvedValue({
       ok: true, message: "Updated status for 'CDS Review'.",
-      data: { weekItemTitle: "CDS Review", field: "status", previousValue: "", newValue: "completed" },
+      data: { weekItemTitle: "CDS Review", field: "status", previousValue: "", newValue: "completed", reverseCascaded: false },
     });
     await tools.update_week_item.execute(
       { weekOf: "2026-04-06", weekItemTitle: "CDS Review", field: "status", newValue: "completed" },
@@ -498,7 +498,7 @@ describe("createBotTools", () => {
   it("update_week_item skips postUpdate when value unchanged", async () => {
     mockOps.updateWeekItemField.mockResolvedValue({
       ok: true, message: "Updated status for 'CDS Review'.",
-      data: { weekItemTitle: "CDS Review", field: "status", previousValue: "completed", newValue: "completed" },
+      data: { weekItemTitle: "CDS Review", field: "status", previousValue: "completed", newValue: "completed", reverseCascaded: false },
     });
     await tools.update_week_item.execute(
       { weekOf: "2026-04-06", weekItemTitle: "CDS Review", field: "status", newValue: "completed" },
