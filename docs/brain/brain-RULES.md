@@ -229,4 +229,19 @@ Built skills live in `.claude/skills/`. They load on demand, not at session star
 
 ---
 
-*Rules file status: Third draft, April 5, 2026. Skills section updated (4 built, 2 backlog). Slash commands updated to reflect actual Claude Code skills. Key decisions and lessons will grow through discovery and early build sessions.*
+### RULE: TP pre-plans, CC executes — never cross the line
+**Symptom:** TP entered plan mode, built a plan, then immediately created a branch and launched agents to write code.
+**Root cause:** Plan approval was treated as execution approval.
+**Rule:** TP designs the work (brainstorm, research, architecture, edge cases). The output is a pre-plan document. CC receives that pre-plan, enters /plan mode, formalizes it against the actual code, and executes after operator approval. TP never writes code, creates branches, or launches build agents.
+
+### RULE: Pre-plan structure for CC handoff
+**Process:** TP builds a pre-plan with phased checkpoints. Each phase has mechanical checks (tests, build, lint) baked in. CC is told to STOP after each phase and wait for operator review. Behavioral verification (live testing, edge case proofs) is held out — TP runs it after CC delivers. This prevents CC from optimizing for passing checks rather than doing the right fix. See `reference_preplan_prompt.md` in memory for the full template.
+
+### RULE: Quality gate skills are operator-invoked only
+**Symptom:** CC runs /code-review on its own output and optimizes for passing rather than quality.
+**Root cause:** Tim set `disable-model-invocation: true` on skill files for this reason.
+**Rule:** `/code-review`, `/atomic-commits`, `/pr-ready` are run by Jason, never by CC. CC prompts end with `pnpm test:run`, `pnpm build`, `pnpm lint` only. CC can READ skill files to learn quality standards, but never invoke them.
+
+---
+
+*Rules file status: Fourth draft, April 9, 2026. Added TP/CC separation rules, pre-plan process, and quality gate ownership. Full audit of this file + brain-SESSION-START + CLAUDE.md planned before Phase 1.*

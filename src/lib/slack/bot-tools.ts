@@ -25,7 +25,10 @@ async function safePostUpdate(update: Parameters<typeof postUpdate>[0]) {
   try {
     await postUpdate(update);
   } catch (err) {
-    console.error("[Runway Bot] Failed to post to updates channel:", err);
+    console.error(JSON.stringify({
+      event: "runway_bot_post_error",
+      error: err instanceof Error ? err.message : String(err),
+    }));
   }
 }
 
@@ -100,8 +103,8 @@ export function createBotTools(userName: string, now: Date = new Date()) {
 
         const cascaded = result.data?.cascadedItems as string[] | undefined;
 
-        // Post to updates channel (bot-specific behavior)
-        if (result.data) {
+        // Post to updates channel -- skip only true no-ops (no status change AND no notes)
+        if (result.data && (result.data.previousStatus !== result.data.newStatus || notes)) {
           const updateText = `${result.data.previousStatus} -> ${result.data.newStatus}${notes ? ` (${notes})` : ""}${cascaded?.length ? ` [+${cascaded.length} week items]` : ""}`;
           await safePostUpdate({
             clientName: result.data.clientName as string,
@@ -253,20 +256,31 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           return { error: result.error, available: result.available };
         }
 
+        const cascaded = result.data?.cascadedItems as string[] | undefined;
+
+        // Post to updates channel -- skip only true no-ops (no field change AND no cascades)
         if (result.data) {
-          const updateText = `${field}: "${result.data.previousValue}" → "${result.data.newValue}"`;
-          await safePostUpdate({
-            clientName: result.data.clientName as string,
-            projectName: result.data.projectName as string,
-            updateText,
-            updatedBy: userName,
-          });
+          const changed = result.data.previousValue !== result.data.newValue;
+          if (changed || cascaded?.length) {
+            const updateText = changed
+              ? `${field}: "${result.data.previousValue}" → "${result.data.newValue}"${cascaded?.length ? ` [+${cascaded.length} calendar items]` : ""}`
+              : `Cascaded dueDate to ${cascaded!.length} calendar item(s): ${cascaded!.join(", ")}`;
+            await safePostUpdate({
+              clientName: result.data.clientName as string,
+              projectName: result.data.projectName as string,
+              updateText,
+              updatedBy: userName,
+            });
+          }
         }
 
         if (!result.data) return { result: result.message };
 
         const d = result.data;
-        return { result: `Updated ${d.field} for ${d.projectName} (${d.clientName}). Was: "${d.previousValue}", now: "${d.newValue}".` };
+        const cascadeNote = cascaded?.length
+          ? ` Also updated ${cascaded.length} linked calendar item(s): ${cascaded.join(", ")}.`
+          : "";
+        return { result: `Updated ${d.field} for ${d.projectName} (${d.clientName}). Was: "${d.previousValue}", now: "${d.newValue}".${cascadeNote}` };
       },
     }),
 
@@ -369,12 +383,18 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           return { error: result.error, available: result.available };
         }
 
+        // Post to updates channel -- skip only true no-ops (no change AND no reverse cascade)
         if (result.data) {
-          await safePostUpdate({
-            clientName: "Calendar",
-            updateText: `Week item "${weekItemTitle}": ${field} updated`,
-            updatedBy: userName,
-          });
+          const changed = result.data.previousValue !== result.data.newValue;
+          const reverseCascaded = result.data.reverseCascaded as boolean | undefined;
+          if (changed || reverseCascaded) {
+            const cascadeNote = reverseCascaded ? " (also updated project dueDate)" : "";
+            await safePostUpdate({
+              clientName: "Calendar",
+              updateText: `Week item "${weekItemTitle}": ${field} updated${cascadeNote}`,
+              updatedBy: userName,
+            });
+          }
         }
 
         return { result: result.message };

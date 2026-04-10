@@ -25,8 +25,27 @@ import {
 import { createBotTools } from "./bot-tools";
 import { buildBotSystemPrompt } from "@/lib/runway/bot-context";
 import { formatProactiveFollowUp } from "./bot-proactive";
+import { recordTokenUsage } from "@/lib/token-usage";
+
+const RUNWAY_WORKSPACE_ID = "runway-bot";
 
 const MODEL = "claude-sonnet-4-6";
+
+/** Only log safe structural fields from tool inputs — never free-text content like notes/summary. */
+const SAFE_INPUT_FIELDS = [
+  "clientSlug", "projectName", "field", "newValue", "newStatus",
+  "weekOf", "weekItemTitle", "personName", "dayOfWeek", "date",
+  "category", "since", "limit",
+];
+
+export function sanitizeToolInput(input: unknown): Record<string, unknown> {
+  const raw = input as Record<string, unknown>;
+  const sanitized: Record<string, unknown> = {};
+  for (const key of SAFE_INPUT_FIELDS) {
+    if (key in raw) sanitized[key] = raw[key];
+  }
+  return sanitized;
+}
 const MAX_STEPS = 12;
 
 /** Tool names that mutate project/week-item data — used to exclude just-updated items from proactive nudge. */
@@ -92,7 +111,7 @@ async function handleProactiveFollowUp(
 
   const updatedProjects: string[] = [];
   for (const step of result.steps) {
-    for (const call of step.toolCalls) {
+    for (const call of step.toolCalls ?? []) {
       if (
         MUTATION_TOOLS.includes(call.toolName as typeof MUTATION_TOOLS[number]) &&
         call.input &&
@@ -190,11 +209,45 @@ export async function handleDirectMessage(
       maxRetries: 1,
     });
 
-    // Log token usage for cost visibility
-    // TODO: integrate with recordTokenUsage once Runway has a workspaceId
-    if (result.usage) {
-      const { inputTokens, outputTokens } = result.usage;
-      console.log(`[Runway Bot] tokens: ${inputTokens} in / ${outputTokens} out`);
+    // Structured logging for observability
+    console.log(JSON.stringify({
+      event: "runway_bot_request",
+      user: displayName,
+      slackUserId,
+      isThread: !!threadTs,
+      inputTokens: result.usage?.inputTokens,
+      outputTokens: result.usage?.outputTokens,
+      stepCount: result.steps.length,
+    }));
+
+    for (const step of result.steps) {
+      for (const call of step.toolCalls ?? []) {
+        console.log(JSON.stringify({
+          event: "runway_bot_tool_call",
+          tool: call.toolName,
+          input: sanitizeToolInput(call.input),
+        }));
+      }
+      for (const res of step.toolResults ?? []) {
+        console.log(JSON.stringify({
+          event: "runway_bot_tool_result",
+          tool: res.toolName,
+          output: typeof res.output === "string" ? res.output : JSON.stringify(res.output),
+        }));
+      }
+    }
+
+    // Persist token usage for cost monitoring (non-critical)
+    try {
+      await recordTokenUsage({
+        workspaceId: RUNWAY_WORKSPACE_ID,
+        model: MODEL,
+        inputTokens: result.usage?.inputTokens ?? 0,
+        outputTokens: result.usage?.outputTokens ?? 0,
+        source: "runway-bot",
+      });
+    } catch {
+      // Token tracking is non-critical; don't fail the bot response
     }
 
     const replyTs = threadTs ?? messageTs;
@@ -210,11 +263,19 @@ export async function handleDirectMessage(
       try {
         await handleProactiveFollowUp(result, teamMemberRecord, channelId, replyTs, displayName);
       } catch (err) {
-        console.error("[Runway Bot] Proactive follow-up failed:", err);
+        console.error(JSON.stringify({
+          event: "runway_bot_proactive_error",
+          user: displayName,
+          error: err instanceof Error ? err.message : String(err),
+        }));
       }
     }
   } catch (err) {
-    console.error("[Runway Bot] AI generation failed:", err);
+    console.error(JSON.stringify({
+      event: "runway_bot_error",
+      user: displayName,
+      error: err instanceof Error ? err.message : String(err),
+    }));
     await slack.chat.postMessage({
       channel: channelId,
       text: "Something went wrong processing your message. Try again or check with the team.",

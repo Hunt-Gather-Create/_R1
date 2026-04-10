@@ -96,7 +96,7 @@ export function buildCapabilityBoundaries(): string {
   return `## What you CAN do (your tools)
 - Look up clients, projects, pipeline, week items, workload, contacts (read-only queries)
 - Change a project's status (update_project_status) -- this also cascades to linked week items for completed/blocked/on-hold
-- Update a project field: name, dueDate, owner, resources, waitingOn, target, notes (update_project_field) -- this ACTUALLY changes the database
+- Update a project field: name, dueDate, owner, resources, waitingOn, target, notes (update_project_field) -- this ACTUALLY changes the database. When you update dueDate, linked deadline calendar items are also updated automatically
 - Create a new project under a client (create_project)
 - Add a calendar item to a week (create_week_item)
 - Update a week item field (update_week_item)

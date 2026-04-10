@@ -1,7 +1,7 @@
 # brain-SESSION-START.md
 ## Round One: Project Management + Resource View
 **Civilization Agency — Internal Build**
-*Last updated: April 7, 2026 (evening)*
+*Last updated: April 9, 2026*
 
 ---
 
@@ -32,7 +32,7 @@ Full product intent lives in `brain-PRODUCT-VISION.md`.
 
 ## §2 Current Status and Next Actions
 
-**Status as of April 7, 2026 (evening):**
+**Status as of April 9, 2026:**
 
 | Item | Status |
 |---|---|
@@ -61,11 +61,13 @@ Full product intent lives in `brain-PRODUCT-VISION.md`.
 | **Phase 0: Bot testing** | **Done** — Full QA pass: identity, date context, "my plate" morning briefing, CGX queries, pipeline, writes with updates channel post, image attachments, client contacts. All passing on Sonnet 4.6. |
 | **Phase 0: Pipeline status overhaul** | **Done** — CC ran prompt. Lifecycle: scoping, drafting, sow-sent, verbal, signed + at-risk flag. |
 | **Phase 0: Status cascade** | **Done** — Project status changes cascade to linked week items (completed/blocked/on-hold). Seed script links 15/39 items via fuzzy matching. 4 cascade scenarios tested. |
-| Phase 0: Data intake (Allison, Ronan, Jason) | Not started — QA questions stockpiled. |
+| **Phase 0: Real-user rollout** | **Done (failed)** — April 8. Allison and Leslie tested. Bot failed at multi-turn conversations, couldn't create projects or update fields, faked success on deadline changes, nagged about unrelated tasks. |
+| **Phase 0: Bot v2** | **PR #81 up** — Thread history, 6 new write tools, capability boundaries, proactive nudge overhaul, fuzzy matching with dash normalization, undo, prompt caching. 8 commits, 1213 tests. Awaiting merge. |
+| Phase 0: Data intake (Allison, Ronan, Jason) | Blocked on bot v2 merge + deploy. |
 | User stories (4-pass) | Not started — next after Phase 0 ships |
 | Full product `/plan` | Not started |
 
-**Immediate next action:** Merge PR #80. Deploy to production (Tim deploys from `runway` branch). Verify bot responds in production post-deploy. Remaining QA sessions: Allison, Ronan, Jason. Thursday 4/9: review client reference data.
+**Immediate next action:** Merge PR #81. Tim deploys from `runway` branch. Run `pnpm db:migrate` (new metadata column) then `pnpm runway:seed`. Verify bot with Allison and Leslie. Remaining QA sessions: Allison, Ronan, Jason.
 
 ---
 
@@ -77,7 +79,7 @@ Runway is Civilization Agency's triage tool. It puts everything in flight, waiti
 
 **1. The Board (Web View)** — Route: `/runway`. Three views: This Week (day-by-day), By Account, Pipeline. TV-readable: large type, clear status colors, high contrast. Read-only display — all writes come through Slack.
 
-**2. The Slack Bot (Update Layer)** — 1:1 DM channels between bot and team members. Conversational: person tells bot what changed, bot confirms before writing. Deduplication via idempotency keys. Proactive nudges deferred — start reactive, earn trust.
+**2. The Slack Bot (Update Layer)** — 1:1 DM channels between bot and team members. Conversational: person tells bot what changed, bot confirms before writing. Deduplication via idempotency keys. Thread history for multi-turn conversations. 14 tools (reads + writes). Proactive nudge on first message only, filtered by owner/resource. Confirmation before destructive changes.
 
 **3. The Updates Channel (History Log)** — Shared Slack channel (Jason + Kathy). Passive, read-only log of every change. One message per project update. Format: client name, project, update, updated by with emoji indicator (green = Civ employee, blue = client contact). No AI voice.
 
@@ -166,9 +168,10 @@ Daniel (Convergix, primary), Nicole (Convergix), Tom (LPPC), Blake Cadwell (Soun
 - **8.9 Owner/Resource Separation** — Schema + data + bot tools + UI. All 39 week items triaged.
 - **8.10 Updates Channel** — Formatted posts on every write. Idempotency bug fixed.
 - **8.11 Pipeline Status Overhaul** — Lifecycle: scoping, drafting, sow-sent, verbal, signed + at-risk.
-- **8.12 Status Cascade** — In progress (CC running). Project status changes cascade to linked week items.
-- **8.13 Image Support** — Bot receives and processes image attachments. `files:read` scope added.
-- **8.14 Card Standardization** — DayItemCard with MetadataLabel, consistent layout.
+- **8.12 Status Cascade** — Done. Project status changes cascade to linked week items.
+- **8.13 Image Support** — Done. Bot receives and processes image attachments. `files:read` scope added.
+- **8.14 Card Standardization** — Done. DayItemCard with MetadataLabel, consistent layout.
+- **9.0 Bot v2 (PR #81)** — Thread history (conversations.replies, 20-message cap). 6 new tools: create_project, update_project_field, create/update_week_item, undo_last_change, get_recent_updates. Capability boundaries prompt. Proactive nudge: once per thread, owner/resource filter, on-hold skip. Fuzzy matching: dash normalization, disambiguation. Undo: null previousValue, sequential walk, field validation via metadata column. Prompt caching via providerOptions. Confirmation rules, multi-update guidance, MAX_STEPS=12. Duplicate project guard. 1213 tests.
 
 ---
 
@@ -237,4 +240,4 @@ Full table in `brain-RULES.md`. The ones that must never be re-litigated:
 
 ---
 
-*Session-start status: Updated April 7, 2026 (end of day). Phase 0 Runway live at runway.startround1.com. PRs #77-#79 merged, PR #80 up (bot intelligence, owner/resource, status cascade, pipeline overhaul, updates channel, image support -- 50 commits, 1047 tests). Slack Event URL back on production. Next: merge #80, deploy, verify bot in prod, remaining QA sessions (Allison, Ronan, Jason). Update §2 at end of every session.*
+*Session-start status: Updated April 9, 2026. Phase 0 Runway live at runway.startround1.com. PRs #77-#80 merged. PR #81 up (bot v2: thread history, write ops, fuzzy matching, undo, proactive overhaul, prompt caching -- 8 commits, 1213 tests). Next: merge #81, Tim deploys + runs migration, verify bot with Allison and Leslie. Remaining QA sessions: Allison, Ronan, Jason. Update §2 at end of every session.*

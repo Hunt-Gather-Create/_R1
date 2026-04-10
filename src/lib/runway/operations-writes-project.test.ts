@@ -1,24 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createMockDb } from "./operations-writes-test-helpers";
 
 // ── Mock state ──────────────────────────────────────────
-const mockInsertValues = vi.fn();
-const mockUpdateSet = vi.fn();
-const mockUpdateWhere = vi.fn();
+const { db: mockDb, mockInsertValues, mockUpdateSet } = createMockDb();
 
 vi.mock("@/lib/db/runway", () => ({
-  getRunwayDb: () => ({
-    insert: vi.fn(() => ({ values: mockInsertValues })),
-    update: vi.fn(() => ({
-      set: vi.fn((...args: unknown[]) => {
-        mockUpdateSet(...args);
-        return { where: mockUpdateWhere };
-      }),
-    })),
-  }),
+  getRunwayDb: () => mockDb,
 }));
 
 vi.mock("@/lib/db/runway-schema", () => ({
   projects: { id: "id" },
+  weekItems: { id: "id" },
   updates: {},
 }));
 
@@ -66,6 +58,12 @@ vi.mock("./operations-utils", () => ({
   },
 }));
 
+const mockGetLinkedDeadlineItems = vi.fn();
+
+vi.mock("./operations-reads-week", () => ({
+  getLinkedDeadlineItems: (...args: unknown[]) => mockGetLinkedDeadlineItems(...args),
+}));
+
 const client = { id: "c1", name: "Convergix", slug: "convergix" };
 const project = {
   id: "p1",
@@ -82,6 +80,7 @@ const project = {
 beforeEach(() => {
   vi.clearAllMocks();
   mockCheckIdempotency.mockResolvedValue(false);
+  mockGetLinkedDeadlineItems.mockResolvedValue([]);
 });
 
 describe("updateProjectField", () => {
@@ -106,6 +105,7 @@ describe("updateProjectField", () => {
         field: "dueDate",
         previousValue: "2026-04-15",
         newValue: "2026-04-25",
+        cascadedItems: [],
       });
     }
     expect(mockUpdateSet).toHaveBeenCalledWith(
@@ -266,5 +266,75 @@ describe("updateProjectField", () => {
 
     const insertCall = mockInsertValues.mock.calls[0][0];
     expect(insertCall.metadata).toBe(JSON.stringify({ field: "dueDate" }));
+  });
+
+  it("cascades dueDate to linked deadline week items", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+    mockGetLinkedDeadlineItems.mockResolvedValue([
+      { id: "wi-1", title: "Code handoff", category: "deadline" },
+      { id: "wi-2", title: "Go live", category: "deadline" },
+    ]);
+
+    const { updateProjectField } = await import("./operations-writes-project");
+    const result = await updateProjectField({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      field: "dueDate",
+      newValue: "2026-04-28",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.cascadedItems).toEqual(["Code handoff", "Go live"]);
+    }
+    // project update + 2 week item updates = 3 calls to mockUpdateSet
+    expect(mockUpdateSet).toHaveBeenCalledTimes(3);
+    expect(mockUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ date: "2026-04-28" })
+    );
+  });
+
+  it("does not cascade non-dueDate field changes", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+    const { updateProjectField } = await import("./operations-writes-project");
+    const result = await updateProjectField({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      field: "owner",
+      newValue: "Lane",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mockGetLinkedDeadlineItems).not.toHaveBeenCalled();
+    if (result.ok) {
+      expect(result.data?.cascadedItems).toEqual([]);
+    }
+  });
+
+  it("handles no linked deadline items gracefully", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+    mockGetLinkedDeadlineItems.mockResolvedValue([]);
+
+    const { updateProjectField } = await import("./operations-writes-project");
+    const result = await updateProjectField({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      field: "dueDate",
+      newValue: "2026-04-28",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.cascadedItems).toEqual([]);
+    }
+    // Only the project update itself
+    expect(mockUpdateSet).toHaveBeenCalledTimes(1);
   });
 });

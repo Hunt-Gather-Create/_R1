@@ -6,8 +6,9 @@
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
-import { projects } from "@/lib/db/runway-schema";
+import { projects, weekItems } from "@/lib/db/runway-schema";
 import { eq } from "drizzle-orm";
+import { getLinkedDeadlineItems } from "./operations-reads-week";
 import {
   PROJECT_FIELDS,
   PROJECT_FIELD_TO_COLUMN,
@@ -66,10 +67,37 @@ export async function updateProjectField(
   });
   if (dup) return dup;
 
-  await db
-    .update(projects)
-    .set({ [columnKey]: newValue, updatedAt: new Date() })
-    .where(eq(projects.id, project.id));
+  // Wrap project update + cascade in a single transaction for atomicity
+  const cascadedItems: string[] = [];
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(projects)
+      .set({ [columnKey]: newValue, updatedAt: new Date() })
+      .where(eq(projects.id, project.id));
+
+    // Cascade dueDate changes to linked deadline week items
+    if (typedField === "dueDate") {
+      const linkedDeadlines = await getLinkedDeadlineItems(project.id);
+      for (const item of linkedDeadlines) {
+        await tx
+          .update(weekItems)
+          .set({ date: newValue, updatedAt: new Date() })
+          .where(eq(weekItems.id, item.id));
+        cascadedItems.push(item.title);
+      }
+    }
+  });
+
+  if (cascadedItems.length > 0) {
+    console.log(JSON.stringify({
+      event: "runway_cascade_forward",
+      projectId: project.id,
+      field: "dueDate",
+      newValue,
+      cascadedItems,
+    }));
+  }
 
   await insertAuditRecord({
     idempotencyKey: idemKey,
@@ -92,6 +120,7 @@ export async function updateProjectField(
       field,
       previousValue,
       newValue,
+      cascadedItems,
     },
   };
 }

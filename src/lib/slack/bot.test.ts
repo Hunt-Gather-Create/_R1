@@ -49,6 +49,11 @@ vi.mock("@/lib/runway/bot-context", () => ({
   buildBotSystemPrompt: vi.fn().mockReturnValue("mocked system prompt"),
 }));
 
+const mockRecordTokenUsage = vi.fn().mockResolvedValue(undefined);
+vi.mock("@/lib/token-usage", () => ({
+  recordTokenUsage: (...args: unknown[]) => mockRecordTokenUsage(...args),
+}));
+
 describe("handleDirectMessage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -607,5 +612,144 @@ describe("proactive follow-up", () => {
     // AI response still posted
     expect(mockPostMessage).toHaveBeenCalledTimes(1);
     expect(mockPostMessage.mock.calls[0][0].text).toBe("Done.");
+  });
+});
+
+describe("sanitizeToolInput", () => {
+  it("passes through safe structural fields", async () => {
+    const { sanitizeToolInput } = await import("./bot");
+    const result = sanitizeToolInput({
+      clientSlug: "convergix",
+      projectName: "CDS",
+      field: "dueDate",
+      newValue: "2026-05-01",
+    });
+    expect(result).toEqual({
+      clientSlug: "convergix",
+      projectName: "CDS",
+      field: "dueDate",
+      newValue: "2026-05-01",
+    });
+  });
+
+  it("strips sensitive free-text fields", async () => {
+    const { sanitizeToolInput } = await import("./bot");
+    const result = sanitizeToolInput({
+      clientSlug: "convergix",
+      projectName: "CDS",
+      notes: "Confidential client info here",
+      summary: "Secret details",
+      name: "should not appear",
+    });
+    expect(result).toEqual({
+      clientSlug: "convergix",
+      projectName: "CDS",
+    });
+    expect(result).not.toHaveProperty("notes");
+    expect(result).not.toHaveProperty("summary");
+    expect(result).not.toHaveProperty("name");
+  });
+
+  it("handles empty input", async () => {
+    const { sanitizeToolInput } = await import("./bot");
+    expect(sanitizeToolInput({})).toEqual({});
+  });
+
+  it("includes all safe fields when present", async () => {
+    const { sanitizeToolInput } = await import("./bot");
+    const result = sanitizeToolInput({
+      clientSlug: "x", projectName: "y", field: "f", newValue: "v",
+      newStatus: "s", weekOf: "w", weekItemTitle: "t", personName: "p",
+      dayOfWeek: "monday", date: "2026-01-01", category: "deadline",
+      since: "2026-01-01", limit: 10,
+    });
+    expect(Object.keys(result)).toHaveLength(13);
+  });
+});
+
+describe("token usage tracking", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockConversationsReplies.mockResolvedValue({ messages: [] });
+  });
+
+  it("calls recordTokenUsage with correct params after successful response", async () => {
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: "response",
+      steps: [{ toolCalls: [] }],
+      usage: { inputTokens: 500, outputTokens: 150 },
+    });
+
+    const { handleDirectMessage } = await import("./bot");
+    await handleDirectMessage("U12345", "D67890", "hello", "ts123");
+
+    expect(mockRecordTokenUsage).toHaveBeenCalledWith({
+      workspaceId: "runway-bot",
+      model: "claude-sonnet-4-6",
+      inputTokens: 500,
+      outputTokens: 150,
+      source: "runway-bot",
+    });
+  });
+
+  it("defaults to 0 tokens when usage is missing", async () => {
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: "response",
+      steps: [{ toolCalls: [] }],
+    });
+
+    const { handleDirectMessage } = await import("./bot");
+    await handleDirectMessage("U12345", "D67890", "hello", "ts123");
+
+    expect(mockRecordTokenUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ inputTokens: 0, outputTokens: 0 })
+    );
+  });
+
+  it("does not fail the bot response when token tracking throws", async () => {
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: "response",
+      steps: [{ toolCalls: [] }],
+      usage: { inputTokens: 100, outputTokens: 50 },
+    });
+    mockRecordTokenUsage.mockRejectedValueOnce(new Error("DB down"));
+
+    const { handleDirectMessage } = await import("./bot");
+    await handleDirectMessage("U12345", "D67890", "hello", "ts123");
+
+    // Bot response still posted despite token tracking failure
+    expect(mockPostMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "response" })
+    );
+  });
+});
+
+describe("toolCalls/toolResults guard", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockConversationsReplies.mockResolvedValue({ messages: [] });
+  });
+
+  it("handles steps with undefined toolCalls and toolResults without crashing", async () => {
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: "Just a text response",
+      steps: [
+        { /* text-only step — no toolCalls or toolResults */ },
+        { toolCalls: [{ toolName: "get_clients", input: {} }], toolResults: [{ toolName: "get_clients", output: "[]" }] },
+        { toolCalls: undefined, toolResults: undefined },
+      ],
+    });
+
+    const { handleDirectMessage } = await import("./bot");
+    // Should not throw
+    await handleDirectMessage("U12345", "D67890", "hello", "ts123");
+
+    expect(mockPostMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "Just a text response" })
+    );
   });
 });
