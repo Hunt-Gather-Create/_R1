@@ -4,7 +4,7 @@
 
 import { getRunwayDb } from "@/lib/db/runway";
 import { projects, weekItems } from "@/lib/db/runway-schema";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
   getClientNameMap,
   groupBy,
@@ -16,6 +16,12 @@ export type WeekItemRow = typeof weekItems.$inferSelect;
 export async function getLinkedWeekItems(projectId: string): Promise<WeekItemRow[]> {
   const db = getRunwayDb();
   return db.select().from(weekItems).where(eq(weekItems.projectId, projectId));
+}
+
+export async function getLinkedDeadlineItems(projectId: string): Promise<WeekItemRow[]> {
+  const db = getRunwayDb();
+  return db.select().from(weekItems)
+    .where(and(eq(weekItems.projectId, projectId), eq(weekItems.category, "deadline")));
 }
 
 export async function getWeekItemsData(weekOf?: string, owner?: string, resource?: string) {

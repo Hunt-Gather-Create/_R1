@@ -49,6 +49,7 @@ export {
   getClientsWithCounts,
   getProjectsFiltered,
   getLinkedWeekItems,
+  getLinkedDeadlineItems,
   getWeekItemsData,
   getPersonWorkload,
   getPipelineData,
