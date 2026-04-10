@@ -25,7 +25,10 @@ async function safePostUpdate(update: Parameters<typeof postUpdate>[0]) {
   try {
     await postUpdate(update);
   } catch (err) {
-    console.error("[Runway Bot] Failed to post to updates channel:", err);
+    console.error(JSON.stringify({
+      event: "runway_bot_post_error",
+      error: err instanceof Error ? err.message : String(err),
+    }));
   }
 }
 
@@ -100,8 +103,8 @@ export function createBotTools(userName: string, now: Date = new Date()) {
 
         const cascaded = result.data?.cascadedItems as string[] | undefined;
 
-        // Post to updates channel (bot-specific behavior)
-        if (result.data) {
+        // Post to updates channel (bot-specific behavior) -- skip no-op updates
+        if (result.data && result.data.previousStatus !== result.data.newStatus) {
           const updateText = `${result.data.previousStatus} -> ${result.data.newStatus}${notes ? ` (${notes})` : ""}${cascaded?.length ? ` [+${cascaded.length} week items]` : ""}`;
           await safePostUpdate({
             clientName: result.data.clientName as string,
@@ -253,8 +256,11 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           return { error: result.error, available: result.available };
         }
 
-        if (result.data) {
-          const updateText = `${field}: "${result.data.previousValue}" → "${result.data.newValue}"`;
+        const cascaded = result.data?.cascadedItems as string[] | undefined;
+
+        // Post to updates channel -- skip no-op updates
+        if (result.data && result.data.previousValue !== result.data.newValue) {
+          const updateText = `${field}: "${result.data.previousValue}" → "${result.data.newValue}"${cascaded?.length ? ` [+${cascaded.length} calendar items]` : ""}`;
           await safePostUpdate({
             clientName: result.data.clientName as string,
             projectName: result.data.projectName as string,
@@ -266,7 +272,10 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         if (!result.data) return { result: result.message };
 
         const d = result.data;
-        return { result: `Updated ${d.field} for ${d.projectName} (${d.clientName}). Was: "${d.previousValue}", now: "${d.newValue}".` };
+        const cascadeNote = cascaded?.length
+          ? ` Also updated ${cascaded.length} linked calendar item(s): ${cascaded.join(", ")}.`
+          : "";
+        return { result: `Updated ${d.field} for ${d.projectName} (${d.clientName}). Was: "${d.previousValue}", now: "${d.newValue}".${cascadeNote}` };
       },
     }),
 
@@ -369,7 +378,8 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           return { error: result.error, available: result.available };
         }
 
-        if (result.data) {
+        // Post to updates channel -- skip no-op updates
+        if (result.data && result.data.previousValue !== result.data.newValue) {
           await safePostUpdate({
             clientName: "Calendar",
             updateText: `Week item "${weekItemTitle}": ${field} updated`,

@@ -468,4 +468,42 @@ describe("createBotTools", () => {
     );
     expect((result as Record<string, string[]>).available).toEqual(["CDS Review", "Widget Delivery"]);
   });
+
+  // ── No-op guard tests ─────────────────────────────────────
+
+  it("update_project_status skips postUpdate when status unchanged", async () => {
+    mockOps.updateProjectStatus.mockResolvedValue({
+      ok: true, message: "Updated",
+      data: { clientName: "Convergix", projectName: "CDS", previousStatus: "done", newStatus: "done" },
+    });
+    await tools.update_project_status.execute(
+      { clientSlug: "convergix", projectName: "CDS", newStatus: "done" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockPostUpdate).not.toHaveBeenCalled();
+  });
+
+  it("update_project_field skips postUpdate when value unchanged", async () => {
+    mockOps.updateProjectField.mockResolvedValue({
+      ok: true, message: "Updated dueDate for Convergix / CDS.",
+      data: { clientName: "Convergix", projectName: "CDS", field: "dueDate", previousValue: "2026-04-28", newValue: "2026-04-28" },
+    });
+    await tools.update_project_field.execute(
+      { clientSlug: "convergix", projectName: "CDS", field: "dueDate", newValue: "2026-04-28" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockPostUpdate).not.toHaveBeenCalled();
+  });
+
+  it("update_week_item skips postUpdate when value unchanged", async () => {
+    mockOps.updateWeekItemField.mockResolvedValue({
+      ok: true, message: "Updated status for 'CDS Review'.",
+      data: { weekItemTitle: "CDS Review", field: "status", previousValue: "completed", newValue: "completed" },
+    });
+    await tools.update_week_item.execute(
+      { weekOf: "2026-04-06", weekItemTitle: "CDS Review", field: "status", newValue: "completed" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockPostUpdate).not.toHaveBeenCalled();
+  });
 });
