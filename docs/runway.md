@@ -113,9 +113,11 @@ When a project's `dueDate` is changed via `updateProjectField`, all linked week 
 
 The reverse also applies: when a deadline week item's `date` is changed via `updateWeekItemField`, the linked project's `dueDate` syncs back automatically (**reverse cascade**). This only fires when all three conditions are met: `field === "date"`, `item.category === "deadline"`, and `item.projectId` is not null.
 
-**No circular cascade risk:** Forward cascade writes directly to `weekItems` table via `db.update()`. Reverse cascade writes directly to `projects` table via `db.update()`. Neither function calls the other -- they use raw DB writes, not the operation functions.
+Both forward and reverse cascades are wrapped in `db.transaction()` for atomicity — if any write fails mid-cascade, all changes roll back.
 
-Week items must be linked to projects (via `projectId` FK) for cascades to work. Use `scripts/backfill-week-item-links.ts` to link existing unlinked items.
+**No circular cascade risk:** Forward cascade writes directly to `weekItems` table via `tx.update()`. Reverse cascade writes directly to `projects` table via `tx.update()`. Neither function calls the other -- they use raw DB writes, not the operation functions.
+
+Week items must be linked to projects (via `projectId` FK) for cascades to work. Use `scripts/backfill-week-item-links.ts` to link existing unlinked items (`--verbose` shows match reasoning, `--apply` commits).
 
 ### Idempotency
 
@@ -332,16 +334,31 @@ Defined in `src/lib/slack/bot-tools.ts`. Same operations as MCP but wrapped as A
 
 ### No-Op Guard
 
-All write tool handlers (`update_project_status`, `update_project_field`, `update_week_item`) check if the previous value equals the new value before posting to the updates channel. No-op updates (same value written again) skip the channel post to prevent spam.
+All write tool handlers (`update_project_status`, `update_project_field`, `update_week_item`) check if the previous value equals the new value before posting to the updates channel. True no-ops skip the channel post to prevent spam. However, meaningful side effects still trigger posts:
+
+- **Cascade-only**: `update_project_field` posts when the field value is unchanged but linked deadline items were cascaded
+- **Notes-only**: `update_project_status` posts when the status is unchanged but notes were provided
+- **Reverse cascade**: `update_week_item` posts with a "(also updated project dueDate)" note when reverse cascade fired
 
 ### Structured Logging
 
 `bot.ts` emits structured JSON logs for every bot interaction, visible in Vercel logs:
 
 - `runway_bot_request` -- user, slackUserId, isThread, inputTokens, outputTokens, stepCount
-- `runway_bot_tool_call` -- tool name and input for each tool call
+- `runway_bot_tool_call` -- tool name and **sanitized** input (only safe structural fields like clientSlug, projectName, field, newValue; sensitive free-text fields like notes/summary are stripped)
 - `runway_bot_tool_result` -- tool name and output for each tool result
 - `runway_bot_error` -- user and error message on failure
+- `runway_bot_proactive_error` -- proactive follow-up failures
+- `runway_bot_post_error` -- updates channel post failures
+
+Cascade operations emit their own structured logs from the operations layer:
+
+- `runway_cascade_forward` -- projectId, field, newValue, cascadedItems[] (from `operations-writes-project.ts`)
+- `runway_cascade_reverse` -- weekItemId, projectId, field, newValue (from `operations-writes-week.ts`)
+
+### Token Usage Tracking
+
+After each bot response, `recordTokenUsage()` persists token counts to the main app's `tokenUsage` table using `"runway-bot"` as the sentinel workspace ID. This is non-critical — failures are silently caught to avoid breaking bot responses.
 
 ### Updates Channel
 
@@ -419,7 +436,7 @@ Requires `pnpm dev:inngest` (or `pnpm dev:all`) running alongside the dev server
 | `src/lib/mcp/runway-tools.ts` | MCP tool registrations (11 tools) |
 | `src/app/api/mcp/runway/route.ts` | MCP HTTP endpoint |
 | `src/app/api/slack/events/route.ts` | Slack webhook handler (text + images) |
-| `src/lib/slack/bot.ts` | AI bot orchestration (text + image content blocks) |
+| `src/lib/slack/bot.ts` | AI bot orchestration (text + image content blocks, sanitized logging, token tracking) |
 | `src/lib/slack/bot-tools.ts` | Bot tool definitions (14 tools) |
 | `src/lib/slack/verify.ts` | Slack signature verification |
 | `src/lib/slack/updates-channel.ts` | Updates channel posting |
@@ -435,7 +452,7 @@ Requires `pnpm dev:inngest` (or `pnpm dev:all`) running alongside the dev server
 | `src/app/runway/components/status-badge.tsx` | Shared badge and label components |
 | `src/app/runway/data.ts` | Seed data (13 clients, typed exports) |
 | `scripts/seed-runway.ts` | Seed script (imports from date-utils, links week items to projects via `projectId` FK) |
-| `scripts/backfill-week-item-links.ts` | One-time backfill: links unlinked week items to projects via fuzzy title matching. Dry-run by default, `--apply` to commit. |
+| `scripts/backfill-week-item-links.ts` | One-time backfill: links unlinked week items to projects via fuzzy title matching. Dry-run by default, `--verbose` for match reasoning, `--apply` to commit. Warns about cascade risk from incorrect links. |
 
 ## Related Documentation
 
