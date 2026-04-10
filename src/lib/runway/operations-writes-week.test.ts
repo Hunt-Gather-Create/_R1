@@ -18,6 +18,7 @@ vi.mock("@/lib/db/runway", () => ({
 }));
 
 vi.mock("@/lib/db/runway-schema", () => ({
+  projects: { id: "id" },
   weekItems: { id: "id" },
   updates: {},
 }));
@@ -288,5 +289,100 @@ describe("updateWeekItemField", () => {
     if (!result.ok) {
       expect(result.error).toContain("invalid");
     }
+  });
+
+  it("reverse cascades date change on deadline item to project.dueDate", async () => {
+    const deadlineItem = {
+      ...weekItem,
+      category: "deadline",
+      projectId: "p1",
+      date: "2026-04-23",
+    };
+    mockFindWeekItemByFuzzyTitle.mockResolvedValue(deadlineItem);
+
+    const { updateWeekItemField } = await import("./operations-writes-week");
+    const result = await updateWeekItemField({
+      weekOf: "2026-04-06",
+      weekItemTitle: "CDS Review",
+      field: "date",
+      newValue: "2026-04-28",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    // week item update + project dueDate update = 2 calls
+    expect(mockUpdateSet).toHaveBeenCalledTimes(2);
+    expect(mockUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ dueDate: "2026-04-28" })
+    );
+  });
+
+  it("does not reverse cascade for non-deadline category", async () => {
+    const reviewItem = {
+      ...weekItem,
+      category: "review",
+      projectId: "p1",
+    };
+    mockFindWeekItemByFuzzyTitle.mockResolvedValue(reviewItem);
+
+    const { updateWeekItemField } = await import("./operations-writes-week");
+    await updateWeekItemField({
+      weekOf: "2026-04-06",
+      weekItemTitle: "CDS Review",
+      field: "date",
+      newValue: "2026-04-28",
+      updatedBy: "kathy",
+    });
+
+    // Only the week item update itself
+    expect(mockUpdateSet).toHaveBeenCalledTimes(1);
+    expect(mockUpdateSet).not.toHaveBeenCalledWith(
+      expect.objectContaining({ dueDate: "2026-04-28" })
+    );
+  });
+
+  it("does not reverse cascade when projectId is null", async () => {
+    const unlinkedDeadline = {
+      ...weekItem,
+      category: "deadline",
+      projectId: null,
+    };
+    mockFindWeekItemByFuzzyTitle.mockResolvedValue(unlinkedDeadline);
+
+    const { updateWeekItemField } = await import("./operations-writes-week");
+    await updateWeekItemField({
+      weekOf: "2026-04-06",
+      weekItemTitle: "CDS Review",
+      field: "date",
+      newValue: "2026-04-28",
+      updatedBy: "kathy",
+    });
+
+    // Only the week item update itself
+    expect(mockUpdateSet).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not reverse cascade for non-date field changes", async () => {
+    const deadlineItem = {
+      ...weekItem,
+      category: "deadline",
+      projectId: "p1",
+    };
+    mockFindWeekItemByFuzzyTitle.mockResolvedValue(deadlineItem);
+
+    const { updateWeekItemField } = await import("./operations-writes-week");
+    await updateWeekItemField({
+      weekOf: "2026-04-06",
+      weekItemTitle: "CDS Review",
+      field: "status",
+      newValue: "completed",
+      updatedBy: "kathy",
+    });
+
+    // Only the week item update itself
+    expect(mockUpdateSet).toHaveBeenCalledTimes(1);
+    expect(mockUpdateSet).not.toHaveBeenCalledWith(
+      expect.objectContaining({ dueDate: expect.anything() })
+    );
   });
 });

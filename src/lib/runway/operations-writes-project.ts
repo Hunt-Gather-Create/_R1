@@ -6,8 +6,9 @@
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
-import { projects } from "@/lib/db/runway-schema";
+import { projects, weekItems } from "@/lib/db/runway-schema";
 import { eq } from "drizzle-orm";
+import { getLinkedDeadlineItems } from "./operations-reads-week";
 import {
   PROJECT_FIELDS,
   PROJECT_FIELD_TO_COLUMN,
@@ -71,6 +72,19 @@ export async function updateProjectField(
     .set({ [columnKey]: newValue, updatedAt: new Date() })
     .where(eq(projects.id, project.id));
 
+  // Cascade dueDate changes to linked deadline week items
+  const cascadedItems: string[] = [];
+  if (typedField === "dueDate") {
+    const linkedDeadlines = await getLinkedDeadlineItems(project.id);
+    for (const item of linkedDeadlines) {
+      await db
+        .update(weekItems)
+        .set({ date: newValue, updatedAt: new Date() })
+        .where(eq(weekItems.id, item.id));
+      cascadedItems.push(item.title);
+    }
+  }
+
   await insertAuditRecord({
     idempotencyKey: idemKey,
     projectId: project.id,
@@ -92,6 +106,7 @@ export async function updateProjectField(
       field,
       previousValue,
       newValue,
+      cascadedItems,
     },
   };
 }

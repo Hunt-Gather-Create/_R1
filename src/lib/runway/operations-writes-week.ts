@@ -6,7 +6,7 @@
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
-import { weekItems } from "@/lib/db/runway-schema";
+import { projects, weekItems } from "@/lib/db/runway-schema";
 import { eq } from "drizzle-orm";
 import {
   WEEK_ITEM_FIELDS,
@@ -173,6 +173,14 @@ export async function updateWeekItemField(
     .update(weekItems)
     .set({ [columnKey]: newValue, updatedAt: new Date() })
     .where(eq(weekItems.id, item.id));
+
+  // Reverse cascade: deadline date changes sync back to project.dueDate
+  if (typedField === "date" && item.category === "deadline" && item.projectId) {
+    await db
+      .update(projects)
+      .set({ dueDate: newValue, updatedAt: new Date() })
+      .where(eq(projects.id, item.projectId));
+  }
 
   await insertAuditRecord({
     idempotencyKey: idemKey,
