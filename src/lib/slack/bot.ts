@@ -190,11 +190,34 @@ export async function handleDirectMessage(
       maxRetries: 1,
     });
 
-    // Log token usage for cost visibility
-    // TODO: integrate with recordTokenUsage once Runway has a workspaceId
-    if (result.usage) {
-      const { inputTokens, outputTokens } = result.usage;
-      console.log(`[Runway Bot] tokens: ${inputTokens} in / ${outputTokens} out`);
+    // Structured logging for observability
+    console.log(JSON.stringify({
+      event: "runway_bot_request",
+      user: displayName,
+      slackUserId,
+      isThread: !!threadTs,
+      inputTokens: result.usage?.inputTokens,
+      outputTokens: result.usage?.outputTokens,
+      stepCount: result.steps.length,
+    }));
+
+    for (const step of result.steps) {
+      for (const call of step.toolCalls) {
+        console.log(JSON.stringify({
+          event: "runway_bot_tool_call",
+          tool: call.toolName,
+          input: call.input,
+        }));
+      }
+      if (step.toolResults) {
+        for (const res of step.toolResults) {
+          console.log(JSON.stringify({
+            event: "runway_bot_tool_result",
+            tool: res.toolName,
+            output: typeof res.output === "string" ? res.output : JSON.stringify(res.output),
+          }));
+        }
+      }
     }
 
     const replyTs = threadTs ?? messageTs;
@@ -210,11 +233,19 @@ export async function handleDirectMessage(
       try {
         await handleProactiveFollowUp(result, teamMemberRecord, channelId, replyTs, displayName);
       } catch (err) {
-        console.error("[Runway Bot] Proactive follow-up failed:", err);
+        console.error(JSON.stringify({
+          event: "runway_bot_proactive_error",
+          user: displayName,
+          error: err instanceof Error ? err.message : String(err),
+        }));
       }
     }
   } catch (err) {
-    console.error("[Runway Bot] AI generation failed:", err);
+    console.error(JSON.stringify({
+      event: "runway_bot_error",
+      user: displayName,
+      error: err instanceof Error ? err.message : String(err),
+    }));
     await slack.chat.postMessage({
       channel: channelId,
       text: "Something went wrong processing your message. Try again or check with the team.",
