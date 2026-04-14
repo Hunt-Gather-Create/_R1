@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import type { DayItem } from "../types";
 import { DayItemCard } from "./day-item-card";
 
@@ -9,16 +8,12 @@ export function TodaySection({
 }: {
   todayColumn: DayItem | null;
 }) {
-  const todayFormatted = useMemo(
-    () =>
-      new Date().toLocaleDateString("en-US", {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      }),
-    []
-  );
+  const todayFormatted = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
 
   return (
     <section>
