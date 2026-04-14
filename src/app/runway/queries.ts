@@ -7,9 +7,9 @@ import {
   teamMembers,
   updates,
 } from "@/lib/db/runway-schema";
-import { eq, asc } from "drizzle-orm";
+import { eq, and, gte, lte, asc } from "drizzle-orm";
 import type { ClientWithProjects, DayItemType, PipelineRow, WeekDay } from "./types";
-import { parseISODate, getMondayISODate, toISODateString } from "./date-utils";
+import { parseISODate, getMonday, getMondayISODate, toISODateString } from "./date-utils";
 import { getClientNameMap, groupBy } from "@/lib/runway/operations";
 
 // ── Shared helpers ──────────────────────────────────────
@@ -110,8 +110,8 @@ export async function getPipeline(): Promise<PipelineRow[]> {
 }
 
 /**
- * Get week items from previous days (before today) in the current week
- * that have no corresponding update since their scheduled date.
+ * Get past-due week items (date before today) from the current week
+ * and up to 3 previous weeks that have no corresponding update.
  * Items are grouped by date, sorted oldest first.
  */
 export async function getStaleWeekItems(): Promise<WeekDay[]> {
@@ -120,13 +120,18 @@ export async function getStaleWeekItems(): Promise<WeekDay[]> {
   const todayISO = toISODateString(now);
   const mondayISO = getMondayISODate(now);
 
+  // Look back 3 weeks max to bound the query
+  const lookbackMonday = new Date(getMonday(now));
+  lookbackMonday.setDate(lookbackMonday.getDate() - 21);
+  const lookbackISO = toISODateString(lookbackMonday);
+
   const clientNameById = await getClientNameMap();
 
-  // Get all week items for the current week
+  // Get week items from current week and up to 3 previous weeks
   const allItems = await db
     .select()
     .from(weekItems)
-    .where(eq(weekItems.weekOf, mondayISO))
+    .where(and(gte(weekItems.weekOf, lookbackISO), lte(weekItems.weekOf, mondayISO)))
     .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
 
   // Filter to past days only
