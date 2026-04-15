@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { TeamMemberRecord } from "./operations-context";
+import type { TeamMemberRecord, TeamRosterEntry, ClientMapEntry } from "./operations-context";
 import {
   formatDate,
   addDays,
@@ -9,6 +9,26 @@ import {
   buildClientMap,
   buildQueryRecipes,
 } from "./bot-context-sections";
+
+const sampleTeamRoster: TeamRosterEntry[] = [
+  { name: "Kathy Horn", firstName: "Kathy", fullName: "Kathy Horn", title: "Co-Founder / Executive Creative Director", roleCategory: "leadership", accountsLed: ["convergix"], nicknames: [], isActive: 1 },
+  { name: "Jason Burks", firstName: "Jason", fullName: "Jason Burks", title: "Co-Founder / Development Director", roleCategory: "leadership", accountsLed: ["tap"], nicknames: [], isActive: 1 },
+  { name: "Allison Shannon", firstName: "Allison", fullName: "Allison Shannon", title: "Strategy Director / Sr. Account Manager", roleCategory: "am", accountsLed: ["wilsonart", "dave-asprey"], nicknames: ["Allie"], isActive: 1 },
+  { name: "Lane Jordan", firstName: "Lane", fullName: "Lane Jordan", title: "Creative Director", roleCategory: "creative", accountsLed: [], nicknames: [], isActive: 1 },
+  { name: "Leslie Crosby", firstName: "Leslie", fullName: "Leslie Crosby", title: "Sr. Frontend Dev / Technical PM", roleCategory: "dev", accountsLed: [], nicknames: [], isActive: 1 },
+  { name: "Ronan Lane", firstName: "Ronan", fullName: "Ronan Lane", title: "Senior PM", roleCategory: "pm", accountsLed: ["hopdoddy", "lppc", "soundly"], nicknames: [], isActive: 1 },
+  { name: "Jill Runyon", firstName: "Jill", fullName: "Jill Runyon", title: "Director of Client Experience", roleCategory: "am", accountsLed: ["beyond-petro"], nicknames: [], isActive: 1 },
+  { name: "Sami Blumenthal", firstName: "Sami", fullName: "Sami Blumenthal", title: "Community Manager", roleCategory: "community", accountsLed: [], nicknames: [], isActive: 1 },
+];
+
+const sampleClientMap: ClientMapEntry[] = [
+  { slug: "convergix", name: "Convergix", nicknames: ["CGX", "Convergix"], contacts: [{ name: "Daniel", role: "Marketing Director" }, { name: "Nicole", role: "Marketing" }] },
+  { slug: "beyond-petro", name: "Beyond Petrochemicals", nicknames: ["BP", "Beyond Petro"], contacts: [{ name: "Abby Compton" }] },
+  { slug: "lppc", name: "LPPC", nicknames: ["LPPC"], contacts: [] },
+  { slug: "hopdoddy", name: "Hopdoddy", nicknames: ["Hop", "Hopdoddy"], contacts: [] },
+  { slug: "hdl", name: "High Desert Law", nicknames: ["HDL", "High Desert"], contacts: [{ name: "Chris", role: "Copywriter" }] },
+  { slug: "tap", name: "TAP", nicknames: ["TAP"], contacts: [{ name: "Kim Sproul", role: "Client Lead" }] },
+];
 
 describe("formatDate", () => {
   it("formats a date with day name, month, date, year, and ISO", () => {
@@ -120,7 +140,7 @@ describe("buildIdentityContext", () => {
 
 describe("buildTeamRoster", () => {
   it("contains key team member names", () => {
-    const result = buildTeamRoster();
+    const result = buildTeamRoster(sampleTeamRoster);
     expect(result).toContain("Kathy");
     expect(result).toContain("Jason");
     expect(result).toContain("Jill");
@@ -131,24 +151,35 @@ describe("buildTeamRoster", () => {
   });
 
   it("contains name disambiguation section", () => {
-    const result = buildTeamRoster();
+    const result = buildTeamRoster(sampleTeamRoster);
     expect(result).toContain("Lane Jordan");
     expect(result).toContain("Ronan Lane");
     expect(result).toContain("Allie");
   });
 
   it("includes role categories", () => {
-    const result = buildTeamRoster();
+    const result = buildTeamRoster(sampleTeamRoster);
     expect(result).toContain("leadership");
     expect(result).toContain("creative");
     expect(result).toContain("dev");
     expect(result).toContain("am");
   });
+
+  it("handles null title and roleCategory without literal 'null'", () => {
+    const roster = [
+      { name: "New Person", firstName: null, fullName: null, title: null, roleCategory: null, accountsLed: [], nicknames: [], isActive: 1 },
+    ];
+    const result = buildTeamRoster(roster);
+    expect(result).not.toContain("null");
+    expect(result).toContain("unknown title");
+    expect(result).toContain("unknown");
+    expect(result).toContain("New Person");
+  });
 });
 
 describe("buildClientMap", () => {
   it("contains client slugs", () => {
-    const result = buildClientMap();
+    const result = buildClientMap(sampleClientMap);
     expect(result).toContain("convergix");
     expect(result).toContain("beyond-petro");
     expect(result).toContain("lppc");
@@ -156,14 +187,14 @@ describe("buildClientMap", () => {
   });
 
   it("contains client nicknames", () => {
-    const result = buildClientMap();
+    const result = buildClientMap(sampleClientMap);
     expect(result).toContain("CGX");
     expect(result).toContain("BP");
     expect(result).toContain("HDL");
   });
 
   it("contains client contacts section note", () => {
-    const result = buildClientMap();
+    const result = buildClientMap(sampleClientMap);
     expect(result).toContain("Client contacts vs team members");
     expect(result).toContain("NOT Civilization team members");
   });

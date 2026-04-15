@@ -180,7 +180,7 @@ export async function handleDirectMessage(
   }
 
   try {
-    const systemPrompt = buildBotSystemPrompt(teamMemberRecord, now);
+    const systemPrompt = await buildBotSystemPrompt(teamMemberRecord, now);
 
     // Build messages array — include thread history when in a thread
     const threadHistory = threadTs

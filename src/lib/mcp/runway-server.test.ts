@@ -21,8 +21,8 @@ vi.mock("@/lib/runway/operations", () => ({
   addUpdate: vi.fn().mockResolvedValue({ ok: true, message: "Logged" }),
 }));
 
-vi.mock("@/lib/runway/reference/clients", () => ({
-  getClientContactsRef: vi.fn().mockReturnValue([]),
+vi.mock("@/lib/runway/operations-context", () => ({
+  getClientContactsStructured: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({

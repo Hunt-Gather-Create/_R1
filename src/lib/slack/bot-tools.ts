@@ -18,7 +18,7 @@ import {
   undoLastChange,
   getRecentUpdates,
 } from "@/lib/runway/operations";
-import { getClientContactsRef } from "@/lib/runway/reference/clients";
+import { getClientContactsStructured } from "@/lib/runway/operations-context";
 import { getMonday, toISODateString } from "@/app/runway/date-utils";
 
 async function safePostUpdate(update: Parameters<typeof postUpdate>[0]) {
@@ -178,7 +178,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         clientSlug: z.string().describe("Client slug (e.g. 'convergix')"),
       }),
       execute: async ({ clientSlug }) => {
-        const contacts = getClientContactsRef(clientSlug);
+        const contacts = await getClientContactsStructured(clientSlug);
         if (contacts.length === 0) {
           return { client: clientSlug, contacts: [], note: "No contacts on file for this client" };
         }

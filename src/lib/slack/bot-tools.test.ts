@@ -24,8 +24,8 @@ const { mockPostUpdate, mockOps } = vi.hoisted(() => {
   return { mockPostUpdate, mockOps };
 });
 
-const { mockGetClientContactsRef } = vi.hoisted(() => ({
-  mockGetClientContactsRef: vi.fn().mockReturnValue([{ name: "Daniel", role: "Marketing Director" }]),
+const { mockGetClientContactsStructured } = vi.hoisted(() => ({
+  mockGetClientContactsStructured: vi.fn().mockResolvedValue([{ name: "Daniel", role: "Marketing Director" }]),
 }));
 
 vi.mock("./updates-channel", () => ({
@@ -33,8 +33,8 @@ vi.mock("./updates-channel", () => ({
 }));
 vi.mock("ai", () => ({ tool: vi.fn((config) => config) }));
 vi.mock("@/lib/runway/operations", () => mockOps);
-vi.mock("@/lib/runway/reference/clients", () => ({
-  getClientContactsRef: (...args: unknown[]) => mockGetClientContactsRef(...args),
+vi.mock("@/lib/runway/operations-context", () => ({
+  getClientContactsStructured: (...args: unknown[]) => mockGetClientContactsStructured(...args),
 }));
 
 import { createBotTools } from "./bot-tools";
@@ -218,14 +218,14 @@ describe("createBotTools", () => {
     expect(result).toEqual(expect.objectContaining({ person: "Kathy" }));
   });
 
-  it("get_client_contacts returns contacts from reference data", async () => {
+  it("get_client_contacts returns contacts from DB", async () => {
     const result = await tools.get_client_contacts.execute({ clientSlug: "convergix" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockGetClientContactsRef).toHaveBeenCalledWith("convergix");
+    expect(mockGetClientContactsStructured).toHaveBeenCalledWith("convergix");
     expect(result).toEqual(expect.objectContaining({ client: "convergix", contacts: [{ name: "Daniel", role: "Marketing Director" }] }));
   });
 
   it("get_client_contacts returns note when no contacts found", async () => {
-    mockGetClientContactsRef.mockReturnValueOnce([]);
+    mockGetClientContactsStructured.mockResolvedValueOnce([]);
     const result = await tools.get_client_contacts.execute({ clientSlug: "lppc" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
     expect(result).toEqual(expect.objectContaining({ note: "No contacts on file for this client" }));
   });

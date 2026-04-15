@@ -1,9 +1,9 @@
 /**
- * Runway Team Member Reference Data
+ * Runway Team Member Reference Data — Bootstrap only
  *
- * Easy-to-edit reference for team members, roles, and account assignments.
- * Used by the bot system prompt builder and workload tools.
- * Update this file as team members come and go.
+ * This file is used by the seed script for initial data population.
+ * The bot reads team data from the database at runtime via operations-context.ts.
+ * To update team data in production, use the runway:migrate runner.
  */
 
 export type RoleCategory =

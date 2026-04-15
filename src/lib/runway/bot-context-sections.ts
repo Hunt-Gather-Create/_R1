@@ -5,12 +5,10 @@
  * team roster, client map, and query recipes.
  */
 
-import { TEAM_REFERENCES } from "./reference/team";
-import { CLIENT_REFERENCES } from "./reference/clients";
 import { getMonday, toISODateString } from "@/app/runway/date-utils";
 import { DAY_NAMES, MONTH_NAMES } from "./date-constants";
 import { CASCADE_STATUSES } from "./operations-utils";
-import type { TeamMemberRecord } from "./operations-context";
+import type { TeamMemberRecord, TeamRosterEntry, ClientMapEntry } from "./operations-context";
 
 export function formatDate(date: Date): string {
   const day = DAY_NAMES[date.getDay()];
@@ -57,12 +55,12 @@ export function buildIdentityContext(member: TeamMemberRecord | null): string {
 - When they say "I", "me", "my", they mean ${member.firstName ?? member.name}.`;
 }
 
-export function buildTeamRoster(): string {
-  const lines = TEAM_REFERENCES.map((m) => {
+export function buildTeamRoster(teamMembers: TeamRosterEntry[]): string {
+  const lines = teamMembers.map((m) => {
     const accounts = m.accountsLed.length > 0
       ? ` (leads: ${m.accountsLed.join(", ")})`
       : "";
-    return `- ${m.firstName} (${m.fullName}): ${m.title}, ${m.roleCategory}${accounts}`;
+    return `- ${m.firstName ?? m.name} (${m.fullName ?? m.name}): ${m.title ?? "unknown title"}, ${m.roleCategory ?? "unknown"}${accounts}`;
   });
 
   return `## Team roster
@@ -74,13 +72,13 @@ ${lines.join("\n")}
 - If someone says "the dev team" or "creative", filter by role category.`;
 }
 
-export function buildClientMap(): string {
-  const lines = CLIENT_REFERENCES.map((c) => {
-    const nicknames = c.nicknames.join(" or ");
+export function buildClientMap(clients: ClientMapEntry[]): string {
+  const lines = clients.map((c) => {
+    const nicknames = c.nicknames.length > 0 ? c.nicknames.join(" or ") : c.name;
     const contactList = c.contacts.length > 0
       ? ` Contacts: ${c.contacts.map((ct) => ct.role ? `${ct.name} (${ct.role})` : ct.name).join(", ")}.`
       : "";
-    return `- ${nicknames} = ${c.fullName} (slug: ${c.slug}).${contactList}`;
+    return `- ${nicknames} = ${c.name} (slug: ${c.slug}).${contactList}`;
   });
 
   return `## Client map
