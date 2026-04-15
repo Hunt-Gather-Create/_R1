@@ -607,6 +607,11 @@ describe("Category E: undo and audit", () => {
     const { updateProjectStatus } = await import("./operations-writes");
     const { undoLastChange } = await import("./operations-writes-undo");
 
+    // Snapshot original status from DB (don't assume seed data)
+    const projectOriginal = await getProject(testDb, "pj-cds");
+    const originalStatus = projectOriginal?.status;
+    expect(originalStatus).toBeTruthy();
+
     // Change status
     const changeResult = await updateProjectStatus({
       clientSlug: "convergix",
@@ -623,15 +628,15 @@ describe("Category E: undo and audit", () => {
     const undoResult = await undoLastChange({ updatedBy: "kathy" });
     expect(undoResult.ok).toBe(true);
 
-    // Status reverted
+    // Status reverted to original
     const projectAfter = await getProject(testDb, "pj-cds");
-    expect(projectAfter?.status).toBe("in-production");
+    expect(projectAfter?.status).toBe(originalStatus);
 
     // Exactly one undo audit record
     const undoAudits = await getAuditRecords(testDb, { updateType: "undo" });
     expect(undoAudits).toHaveLength(1);
     expect(undoAudits[0].previousValue).toBe("blocked");
-    expect(undoAudits[0].newValue).toBe("in-production");
+    expect(undoAudits[0].newValue).toBe(originalStatus);
   });
 
   it("E2: undo after multiple changes reverts only the last", async () => {

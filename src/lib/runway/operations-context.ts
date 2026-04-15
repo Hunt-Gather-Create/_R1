@@ -10,13 +10,17 @@ import { clients as clientsTable, updates, teamMembers } from "@/lib/db/runway-s
 import { eq, desc } from "drizzle-orm";
 import { getClientBySlug, getClientNameMap } from "./operations";
 
-function parseJsonArray(json: string | null): string[] {
-  if (!json) return [];
+function safeJsonParse<T>(json: string | null, defaultValue: T): T {
+  if (!json) return defaultValue;
   try {
-    return JSON.parse(json) as string[];
+    return JSON.parse(json) as T;
   } catch {
-    return [];
+    return defaultValue;
   }
+}
+
+function parseJsonArray(json: string | null): string[] {
+  return safeJsonParse<string[]>(json, []);
 }
 
 export async function getUpdatesData(opts?: {
@@ -80,14 +84,9 @@ export async function getClientContacts(clientSlug: string) {
   const client = await getClientBySlug(clientSlug);
   if (!client) return null;
 
-  let contacts: string[] = [];
-  if (client.clientContacts) {
-    try {
-      contacts = JSON.parse(client.clientContacts);
-    } catch {
-      contacts = [client.clientContacts];
-    }
-  }
+  const contacts = client.clientContacts
+    ? safeJsonParse<string[]>(client.clientContacts, [client.clientContacts])
+    : [];
 
   return { client: client.name, contacts };
 }
@@ -174,11 +173,7 @@ export async function getClientMapForContext(): Promise<ClientMapEntry[]> {
 }
 
 function safeParseContacts(json: string): Array<{ name: string; role?: string }> {
-  try {
-    return JSON.parse(json);
-  } catch {
-    return [];
-  }
+  return safeJsonParse<Array<{ name: string; role?: string }>>(json, []);
 }
 
 /** Returns structured client contacts with roles. */

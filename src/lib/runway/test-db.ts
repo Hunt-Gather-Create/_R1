@@ -137,6 +137,11 @@ INSERT INTO week_items (id, project_id, client_id, week_of, date, title, status,
   ('wi-completed', 'pj-cds', 'cl-convergix', '2026-04-13', '2026-04-13', 'CDS Brief Completed', 'completed', 'delivery', 'Kathy', NULL, 2, ${NOW_EPOCH}, ${NOW_EPOCH}),
   ('wi-canceled', 'pj-cds', 'cl-convergix', '2026-04-13', '2026-04-13', 'CDS Retro Canceled', 'canceled', 'review', 'Kathy', NULL, 3, ${NOW_EPOCH}, ${NOW_EPOCH}),
   ('wi-other-week', 'pj-map', 'cl-lppc', '2026-04-06', '2026-04-07', 'Map R2 Kickoff', NULL, 'kickoff', 'Ronan', NULL, 0, ${NOW_EPOCH}, ${NOW_EPOCH});
+
+INSERT INTO pipeline_items (id, client_id, name, owner, status, estimated_value, waiting_on, notes, sort_order, created_at, updated_at) VALUES
+  ('pl-cgx-sow', 'cl-convergix', 'SOW Expansion', 'Kathy', 'proposal', '50000', 'Client review', 'Pending budget approval', 0, ${NOW_EPOCH}, ${NOW_EPOCH}),
+  ('pl-bonterra-renewal', 'cl-bonterra', 'Annual Renewal', 'Jill', 'negotiation', '120000', NULL, NULL, 1, ${NOW_EPOCH}, ${NOW_EPOCH}),
+  ('pl-new-lead', NULL, 'Inbound Lead - Acme', 'Lane', 'qualification', '30000', 'Discovery call', NULL, 2, ${NOW_EPOCH}, ${NOW_EPOCH});
 `;
 
 // ── Public API ──────────────────────────────────────────
@@ -208,4 +213,16 @@ export async function getAllWeekItemsForProject(db: TestDb, projectId: string) {
     .select()
     .from(schema.weekItems)
     .where(eq(schema.weekItems.projectId, projectId));
+}
+
+export async function getClient(db: TestDb, id: string) {
+  const rows = await db
+    .select()
+    .from(schema.clients)
+    .where(eq(schema.clients.id, id));
+  return rows[0] ?? null;
+}
+
+export async function getAllPipelineItems(db: TestDb) {
+  return db.select().from(schema.pipelineItems);
 }
