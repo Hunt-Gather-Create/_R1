@@ -9,11 +9,12 @@ export const clients = sqliteTable("clients", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
+  nicknames: text("nicknames"), // JSON array of strings, e.g. ["CGX", "Convergix"]
   contractValue: text("contract_value"),
   contractTerm: text("contract_term"),
   contractStatus: text("contract_status"), // signed, unsigned, expired
   team: text("team"),
-  clientContacts: text("client_contacts"), // JSON array of contact names
+  clientContacts: text("client_contacts"), // JSON array of {name, role?} objects
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),
@@ -107,6 +108,8 @@ export const teamMembers = sqliteTable("team_members", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   firstName: text("first_name"),
+  fullName: text("full_name"), // e.g. "Allison Shannon"
+  nicknames: text("nicknames"), // JSON array of strings, e.g. ["Allie"]
   title: text("title"),
   slackUserId: text("slack_user_id").unique(),
   roleCategory: text("role_category"), // creative, dev, am, pm, leadership, community, contractor
