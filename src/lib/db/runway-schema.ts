@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
 
 // ============================================================
 // Runway Database Schema — Separate Turso DB
@@ -67,7 +67,9 @@ export const weekItems = sqliteTable("week_items", {
   updatedAt: integer("updated_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),
-});
+}, (table) => [
+  index("idx_week_items_week_of").on(table.weekOf),
+]);
 
 export const pipelineItems = sqliteTable("pipeline_items", {
   id: text("id").primaryKey(),

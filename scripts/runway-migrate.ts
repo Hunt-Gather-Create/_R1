@@ -107,6 +107,12 @@ async function run() {
 
   // Load and validate the migration module
   const fullPath = resolve(process.cwd(), migrationPath);
+  const allowedDir = resolve(process.cwd(), "scripts/runway-migrations");
+  if (!fullPath.startsWith(allowedDir + "/") || !/\.(ts|js)$/.test(fullPath)) {
+    console.error(`Migration path must be a .ts or .js file inside scripts/runway-migrations/.\nGot: ${fullPath}`);
+    process.exit(1);
+  }
+
   let migration: MigrationModule;
   try {
     const imported = await import(fullPath);

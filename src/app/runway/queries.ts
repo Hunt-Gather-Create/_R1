@@ -73,6 +73,7 @@ export async function getClientsWithProjects(): Promise<ClientWithProjects[]> {
   }));
 }
 
+// weekOf is indexed (idx_week_items_week_of) — see runway-schema.ts
 export async function getWeekItems(weekOf?: string): Promise<WeekDay[]> {
   const db = getRunwayDb();
 

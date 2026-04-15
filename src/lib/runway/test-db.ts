@@ -65,6 +65,8 @@ CREATE TABLE week_items (
   updated_at INTEGER NOT NULL
 );
 
+CREATE INDEX idx_week_items_week_of ON week_items(week_of);
+
 CREATE TABLE pipeline_items (
   id TEXT PRIMARY KEY NOT NULL,
   client_id TEXT REFERENCES clients(id),

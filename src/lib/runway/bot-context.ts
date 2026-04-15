@@ -37,10 +37,19 @@ export async function buildBotSystemPrompt(
   teamMember: TeamMemberRecord | null,
   currentDate: Date
 ): Promise<string> {
-  const [teamRoster, clientMap] = await Promise.all([
-    getTeamRosterForContext(),
-    getClientMapForContext(),
-  ]);
+  let teamRoster: Awaited<ReturnType<typeof getTeamRosterForContext>> = [];
+  let clientMap: Awaited<ReturnType<typeof getClientMapForContext>> = [];
+  try {
+    [teamRoster, clientMap] = await Promise.all([
+      getTeamRosterForContext(),
+      getClientMapForContext(),
+    ]);
+  } catch (err) {
+    console.log(JSON.stringify({
+      event: "runway_bot_context_error",
+      error: err instanceof Error ? err.message : String(err),
+    }));
+  }
 
   const sections = [
     `You are the Civilization Runway bot. You help team members update project statuses and log information about client work.
