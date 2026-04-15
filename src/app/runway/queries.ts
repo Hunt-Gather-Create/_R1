@@ -4,7 +4,6 @@ import {
   projects,
   weekItems,
   pipelineItems,
-  teamMembers,
   updates,
 } from "@/lib/db/runway-schema";
 import { eq, and, gte, lte, asc } from "drizzle-orm";
@@ -165,12 +164,4 @@ export async function getStaleWeekItems(): Promise<WeekDay[]> {
   if (staleItems.length === 0) return [];
 
   return groupWeekItemsIntoDays(staleItems, clientNameById);
-}
-
-export async function getTeamMembers() {
-  const db = getRunwayDb();
-  return db
-    .select()
-    .from(teamMembers)
-    .where(eq(teamMembers.isActive, 1));
 }
