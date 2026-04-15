@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mockProjectsSelect = vi.fn();
 const mockClientsSelect = vi.fn();
@@ -50,6 +50,10 @@ const now = new Date("2026-04-08T12:00:00Z");
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Pin Date.now() so the default "since" (7 days ago) is stable
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+
   mockProjectsSelect.mockReturnValue([
     { id: "p1", name: "CDS Messaging" },
     { id: "p2", name: "Website" },
@@ -58,6 +62,10 @@ beforeEach(() => {
     { id: "c1", name: "Convergix" },
     { id: "c2", name: "Bonterra" },
   ]);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("getRecentUpdates", () => {
