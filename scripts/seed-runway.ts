@@ -5,11 +5,7 @@
  * Requires: RUNWAY_DATABASE_URL in .env.local (or falls back to file:runway-local.db)
  */
 
-import { drizzle } from "drizzle-orm/libsql";
-import { createClient } from "@libsql/client";
-import { loadEnvLocal } from "./lib/load-env";
-
-loadEnvLocal();
+import { createRunwayDb, runIfDirect } from "./lib/run-script";
 import {
   clients,
   projects,
@@ -25,10 +21,13 @@ import {
   pipeline,
 } from "../src/app/runway/data";
 import { getMondayISODate, parseISODate } from "../src/app/runway/date-utils";
+import {
+  TEAM_SEED_DATA,
+  CLIENT_SEED_NICKNAMES,
+  CLIENT_SEED_CONTACTS,
+} from "./seed-runway-data";
 
-const url = process.env.RUNWAY_DATABASE_URL ?? "file:runway-local.db";
-const client = createClient({ url, authToken: process.env.RUNWAY_AUTH_TOKEN });
-const db = drizzle(client);
+const { db, url } = createRunwayDb();
 
 function generateId() {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 25);
@@ -115,6 +114,14 @@ async function seed() {
   console.log("Seeding Runway database...");
   console.log(`Database: ${url}`);
 
+  // Safety guard: refuse to wipe populated DB without --force
+  const existingClients = await db.select().from(clients);
+  if (existingClients.length > 0 && !process.argv.includes("--force")) {
+    console.error("Database has existing data. Use --force to wipe and reseed.");
+    console.error("For incremental changes, use runway:migrate instead.");
+    process.exit(1);
+  }
+
   // Clear existing data (order matters for foreign keys)
   console.log("  Clearing existing data...");
   await db.delete(updates);
@@ -133,14 +140,19 @@ async function seed() {
     // Also map by name for week items / pipeline matching
     clientMap.set(account.name.toLowerCase(), id);
 
+    const seedNicknames = CLIENT_SEED_NICKNAMES[account.slug] ?? [];
+    const seedContacts = CLIENT_SEED_CONTACTS[account.slug] ?? [];
+
     await db.insert(clients).values({
       id,
       name: account.name,
       slug: account.slug,
+      nicknames: seedNicknames.length > 0 ? JSON.stringify(seedNicknames) : null,
       contractValue: account.contractValue ?? null,
       contractTerm: account.contractTerm ?? null,
       contractStatus: account.contractStatus,
       team: account.team ?? null,
+      clientContacts: seedContacts.length > 0 ? JSON.stringify(seedContacts) : null,
     });
   }
   console.log(`  Clients: ${accounts.length} inserted`);
@@ -253,26 +265,13 @@ async function seed() {
   console.log(`  Pipeline: ${pipeline.length} inserted`);
 
   // ── 5. Team Members ─────────────────────────────────────────
-  const team = [
-    { name: "Kathy Horn", firstName: "Kathy", slackUserId: "U11NL4SBS", title: "Co-Founder / Executive Creative Director", roleCategory: "leadership", accountsLed: ["convergix"], channelPurpose: "Creative, copy, client relationships" },
-    { name: "Jason Burks", firstName: "Jason", slackUserId: "U1HH41TFX", title: "Co-Founder / Development Director", roleCategory: "leadership", accountsLed: ["tap"], channelPurpose: "Strategy, operations, account management" },
-    { name: "Jill Runyon", firstName: "Jill", slackUserId: "U08TZ6ZDEUF", title: "Director of Client Experience", roleCategory: "am", accountsLed: ["beyond-petro", "bonterra", "ag1", "edf", "abm"], channelPurpose: "Beyond Petro, AM accounts" },
-    { name: "Allison Shannon", firstName: "Allison", slackUserId: "U06BA311N92", title: "Strategy Director / Sr. Account Manager", roleCategory: "am", accountsLed: ["wilsonart", "dave-asprey"], channelPurpose: "Wilsonart, AM accounts" },
-    { name: "Lane Jordan", firstName: "Lane", slackUserId: "U03F7MED8F8", title: "Creative Director", roleCategory: "creative", accountsLed: [], channelPurpose: "Brand, design direction" },
-    { name: "Roz", firstName: "Roz", slackUserId: "", title: "Designer", roleCategory: "creative", accountsLed: [], channelPurpose: "Design execution" },
-    { name: "Leslie Crosby", firstName: "Leslie", slackUserId: "U01LJGMC1GV", title: "Sr. Frontend Dev / Technical PM", roleCategory: "dev", accountsLed: [], channelPurpose: "Dev, web builds" },
-    { name: "Ronan Lane", firstName: "Ronan", slackUserId: "", title: "Senior PM", roleCategory: "pm", accountsLed: ["hopdoddy", "lppc", "soundly"], channelPurpose: "Project management, status tracking" },
-    { name: "Sami Blumenthal", firstName: "Sami", slackUserId: "U0AFM4FG87P", title: "Community Manager", roleCategory: "community", accountsLed: [], channelPurpose: "Community management" },
-    { name: "Tim Warren", firstName: "Tim", slackUserId: "U016N17D9KR", title: "Director of AI", roleCategory: "dev", accountsLed: [], channelPurpose: "AI, development" },
-    { name: "Chris", firstName: "Chris", slackUserId: "", title: "Copywriter (HDL)", roleCategory: "contractor", accountsLed: [], channelPurpose: "HDL copy" },
-    { name: "Josefina", firstName: "Josefina", slackUserId: "", title: "Contractor (Soundly)", roleCategory: "contractor", accountsLed: [], channelPurpose: "Soundly contractor" },
-  ];
-
-  for (const member of team) {
+  for (const member of TEAM_SEED_DATA) {
     await db.insert(teamMembers).values({
       id: generateId(),
       name: member.name,
       firstName: member.firstName,
+      fullName: member.fullName,
+      nicknames: member.nicknames.length > 0 ? JSON.stringify(member.nicknames) : null,
       slackUserId: member.slackUserId || undefined,
       title: member.title,
       roleCategory: member.roleCategory,
@@ -280,20 +279,9 @@ async function seed() {
       channelPurpose: member.channelPurpose,
     });
   }
-  console.log(`  Team Members: ${team.length} inserted`);
+  console.log(`  Team Members: ${TEAM_SEED_DATA.length} inserted`);
 
   console.log("\nSeed complete.");
 }
 
-// Only run when executed directly (not when imported by tests)
-const isDirectExecution =
-  typeof process !== "undefined" &&
-  process.argv[1] &&
-  (process.argv[1].endsWith("seed-runway.ts") || process.argv[1].endsWith("seed-runway"));
-
-if (isDirectExecution) {
-  seed().catch((err) => {
-    console.error("Seed failed:", err);
-    process.exit(1);
-  });
-}
+runIfDirect("seed-runway", seed);
