@@ -10,6 +10,7 @@ vi.mock("@/lib/db/runway", () => ({
   }),
 }));
 vi.mock("@/lib/db/runway-schema", () => ({
+  clients: { name: "name", slug: "slug" },
   updates: { createdAt: "createdAt", idempotencyKey: "idempotencyKey" },
   teamMembers: { isActive: "isActive", slackUserId: "slackUserId" },
 }));
@@ -181,6 +182,109 @@ describe("getTeamMembersData — edge cases", () => {
     mockSelectFrom.mockReturnValue(chainable([]));
     const { getTeamMembersData } = await import("./operations-context");
     const result = await getTeamMembersData();
+    expect(result).toEqual([]);
+  });
+});
+
+describe("getTeamRosterForContext", () => {
+  it("returns active members with parsed accountsLed and nicknames", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      {
+        name: "Allison Shannon",
+        firstName: "Allison",
+        fullName: "Allison Shannon",
+        nicknames: '["Allie"]',
+        title: "Strategy Director",
+        roleCategory: "am",
+        accountsLed: '["wilsonart","dave-asprey"]',
+        isActive: 1,
+      },
+    ]));
+    const { getTeamRosterForContext } = await import("./operations-context");
+    const result = await getTeamRosterForContext();
+    expect(result).toHaveLength(1);
+    expect(result[0].firstName).toBe("Allison");
+    expect(result[0].fullName).toBe("Allison Shannon");
+    expect(result[0].nicknames).toEqual(["Allie"]);
+    expect(result[0].accountsLed).toEqual(["wilsonart", "dave-asprey"]);
+  });
+
+  it("handles null nicknames gracefully", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      {
+        name: "Lane Jordan",
+        firstName: "Lane",
+        fullName: "Lane Jordan",
+        nicknames: null,
+        title: "Creative Director",
+        roleCategory: "creative",
+        accountsLed: "[]",
+        isActive: 1,
+      },
+    ]));
+    const { getTeamRosterForContext } = await import("./operations-context");
+    const result = await getTeamRosterForContext();
+    expect(result[0].nicknames).toEqual([]);
+  });
+});
+
+describe("getClientMapForContext", () => {
+  it("returns all clients with parsed nicknames and structured contacts", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      {
+        slug: "convergix",
+        name: "Convergix",
+        nicknames: '["CGX","Convergix"]',
+        clientContacts: '[{"name":"Daniel","role":"Marketing Director"}]',
+      },
+    ]));
+    const { getClientMapForContext } = await import("./operations-context");
+    const result = await getClientMapForContext();
+    expect(result).toHaveLength(1);
+    expect(result[0].slug).toBe("convergix");
+    expect(result[0].nicknames).toEqual(["CGX", "Convergix"]);
+    expect(result[0].contacts).toEqual([{ name: "Daniel", role: "Marketing Director" }]);
+  });
+
+  it("handles null nicknames and contacts", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      {
+        slug: "lppc",
+        name: "LPPC",
+        nicknames: null,
+        clientContacts: null,
+      },
+    ]));
+    const { getClientMapForContext } = await import("./operations-context");
+    const result = await getClientMapForContext();
+    expect(result[0].nicknames).toEqual([]);
+    expect(result[0].contacts).toEqual([]);
+  });
+});
+
+describe("getClientContactsStructured", () => {
+  it("returns structured contacts with roles for valid slug", async () => {
+    mockGetClientBySlug.mockResolvedValue({
+      name: "Convergix",
+      clientContacts: '[{"name":"Daniel","role":"Marketing Director"},{"name":"Nicole","role":"Marketing"}]',
+    });
+    const { getClientContactsStructured } = await import("./operations-context");
+    const result = await getClientContactsStructured("convergix");
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ name: "Daniel", role: "Marketing Director" });
+  });
+
+  it("returns empty array for unknown slug", async () => {
+    mockGetClientBySlug.mockResolvedValue(null);
+    const { getClientContactsStructured } = await import("./operations-context");
+    const result = await getClientContactsStructured("unknown");
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty array when clientContacts is null", async () => {
+    mockGetClientBySlug.mockResolvedValue({ name: "LPPC", clientContacts: null });
+    const { getClientContactsStructured } = await import("./operations-context");
+    const result = await getClientContactsStructured("lppc");
     expect(result).toEqual([]);
   });
 });

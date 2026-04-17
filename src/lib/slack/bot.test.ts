@@ -46,7 +46,7 @@ vi.mock("@/lib/runway/operations", () => ({
 }));
 
 vi.mock("@/lib/runway/bot-context", () => ({
-  buildBotSystemPrompt: vi.fn().mockReturnValue("mocked system prompt"),
+  buildBotSystemPrompt: vi.fn().mockResolvedValue("mocked system prompt"),
 }));
 
 const mockRecordTokenUsage = vi.fn().mockResolvedValue(undefined);

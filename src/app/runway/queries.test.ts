@@ -22,6 +22,9 @@ vi.mock("@/lib/db/runway-schema", () => ({
 
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((a, b) => ({ eq: [a, b] })),
+  and: vi.fn((...args: unknown[]) => ({ and: args })),
+  gte: vi.fn((a, b) => ({ gte: [a, b] })),
+  lte: vi.fn((a, b) => ({ lte: [a, b] })),
   asc: vi.fn((col) => ({ asc: col })),
   desc: vi.fn((col) => ({ desc: col })),
 }));
@@ -211,6 +214,46 @@ describe("getStaleWeekItems", () => {
     const result = await getStaleWeekItems();
 
     expect(result).toEqual([]);
+
+    vi.useRealTimers();
+  });
+
+  it("includes overdue items from previous weeks", async () => {
+    vi.useFakeTimers();
+    // It's now Tuesday of a NEW week (2026-04-14 week)
+    vi.setSystemTime(new Date("2026-04-14T12:00:00"));
+
+    // lte(weekOf, "2026-04-13") returns items from previous weeks too
+    mockResults.push([
+      createWeekItem({ date: "2026-04-09", weekOf: "2026-04-06" }), // last week Thursday
+    ]);
+    // updates query
+    mockResults.push([]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    // Item from last week should appear since it's past-due and has no update
+    expect(result).toHaveLength(1);
+    expect(result[0].date).toBe("2026-04-09");
+
+    vi.useRealTimers();
+  });
+
+  it("excludes overdue items from previous weeks that have updates", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-14T12:00:00"));
+
+    mockResults.push([
+      createWeekItem({ date: "2026-04-09", weekOf: "2026-04-06", projectId: "p1" }),
+    ]);
+    // Update after the item's date — project has been updated
+    mockResults.push([createUpdate({ projectId: "p1", createdAt: new Date("2026-04-10T10:00:00") })]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    expect(result).toHaveLength(0);
 
     vi.useRealTimers();
   });

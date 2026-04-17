@@ -1,9 +1,9 @@
 /**
- * Runway Client Reference Data
+ * Runway Client Reference Data — Bootstrap only
  *
- * Easy-to-edit reference for client nicknames and contacts.
- * Used by the bot system prompt builder and contact lookup tools.
- * Update this file as clients come and go.
+ * This file is used by the seed script for initial data population.
+ * The bot reads client data from the database at runtime via operations-context.ts.
+ * To update client data in production, use the runway:migrate runner.
  */
 
 export interface ClientContact {

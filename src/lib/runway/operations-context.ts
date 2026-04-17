@@ -6,13 +6,21 @@
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
-import { updates, teamMembers } from "@/lib/db/runway-schema";
+import { clients as clientsTable, updates, teamMembers } from "@/lib/db/runway-schema";
 import { eq, desc } from "drizzle-orm";
 import { getClientBySlug, getClientNameMap } from "./operations";
 
-function parseAccountsLed(json: string | null): string[] {
-  if (!json) return [];
-  return JSON.parse(json) as string[];
+function safeJsonParse<T>(json: string | null, defaultValue: T): T {
+  if (!json) return defaultValue;
+  try {
+    return JSON.parse(json) as T;
+  } catch {
+    return defaultValue;
+  }
+}
+
+function parseJsonArray(json: string | null): string[] {
+  return safeJsonParse<string[]>(json, []);
 }
 
 export async function getUpdatesData(opts?: {
@@ -59,7 +67,7 @@ export async function getTeamMembersData() {
     firstName: m.firstName,
     title: m.title,
     roleCategory: m.roleCategory,
-    accountsLed: parseAccountsLed(m.accountsLed),
+    accountsLed: parseJsonArray(m.accountsLed),
     channelPurpose: m.channelPurpose,
   }));
 }
@@ -76,14 +84,9 @@ export async function getClientContacts(clientSlug: string) {
   const client = await getClientBySlug(clientSlug);
   if (!client) return null;
 
-  let contacts: string[] = [];
-  if (client.clientContacts) {
-    try {
-      contacts = JSON.parse(client.clientContacts);
-    } catch {
-      contacts = [client.clientContacts];
-    }
-  }
+  const contacts = client.clientContacts
+    ? safeJsonParse<string[]>(client.clientContacts, [client.clientContacts])
+    : [];
 
   return { client: client.name, contacts };
 }
@@ -114,6 +117,70 @@ export async function getTeamMemberRecordBySlackId(
     firstName: member.firstName,
     title: member.title,
     roleCategory: member.roleCategory,
-    accountsLed: parseAccountsLed(member.accountsLed),
+    accountsLed: parseJsonArray(member.accountsLed),
   };
+}
+
+// ── Enriched queries for bot context ──────────────────────
+
+export interface TeamRosterEntry {
+  name: string;
+  firstName: string | null;
+  fullName: string | null;
+  title: string | null;
+  roleCategory: string | null;
+  accountsLed: string[];
+  nicknames: string[];
+  isActive: number;
+}
+
+/** Returns full team member data for bot context building. */
+export async function getTeamRosterForContext(): Promise<TeamRosterEntry[]> {
+  const db = getRunwayDb();
+  const members = await db
+    .select()
+    .from(teamMembers)
+    .where(eq(teamMembers.isActive, 1));
+  return members.map((m) => ({
+    name: m.name,
+    firstName: m.firstName,
+    fullName: m.fullName ?? null,
+    title: m.title,
+    roleCategory: m.roleCategory,
+    accountsLed: parseJsonArray(m.accountsLed),
+    nicknames: parseJsonArray(m.nicknames ?? null),
+    isActive: m.isActive,
+  }));
+}
+
+export interface ClientMapEntry {
+  slug: string;
+  name: string;
+  nicknames: string[];
+  contacts: Array<{ name: string; role?: string }>;
+}
+
+/** Returns client map for bot context (slugs, names, nicknames, contacts). */
+export async function getClientMapForContext(): Promise<ClientMapEntry[]> {
+  const db = getRunwayDb();
+  const allClients = await db.select().from(clientsTable);
+  return allClients.map((c) => ({
+    slug: c.slug,
+    name: c.name,
+    nicknames: parseJsonArray(c.nicknames ?? null),
+    contacts: c.clientContacts ? safeParseContacts(c.clientContacts) : [],
+  }));
+}
+
+function safeParseContacts(json: string): Array<{ name: string; role?: string }> {
+  return safeJsonParse<Array<{ name: string; role?: string }>>(json, []);
+}
+
+/** Returns structured client contacts with roles. */
+export async function getClientContactsStructured(
+  clientSlug: string
+): Promise<Array<{ name: string; role?: string }>> {
+  const client = await getClientBySlug(clientSlug);
+  if (!client?.clientContacts) return [];
+  return safeParseContacts(client.clientContacts);
 }

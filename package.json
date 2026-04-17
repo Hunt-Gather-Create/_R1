@@ -17,6 +17,8 @@
     "runway:push": "export $(grep -v '^#' .env.local | grep RUNWAY | xargs) && drizzle-kit push --config drizzle-runway.config.ts",
     "runway:studio": "export $(grep -v '^#' .env.local | grep RUNWAY | xargs) && drizzle-kit studio --config drizzle-runway.config.ts",
     "runway:seed": "npx tsx scripts/seed-runway.ts",
+    "runway:pull": "npx tsx scripts/runway-pull.ts",
+    "runway:migrate": "npx tsx scripts/runway-migrate.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "dev:inngest": "NPM_CONFIG_CACHE=$(mktemp -d) npx --yes --ignore-scripts=false inngest-cli@latest dev",

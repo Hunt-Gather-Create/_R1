@@ -126,6 +126,12 @@ async function getCachedClients(): Promise<ClientRow[]> {
   return _cachedClients;
 }
 
+/** @internal — test-only. Resets the in-memory client cache. */
+export function _resetClientCacheForTest(): void {
+  _cachedClients = null;
+  _cacheTimestamp = 0;
+}
+
 // ── Shared Queries ────────────────────────────────────────
 
 export async function getAllClients() {

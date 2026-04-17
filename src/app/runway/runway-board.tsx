@@ -32,21 +32,12 @@ const TABS = [
   { key: "pipeline", label: "Pipeline" },
 ] as const;
 
-export function RunwayBoard({
-  thisWeek,
-  upcoming,
-  accounts,
-  pipeline,
-  flags = [],
-  staleItems = [],
-}: RunwayBoardProps) {
-  const router = useRouter();
-  const [view, setView] = useState<View>("triage");
-
-  useEffect(() => {
-    const id = setInterval(() => router.refresh(), REFRESH_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [router]);
+function useBoardData(
+  thisWeek: DayItem[],
+  upcoming: DayItem[],
+  pipeline: PipelineItem[]
+) {
+  const todayStr = useMemo(() => new Date().toDateString(), []);
 
   const pipelineTotal = useMemo(
     () =>
@@ -58,8 +49,6 @@ export function RunwayBoard({
         }, 0),
     [pipeline]
   );
-
-  const todayStr = useMemo(() => new Date().toDateString(), []);
 
   const todayColumn = useMemo(
     () =>
@@ -83,6 +72,26 @@ export function RunwayBoard({
     () => groupByWeek(mergeWeekendDays(upcoming)),
     [upcoming]
   );
+
+  return { pipelineTotal, todayColumn, restOfWeek, upcomingWeeks };
+}
+
+export function RunwayBoard({
+  thisWeek,
+  upcoming,
+  accounts,
+  pipeline,
+  flags = [],
+  staleItems = [],
+}: RunwayBoardProps) {
+  const router = useRouter();
+  const [view, setView] = useState<View>("triage");
+  const { pipelineTotal, todayColumn, restOfWeek, upcomingWeeks } = useBoardData(thisWeek, upcoming, pipeline);
+
+  useEffect(() => {
+    const id = setInterval(() => router.refresh(), REFRESH_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [router]);
 
   return (
     <div className="min-h-screen bg-background">

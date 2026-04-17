@@ -23,6 +23,7 @@ describe("runway-schema", () => {
     expect(cols).toContain("id");
     expect(cols).toContain("name");
     expect(cols).toContain("slug");
+    expect(cols).toContain("nicknames");
     expect(cols).toContain("contractValue");
     expect(cols).toContain("contractStatus");
     expect(cols).toContain("team");
@@ -74,6 +75,8 @@ describe("runway-schema", () => {
   it("teamMembers table has identity columns", () => {
     const cols = Object.keys(teamMembers);
     expect(cols).toContain("name");
+    expect(cols).toContain("fullName");
+    expect(cols).toContain("nicknames");
     expect(cols).toContain("title");
     expect(cols).toContain("slackUserId");
     expect(cols).toContain("isActive");

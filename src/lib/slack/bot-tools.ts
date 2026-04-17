@@ -18,7 +18,7 @@ import {
   undoLastChange,
   getRecentUpdates,
 } from "@/lib/runway/operations";
-import { getClientContactsRef } from "@/lib/runway/reference/clients";
+import { getClientContactsStructured } from "@/lib/runway/operations-context";
 import { getMonday, toISODateString } from "@/app/runway/date-utils";
 
 async function safePostUpdate(update: Parameters<typeof postUpdate>[0]) {
@@ -178,7 +178,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         clientSlug: z.string().describe("Client slug (e.g. 'convergix')"),
       }),
       execute: async ({ clientSlug }) => {
-        const contacts = getClientContactsRef(clientSlug);
+        const contacts = await getClientContactsStructured(clientSlug);
         if (contacts.length === 0) {
           return { client: clientSlug, contacts: [], note: "No contacts on file for this client" };
         }
@@ -289,7 +289,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
       inputSchema: z.object({
         clientSlug: z.string().optional().describe("Client slug (if related to a client)"),
         projectName: z.string().optional().describe("Project name (fuzzy match)"),
-        weekOf: z.string().default(currentMonday).describe(`ISO Monday date. Defaults to ${currentMonday}`),
+        weekOf: z.string().default(currentMonday).describe(`ISO Monday date. Defaults to ${currentMonday}. If the user provides a specific date, calculate which Monday that date belongs to and use that as weekOf. Do not default to current Monday when a date is provided.`),
         dayOfWeek: z.string().optional().describe("Day of the week (e.g. 'tuesday')"),
         date: z.string().optional().describe("Exact date (ISO format)"),
         title: z.string().describe("Week item title"),

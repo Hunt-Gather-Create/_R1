@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { findProjectIdForWeekItem } from "./seed-runway";
+import { TEAM_SEED_DATA, CLIENT_SEED_NICKNAMES, CLIENT_SEED_CONTACTS } from "./seed-runway-data";
 
 function buildMap(
   entries: Record<string, { id: string; name: string }[]>
@@ -146,5 +147,62 @@ describe("findProjectIdForWeekItem", () => {
       projectsByClient
     );
     expect(result).toBeNull();
+  });
+});
+
+describe("TEAM_SEED_DATA", () => {
+  it("has fullName for every member", () => {
+    for (const member of TEAM_SEED_DATA) {
+      expect(member.fullName).toBeDefined();
+      expect(member.fullName.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("has nicknames as an array for every member", () => {
+    for (const member of TEAM_SEED_DATA) {
+      expect(Array.isArray(member.nicknames)).toBe(true);
+    }
+  });
+
+  it("Allison has Allie nickname", () => {
+    const allison = TEAM_SEED_DATA.find((m) => m.firstName === "Allison");
+    expect(allison).toBeDefined();
+    expect(allison!.nicknames).toContain("Allie");
+  });
+
+  it("matches reference data: all 11 team members", () => {
+    expect(TEAM_SEED_DATA).toHaveLength(11);
+  });
+});
+
+describe("CLIENT_SEED_NICKNAMES", () => {
+  it("maps client slugs to nickname arrays", () => {
+    expect(CLIENT_SEED_NICKNAMES["convergix"]).toBeDefined();
+    expect(Array.isArray(CLIENT_SEED_NICKNAMES["convergix"])).toBe(true);
+    expect(CLIENT_SEED_NICKNAMES["convergix"].length).toBeGreaterThan(0);
+  });
+
+  it("Convergix has CGX nickname", () => {
+    expect(CLIENT_SEED_NICKNAMES["convergix"]).toContain("CGX");
+  });
+
+  it("Beyond Petro has BP nickname", () => {
+    expect(CLIENT_SEED_NICKNAMES["beyond-petro"]).toContain("BP");
+  });
+});
+
+describe("CLIENT_SEED_CONTACTS", () => {
+  it("stores structured contacts with roles", () => {
+    const convergixContacts = CLIENT_SEED_CONTACTS["convergix"];
+    expect(convergixContacts).toBeDefined();
+    expect(convergixContacts.length).toBeGreaterThan(0);
+
+    const daniel = convergixContacts.find((c) => c.name === "Daniel");
+    expect(daniel).toBeDefined();
+    expect(daniel!.role).toBe("Marketing Director");
+  });
+
+  it("returns empty array for clients with no contacts", () => {
+    expect(CLIENT_SEED_CONTACTS["lppc"]).toEqual([]);
   });
 });

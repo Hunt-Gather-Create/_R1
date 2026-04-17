@@ -2,10 +2,15 @@
  * Runway Bot Context — main system prompt builder
  *
  * Composes section builders from bot-context-sections.ts into
- * the full system prompt for the Slack bot.
+ * the full system prompt for the Slack bot. Queries DB for team
+ * roster and client map data.
  */
 
 import type { TeamMemberRecord } from "./operations-context";
+import {
+  getTeamRosterForContext,
+  getClientMapForContext,
+} from "./operations-context";
 import {
   buildDateContext,
   buildIdentityContext,
@@ -28,10 +33,24 @@ import {
  * @param teamMember - The resolved team member record (null if unknown)
  * @param currentDate - The current date (injected for testability)
  */
-export function buildBotSystemPrompt(
+export async function buildBotSystemPrompt(
   teamMember: TeamMemberRecord | null,
   currentDate: Date
-): string {
+): Promise<string> {
+  let teamRoster: Awaited<ReturnType<typeof getTeamRosterForContext>> = [];
+  let clientMap: Awaited<ReturnType<typeof getClientMapForContext>> = [];
+  try {
+    [teamRoster, clientMap] = await Promise.all([
+      getTeamRosterForContext(),
+      getClientMapForContext(),
+    ]);
+  } catch (err) {
+    console.log(JSON.stringify({
+      event: "runway_bot_context_error",
+      error: err instanceof Error ? err.message : String(err),
+    }));
+  }
+
   const sections = [
     `You are the Civilization Runway bot. You help team members update project statuses and log information about client work.
 
@@ -67,8 +86,8 @@ Pipeline items (unsigned SOWs / new business) use: scoping, drafting, sow-sent, 
     buildDateContext(currentDate),
     buildIdentityContext(teamMember),
     buildQueryRecipes(),
-    buildTeamRoster(),
-    buildClientMap(),
+    buildTeamRoster(teamRoster),
+    buildClientMap(clientMap),
     buildGlossary(),
     buildRoleBehavior(),
     buildProactiveBehavior(),
