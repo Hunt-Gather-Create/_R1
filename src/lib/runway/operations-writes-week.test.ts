@@ -38,6 +38,10 @@ vi.mock("./operations-utils", () => ({
   },
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
   generateId: () => "mock-id-12345678901234",
+  getClientNameById: vi.fn().mockImplementation(async (clientId: string | null) => {
+    if (clientId === "c1") return "Convergix";
+    return undefined;
+  }),
   getClientOrFail: async (slug: string) => {
     const client = await mockGetClientBySlug(slug);
     if (!client) return { ok: false, error: `Client '${slug}' not found.` };
@@ -154,6 +158,73 @@ describe("createWeekItem", () => {
     }
     expect(mockInsertValues).not.toHaveBeenCalled();
   });
+
+  it("auto-calculates weekOf from date when weekOf not provided", async () => {
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      date: "2026-04-15", // Wednesday → Monday is 2026-04-13
+      title: "Auto Week Test",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    // Verify the insert used the calculated weekOf
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.weekOf).toBe("2026-04-13");
+  });
+
+  it("auto-calculates weekOf from Sunday date", async () => {
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      date: "2026-04-19", // Sunday → Monday is 2026-04-13
+      title: "Sunday Test",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.weekOf).toBe("2026-04-13");
+  });
+
+  it("auto-calculates weekOf from Monday date", async () => {
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      date: "2026-04-13", // Monday → stays 2026-04-13
+      title: "Monday Test",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.weekOf).toBe("2026-04-13");
+  });
+
+  it("uses explicit weekOf when both weekOf and date provided", async () => {
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      weekOf: "2026-04-06",
+      date: "2026-04-15",
+      title: "Explicit WeekOf Test",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.weekOf).toBe("2026-04-06");
+  });
+
+  it("returns error when neither weekOf nor date provided", async () => {
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      title: "No Week Test",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("weekOf");
+    }
+  });
 });
 
 describe("updateWeekItemField", () => {
@@ -190,6 +261,7 @@ describe("updateWeekItemField", () => {
         previousValue: "",
         newValue: "completed",
         reverseCascaded: false,
+        clientName: "Convergix",
       });
     }
     expect(mockUpdateSet).toHaveBeenCalledWith(

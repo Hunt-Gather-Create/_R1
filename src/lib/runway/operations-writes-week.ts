@@ -14,6 +14,7 @@ import {
   generateIdempotencyKey,
   generateId,
   getClientOrFail,
+  getClientNameById,
   findProjectByFuzzyName,
   resolveWeekItemOrFail,
   checkDuplicate,
@@ -23,12 +24,23 @@ import {
 } from "./operations-utils";
 import type { OperationResult } from "./operations-utils";
 
+// ── Helpers ──────────────────────────────────────────────
+
+/** Compute the Monday (ISO date) of the week containing the given date. */
+function getMonday(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  const day = d.getUTCDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
 // ── Create Week Item ─────────────────────────────────────
 
 export interface CreateWeekItemParams {
   clientSlug?: string;
   projectName?: string;
-  weekOf: string;
+  weekOf?: string;
   dayOfWeek?: string;
   date?: string;
   title: string;
@@ -46,7 +58,7 @@ export async function createWeekItem(
   const {
     clientSlug,
     projectName,
-    weekOf,
+    weekOf: rawWeekOf,
     dayOfWeek,
     date,
     title,
@@ -57,6 +69,13 @@ export async function createWeekItem(
     notes,
     updatedBy,
   } = params;
+
+  // Auto-calculate weekOf from date if not provided
+  const weekOf = rawWeekOf ?? (date ? getMonday(date) : undefined);
+  if (!weekOf) {
+    return { ok: false, error: "Provide weekOf or date to determine which week this item belongs to." };
+  }
+
   const db = getRunwayDb();
 
   let clientId: string | null = null;
@@ -150,6 +169,8 @@ export async function updateWeekItemField(
   if (!itemLookup.ok) return itemLookup;
   const item = itemLookup.item;
 
+  const clientName = await getClientNameById(item.clientId);
+
   const previousValue = getPreviousValue(item, columnKey);
 
   const idemKey = generateIdempotencyKey(
@@ -210,7 +231,7 @@ export async function updateWeekItemField(
   return {
     ok: true,
     message: `Updated ${field} for '${item.title}'.`,
-    data: { weekItemTitle: item.title, field, previousValue, newValue, reverseCascaded },
+    data: { weekItemTitle: item.title, field, previousValue, newValue, reverseCascaded, clientName },
   };
 }
 
@@ -261,6 +282,8 @@ export async function deleteWeekItem(
   });
   if (dup) return dup;
 
+  const clientName = await getClientNameById(item.clientId);
+
   await db.delete(weekItems).where(eq(weekItems.id, item.id));
 
   await insertAuditRecord({
@@ -275,5 +298,6 @@ export async function deleteWeekItem(
   return {
     ok: true,
     message: `Deleted week item '${item.title}'.`,
+    data: { clientName },
   };
 }
