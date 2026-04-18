@@ -12,6 +12,8 @@ import {
   projects,
   updates,
   weekItems,
+  pipelineItems,
+  teamMembers,
 } from "@/lib/db/runway-schema";
 import { eq, asc } from "drizzle-orm";
 import { createHash } from "crypto";
@@ -126,8 +128,12 @@ async function getCachedClients(): Promise<ClientRow[]> {
   return _cachedClients;
 }
 
-/** @internal — test-only. Resets the in-memory client cache. */
-export function _resetClientCacheForTest(): void {
+/**
+ * Invalidate the in-memory client cache.
+ * Called after creating a new client so subsequent lookups find it.
+ * Also used in tests to reset state between runs.
+ */
+export function invalidateClientCache(): void {
   _cachedClients = null;
   _cacheTimestamp = 0;
 }
@@ -353,9 +359,25 @@ export function validateField(
   return null;
 }
 
+/**
+ * Validate a field name and resolve it to a typed field + column key.
+ * Combines the repeated validateField + typecast + column lookup pattern.
+ * Returns an error OperationResult if invalid, or the resolved field + column.
+ */
+export function validateAndResolveField<F extends string>(
+  field: string,
+  allowedFields: readonly F[],
+  fieldToColumn: Record<F, string>
+): { ok: false; error: string } | { ok: true; typedField: F; columnKey: string } {
+  const error = validateField(field, allowedFields);
+  if (error) return error;
+  const typedField = field as F;
+  return { ok: true, typedField, columnKey: fieldToColumn[typedField] };
+}
+
 // ── Audit & Idempotency Helpers ─────────────────────────
 
-type OperationResult =
+export type OperationResult =
   | { ok: true; message: string; data?: Record<string, unknown> }
   | { ok: false; error: string; available?: string[] };
 
@@ -475,4 +497,211 @@ export async function resolveWeekItemOrFail(
     };
   }
   return { ok: true, item: fuzzyResult.value };
+}
+
+// ── Pipeline Item Fields & Queries ─────────────────────
+
+export const PIPELINE_ITEM_FIELDS = [
+  "name", "owner", "status", "estimatedValue", "waitingOn", "notes",
+] as const;
+
+export type PipelineItemField = (typeof PIPELINE_ITEM_FIELDS)[number];
+
+export const PIPELINE_ITEM_FIELD_TO_COLUMN: Record<PipelineItemField, keyof typeof pipelineItems.$inferSelect> = {
+  name: "name",
+  owner: "owner",
+  status: "status",
+  estimatedValue: "estimatedValue",
+  waitingOn: "waitingOn",
+  notes: "notes",
+};
+
+export async function findPipelineItemByFuzzyName(
+  clientId: string,
+  name: string
+): Promise<typeof pipelineItems.$inferSelect | null> {
+  const db = getRunwayDb();
+  const items = await db
+    .select()
+    .from(pipelineItems)
+    .where(eq(pipelineItems.clientId, clientId));
+  const result = fuzzyMatch(items, name, (i) => i.name);
+  if (result.kind === "match") return result.value;
+  return null;
+}
+
+export async function resolvePipelineItemOrFail(
+  clientId: string,
+  clientName: string,
+  pipelineName: string
+): Promise<
+  | { ok: true; item: typeof pipelineItems.$inferSelect }
+  | { ok: false; error: string; available?: string[] }
+> {
+  const db = getRunwayDb();
+  const items = await db
+    .select()
+    .from(pipelineItems)
+    .where(eq(pipelineItems.clientId, clientId));
+  const fuzzyResult = fuzzyMatch(items, pipelineName, (i) => i.name);
+  if (fuzzyResult.kind === "ambiguous") {
+    return {
+      ok: false,
+      error: `Multiple pipeline items match '${pipelineName}': ${fuzzyResult.options.map((i) => i.name).join(", ")}. Which one?`,
+      available: fuzzyResult.options.map((i) => i.name),
+    };
+  }
+  if (fuzzyResult.kind === "none") {
+    return {
+      ok: false,
+      error: `Pipeline item '${pipelineName}' not found for ${clientName}.`,
+      available: items.map((i) => i.name),
+    };
+  }
+  return { ok: true, item: fuzzyResult.value };
+}
+
+// ── Client Fields ──────────────────────────────────────
+
+export const CLIENT_FIELDS = [
+  "name", "team", "contractValue", "contractTerm", "contractStatus", "clientContacts", "nicknames",
+] as const;
+
+export type ClientField = (typeof CLIENT_FIELDS)[number];
+
+export const CLIENT_FIELD_TO_COLUMN: Record<ClientField, keyof typeof clients.$inferSelect> = {
+  name: "name",
+  team: "team",
+  contractValue: "contractValue",
+  contractTerm: "contractTerm",
+  contractStatus: "contractStatus",
+  clientContacts: "clientContacts",
+  nicknames: "nicknames",
+};
+
+// ── Team Member Fields & Queries ───────────────────────
+
+export const TEAM_MEMBER_FIELDS = [
+  "title", "fullName", "slackUserId", "roleCategory", "accountsLed", "isActive", "nicknames", "channelPurpose",
+] as const;
+
+export type TeamMemberField = (typeof TEAM_MEMBER_FIELDS)[number];
+
+export const TEAM_MEMBER_FIELD_TO_COLUMN: Record<TeamMemberField, keyof typeof teamMembers.$inferSelect> = {
+  title: "title",
+  fullName: "fullName",
+  slackUserId: "slackUserId",
+  roleCategory: "roleCategory",
+  accountsLed: "accountsLed",
+  isActive: "isActive",
+  nicknames: "nicknames",
+  channelPurpose: "channelPurpose",
+};
+
+export async function findTeamMemberByFuzzyName(
+  name: string
+): Promise<typeof teamMembers.$inferSelect | null> {
+  const db = getRunwayDb();
+  const members = await db.select().from(teamMembers);
+  const result = fuzzyMatch(members, name, (m) => m.name);
+  if (result.kind === "match") return result.value;
+  return null;
+}
+
+export async function resolveTeamMemberOrFail(
+  memberName: string
+): Promise<
+  | { ok: true; member: typeof teamMembers.$inferSelect }
+  | { ok: false; error: string; available?: string[] }
+> {
+  const db = getRunwayDb();
+  const members = await db.select().from(teamMembers);
+  const fuzzyResult = fuzzyMatch(members, memberName, (m) => m.name);
+  if (fuzzyResult.kind === "ambiguous") {
+    return {
+      ok: false,
+      error: `Multiple team members match '${memberName}': ${fuzzyResult.options.map((m) => m.name).join(", ")}. Which one?`,
+      available: fuzzyResult.options.map((m) => m.name),
+    };
+  }
+  if (fuzzyResult.kind === "none") {
+    return {
+      ok: false,
+      error: `Team member '${memberName}' not found.`,
+      available: members.map((m) => m.name),
+    };
+  }
+  return { ok: true, member: fuzzyResult.value };
+}
+
+// ── Entity Field Helpers ──────────────────────────────
+
+/**
+ * Extract the previous value of a field from an entity row.
+ * Coerces to string, defaulting null/undefined to empty string.
+ */
+export function getPreviousValue(
+  entity: Record<string, unknown>,
+  columnKey: string
+): string {
+  return String(entity[columnKey] ?? "");
+}
+
+// ── Resource & Name Helpers ────────────────────────────
+
+/**
+ * Case-insensitive check if a string contains a name.
+ */
+export function containsName(value: string | null, name: string): boolean {
+  if (!value) return false;
+  return value.toLowerCase().includes(name.toLowerCase());
+}
+
+/**
+ * Replace a name in a comma- or slash-separated resource string.
+ * Splits by separator, replaces matching names, deduplicates, rejoins.
+ */
+export function replaceResourceName(
+  current: string,
+  search: string,
+  replacement: string
+): string {
+  const sep = current.includes("/") ? "/" : ",";
+  const parts = current.split(sep).map((s) => s.trim());
+  const replaced = parts.map((p) =>
+    p.toLowerCase() === search.toLowerCase() ? replacement : p
+  );
+  const deduped = [...new Set(replaced)];
+  return deduped.join(sep === "/" ? "/" : ", ");
+}
+
+/**
+ * Remove a name from a comma- or slash-separated resource string.
+ * Returns null when the sole resource is removed.
+ */
+export function removeFromResources(
+  resources: string | null,
+  name: string
+): string | null {
+  if (!resources) return null;
+  const sep = resources.includes("/") ? "/" : ",";
+  const parts = resources
+    .split(sep)
+    .map((s) => s.trim())
+    .filter((s) => s.toLowerCase() !== name.toLowerCase());
+  if (parts.length === 0) return null;
+  return parts.join(sep === "/" ? "/" : ", ");
+}
+
+/**
+ * Merge new entries into a JSON array string, deduplicating.
+ * Used for accountsLed and similar JSON array fields.
+ */
+export function mergeJsonArray(
+  current: string | null,
+  toAdd: string[]
+): string {
+  const existing: string[] = current ? JSON.parse(current) : [];
+  const merged = [...new Set([...existing, ...toAdd])];
+  return JSON.stringify(merged);
 }
