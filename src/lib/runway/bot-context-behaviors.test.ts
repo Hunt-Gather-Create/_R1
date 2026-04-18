@@ -145,8 +145,8 @@ describe("buildCapabilityBoundaries", () => {
   it("lists what the bot CANNOT do", () => {
     const result = buildCapabilityBoundaries();
     expect(result).toContain("## What you CANNOT do");
-    expect(result).toContain("Delete or archive");
-    expect(result).toContain("pipeline items");
+    expect(result).toContain("Set reminders");
+    expect(result).toContain("billing");
   });
 
   it("includes critical add_update vs update_project_field distinction", () => {
