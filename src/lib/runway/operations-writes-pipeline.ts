@@ -219,5 +219,6 @@ export async function deletePipelineItem(
   return {
     ok: true,
     message: `Deleted pipeline item '${item.name}' from ${client.name}.`,
+    data: { clientName: client.name, pipelineName: item.name },
   };
 }

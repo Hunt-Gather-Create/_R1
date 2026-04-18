@@ -217,7 +217,10 @@ describe("deletePipelineItem", () => {
     });
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.message).toContain("SOW Expansion");
+    if (result.ok) {
+      expect(result.message).toContain("SOW Expansion");
+      expect(result.data).toEqual({ clientName: "Convergix", pipelineName: "SOW Expansion" });
+    }
     expect(mockDeleteFn).toHaveBeenCalled();
     // Audit record inserted
     const auditCall = mockInsertValues.mock.calls[0][0];

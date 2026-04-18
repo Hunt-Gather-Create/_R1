@@ -132,7 +132,7 @@ export function registerRunwayTools(server: McpServer) {
     const result = await deleteProject(params);
     if (result.ok && !getBatchId()) {
       await safePostUpdate({
-        clientName: params.clientSlug,
+        clientName: (result.data?.clientName as string) ?? params.clientSlug,
         updateText: `Deleted project: ${params.projectName}`,
         updatedBy: params.updatedBy,
       });
@@ -152,7 +152,7 @@ export function registerRunwayTools(server: McpServer) {
     const result = await addProject(params);
     if (result.ok && !getBatchId()) {
       await safePostUpdate({
-        clientName: params.clientSlug,
+        clientName: (result.data?.clientName as string) ?? params.clientSlug,
         updateText: `New project: ${params.name}`,
         updatedBy: params.updatedBy,
       });
@@ -271,7 +271,7 @@ export function registerRunwayTools(server: McpServer) {
     const result = await deletePipelineItem(params);
     if (result.ok && !getBatchId()) {
       await safePostUpdate({
-        clientName: params.clientSlug,
+        clientName: (result.data?.clientName as string) ?? params.clientSlug,
         updateText: `Removed pipeline item: ${params.pipelineName}`,
         updatedBy: params.updatedBy,
       });
@@ -347,7 +347,7 @@ export function registerRunwayTools(server: McpServer) {
     const result = await addUpdate(params);
     if (result.ok && !getBatchId()) {
       await safePostUpdate({
-        clientName: params.clientSlug,
+        clientName: (result.data?.clientName as string) ?? params.clientSlug,
         projectName: params.projectName,
         updateText: `${params.summary}`,
         updatedBy: params.updatedBy,

@@ -241,6 +241,33 @@ describe("registerRunwayTools", () => {
     );
   });
 
+  it("delete tools post clientName from result.data, not slug", async () => {
+    const { safePostUpdate } = await import("@/lib/slack/updates-channel");
+    mockOps.getBatchId.mockReturnValue(null);
+    mockOps.deletePipelineItem.mockResolvedValue({
+      ok: true, message: "Deleted",
+      data: { clientName: "Convergix", pipelineName: "SOW Expansion" },
+    });
+    await registeredTools.get("delete_pipeline_item")!({
+      clientSlug: "convergix", pipelineName: "SOW Expansion", updatedBy: "mcp",
+    });
+    expect(safePostUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ clientName: "Convergix" })
+    );
+  });
+
+  it("delete tools fall back to slug when result.data is missing", async () => {
+    const { safePostUpdate } = await import("@/lib/slack/updates-channel");
+    mockOps.getBatchId.mockReturnValue(null);
+    mockOps.deleteProject.mockResolvedValue({ ok: true, message: "Deleted" });
+    await registeredTools.get("delete_project")!({
+      clientSlug: "convergix", projectName: "CDS", updatedBy: "mcp",
+    });
+    expect(safePostUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ clientName: "convergix" })
+    );
+  });
+
   it("mutation tools suppress Slack when in batch mode", async () => {
     const { safePostUpdate } = await import("@/lib/slack/updates-channel");
     mockOps.getBatchId.mockReturnValue("batch-2026-04-18");

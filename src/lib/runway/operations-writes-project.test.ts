@@ -353,7 +353,10 @@ describe("deleteProject", () => {
     });
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.message).toContain("CDS Messaging");
+    if (result.ok) {
+      expect(result.message).toContain("CDS Messaging");
+      expect(result.data).toEqual({ clientName: "Convergix", projectName: "CDS Messaging" });
+    }
     // Audit record
     const auditCall = mockInsertValues.mock.calls[0][0];
     expect(auditCall.updateType).toBe("delete-project");

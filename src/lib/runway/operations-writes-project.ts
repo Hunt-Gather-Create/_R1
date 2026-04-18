@@ -86,6 +86,7 @@ export async function deleteProject(
   return {
     ok: true,
     message: `Deleted project '${project.name}' from ${client.name}.`,
+    data: { clientName: client.name, projectName: project.name },
   };
 }
 
