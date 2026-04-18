@@ -20,6 +20,10 @@ import {
   insertAuditRecord,
   getLinkedWeekItems,
 } from "./operations";
+import type { OperationResult } from "./operations-utils";
+
+// Re-export so existing consumers that import from here still work
+export type { OperationResult } from "./operations-utils";
 
 // ── Types ────────────────────────────────────────────────
 
@@ -30,10 +34,6 @@ export interface UpdateProjectStatusParams {
   updatedBy: string;
   notes?: string;
 }
-
-export type OperationResult =
-  | { ok: true; message: string; data?: Record<string, unknown> }
-  | { ok: false; error: string; available?: string[] };
 
 // ── Write Operation ─────────────────────────────────────
 
