@@ -100,6 +100,7 @@ export const updates = sqliteTable("updates", {
   newValue: text("new_value"),
   summary: text("summary"),
   metadata: text("metadata"),
+  batchId: text("batch_id"),
   slackMessageTs: text("slack_message_ts"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()

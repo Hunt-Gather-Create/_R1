@@ -92,6 +92,7 @@ CREATE TABLE updates (
   new_value TEXT,
   summary TEXT,
   metadata TEXT,
+  batch_id TEXT,
   slack_message_ts TEXT,
   created_at INTEGER NOT NULL
 );
