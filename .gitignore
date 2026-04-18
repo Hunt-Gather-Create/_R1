@@ -49,6 +49,7 @@ yarn-error.log*
 next-env.d.ts
 
 .worktrees
+.mcp.json
 
 # brain docs, reference docs, and inspiration sources (local working files)
 docs/brain/
