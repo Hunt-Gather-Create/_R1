@@ -65,3 +65,36 @@ export async function postUpdate(update: UpdatePost): Promise<string | undefined
 
   return result.ts;
 }
+
+/**
+ * Post a formatted update, swallowing errors.
+ * Used by bot tools and MCP tools so a Slack failure doesn't break the operation.
+ */
+export async function safePostUpdate(update: UpdatePost): Promise<void> {
+  try {
+    await postUpdate(update);
+  } catch (err) {
+    console.error(JSON.stringify({
+      event: "runway_update_post_error",
+      error: err instanceof Error ? err.message : String(err),
+    }));
+  }
+}
+
+/**
+ * Post pre-formatted text directly to the updates channel.
+ * Used by the publish script for multi-line grouped messages.
+ */
+export async function postFormattedMessage(text: string): Promise<string | undefined> {
+  const slack = getSlackClient();
+  const channelId = getUpdatesChannelId();
+
+  const result = await slack.chat.postMessage({
+    channel: channelId,
+    text,
+    unfurl_links: false,
+    unfurl_media: false,
+  });
+
+  return result.ts;
+}
