@@ -12,7 +12,7 @@ import {
   cleanupTestDb,
   type TestDb,
 } from "./test-db";
-import { _resetClientCacheForTest } from "./operations-utils";
+import { invalidateClientCache } from "./operations-utils";
 
 let testDb: TestDb;
 let libsqlClient: Client;
@@ -28,7 +28,7 @@ beforeEach(async () => {
   libsqlClient = created.client;
   dbPath = created.dbPath;
   await seedTestDb(libsqlClient);
-  _resetClientCacheForTest();
+  invalidateClientCache();
 });
 
 afterEach(() => {
@@ -126,11 +126,12 @@ describe("getStaleItemsForAccounts", () => {
 
     const result = await getStaleItemsForAccounts(["convergix"], "Kathy");
 
-    // Kathy owns CDS Messaging and ABM Brand Guidelines
+    // Kathy owns CDS Messaging (ABM Brand Guidelines is now owned by Paige)
     const projectNames = result.map((i) => i.projectName);
     expect(projectNames).toContain("CDS Messaging");
-    expect(projectNames).toContain("ABM Brand Guidelines");
-    // Lane owns Social Content — should NOT appear
+    // Paige owns ABM Brand Guidelines — should NOT appear for Kathy
+    expect(projectNames).not.toContain("ABM Brand Guidelines");
+    // Roz owns Social Content — should NOT appear
     expect(projectNames).not.toContain("Social Content");
   });
 

@@ -11,6 +11,8 @@ export function createMockDb() {
   const mockUpdateSet = vi.fn();
   const mockUpdateWhere = vi.fn();
 
+  const mockDeleteWhere = vi.fn();
+
   const mockTx = {
     update: vi.fn(() => ({
       set: vi.fn((...args: unknown[]) => {
@@ -18,6 +20,7 @@ export function createMockDb() {
         return { where: mockUpdateWhere };
       }),
     })),
+    delete: vi.fn(() => ({ where: mockDeleteWhere })),
   };
 
   const db = {
@@ -28,8 +31,11 @@ export function createMockDb() {
         return { where: mockUpdateWhere };
       }),
     })),
+    delete: vi.fn(() => ({ where: mockDeleteWhere })),
     transaction: vi.fn(async (cb: (tx: typeof mockTx) => Promise<void>) => cb(mockTx)),
   };
 
-  return { db, mockTx, mockInsertValues, mockUpdateSet, mockUpdateWhere };
+  const mockDeleteFn = db.delete as ReturnType<typeof vi.fn>;
+
+  return { db, mockTx, mockInsertValues, mockUpdateSet, mockUpdateWhere, mockDeleteWhere, mockDeleteFn };
 }
