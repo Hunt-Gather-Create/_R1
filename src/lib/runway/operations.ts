@@ -56,6 +56,8 @@ export {
   replaceResourceName,
   removeFromResources,
   mergeJsonArray,
+  setBatchId,
+  getBatchId,
 } from "./operations-utils";
 
 export type {

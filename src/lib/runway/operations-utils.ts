@@ -156,6 +156,13 @@ export async function getClientNameMap(): Promise<Map<string, string>> {
   return new Map(allClients.map((c) => [c.id, c.name]));
 }
 
+/** Look up a single client name by ID. Returns undefined if not found. */
+export async function getClientNameById(clientId: string | null): Promise<string | undefined> {
+  if (!clientId) return undefined;
+  const allClients = await getCachedClients();
+  return allClients.find((c) => c.id === clientId)?.name;
+}
+
 export type FuzzyMatchResult<T> =
   | { kind: "match"; value: T }
   | { kind: "ambiguous"; options: T[] }
@@ -381,6 +388,16 @@ export type OperationResult =
   | { ok: true; message: string; data?: Record<string, unknown> }
   | { ok: false; error: string; available?: string[] };
 
+// ── Batch Mode ────────────────────────────────────────────
+
+let _currentBatchId: string | null = null;
+
+/** Set the current batch ID. All subsequent audit records will be tagged with this ID. */
+export function setBatchId(id: string | null): void { _currentBatchId = id; }
+
+/** Get the current batch ID (null if not in batch mode). */
+export function getBatchId(): string | null { return _currentBatchId; }
+
 export interface AuditRecordParams {
   idempotencyKey: string;
   projectId?: string | null;
@@ -391,6 +408,7 @@ export interface AuditRecordParams {
   newValue?: string | null;
   summary: string;
   metadata?: string;
+  batchId?: string | null;
 }
 
 /** Insert an audit record into the updates table. */
@@ -407,6 +425,7 @@ export async function insertAuditRecord(params: AuditRecordParams): Promise<void
     newValue: params.newValue ?? null,
     summary: params.summary,
     metadata: params.metadata,
+    batchId: params.batchId ?? _currentBatchId ?? null,
   });
 }
 

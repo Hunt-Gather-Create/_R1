@@ -469,6 +469,31 @@ describe("client cache", () => {
   });
 });
 
+// ── Batch Mode ────────────────────────────────────────────
+
+describe("setBatchId / getBatchId", () => {
+  it("sets and reads batch ID", async () => {
+    const { setBatchId, getBatchId } = await import("./operations-utils");
+    setBatchId("test-batch-1");
+    expect(getBatchId()).toBe("test-batch-1");
+    setBatchId(null);
+  });
+
+  it("returns null when not set", async () => {
+    const { setBatchId, getBatchId } = await import("./operations-utils");
+    setBatchId(null);
+    expect(getBatchId()).toBeNull();
+  });
+
+  it("clears batch ID with null", async () => {
+    const { setBatchId, getBatchId } = await import("./operations-utils");
+    setBatchId("batch-abc");
+    expect(getBatchId()).toBe("batch-abc");
+    setBatchId(null);
+    expect(getBatchId()).toBeNull();
+  });
+});
+
 // ── validateAndResolveField ───────────────────────────────
 
 describe("validateAndResolveField", () => {
