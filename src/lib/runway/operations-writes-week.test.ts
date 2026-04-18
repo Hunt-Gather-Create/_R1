@@ -2,7 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createMockDb } from "./operations-writes-test-helpers";
 
 // ── Mock state ──────────────────────────────────────────
-const { db: mockDb, mockInsertValues, mockUpdateSet } = createMockDb();
+const { db: mockDb, mockInsertValues, mockUpdateSet, mockDeleteFn } = createMockDb();
+
+// Track select calls for deleteWeekItem by ID
+const mockSelectGet = vi.fn();
+const mockSelectWhere = vi.fn(() => mockSelectGet.mock.results[0]?.value ?? []);
+const mockSelectFrom = vi.fn(() => ({ where: mockSelectWhere }));
+(mockDb as Record<string, unknown>).select = vi.fn(() => ({ from: mockSelectFrom }));
 
 vi.mock("@/lib/db/runway", () => ({
   getRunwayDb: () => mockDb,
@@ -65,11 +71,12 @@ vi.mock("./operations-utils", () => ({
   insertAuditRecord: async (params: Record<string, unknown>) => {
     mockInsertValues(params);
   },
-  validateField: (field: string, allowed: readonly string[]) => {
+  getPreviousValue: (entity: Record<string, unknown>, columnKey: string) => String(entity[columnKey] ?? ""),
+  validateAndResolveField: (field: string, allowed: readonly string[], fieldToColumn: Record<string, string>) => {
     if (!allowed.includes(field)) {
       return { ok: false, error: `Invalid field '${field}'. Allowed fields: ${allowed.join(", ")}` };
     }
-    return null;
+    return { ok: true, typedField: field, columnKey: fieldToColumn[field] };
   },
 }));
 
@@ -376,5 +383,85 @@ describe("updateWeekItemField", () => {
     expect(mockUpdateSet).not.toHaveBeenCalledWith(
       expect.objectContaining({ dueDate: expect.anything() })
     );
+  });
+});
+
+describe("deleteWeekItem", () => {
+  const weekItem = {
+    id: "wi1",
+    title: "CDS Review",
+    clientId: "c1",
+    category: "review",
+  };
+
+  it("deletes week item by fuzzy title and audits", async () => {
+    mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+    const { deleteWeekItem } = await import("./operations-writes-week");
+    const result = await deleteWeekItem({
+      weekOf: "2026-04-06",
+      weekItemTitle: "CDS Review",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.message).toContain("CDS Review");
+    expect(mockDeleteFn).toHaveBeenCalled();
+    const auditCall = mockInsertValues.mock.calls[0][0];
+    expect(auditCall.updateType).toBe("delete-week-item");
+    expect(auditCall.previousValue).toBe("CDS Review");
+  });
+
+  it("deletes week item by direct ID", async () => {
+    mockSelectWhere.mockReturnValueOnce([weekItem]);
+
+    const { deleteWeekItem } = await import("./operations-writes-week");
+    const result = await deleteWeekItem({
+      id: "wi1",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.message).toContain("CDS Review");
+  });
+
+  it("returns error when item not found by title", async () => {
+    mockFindWeekItemByFuzzyTitle.mockResolvedValue(null);
+    mockGetWeekItemsForWeek.mockResolvedValue([{ title: "CDS Review" }]);
+
+    const { deleteWeekItem } = await import("./operations-writes-week");
+    const result = await deleteWeekItem({
+      weekOf: "2026-04-06",
+      weekItemTitle: "Nonexistent",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(false);
+  });
+
+  it("returns error when neither id nor weekOf+title provided", async () => {
+    const { deleteWeekItem } = await import("./operations-writes-week");
+    const result = await deleteWeekItem({
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("Provide either");
+  });
+
+  it("handles duplicate request", async () => {
+    mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+    mockCheckIdempotency.mockResolvedValue(true);
+
+    const { deleteWeekItem } = await import("./operations-writes-week");
+    const result = await deleteWeekItem({
+      weekOf: "2026-04-06",
+      weekItemTitle: "CDS Review",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.message).toContain("duplicate");
+    expect(mockDeleteFn).not.toHaveBeenCalled();
   });
 });

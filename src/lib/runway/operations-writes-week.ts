@@ -1,7 +1,7 @@
 /**
- * Runway Write Operations — week item create and update
+ * Runway Write Operations — week item create, update, and delete
  *
- * Handles creating new week items and updating individual fields
+ * Handles creating, updating, and deleting week items
  * with idempotency checks and audit logging.
  */
 
@@ -18,10 +18,10 @@ import {
   resolveWeekItemOrFail,
   checkDuplicate,
   insertAuditRecord,
-  validateField,
+  validateAndResolveField,
+  getPreviousValue,
 } from "./operations-utils";
-import type { WeekItemField } from "./operations-utils";
-import type { OperationResult } from "./operations-writes";
+import type { OperationResult } from "./operations-utils";
 
 // ── Create Week Item ─────────────────────────────────────
 
@@ -142,17 +142,15 @@ export async function updateWeekItemField(
   const { weekOf, weekItemTitle, field, newValue, updatedBy } = params;
   const db = getRunwayDb();
 
-  const fieldError = validateField(field, WEEK_ITEM_FIELDS);
-  if (fieldError) return fieldError;
-
-  const typedField = field as WeekItemField;
+  const fieldResult = validateAndResolveField(field, WEEK_ITEM_FIELDS, WEEK_ITEM_FIELD_TO_COLUMN);
+  if (!fieldResult.ok) return fieldResult;
+  const { typedField, columnKey } = fieldResult;
 
   const itemLookup = await resolveWeekItemOrFail(weekOf, weekItemTitle);
   if (!itemLookup.ok) return itemLookup;
   const item = itemLookup.item;
 
-  const columnKey = WEEK_ITEM_FIELD_TO_COLUMN[typedField];
-  const previousValue = String(item[columnKey] ?? "");
+  const previousValue = getPreviousValue(item, columnKey);
 
   const idemKey = generateIdempotencyKey(
     "week-field-change",
@@ -213,5 +211,69 @@ export async function updateWeekItemField(
     ok: true,
     message: `Updated ${field} for '${item.title}'.`,
     data: { weekItemTitle: item.title, field, previousValue, newValue, reverseCascaded },
+  };
+}
+
+// ── Delete Week Item ────────────────────────────────────
+
+export interface DeleteWeekItemParams {
+  /** Provide either weekOf + weekItemTitle (fuzzy match) or id (direct lookup) */
+  weekOf?: string;
+  weekItemTitle?: string;
+  id?: string;
+  updatedBy: string;
+}
+
+export async function deleteWeekItem(
+  params: DeleteWeekItemParams
+): Promise<OperationResult> {
+  const { weekOf, weekItemTitle, id, updatedBy } = params;
+  const db = getRunwayDb();
+
+  let item: typeof weekItems.$inferSelect | undefined;
+
+  if (id) {
+    const rows = await db
+      .select()
+      .from(weekItems)
+      .where(eq(weekItems.id, id));
+    item = rows[0];
+    if (!item) {
+      return { ok: false, error: `Week item with id '${id}' not found.` };
+    }
+  } else if (weekOf && weekItemTitle) {
+    const itemLookup = await resolveWeekItemOrFail(weekOf, weekItemTitle);
+    if (!itemLookup.ok) return itemLookup;
+    item = itemLookup.item;
+  } else {
+    return { ok: false, error: "Provide either id or weekOf + weekItemTitle to identify the week item." };
+  }
+
+  const idemKey = generateIdempotencyKey(
+    "delete-week-item",
+    item.id,
+    updatedBy
+  );
+
+  const dup = await checkDuplicate(idemKey, {
+    ok: true,
+    message: "Week item already deleted (duplicate request).",
+  });
+  if (dup) return dup;
+
+  await db.delete(weekItems).where(eq(weekItems.id, item.id));
+
+  await insertAuditRecord({
+    idempotencyKey: idemKey,
+    clientId: item.clientId,
+    updatedBy,
+    updateType: "delete-week-item",
+    previousValue: item.title,
+    summary: `Deleted week item: ${item.title}`,
+  });
+
+  return {
+    ok: true,
+    message: `Deleted week item '${item.title}'.`,
   };
 }
