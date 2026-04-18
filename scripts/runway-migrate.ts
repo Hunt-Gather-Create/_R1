@@ -10,9 +10,10 @@
 
 import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
-import { resolve } from "path";
+import { resolve, basename, extname } from "path";
 import { createInterface } from "readline";
 import { runIfDirect } from "./lib/run-script";
+import { setBatchId } from "@/lib/runway/operations-utils";
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -142,16 +143,29 @@ async function run() {
     }
   }
 
+  // Derive batchId from migration filename for audit tagging
+  const migrationBatchId = basename(migrationPath, extname(migrationPath));
+
   // Run migration
   const ctx = createMigrationContext(db, !shouldApply);
+
+  if (shouldApply) {
+    setBatchId(migrationBatchId);
+  }
 
   try {
     await migration.up(ctx);
     console.log(`\n${shouldApply ? "Migration applied." : "Dry-run complete. Use --apply to execute."}`);
     console.log(`${ctx.logs.length} operation(s) logged.`);
+    if (shouldApply) {
+      console.log(`\nTo publish changes to Slack, run:`);
+      console.log(`  pnpm runway:publish-updates --batch "${migrationBatchId}"`);
+    }
   } catch (err) {
     console.error("\nMigration failed:", err);
     process.exit(1);
+  } finally {
+    setBatchId(null);
   }
 }
 
