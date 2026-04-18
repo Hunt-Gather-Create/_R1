@@ -50,11 +50,12 @@ vi.mock("./operations-utils", () => ({
   insertAuditRecord: async (params: Record<string, unknown>) => {
     mockInsertValues(params);
   },
-  validateField: (field: string, allowed: readonly string[]) => {
+  getPreviousValue: (entity: Record<string, unknown>, columnKey: string) => String(entity[columnKey] ?? ""),
+  validateAndResolveField: (field: string, allowed: readonly string[], fieldToColumn: Record<string, string>) => {
     if (!allowed.includes(field)) {
       return { ok: false, error: `Invalid field '${field}'. Allowed fields: ${allowed.join(", ")}` };
     }
-    return null;
+    return { ok: true, typedField: field, columnKey: fieldToColumn[field] };
   },
 }));
 
@@ -336,5 +337,71 @@ describe("updateProjectField", () => {
     }
     // Only the project update itself
     expect(mockUpdateSet).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("deleteProject", () => {
+  it("deletes project and audits", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+    const { deleteProject } = await import("./operations-writes-project");
+    const result = await deleteProject({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.message).toContain("CDS Messaging");
+    // Audit record
+    const auditCall = mockInsertValues.mock.calls[0][0];
+    expect(auditCall.updateType).toBe("delete-project");
+    expect(auditCall.previousValue).toBe("CDS Messaging");
+  });
+
+  it("returns error for unknown client", async () => {
+    mockGetClientBySlug.mockResolvedValue(null);
+
+    const { deleteProject } = await import("./operations-writes-project");
+    const result = await deleteProject({
+      clientSlug: "unknown",
+      projectName: "Test",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(false);
+  });
+
+  it("returns error for unknown project", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(null);
+    mockGetProjectsForClient.mockResolvedValue([{ name: "CDS Messaging" }]);
+
+    const { deleteProject } = await import("./operations-writes-project");
+    const result = await deleteProject({
+      clientSlug: "convergix",
+      projectName: "Nonexistent",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.available).toEqual(["CDS Messaging"]);
+  });
+
+  it("handles duplicate request", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+    mockCheckIdempotency.mockResolvedValue(true);
+
+    const { deleteProject } = await import("./operations-writes-project");
+    const result = await deleteProject({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.message).toContain("duplicate");
   });
 });
