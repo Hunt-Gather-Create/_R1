@@ -224,15 +224,8 @@ export async function findProjectByFuzzyName(
   clientId: string,
   projectName: string
 ): Promise<typeof projects.$inferSelect | null> {
-  const db = getRunwayDb();
-  const clientProjects = await db
-    .select()
-    .from(projects)
-    .where(eq(projects.clientId, clientId));
-
-  const result = fuzzyMatchProject(clientProjects, projectName);
-  if (result.kind === "match") return result.value;
-  return null;
+  const result = await findProjectByFuzzyNameWithDisambiguation(clientId, projectName);
+  return result.kind === "match" ? result.value : null;
 }
 
 /**
@@ -253,8 +246,37 @@ export async function findProjectByFuzzyNameWithDisambiguation(
 }
 
 /**
+ * Generic fuzzy-resolve with disambiguation error handling.
+ * Eliminates the repeated ambiguous/none/match pattern in all resolve*OrFail functions.
+ */
+export function resolveEntityOrFail<T>(opts: {
+  items: T[];
+  searchTerm: string;
+  getText: (item: T) => string;
+  entityLabel: string;
+  contextLabel?: string;
+}): { ok: true; item: T } | { ok: false; error: string; available?: string[] } {
+  const result = fuzzyMatch(opts.items, opts.searchTerm, opts.getText);
+  if (result.kind === "ambiguous") {
+    return {
+      ok: false,
+      error: `Multiple ${opts.entityLabel}s match '${opts.searchTerm}': ${result.options.map(opts.getText).join(", ")}. Which one?`,
+      available: result.options.map(opts.getText),
+    };
+  }
+  if (result.kind === "none") {
+    const label = opts.entityLabel.charAt(0).toUpperCase() + opts.entityLabel.slice(1);
+    return {
+      ok: false,
+      error: `${label} '${opts.searchTerm}' not found${opts.contextLabel ? ` ${opts.contextLabel}` : ""}.`,
+      available: opts.items.map(opts.getText),
+    };
+  }
+  return { ok: true, item: result.value };
+}
+
+/**
  * Resolve a project by fuzzy name with full disambiguation error handling.
- * Eliminates the repeated ambiguous/none pattern in write operations.
  */
 export async function resolveProjectOrFail(
   clientId: string,
@@ -264,23 +286,17 @@ export async function resolveProjectOrFail(
   | { ok: true; project: typeof projects.$inferSelect }
   | { ok: false; error: string; available?: string[] }
 > {
-  const fuzzyResult = await findProjectByFuzzyNameWithDisambiguation(clientId, projectName);
-  if (fuzzyResult.kind === "ambiguous") {
-    return {
-      ok: false,
-      error: `Multiple projects match '${projectName}': ${fuzzyResult.options.map((p) => p.name).join(", ")}. Which one?`,
-      available: fuzzyResult.options.map((p) => p.name),
-    };
-  }
-  if (fuzzyResult.kind === "none") {
-    const clientProjects = await getProjectsForClient(clientId);
-    return {
-      ok: false,
-      error: `Project '${projectName}' not found for ${clientName}.`,
-      available: clientProjects.map((p) => p.name),
-    };
-  }
-  return { ok: true, project: fuzzyResult.value };
+  const db = getRunwayDb();
+  const items = await db.select().from(projects).where(eq(projects.clientId, clientId));
+  const result = resolveEntityOrFail({
+    items,
+    searchTerm: projectName,
+    getText: (p) => p.name,
+    entityLabel: "project",
+    contextLabel: `for ${clientName}`,
+  });
+  if (!result.ok) return result;
+  return { ok: true, project: result.item };
 }
 
 export async function getProjectsForClient(clientId: string) {
@@ -455,15 +471,8 @@ export async function findWeekItemByFuzzyTitle(
   weekOf: string,
   title: string
 ): Promise<typeof weekItems.$inferSelect | null> {
-  const db = getRunwayDb();
-  const items = await db
-    .select()
-    .from(weekItems)
-    .where(eq(weekItems.weekOf, weekOf));
-
-  const result = fuzzyMatchWeekItem(items, title);
-  if (result.kind === "match") return result.value;
-  return null;
+  const result = await findWeekItemByFuzzyTitleWithDisambiguation(weekOf, title);
+  return result.kind === "match" ? result.value : null;
 }
 
 export async function findWeekItemByFuzzyTitleWithDisambiguation(
@@ -490,7 +499,6 @@ export async function getWeekItemsForWeek(weekOf: string) {
 
 /**
  * Resolve a week item by fuzzy title with full disambiguation error handling.
- * Mirrors resolveProjectOrFail for week items.
  */
 export async function resolveWeekItemOrFail(
   weekOf: string,
@@ -499,23 +507,15 @@ export async function resolveWeekItemOrFail(
   | { ok: true; item: typeof weekItems.$inferSelect }
   | { ok: false; error: string; available?: string[] }
 > {
-  const fuzzyResult = await findWeekItemByFuzzyTitleWithDisambiguation(weekOf, weekItemTitle);
-  if (fuzzyResult.kind === "ambiguous") {
-    return {
-      ok: false,
-      error: `Multiple week items match '${weekItemTitle}': ${fuzzyResult.options.map((i) => i.title).join(", ")}. Which one?`,
-      available: fuzzyResult.options.map((i) => i.title),
-    };
-  }
-  if (fuzzyResult.kind === "none") {
-    const weekItemsList = await getWeekItemsForWeek(weekOf);
-    return {
-      ok: false,
-      error: `Week item '${weekItemTitle}' not found for week of ${weekOf}.`,
-      available: weekItemsList.map((i) => i.title),
-    };
-  }
-  return { ok: true, item: fuzzyResult.value };
+  const db = getRunwayDb();
+  const items = await db.select().from(weekItems).where(eq(weekItems.weekOf, weekOf));
+  return resolveEntityOrFail({
+    items,
+    searchTerm: weekItemTitle,
+    getText: (i) => i.title,
+    entityLabel: "week item",
+    contextLabel: `for week of ${weekOf}`,
+  });
 }
 
 // ── Pipeline Item Fields & Queries ─────────────────────
@@ -562,22 +562,13 @@ export async function resolvePipelineItemOrFail(
     .select()
     .from(pipelineItems)
     .where(eq(pipelineItems.clientId, clientId));
-  const fuzzyResult = fuzzyMatch(items, pipelineName, (i) => i.name);
-  if (fuzzyResult.kind === "ambiguous") {
-    return {
-      ok: false,
-      error: `Multiple pipeline items match '${pipelineName}': ${fuzzyResult.options.map((i) => i.name).join(", ")}. Which one?`,
-      available: fuzzyResult.options.map((i) => i.name),
-    };
-  }
-  if (fuzzyResult.kind === "none") {
-    return {
-      ok: false,
-      error: `Pipeline item '${pipelineName}' not found for ${clientName}.`,
-      available: items.map((i) => i.name),
-    };
-  }
-  return { ok: true, item: fuzzyResult.value };
+  return resolveEntityOrFail({
+    items,
+    searchTerm: pipelineName,
+    getText: (i) => i.name,
+    entityLabel: "pipeline item",
+    contextLabel: `for ${clientName}`,
+  });
 }
 
 // ── Client Fields ──────────────────────────────────────
@@ -635,22 +626,14 @@ export async function resolveTeamMemberOrFail(
 > {
   const db = getRunwayDb();
   const members = await db.select().from(teamMembers);
-  const fuzzyResult = fuzzyMatch(members, memberName, (m) => m.name);
-  if (fuzzyResult.kind === "ambiguous") {
-    return {
-      ok: false,
-      error: `Multiple team members match '${memberName}': ${fuzzyResult.options.map((m) => m.name).join(", ")}. Which one?`,
-      available: fuzzyResult.options.map((m) => m.name),
-    };
-  }
-  if (fuzzyResult.kind === "none") {
-    return {
-      ok: false,
-      error: `Team member '${memberName}' not found.`,
-      available: members.map((m) => m.name),
-    };
-  }
-  return { ok: true, member: fuzzyResult.value };
+  const result = resolveEntityOrFail({
+    items: members,
+    searchTerm: memberName,
+    getText: (m) => m.name,
+    entityLabel: "team member",
+  });
+  if (!result.ok) return result;
+  return { ok: true, member: result.item };
 }
 
 // ── Entity Field Helpers ──────────────────────────────

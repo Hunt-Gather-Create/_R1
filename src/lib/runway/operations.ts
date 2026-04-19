@@ -26,6 +26,7 @@ export {
   getClientNameMap,
   findProjectByFuzzyName,
   findProjectByFuzzyNameWithDisambiguation,
+  resolveEntityOrFail,
   resolveProjectOrFail,
   normalizeForMatch,
   fuzzyMatch,
