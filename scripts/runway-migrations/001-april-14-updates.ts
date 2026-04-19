@@ -16,7 +16,6 @@ import {
   getAllClients,
   containsName,
   replaceResourceName,
-  removeFromResources,
   mergeJsonArray,
 } from "@/lib/runway/operations-utils";
 import {
@@ -199,8 +198,8 @@ async function clientTeamRoster(ctx: MigrationContext): Promise<void> {
     slug: string;
     newTeam: string;
   }> = [
-    { slug: "convergix", newTeam: "PM: Jason" },
-    { slug: "lppc", newTeam: "PM: Jason" },
+    { slug: "convergix", newTeam: "CD: Lane, Copy: Kathy, Dev: Leslie, PM: Jason" },
+    { slug: "lppc", newTeam: "CD: Lane, Copy: Kathy, Dev: Leslie, PM: Jason" },
     {
       slug: "beyond-petro",
       newTeam: "Kathy Horn, Jill Runyon, Jason Burks",
@@ -268,10 +267,20 @@ async function globalResourceSwaps(ctx: MigrationContext): Promise<void> {
 async function ownerReassignments(ctx: MigrationContext): Promise<void> {
   ctx.log("=== Section 4: Owner Reassignments ===");
 
-  // 4a. Week item reassignments
+  // 4a. Week item reassignments.
+  // Use `compute` for resource changes so swaps preserve other names
+  // (e.g. "Roz, Leslie" → "Lane, Leslie" instead of overwriting to "Lane").
+  type WeekItem = typeof weekItems.$inferSelect;
+  type WeekItemFieldChange =
+    | { field: string; newValue: string }
+    | { field: string; compute: (item: WeekItem) => string | null };
+
+  const swapOrSet = (from: string, to: string) => (item: WeekItem) =>
+    item.resources ? replaceResourceName(item.resources, from, to) : to;
+
   const weekItemChanges: Array<{
     titleSearch: string;
-    changes: Array<{ field: string; newValue: string | null }>;
+    changes: WeekItemFieldChange[];
   }> = [
     {
       titleSearch: "LPPC copy expected",
@@ -281,7 +290,7 @@ async function ownerReassignments(ctx: MigrationContext): Promise<void> {
       titleSearch: "LPPC Map R2",
       changes: [
         { field: "owner", newValue: "Kathy" },
-        { field: "resources", newValue: "Lane" },
+        { field: "resources", compute: swapOrSet("Roz", "Lane") },
       ],
     },
     {
@@ -296,16 +305,16 @@ async function ownerReassignments(ctx: MigrationContext): Promise<void> {
       titleSearch: "Social posts reviewed at status",
       changes: [
         { field: "owner", newValue: "Kathy" },
-        { field: "resources", newValue: "Lane" },
+        { field: "resources", compute: swapOrSet("Roz", "Lane") },
       ],
     },
     {
       titleSearch: "Social Post Approval",
-      changes: [], // resources: remove Ronan (computed below)
+      changes: [{ field: "resources", compute: swapOrSet("Ronan", "Kathy") }],
     },
     {
       titleSearch: "Raise stale items",
-      changes: [], // resources: remove Ronan (computed below)
+      changes: [{ field: "resources", compute: swapOrSet("Ronan", "Kathy") }],
     },
   ];
 
@@ -338,29 +347,19 @@ async function ownerReassignments(ctx: MigrationContext): Promise<void> {
       continue;
     }
 
-    // Handle "remove Ronan from resources" for the last two items
-    let effectiveChanges = changes;
-    if (changes.length === 0) {
-      const newResources = removeFromResources(item.resources, "Ronan");
-      effectiveChanges = [
-        {
-          field: "resources",
-          newValue: newResources,
-        },
-      ];
-    }
-
-    for (const { field, newValue } of effectiveChanges) {
-      const currentValue = item[field as keyof typeof item] ?? "";
+    for (const change of changes) {
+      const newValue =
+        "compute" in change ? change.compute(item) : change.newValue;
+      const currentValue = item[change.field as keyof typeof item] ?? "";
       const displayNew = newValue ?? "(null)";
       ctx.log(
-        `Week item "${item.title}" ${field}: "${currentValue}" → "${displayNew}"`
+        `Week item "${item.title}" ${change.field}: "${currentValue}" → "${displayNew}"`
       );
       if (!ctx.dryRun) {
         await updateWeekItemField({
           weekOf: item.weekOf,
           weekItemTitle: item.title,
-          field,
+          field: change.field,
           newValue: newValue ?? "",
           updatedBy: "migration",
         });
