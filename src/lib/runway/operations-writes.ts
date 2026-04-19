@@ -18,12 +18,9 @@ import {
   resolveProjectOrFail,
   checkDuplicate,
   insertAuditRecord,
-  getLinkedWeekItems,
-} from "./operations";
+} from "./operations-utils";
+import { getLinkedWeekItems } from "./operations-reads-week";
 import type { OperationResult } from "./operations-utils";
-
-// Re-export so existing consumers that import from here still work
-export type { OperationResult } from "./operations-utils";
 
 // ── Types ────────────────────────────────────────────────
 

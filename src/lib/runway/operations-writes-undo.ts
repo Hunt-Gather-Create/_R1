@@ -13,7 +13,7 @@ import {
   checkIdempotency,
   insertAuditRecord,
 } from "./operations-utils";
-import type { OperationResult } from "./operations-writes";
+import type { OperationResult } from "./operations-utils";
 
 const UNDOABLE_TYPES = ["status-change", "field-change"];
 const MAX_UNDO_SCAN = 50;
