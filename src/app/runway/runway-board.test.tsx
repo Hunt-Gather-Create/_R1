@@ -137,15 +137,15 @@ describe("RunwayBoard", () => {
     expect(screen.queryByText("Convergix")).not.toBeInTheDocument();
   });
 
-  it("calls router.refresh on 5-minute interval", () => {
+  it("calls router.refresh on 60-second interval", () => {
     vi.useFakeTimers();
     mockRefresh.mockClear();
     render(<RunwayBoard {...defaultProps} />);
 
     expect(mockRefresh).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(5 * 60 * 1000);
+    vi.advanceTimersByTime(60 * 1000);
     expect(mockRefresh).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(5 * 60 * 1000);
+    vi.advanceTimersByTime(60 * 1000);
     expect(mockRefresh).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
   });

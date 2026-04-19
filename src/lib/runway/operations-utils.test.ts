@@ -116,6 +116,11 @@ describe("matchesSubstring", () => {
     const { matchesSubstring } = await import("./operations-utils");
     expect(matchesSubstring("Kathy", "Leslie")).toBe(false);
   });
+
+  it("returns false for empty string value", async () => {
+    const { matchesSubstring } = await import("./operations-utils");
+    expect(matchesSubstring("", "test")).toBe(false);
+  });
 });
 
 describe("groupBy", () => {
@@ -461,5 +466,233 @@ describe("client cache", () => {
     const map = await getClientNameMap();
     expect(map.get("c1")).toBe("Convergix");
     expect(map.get("c2")).toBe("LPPC");
+  });
+});
+
+// ── Batch Mode ────────────────────────────────────────────
+
+describe("setBatchId / getBatchId", () => {
+  it("sets and reads batch ID", async () => {
+    const { setBatchId, getBatchId } = await import("./operations-utils");
+    setBatchId("test-batch-1");
+    expect(getBatchId()).toBe("test-batch-1");
+    setBatchId(null);
+  });
+
+  it("returns null when not set", async () => {
+    const { setBatchId, getBatchId } = await import("./operations-utils");
+    setBatchId(null);
+    expect(getBatchId()).toBeNull();
+  });
+
+  it("clears batch ID with null", async () => {
+    const { setBatchId, getBatchId } = await import("./operations-utils");
+    setBatchId("batch-abc");
+    expect(getBatchId()).toBe("batch-abc");
+    setBatchId(null);
+    expect(getBatchId()).toBeNull();
+  });
+});
+
+// ── validateAndResolveField ───────────────────────────────
+
+describe("validateAndResolveField", () => {
+  it("returns typed field and column key for valid field", async () => {
+    const { validateAndResolveField } = await import("./operations-utils");
+    const result = validateAndResolveField(
+      "owner",
+      ["name", "owner", "notes"] as const,
+      { name: "name", owner: "owner", notes: "notes" }
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.typedField).toBe("owner");
+      expect(result.columnKey).toBe("owner");
+    }
+  });
+
+  it("returns error for invalid field", async () => {
+    const { validateAndResolveField } = await import("./operations-utils");
+    const result = validateAndResolveField(
+      "badField",
+      ["name", "owner"] as const,
+      { name: "name", owner: "owner" }
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("badField");
+      expect(result.error).toContain("name, owner");
+    }
+  });
+});
+
+// ── Resource & Name Helpers ───────────────────────────────
+
+describe("containsName", () => {
+  it("matches case-insensitively", async () => {
+    const { containsName } = await import("./operations-utils");
+    expect(containsName("Kathy, Ronan", "ronan")).toBe(true);
+    expect(containsName("Kathy, Ronan", "KATHY")).toBe(true);
+  });
+
+  it("returns false for null", async () => {
+    const { containsName } = await import("./operations-utils");
+    expect(containsName(null, "test")).toBe(false);
+  });
+
+  it("returns false when name not present", async () => {
+    const { containsName } = await import("./operations-utils");
+    expect(containsName("Kathy, Lane", "Ronan")).toBe(false);
+  });
+});
+
+describe("replaceResourceName", () => {
+  it("replaces name in comma-separated list", async () => {
+    const { replaceResourceName } = await import("./operations-utils");
+    expect(replaceResourceName("Kathy, Roz", "Roz", "Lane")).toBe("Kathy, Lane");
+  });
+
+  it("replaces name in slash-separated list", async () => {
+    const { replaceResourceName } = await import("./operations-utils");
+    expect(replaceResourceName("Roz/Ronan", "Roz", "Lane")).toBe("Lane/Ronan");
+  });
+
+  it("deduplicates after replacement", async () => {
+    const { replaceResourceName } = await import("./operations-utils");
+    expect(replaceResourceName("Lane, Roz", "Roz", "Lane")).toBe("Lane");
+  });
+
+  it("handles case-insensitive matching", async () => {
+    const { replaceResourceName } = await import("./operations-utils");
+    expect(replaceResourceName("roz, Lane", "Roz", "Lane")).toBe("Lane");
+  });
+
+  it("handles multi-swap scenario without stale reads", async () => {
+    const { replaceResourceName } = await import("./operations-utils");
+    // Simulate: first swap Paige→Lane, then Roz→Lane on running value
+    let value = "Paige, Roz";
+    value = replaceResourceName(value, "Paige", "Lane");
+    expect(value).toBe("Lane, Roz");
+    value = replaceResourceName(value, "Roz", "Lane");
+    expect(value).toBe("Lane"); // deduped, not "Lane, Lane"
+  });
+
+  it("handles slash-separated with dedup", async () => {
+    const { replaceResourceName } = await import("./operations-utils");
+    // Roz→Lane, dedup removes the later Lane, preserving insertion order
+    expect(replaceResourceName("Josefina/Roz/Ronan/Lane", "Roz", "Lane")).toBe("Josefina/Lane/Ronan");
+  });
+
+  it("replaces sole entry", async () => {
+    const { replaceResourceName } = await import("./operations-utils");
+    expect(replaceResourceName("Paige", "Paige", "Lane")).toBe("Lane");
+  });
+
+  it("uses comma separator when no slash present", async () => {
+    const { replaceResourceName } = await import("./operations-utils");
+    expect(replaceResourceName("Kathy, Roz, Ronan", "Roz", "Lane")).toBe("Kathy, Lane, Ronan");
+  });
+
+  it("uses slash separator when slash present", async () => {
+    const { replaceResourceName } = await import("./operations-utils");
+    expect(replaceResourceName("Kathy/Roz/Ronan", "Roz", "Lane")).toBe("Kathy/Lane/Ronan");
+  });
+});
+
+describe("removeFromResources", () => {
+  it("removes name from comma-separated list", async () => {
+    const { removeFromResources } = await import("./operations-utils");
+    expect(removeFromResources("Kathy, Ronan", "Ronan")).toBe("Kathy");
+  });
+
+  it("returns null when sole resource removed", async () => {
+    const { removeFromResources } = await import("./operations-utils");
+    expect(removeFromResources("Ronan", "Ronan")).toBeNull();
+  });
+
+  it("returns null for null input", async () => {
+    const { removeFromResources } = await import("./operations-utils");
+    expect(removeFromResources(null, "Ronan")).toBeNull();
+  });
+
+  it("handles case-insensitive removal", async () => {
+    const { removeFromResources } = await import("./operations-utils");
+    expect(removeFromResources("RONAN, Lane", "ronan")).toBe("Lane");
+  });
+
+  it("handles slash-separated values", async () => {
+    const { removeFromResources } = await import("./operations-utils");
+    expect(removeFromResources("Kathy/Ronan/Lane", "Ronan")).toBe("Kathy/Lane");
+  });
+
+  it("preserves remaining names when middle entry removed", async () => {
+    const { removeFromResources } = await import("./operations-utils");
+    expect(removeFromResources("A, B, C", "B")).toBe("A, C");
+  });
+});
+
+describe("mergeJsonArray", () => {
+  it("merges new entries into existing array", async () => {
+    const { mergeJsonArray } = await import("./operations-utils");
+    const result = mergeJsonArray('["bonterra"]', ["hopdoddy", "soundly"]);
+    const parsed = JSON.parse(result);
+    expect(parsed).toContain("bonterra");
+    expect(parsed).toContain("hopdoddy");
+    expect(parsed).toContain("soundly");
+    expect(parsed).toHaveLength(3);
+  });
+
+  it("deduplicates existing entries", async () => {
+    const { mergeJsonArray } = await import("./operations-utils");
+    const result = mergeJsonArray('["a", "b"]', ["b", "c"]);
+    const parsed = JSON.parse(result);
+    expect(parsed).toEqual(["a", "b", "c"]);
+  });
+
+  it("handles null current value", async () => {
+    const { mergeJsonArray } = await import("./operations-utils");
+    const result = mergeJsonArray(null, ["a", "b"]);
+    expect(JSON.parse(result)).toEqual(["a", "b"]);
+  });
+
+  it("handles empty current array", async () => {
+    const { mergeJsonArray } = await import("./operations-utils");
+    const result = mergeJsonArray("[]", ["x"]);
+    expect(JSON.parse(result)).toEqual(["x"]);
+  });
+
+  it("handles empty additions", async () => {
+    const { mergeJsonArray } = await import("./operations-utils");
+    const result = mergeJsonArray('["a"]', []);
+    expect(JSON.parse(result)).toEqual(["a"]);
+  });
+
+  it("throws on invalid JSON input", async () => {
+    const { mergeJsonArray } = await import("./operations-utils");
+    expect(() => mergeJsonArray("not-json", ["a"])).toThrow();
+  });
+});
+
+// ── getPreviousValue ──────────────────────────────────────
+
+describe("getPreviousValue", () => {
+  it("returns string value of existing field", async () => {
+    const { getPreviousValue } = await import("./operations-utils");
+    expect(getPreviousValue({ owner: "Kathy" }, "owner")).toBe("Kathy");
+  });
+
+  it("returns empty string for null field", async () => {
+    const { getPreviousValue } = await import("./operations-utils");
+    expect(getPreviousValue({ owner: null }, "owner")).toBe("");
+  });
+
+  it("returns empty string for undefined field", async () => {
+    const { getPreviousValue } = await import("./operations-utils");
+    expect(getPreviousValue({}, "owner")).toBe("");
+  });
+
+  it("coerces numeric values to string", async () => {
+    const { getPreviousValue } = await import("./operations-utils");
+    expect(getPreviousValue({ isActive: 1 }, "isActive")).toBe("1");
   });
 });

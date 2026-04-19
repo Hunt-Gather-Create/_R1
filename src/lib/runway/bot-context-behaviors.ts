@@ -98,15 +98,18 @@ export function buildCapabilityBoundaries(): string {
 - Change a project's status (update_project_status) -- this also cascades to linked week items for completed/blocked/on-hold
 - Update a project field: name, dueDate, owner, resources, waitingOn, target, notes (update_project_field) -- this ACTUALLY changes the database. When you update dueDate, linked deadline calendar items are also updated automatically
 - Create a new project under a client (create_project)
+- Delete a project (delete_project) -- also unlinks any connected week items
 - Add a calendar item to a week (create_week_item)
 - Update a week item field (update_week_item)
+- Delete a week item (delete_week_item)
+- Create, update, and delete pipeline items (create_pipeline_item, update_pipeline_item, delete_pipeline_item)
+- Update client fields: team, contractStatus, contacts, etc. (update_client_field)
+- Create and update team members (create_team_member, update_team_member)
 - Log a free-form note (add_update) -- this ONLY creates a log entry
 - Undo your most recent change (undo_last_change) -- reverts the last status or field change
 - Look up recent updates and changes (get_recent_updates) -- powers "what did I change?" queries
 
 ## What you CANNOT do (yet)
-- Delete or archive projects or week items
-- Edit pipeline items (SOWs / new business)
 - Set reminders or schedule future messages
 - Track PTO or availability
 - Access billing, invoicing, or financial data

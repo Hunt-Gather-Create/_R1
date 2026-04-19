@@ -17,8 +17,26 @@ vi.mock("@/lib/runway/operations", () => ({
   getTeamMembersData: vi.fn().mockResolvedValue([]),
   getClientContacts: vi.fn().mockResolvedValue(null),
   updateProjectStatus: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
+  updateProjectField: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
+  deleteProject: vi.fn().mockResolvedValue({ ok: true, message: "Deleted" }),
   addProject: vi.fn().mockResolvedValue({ ok: true, message: "Added" }),
   addUpdate: vi.fn().mockResolvedValue({ ok: true, message: "Logged" }),
+  createWeekItem: vi.fn().mockResolvedValue({ ok: true, message: "Created" }),
+  updateWeekItemField: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
+  deleteWeekItem: vi.fn().mockResolvedValue({ ok: true, message: "Deleted" }),
+  undoLastChange: vi.fn().mockResolvedValue({ ok: true, message: "Undone" }),
+  createPipelineItem: vi.fn().mockResolvedValue({ ok: true, message: "Created" }),
+  updatePipelineItem: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
+  deletePipelineItem: vi.fn().mockResolvedValue({ ok: true, message: "Deleted" }),
+  updateClientField: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
+  createTeamMember: vi.fn().mockResolvedValue({ ok: true, message: "Created" }),
+  updateTeamMember: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
+  setBatchId: vi.fn(),
+  getBatchId: vi.fn().mockReturnValue(null),
+}));
+
+vi.mock("@/lib/slack/updates-channel", () => ({
+  safePostUpdate: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/lib/runway/operations-context", () => ({
@@ -43,20 +61,41 @@ describe("createRunwayMcpServer", () => {
 
   it("registers all expected tools", () => {
     const expectedTools = [
+      // Read tools
       "get_clients",
       "get_projects",
       "get_week_items",
       "get_pipeline",
       "get_updates",
-      "update_project_status",
-      "add_project",
-      "add_update",
       "get_team_members",
       "get_person_workload",
       "get_client_contacts",
+      // Mutation tools — project
+      "update_project_status",
+      "update_project_field",
+      "delete_project",
+      "add_project",
+      // Mutation tools — week items
+      "create_week_item",
+      "update_week_item",
+      "delete_week_item",
+      // Mutation tools — pipeline
+      "create_pipeline_item",
+      "update_pipeline_item",
+      "delete_pipeline_item",
+      // Mutation tools — client
+      "update_client_field",
+      // Mutation tools — team
+      "create_team_member",
+      "update_team_member",
+      // Notes & undo
+      "add_update",
+      "undo_last_change",
+      // Batch mode
+      "set_batch_mode",
     ];
     for (const name of expectedTools) {
-      expect(registeredTools.has(name)).toBe(true);
+      expect(registeredTools.has(name), `Missing tool: ${name}`).toBe(true);
     }
     expect(registeredTools.size).toBe(expectedTools.length);
   });

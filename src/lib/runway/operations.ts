@@ -26,6 +26,7 @@ export {
   getClientNameMap,
   findProjectByFuzzyName,
   findProjectByFuzzyNameWithDisambiguation,
+  resolveEntityOrFail,
   resolveProjectOrFail,
   normalizeForMatch,
   fuzzyMatch,
@@ -40,9 +41,35 @@ export {
   resolveWeekItemOrFail,
   fuzzyMatchWeekItem,
   getWeekItemsForWeek,
+  invalidateClientCache,
+  PIPELINE_ITEM_FIELDS,
+  PIPELINE_ITEM_FIELD_TO_COLUMN,
+  findPipelineItemByFuzzyName,
+  resolvePipelineItemOrFail,
+  CLIENT_FIELDS,
+  CLIENT_FIELD_TO_COLUMN,
+  TEAM_MEMBER_FIELDS,
+  TEAM_MEMBER_FIELD_TO_COLUMN,
+  findTeamMemberByFuzzyName,
+  resolveTeamMemberOrFail,
+  validateAndResolveField,
+  containsName,
+  replaceResourceName,
+  removeFromResources,
+  mergeJsonArray,
+  setBatchId,
+  getBatchId,
 } from "./operations-utils";
 
-export type { FuzzyMatchResult, ProjectField, WeekItemField } from "./operations-utils";
+export type {
+  FuzzyMatchResult,
+  OperationResult,
+  ProjectField,
+  WeekItemField,
+  PipelineItemField,
+  ClientField,
+  TeamMemberField,
+} from "./operations-utils";
 
 // ── Read operations ─────────────────────────────────────
 export {
@@ -90,30 +117,68 @@ export {
 
 export type {
   UpdateProjectStatusParams,
-  OperationResult,
 } from "./operations-writes";
 
 export {
+  deleteProject,
   updateProjectField,
 } from "./operations-writes-project";
 
 export type {
+  DeleteProjectParams,
   UpdateProjectFieldParams,
 } from "./operations-writes-project";
 
 export {
   createWeekItem,
   updateWeekItemField,
+  deleteWeekItem,
 } from "./operations-writes-week";
 
 export type {
   CreateWeekItemParams,
   UpdateWeekItemFieldParams,
+  DeleteWeekItemParams,
 } from "./operations-writes-week";
 
 export {
   undoLastChange,
 } from "./operations-writes-undo";
+
+// ── Team member write operations ───────────────────────
+export {
+  createTeamMember,
+  updateTeamMember,
+} from "./operations-writes-team";
+
+export type {
+  CreateTeamMemberParams,
+  UpdateTeamMemberParams,
+} from "./operations-writes-team";
+
+// ── Client write operations ────────────────────────────
+export {
+  createClient,
+  updateClientField,
+} from "./operations-writes-client";
+
+export type {
+  CreateClientParams,
+  UpdateClientFieldParams,
+} from "./operations-writes-client";
+
+// ── Pipeline write operations ──────────────────────────
+export {
+  createPipelineItem,
+  updatePipelineItem,
+  deletePipelineItem,
+} from "./operations-writes-pipeline";
+
+export type {
+  CreatePipelineItemParams,
+  UpdatePipelineItemParams,
+  DeletePipelineItemParams,
+} from "./operations-writes-pipeline";
 
 // ── Add operations ──────────────────────────────────────
 export {

@@ -1,12 +1,12 @@
 /**
- * Runway Write Operations — project field updates
+ * Runway Write Operations — project field updates and delete
  *
  * Handles updates to individual project fields (name, dueDate, owner, etc.)
- * with idempotency checks and audit logging.
+ * and project deletion, with idempotency checks and audit logging.
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
-import { projects, weekItems } from "@/lib/db/runway-schema";
+import { projects, weekItems, updates } from "@/lib/db/runway-schema";
 import { eq } from "drizzle-orm";
 import { getLinkedDeadlineItems } from "./operations-reads-week";
 import {
@@ -17,10 +17,81 @@ import {
   resolveProjectOrFail,
   checkDuplicate,
   insertAuditRecord,
-  validateField,
+  validateAndResolveField,
+  getPreviousValue,
 } from "./operations-utils";
-import type { ProjectField } from "./operations-utils";
-import type { OperationResult } from "./operations-writes";
+import type { OperationResult } from "./operations-utils";
+
+// ── Delete Project ──────────────────────────────────────
+
+export interface DeleteProjectParams {
+  clientSlug: string;
+  projectName: string;
+  updatedBy: string;
+}
+
+export async function deleteProject(
+  params: DeleteProjectParams
+): Promise<OperationResult> {
+  const { clientSlug, projectName, updatedBy } = params;
+  const db = getRunwayDb();
+
+  const lookup = await getClientOrFail(clientSlug);
+  if (!lookup.ok) return lookup;
+  const { client } = lookup;
+
+  const projectLookup = await resolveProjectOrFail(client.id, client.name, projectName);
+  if (!projectLookup.ok) return projectLookup;
+  const project = projectLookup.project;
+
+  const idemKey = generateIdempotencyKey(
+    "delete-project",
+    project.id,
+    updatedBy
+  );
+
+  const dup = await checkDuplicate(idemKey, {
+    ok: true,
+    message: "Project already deleted (duplicate request).",
+  });
+  if (dup) return dup;
+
+  await insertAuditRecord({
+    idempotencyKey: idemKey,
+    projectId: project.id,
+    clientId: client.id,
+    updatedBy,
+    updateType: "delete-project",
+    previousValue: project.name,
+    summary: `Deleted project from ${client.name}: ${project.name}`,
+  });
+
+  // Unlink week items, null out audit FK references, then delete project.
+  // Audit records are preserved (projectId nulled, clientId + summary intact).
+  await db.transaction(async (tx) => {
+    await tx
+      .update(weekItems)
+      .set({ projectId: null, updatedAt: new Date() })
+      .where(eq(weekItems.projectId, project.id));
+
+    await tx
+      .update(updates)
+      .set({ projectId: null })
+      .where(eq(updates.projectId, project.id));
+
+    await tx
+      .delete(projects)
+      .where(eq(projects.id, project.id));
+  });
+
+  return {
+    ok: true,
+    message: `Deleted project '${project.name}' from ${client.name}.`,
+    data: { clientName: client.name, projectName: project.name },
+  };
+}
+
+// ── Update Project Field ────────────────────────────────
 
 export interface UpdateProjectFieldParams {
   clientSlug: string;
@@ -36,10 +107,9 @@ export async function updateProjectField(
   const { clientSlug, projectName, field, newValue, updatedBy } = params;
   const db = getRunwayDb();
 
-  const fieldError = validateField(field, PROJECT_FIELDS);
-  if (fieldError) return fieldError;
-
-  const typedField = field as ProjectField;
+  const fieldResult = validateAndResolveField(field, PROJECT_FIELDS, PROJECT_FIELD_TO_COLUMN);
+  if (!fieldResult.ok) return fieldResult;
+  const { typedField, columnKey } = fieldResult;
 
   const lookup = await getClientOrFail(clientSlug);
   if (!lookup.ok) return lookup;
@@ -49,8 +119,7 @@ export async function updateProjectField(
   if (!projectLookup.ok) return projectLookup;
   const project = projectLookup.project;
 
-  const columnKey = PROJECT_FIELD_TO_COLUMN[typedField];
-  const previousValue = String(project[columnKey] ?? "");
+  const previousValue = getPreviousValue(project, columnKey);
 
   const idemKey = generateIdempotencyKey(
     "field-change",

@@ -29,6 +29,9 @@
 local.db
 runway-local.db
 
+# Runway data
+data/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
@@ -46,6 +49,7 @@ yarn-error.log*
 next-env.d.ts
 
 .worktrees
+.mcp.json
 
 # brain docs, reference docs, and inspiration sources (local working files)
 docs/brain/

@@ -15,6 +15,12 @@ import {
   getProject,
   getWeekItem,
   getAuditRecords,
+  getClient,
+  getTeamMember,
+  getAllTeamMembers,
+  getAllPipelineItems,
+  getPipelineItem,
+  getAllWeekItemsForProject,
   type TestDb,
 } from "./test-db";
 
@@ -36,8 +42,8 @@ beforeEach(async () => {
   await seedTestDb(rawClient);
 
   // Reset the client cache between tests
-  const { _resetClientCacheForTest } = await import("./operations-utils");
-  _resetClientCacheForTest();
+  const { invalidateClientCache } = await import("./operations-utils");
+  invalidateClientCache();
 });
 
 afterEach(() => {
@@ -55,7 +61,7 @@ describe("test infrastructure", () => {
     expect(allClients).toHaveLength(4);
 
     const allProjects = await testDb.select().from(projects);
-    expect(allProjects).toHaveLength(6);
+    expect(allProjects).toHaveLength(7);
 
     const allItems = await testDb.select().from(weekItems);
     expect(allItems).toHaveLength(8);
@@ -743,5 +749,247 @@ describe("Category F: edge cases", () => {
       expect(result.error).toBeDefined();
       expect(result.error).toMatch(/not found|no.*match|no.*item/i);
     }
+  });
+});
+
+// ── Category G: CRUD Operations ──────────────────────────
+
+describe("Category G: pipeline CRUD", () => {
+  it("G1: creates pipeline item, verifies row + audit", async () => {
+    const { createPipelineItem } = await import("./operations-writes-pipeline");
+
+    const result = await createPipelineItem({
+      clientSlug: "convergix",
+      name: "New Deal",
+      owner: "Lane",
+      status: "scoping",
+      estimatedValue: "25000",
+      updatedBy: "jason",
+    });
+
+    expect(result.ok).toBe(true);
+    const items = await getAllPipelineItems(testDb);
+    const created = items.find((i) => i.name === "New Deal");
+    expect(created).toBeDefined();
+    expect(created?.owner).toBe("Lane");
+    expect(created?.status).toBe("scoping");
+
+    const audits = await getAuditRecords(testDb, { updateType: "new-pipeline-item" });
+    expect(audits).toHaveLength(1);
+    expect(audits[0].newValue).toBe("New Deal");
+  });
+
+  it("G2: updates pipeline item field with before/after + audit", async () => {
+    const { updatePipelineItem } = await import("./operations-writes-pipeline");
+
+    const result = await updatePipelineItem({
+      clientSlug: "convergix",
+      pipelineName: "SOW Expansion",
+      field: "status",
+      newValue: "negotiation",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.previousValue).toBe("proposal");
+      expect(result.data?.newValue).toBe("negotiation");
+    }
+
+    const item = await getPipelineItem(testDb, "pl-cgx-sow");
+    expect(item?.status).toBe("negotiation");
+
+    const audits = await getAuditRecords(testDb, { updateType: "pipeline-field-change" });
+    expect(audits).toHaveLength(1);
+  });
+
+  it("G3: deletes pipeline item, verifies row gone + audit", async () => {
+    const { deletePipelineItem } = await import("./operations-writes-pipeline");
+
+    const result = await deletePipelineItem({
+      clientSlug: "bonterra",
+      pipelineName: "Annual Renewal",
+      updatedBy: "jill",
+    });
+
+    expect(result.ok).toBe(true);
+
+    const item = await getPipelineItem(testDb, "pl-bonterra-renewal");
+    expect(item).toBeNull();
+
+    const audits = await getAuditRecords(testDb, { updateType: "delete-pipeline-item" });
+    expect(audits).toHaveLength(1);
+    expect(audits[0].previousValue).toBe("Annual Renewal");
+  });
+});
+
+describe("Category G: delete operations", () => {
+  it("G4: deletes project, verifies project gone + week items unlinked", async () => {
+    const { deleteProject } = await import("./operations-writes-project");
+
+    // Verify week items are linked before delete
+    const linkedBefore = await getAllWeekItemsForProject(testDb, "pj-cds");
+    expect(linkedBefore.length).toBeGreaterThan(0);
+
+    const result = await deleteProject({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      updatedBy: "jason",
+    });
+
+    expect(result.ok).toBe(true);
+
+    // Project is gone
+    const project = await getProject(testDb, "pj-cds");
+    expect(project).toBeNull();
+
+    // Week items still exist but projectId is null
+    for (const item of linkedBefore) {
+      const updated = await getWeekItem(testDb, item.id);
+      expect(updated).not.toBeNull();
+      expect(updated?.projectId).toBeNull();
+    }
+
+    const audits = await getAuditRecords(testDb, { updateType: "delete-project" });
+    expect(audits).toHaveLength(1);
+  });
+
+  it("G5: deletes week item, verifies row gone + audit", async () => {
+    const { deleteWeekItem } = await import("./operations-writes-week");
+
+    const result = await deleteWeekItem({
+      weekOf: "2026-04-13",
+      weekItemTitle: "AG1 Social Drafts",
+      updatedBy: "sami",
+    });
+
+    expect(result.ok).toBe(true);
+
+    const item = await getWeekItem(testDb, "wi-social");
+    expect(item).toBeNull();
+
+    const audits = await getAuditRecords(testDb, { updateType: "delete-week-item" });
+    expect(audits).toHaveLength(1);
+    expect(audits[0].previousValue).toBe("AG1 Social Drafts");
+  });
+});
+
+describe("Category G: client CRUD", () => {
+  it("G6: creates client, verifies row + audit", async () => {
+    const { createClient } = await import("./operations-writes-client");
+
+    const result = await createClient({
+      name: "New Agency",
+      slug: "new-agency",
+      team: "PM: Jason",
+      contractStatus: "unsigned",
+      updatedBy: "jason",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.clientName).toBe("New Agency");
+      expect(result.data?.slug).toBe("new-agency");
+    }
+
+    // Verify we can find it via the operations layer (cache was invalidated)
+    const { getClientBySlug } = await import("./operations-utils");
+    const client = await getClientBySlug("new-agency");
+    expect(client).not.toBeNull();
+    expect(client?.name).toBe("New Agency");
+
+    const audits = await getAuditRecords(testDb, { updateType: "new-client" });
+    expect(audits).toHaveLength(1);
+  });
+
+  it("G7: updates client field (contractStatus), verifies row + audit", async () => {
+    const { updateClientField } = await import("./operations-writes-client");
+
+    const result = await updateClientField({
+      clientSlug: "bonterra",
+      field: "contractStatus",
+      newValue: "signed",
+      updatedBy: "jill",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.newValue).toBe("signed");
+    }
+
+    const client = await getClient(testDb, "cl-bonterra");
+    expect(client?.contractStatus).toBe("signed");
+
+    const audits = await getAuditRecords(testDb, { updateType: "client-field-change" });
+    expect(audits).toHaveLength(1);
+  });
+});
+
+describe("Category G: team member CRUD", () => {
+  it("G8: creates team member, verifies row + audit", async () => {
+    const { createTeamMember } = await import("./operations-writes-team");
+
+    const result = await createTeamMember({
+      name: "NewPerson",
+      firstName: "New",
+      fullName: "New Person",
+      title: "Designer",
+      roleCategory: "creative",
+      updatedBy: "jason",
+    });
+
+    expect(result.ok).toBe(true);
+
+    const members = await getAllTeamMembers(testDb);
+    const created = members.find((m) => m.name === "NewPerson");
+    expect(created).toBeDefined();
+    expect(created?.isActive).toBe(1);
+    expect(created?.roleCategory).toBe("creative");
+
+    const audits = await getAuditRecords(testDb, { updateType: "new-team-member" });
+    expect(audits).toHaveLength(1);
+  });
+
+  it("G9: deactivates team member (isActive -> 0), verifies row + audit", async () => {
+    const { updateTeamMember } = await import("./operations-writes-team");
+
+    const result = await updateTeamMember({
+      memberName: "Ronan",
+      field: "isActive",
+      newValue: "0",
+      updatedBy: "jason",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.previousValue).toBe("1");
+      expect(result.data?.newValue).toBe("0");
+    }
+
+    const member = await getTeamMember(testDb, "tm-ronan");
+    expect(member?.isActive).toBe(0);
+
+    const audits = await getAuditRecords(testDb, { updateType: "team-member-change" });
+    expect(audits).toHaveLength(1);
+  });
+
+  it("G10: updates accountsLed, verifies row + audit", async () => {
+    const { updateTeamMember } = await import("./operations-writes-team");
+
+    const result = await updateTeamMember({
+      memberName: "Jill",
+      field: "accountsLed",
+      newValue: '["bonterra","hopdoddy","soundly"]',
+      updatedBy: "jason",
+    });
+
+    expect(result.ok).toBe(true);
+
+    const member = await getTeamMember(testDb, "tm-jill");
+    expect(member?.accountsLed).toBe('["bonterra","hopdoddy","soundly"]');
+
+    const audits = await getAuditRecords(testDb, { updateType: "team-member-change" });
+    expect(audits).toHaveLength(1);
+    expect(audits[0].metadata).toContain("accountsLed");
   });
 });

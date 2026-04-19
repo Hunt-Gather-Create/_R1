@@ -13,7 +13,7 @@ import { PipelineRow } from "./components/pipeline-row";
 import { FlagsPanel } from "./components/flags-panel";
 import { NeedsUpdateSection } from "./components/needs-update-section";
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const REFRESH_INTERVAL_MS = 60 * 1000;
 
 type View = "triage" | "accounts" | "pipeline";
 

@@ -12,7 +12,7 @@ import {
   cleanupTestDb,
   type TestDb,
 } from "./test-db";
-import { _resetClientCacheForTest } from "./operations-utils";
+import { invalidateClientCache } from "./operations-utils";
 
 let testDb: TestDb;
 let libsqlClient: Client;
@@ -28,7 +28,7 @@ beforeEach(async () => {
   libsqlClient = created.client;
   dbPath = created.dbPath;
   await seedTestDb(libsqlClient);
-  _resetClientCacheForTest();
+  invalidateClientCache();
 });
 
 afterEach(() => {
@@ -49,7 +49,7 @@ describe("getClientsWithCounts", () => {
     expect(convergix!.projectCount).toBe(3); // CDS, Social Content, ABM Brand
 
     const bonterra = result.find((c) => c.slug === "bonterra");
-    expect(bonterra!.projectCount).toBe(1); // Impact Report
+    expect(bonterra!.projectCount).toBe(2); // Impact Report, Brand Refresh
 
     const lppc = result.find((c) => c.slug === "lppc");
     expect(lppc!.projectCount).toBe(1); // Map R2
@@ -66,7 +66,7 @@ describe("getClientsWithCounts", () => {
       sql: `INSERT INTO clients (id, name, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
       args: ["cl-empty", "Empty Co", "empty-co", Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000)],
     });
-    _resetClientCacheForTest();
+    invalidateClientCache();
 
     const result = await getClientsWithCounts();
     const empty = result.find((c) => c.slug === "empty-co");
@@ -81,11 +81,12 @@ describe("getProjectsFiltered", () => {
 
     const result = await getProjectsFiltered();
 
-    expect(result).toHaveLength(6);
+    expect(result).toHaveLength(7);
     const names = result.map((p) => p.name);
     expect(names).toContain("CDS Messaging");
     expect(names).toContain("Social Content");
     expect(names).toContain("Impact Report");
+    expect(names).toContain("Brand Refresh");
     expect(names).toContain("Map R2");
     expect(names).toContain("Social Content Trial");
     expect(names).toContain("ABM Brand Guidelines");
@@ -114,7 +115,7 @@ describe("getProjectsFiltered", () => {
 
     const result = await getProjectsFiltered({ owner: "kathy" });
 
-    expect(result).toHaveLength(2); // CDS Messaging + ABM Brand Guidelines
+    expect(result).toHaveLength(1); // CDS Messaging (ABM Brand Guidelines now owned by Paige)
     result.forEach((p) => expect(p.owner?.toLowerCase()).toContain("kathy"));
   });
 
@@ -125,7 +126,7 @@ describe("getProjectsFiltered", () => {
 
     // No client match — returns all projects (filter doesn't narrow)
     // Check actual behavior: clientBySlug.get returns undefined, so no filtering happens
-    expect(result).toHaveLength(6);
+    expect(result).toHaveLength(7);
   });
 
   it("combines clientSlug and status filters", async () => {

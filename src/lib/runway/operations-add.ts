@@ -17,7 +17,7 @@ import {
   checkDuplicate,
   insertAuditRecord,
 } from "./operations";
-import type { OperationResult } from "./operations-writes";
+import type { OperationResult } from "./operations-utils";
 
 export interface AddProjectParams {
   clientSlug: string;

@@ -18,8 +18,9 @@ import {
   resolveProjectOrFail,
   checkDuplicate,
   insertAuditRecord,
-  getLinkedWeekItems,
-} from "./operations";
+} from "./operations-utils";
+import { getLinkedWeekItems } from "./operations-reads-week";
+import type { OperationResult } from "./operations-utils";
 
 // ── Types ────────────────────────────────────────────────
 
@@ -30,10 +31,6 @@ export interface UpdateProjectStatusParams {
   updatedBy: string;
   notes?: string;
 }
-
-export type OperationResult =
-  | { ok: true; message: string; data?: Record<string, unknown> }
-  | { ok: false; error: string; available?: string[] };
 
 // ── Write Operation ─────────────────────────────────────
 

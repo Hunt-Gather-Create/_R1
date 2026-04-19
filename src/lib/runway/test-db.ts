@@ -31,7 +31,7 @@ CREATE TABLE clients (
 
 CREATE TABLE projects (
   id TEXT PRIMARY KEY NOT NULL,
-  client_id TEXT NOT NULL REFERENCES clients(id),
+  client_id TEXT NOT NULL,
   name TEXT NOT NULL,
   status TEXT,
   category TEXT,
@@ -49,8 +49,8 @@ CREATE TABLE projects (
 
 CREATE TABLE week_items (
   id TEXT PRIMARY KEY NOT NULL,
-  project_id TEXT REFERENCES projects(id),
-  client_id TEXT REFERENCES clients(id),
+  project_id TEXT,
+  client_id TEXT,
   day_of_week TEXT,
   week_of TEXT,
   date TEXT,
@@ -69,7 +69,7 @@ CREATE INDEX idx_week_items_week_of ON week_items(week_of);
 
 CREATE TABLE pipeline_items (
   id TEXT PRIMARY KEY NOT NULL,
-  client_id TEXT REFERENCES clients(id),
+  client_id TEXT,
   name TEXT NOT NULL,
   owner TEXT,
   status TEXT,
@@ -84,14 +84,15 @@ CREATE TABLE pipeline_items (
 CREATE TABLE updates (
   id TEXT PRIMARY KEY NOT NULL,
   idempotency_key TEXT UNIQUE,
-  project_id TEXT REFERENCES projects(id),
-  client_id TEXT REFERENCES clients(id),
+  project_id TEXT,
+  client_id TEXT,
   updated_by TEXT,
   update_type TEXT,
   previous_value TEXT,
   new_value TEXT,
   summary TEXT,
   metadata TEXT,
+  batch_id TEXT,
   slack_message_ts TEXT,
   created_at INTEGER NOT NULL
 );
@@ -107,7 +108,8 @@ CREATE TABLE team_members (
   role_category TEXT,
   accounts_led TEXT,
   channel_purpose TEXT,
-  is_active INTEGER NOT NULL DEFAULT 1
+  is_active INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT
 );
 `;
 
@@ -124,11 +126,12 @@ INSERT INTO clients (id, name, slug, nicknames, created_at, updated_at) VALUES
 
 INSERT INTO projects (id, client_id, name, status, category, owner, due_date, sort_order, created_at, updated_at) VALUES
   ('pj-cds', 'cl-convergix', 'CDS Messaging', 'in-production', 'active', 'Kathy', '2026-04-25', 0, ${NOW_EPOCH}, ${NOW_EPOCH}),
-  ('pj-social-cgx', 'cl-convergix', 'Social Content', 'not-started', 'active', 'Lane', NULL, 1, ${NOW_EPOCH}, ${NOW_EPOCH}),
+  ('pj-social-cgx', 'cl-convergix', 'Social Content', 'not-started', 'active', 'Roz', NULL, 1, ${NOW_EPOCH}, ${NOW_EPOCH}),
   ('pj-impact', 'cl-bonterra', 'Impact Report', 'in-production', 'active', 'Jill', '2026-05-15', 0, ${NOW_EPOCH}, ${NOW_EPOCH}),
+  ('pj-brand-refresh', 'cl-bonterra', 'Brand Refresh', 'in-production', 'active', 'Jill', NULL, 1, ${NOW_EPOCH}, ${NOW_EPOCH}),
   ('pj-map', 'cl-lppc', 'Map R2', 'in-production', 'active', 'Ronan', '2026-04-20', 0, ${NOW_EPOCH}, ${NOW_EPOCH}),
   ('pj-social-ag1', 'cl-ag1', 'Social Content Trial', 'in-production', 'active', 'Sami', NULL, 0, ${NOW_EPOCH}, ${NOW_EPOCH}),
-  ('pj-brand', 'cl-convergix', 'ABM Brand Guidelines', 'awaiting-client', 'active', 'Kathy', NULL, 2, ${NOW_EPOCH}, ${NOW_EPOCH});
+  ('pj-brand', 'cl-convergix', 'ABM Brand Guidelines', 'awaiting-client', 'active', 'Paige', NULL, 2, ${NOW_EPOCH}, ${NOW_EPOCH});
 
 INSERT INTO week_items (id, project_id, client_id, week_of, date, title, status, category, owner, resources, sort_order, created_at, updated_at) VALUES
   ('wi-cds-review', 'pj-cds', 'cl-convergix', '2026-04-13', '2026-04-14', 'CDS Copy Review', NULL, 'review', 'Kathy', 'Roz', 0, ${NOW_EPOCH}, ${NOW_EPOCH}),
@@ -144,6 +147,12 @@ INSERT INTO pipeline_items (id, client_id, name, owner, status, estimated_value,
   ('pl-cgx-sow', 'cl-convergix', 'SOW Expansion', 'Kathy', 'proposal', '50000', 'Client review', 'Pending budget approval', 0, ${NOW_EPOCH}, ${NOW_EPOCH}),
   ('pl-bonterra-renewal', 'cl-bonterra', 'Annual Renewal', 'Jill', 'negotiation', '120000', NULL, NULL, 1, ${NOW_EPOCH}, ${NOW_EPOCH}),
   ('pl-new-lead', NULL, 'Inbound Lead - Acme', 'Lane', 'qualification', '30000', 'Discovery call', NULL, 2, ${NOW_EPOCH}, ${NOW_EPOCH});
+
+INSERT INTO team_members (id, name, first_name, full_name, nicknames, title, role_category, accounts_led, is_active) VALUES
+  ('tm-kathy', 'Kathy', 'Kathy', 'Kathy Horn', NULL, 'Account Director', 'am', '["convergix","lppc"]', 1),
+  ('tm-jill', 'Jill', 'Jill', 'Jill Runyon', NULL, 'Account Director', 'am', '["bonterra"]', 1),
+  ('tm-lane', 'Lane', 'Lane', 'Lane Davis', NULL, 'Creative Director', 'creative', NULL, 1),
+  ('tm-ronan', 'Ronan', 'Ronan', 'Ronan Lane', NULL, 'Project Manager', 'pm', '["convergix"]', 1);
 `;
 
 // ── Public API ──────────────────────────────────────────
@@ -227,4 +236,24 @@ export async function getClient(db: TestDb, id: string) {
 
 export async function getAllPipelineItems(db: TestDb) {
   return db.select().from(schema.pipelineItems);
+}
+
+export async function getTeamMember(db: TestDb, id: string) {
+  const rows = await db
+    .select()
+    .from(schema.teamMembers)
+    .where(eq(schema.teamMembers.id, id));
+  return rows[0] ?? null;
+}
+
+export async function getAllTeamMembers(db: TestDb) {
+  return db.select().from(schema.teamMembers);
+}
+
+export async function getPipelineItem(db: TestDb, id: string) {
+  const rows = await db
+    .select()
+    .from(schema.pipelineItems)
+    .where(eq(schema.pipelineItems.id, id));
+  return rows[0] ?? null;
 }

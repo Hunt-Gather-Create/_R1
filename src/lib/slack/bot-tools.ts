@@ -2,7 +2,7 @@
 
 import { tool } from "ai";
 import { z } from "zod";
-import { postUpdate } from "./updates-channel";
+import { postMutationUpdate } from "./updates-channel";
 import {
   getClientsWithCounts,
   getProjectsFiltered,
@@ -17,20 +17,17 @@ import {
   updateWeekItemField,
   undoLastChange,
   getRecentUpdates,
+  deleteProject,
+  deleteWeekItem,
+  createPipelineItem,
+  updatePipelineItem,
+  deletePipelineItem,
+  updateClientField,
+  createTeamMember,
+  updateTeamMember,
 } from "@/lib/runway/operations";
 import { getClientContactsStructured } from "@/lib/runway/operations-context";
 import { getMonday, toISODateString } from "@/app/runway/date-utils";
-
-async function safePostUpdate(update: Parameters<typeof postUpdate>[0]) {
-  try {
-    await postUpdate(update);
-  } catch (err) {
-    console.error(JSON.stringify({
-      event: "runway_bot_post_error",
-      error: err instanceof Error ? err.message : String(err),
-    }));
-  }
-}
 
 export function createBotTools(userName: string, now: Date = new Date()) {
   const currentMonday = toISODateString(getMonday(now));
@@ -106,8 +103,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         // Post to updates channel -- skip only true no-ops (no status change AND no notes)
         if (result.data && (result.data.previousStatus !== result.data.newStatus || notes)) {
           const updateText = `${result.data.previousStatus} -> ${result.data.newStatus}${notes ? ` (${notes})` : ""}${cascaded?.length ? ` [+${cascaded.length} week items]` : ""}`;
-          await safePostUpdate({
-            clientName: result.data.clientName as string,
+          await postMutationUpdate({
+            result,
+            fallbackClientName: clientSlug,
             projectName: result.data.projectName as string,
             updateText,
             updatedBy: userName,
@@ -150,8 +148,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
 
         // Post to updates channel (bot-specific behavior)
         if (result.data) {
-          await safePostUpdate({
-            clientName: result.data.clientName as string,
+          await postMutationUpdate({
+            result,
+            fallbackClientName: clientSlug,
             projectName: result.data.projectName as string | undefined,
             updateText: summary,
             updatedBy: userName,
@@ -219,8 +218,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         }
 
         if (result.data) {
-          await safePostUpdate({
-            clientName: result.data.clientName as string,
+          await postMutationUpdate({
+            result,
+            fallbackClientName: clientSlug,
             projectName: result.data.projectName as string,
             updateText: `New project created`,
             updatedBy: userName,
@@ -265,8 +265,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
             const updateText = changed
               ? `${field}: "${result.data.previousValue}" → "${result.data.newValue}"${cascaded?.length ? ` [+${cascaded.length} calendar items]` : ""}`
               : `Cascaded dueDate to ${cascaded!.length} calendar item(s): ${cascaded!.join(", ")}`;
-            await safePostUpdate({
-              clientName: result.data.clientName as string,
+            await postMutationUpdate({
+              result,
+              fallbackClientName: clientSlug,
               projectName: result.data.projectName as string,
               updateText,
               updatedBy: userName,
@@ -310,8 +311,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         }
 
         if (result.data?.clientName) {
-          await safePostUpdate({
-            clientName: result.data.clientName as string,
+          await postMutationUpdate({
+            result,
+            fallbackClientName: "Calendar",
             updateText: `New week item: ${result.data.title}`,
             updatedBy: userName,
           });
@@ -333,8 +335,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         }
 
         if (result.data?.revertedFrom) {
-          await safePostUpdate({
-            clientName: "Undo",
+          await postMutationUpdate({
+            result,
+            fallbackClientName: "Undo",
             updateText: `Reverted: "${result.data.revertedFrom}" back to "${result.data.revertedTo}"`,
             updatedBy: userName,
           });
@@ -389,14 +392,179 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           const reverseCascaded = result.data.reverseCascaded as boolean | undefined;
           if (changed || reverseCascaded) {
             const cascadeNote = reverseCascaded ? " (also updated project dueDate)" : "";
-            await safePostUpdate({
-              clientName: "Calendar",
+            await postMutationUpdate({
+              result,
+              fallbackClientName: "Calendar",
               updateText: `Week item "${weekItemTitle}": ${field} updated${cascadeNote}`,
               updatedBy: userName,
             });
           }
         }
 
+        return { result: result.message };
+      },
+    }),
+
+    delete_project: tool({
+      description: "Delete a project from a client. Use when someone says to remove or delete a project.",
+      inputSchema: z.object({
+        clientSlug: z.string().describe("Client slug"),
+        projectName: z.string().describe("Project name (fuzzy match)"),
+      }),
+      execute: async ({ clientSlug, projectName }) => {
+        const result = await deleteProject({ clientSlug, projectName, updatedBy: userName });
+        if (!result.ok) return { error: result.error, available: result.available };
+        await postMutationUpdate({
+          result,
+          fallbackClientName: clientSlug,
+          updateText: `Deleted project: ${projectName}`,
+          updatedBy: userName,
+        });
+        return { result: result.message };
+      },
+    }),
+
+    delete_week_item: tool({
+      description: "Remove a week item from the calendar.",
+      inputSchema: z.object({
+        weekOf: z.string().default(currentMonday).describe(`ISO Monday date. Defaults to ${currentMonday}`),
+        weekItemTitle: z.string().describe("Week item title (fuzzy match)"),
+      }),
+      execute: async ({ weekOf, weekItemTitle }) => {
+        const result = await deleteWeekItem({ weekOf, weekItemTitle, updatedBy: userName });
+        if (!result.ok) return { error: result.error, available: result.available };
+        await postMutationUpdate({
+          result,
+          fallbackClientName: "Calendar",
+          updateText: `Removed: ${weekItemTitle}`,
+          updatedBy: userName,
+        });
+        return { result: result.message };
+      },
+    }),
+
+    create_pipeline_item: tool({
+      description: "Create a new pipeline item (SOW, new business opportunity) for a client.",
+      inputSchema: z.object({
+        clientSlug: z.string().describe("Client slug"),
+        name: z.string().describe("Pipeline item name"),
+        owner: z.string().optional().describe("Owner"),
+        status: z.string().optional().describe("Status (e.g. 'scoping', 'proposal', 'negotiation')"),
+        estimatedValue: z.string().optional().describe("Estimated value"),
+        waitingOn: z.string().optional().describe("Who/what is this waiting on"),
+        notes: z.string().optional().describe("Notes"),
+      }),
+      execute: async ({ clientSlug, name, owner, status, estimatedValue, waitingOn, notes }) => {
+        const result = await createPipelineItem({ clientSlug, name, owner, status, estimatedValue, waitingOn, notes, updatedBy: userName });
+        if (!result.ok) return { error: result.error };
+        await postMutationUpdate({
+          result,
+          fallbackClientName: clientSlug,
+          updateText: `New pipeline item: ${name}`,
+          updatedBy: userName,
+        });
+        return { result: result.message };
+      },
+    }),
+
+    update_pipeline_item: tool({
+      description: "Update a field on a pipeline item.",
+      inputSchema: z.object({
+        clientSlug: z.string().describe("Client slug"),
+        pipelineName: z.string().describe("Pipeline item name (fuzzy match)"),
+        field: z.enum(["name", "owner", "status", "estimatedValue", "waitingOn", "notes"]).describe("Field to update"),
+        newValue: z.string().describe("New value"),
+      }),
+      execute: async ({ clientSlug, pipelineName, field, newValue }) => {
+        const result = await updatePipelineItem({ clientSlug, pipelineName, field, newValue, updatedBy: userName });
+        if (!result.ok) return { error: result.error, available: result.available };
+        await postMutationUpdate({
+          result,
+          fallbackClientName: clientSlug,
+          updateText: `Pipeline ${pipelineName}: ${field} updated`,
+          updatedBy: userName,
+        });
+        return { result: result.message };
+      },
+    }),
+
+    delete_pipeline_item: tool({
+      description: "Remove a pipeline item from a client.",
+      inputSchema: z.object({
+        clientSlug: z.string().describe("Client slug"),
+        pipelineName: z.string().describe("Pipeline item name (fuzzy match)"),
+      }),
+      execute: async ({ clientSlug, pipelineName }) => {
+        const result = await deletePipelineItem({ clientSlug, pipelineName, updatedBy: userName });
+        if (!result.ok) return { error: result.error, available: result.available };
+        await postMutationUpdate({
+          result,
+          fallbackClientName: clientSlug,
+          updateText: `Removed pipeline item: ${pipelineName}`,
+          updatedBy: userName,
+        });
+        return { result: result.message };
+      },
+    }),
+
+    update_client_field: tool({
+      description: "Update a field on a client record (team, contractStatus, contacts, etc.).",
+      inputSchema: z.object({
+        clientSlug: z.string().describe("Client slug"),
+        field: z.enum(["name", "team", "contractValue", "contractTerm", "contractStatus", "clientContacts", "nicknames"]).describe("Field to update"),
+        newValue: z.string().describe("New value"),
+      }),
+      execute: async ({ clientSlug, field, newValue }) => {
+        const result = await updateClientField({ clientSlug, field, newValue, updatedBy: userName });
+        if (!result.ok) return { error: result.error };
+        await postMutationUpdate({
+          result,
+          fallbackClientName: clientSlug,
+          updateText: `${field} updated`,
+          updatedBy: userName,
+        });
+        return { result: result.message };
+      },
+    }),
+
+    create_team_member: tool({
+      description: "Add a new team member to the system.",
+      inputSchema: z.object({
+        name: z.string().describe("Short name (e.g. 'Lane')"),
+        firstName: z.string().optional().describe("First name"),
+        fullName: z.string().optional().describe("Full name (e.g. 'Lane Davis')"),
+        title: z.string().optional().describe("Job title"),
+        roleCategory: z.string().optional().describe("Role category (am, pm, creative, dev, etc.)"),
+      }),
+      execute: async ({ name, firstName, fullName, title, roleCategory }) => {
+        const result = await createTeamMember({ name, firstName, fullName, title, roleCategory, updatedBy: userName });
+        if (!result.ok) return { error: result.error };
+        await postMutationUpdate({
+          result,
+          fallbackClientName: "Team",
+          updateText: `New member: ${name}`,
+          updatedBy: userName,
+        });
+        return { result: result.message };
+      },
+    }),
+
+    update_team_member: tool({
+      description: "Update a field on a team member (title, isActive, accountsLed, etc.).",
+      inputSchema: z.object({
+        memberName: z.string().describe("Team member name (fuzzy match)"),
+        field: z.enum(["title", "fullName", "slackUserId", "roleCategory", "accountsLed", "isActive", "nicknames", "channelPurpose"]).describe("Field to update"),
+        newValue: z.string().describe("New value"),
+      }),
+      execute: async ({ memberName, field, newValue }) => {
+        const result = await updateTeamMember({ memberName, field, newValue, updatedBy: userName });
+        if (!result.ok) return { error: result.error, available: result.available };
+        await postMutationUpdate({
+          result,
+          fallbackClientName: "Team",
+          updateText: `${memberName}: ${field} updated`,
+          updatedBy: userName,
+        });
         return { result: result.message };
       },
     }),

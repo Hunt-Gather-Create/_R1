@@ -34,7 +34,7 @@ const mockGetProjectsForClient = vi.fn();
 const mockCheckIdempotency = vi.fn();
 const mockGetLinkedWeekItems = vi.fn();
 
-vi.mock("./operations", () => ({
+vi.mock("./operations-utils", () => ({
   CASCADE_STATUSES: ["completed", "blocked", "on-hold"],
   TERMINAL_ITEM_STATUSES: ["completed", "canceled"],
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
@@ -60,6 +60,9 @@ vi.mock("./operations", () => ({
   insertAuditRecord: async (params: Record<string, unknown>) => {
     mockInsertValues(params);
   },
+}));
+
+vi.mock("./operations-reads-week", () => ({
   getLinkedWeekItems: (...args: unknown[]) => mockGetLinkedWeekItems(...args),
 }));
 

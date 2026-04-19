@@ -100,6 +100,7 @@ export const updates = sqliteTable("updates", {
   newValue: text("new_value"),
   summary: text("summary"),
   metadata: text("metadata"),
+  batchId: text("batch_id"),
   slackMessageTs: text("slack_message_ts"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
@@ -118,4 +119,5 @@ export const teamMembers = sqliteTable("team_members", {
   accountsLed: text("accounts_led"), // JSON array of client slugs
   channelPurpose: text("channel_purpose"),
   isActive: integer("is_active").notNull().default(1),
+  updatedAt: text("updated_at"),
 });
