@@ -220,7 +220,13 @@ async function run() {
   // Generate or load draft
   let draft: string;
   if (filePath && shouldApply) {
-    draft = readFileSync(resolve(process.cwd(), filePath), "utf-8");
+    try {
+      draft = readFileSync(resolve(process.cwd(), filePath), "utf-8");
+    } catch (err) {
+      console.error(`Could not read draft file: ${filePath}`);
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
     console.log(`Using edited draft from: ${filePath}`);
   } else {
     draft = formatDraft(records, clientNames, projectNames);

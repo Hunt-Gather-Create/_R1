@@ -30,6 +30,9 @@ export interface DeleteProjectParams {
   updatedBy: string;
 }
 
+// FK pattern: when deleting an entity, null out all FK references in the
+// transaction (weekItems.projectId, updates.projectId) before the delete.
+// Apply this same pattern to any future delete operations (e.g., deleteClient).
 export async function deleteProject(
   params: DeleteProjectParams
 ): Promise<OperationResult> {

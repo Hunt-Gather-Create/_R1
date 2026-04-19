@@ -144,7 +144,8 @@ async function run() {
   }
 
   // Derive batchId from migration filename for audit tagging
-  const migrationBatchId = basename(migrationPath, extname(migrationPath));
+  const migrationBatchId = basename(migrationPath, extname(migrationPath))
+    .replace(/[^a-zA-Z0-9_-]/g, "");
 
   // Run migration
   const ctx = createMigrationContext(db, !shouldApply);
