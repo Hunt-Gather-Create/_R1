@@ -6,7 +6,7 @@
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
-import { projects, weekItems } from "@/lib/db/runway-schema";
+import { projects, weekItems, updates } from "@/lib/db/runway-schema";
 import { eq } from "drizzle-orm";
 import { getLinkedDeadlineItems } from "./operations-reads-week";
 import {
@@ -56,8 +56,6 @@ export async function deleteProject(
   });
   if (dup) return dup;
 
-  // Insert audit record BEFORE deleting the project to avoid FK constraint
-  // violation (updates.projectId references projects.id).
   await insertAuditRecord({
     idempotencyKey: idemKey,
     projectId: project.id,
@@ -68,15 +66,18 @@ export async function deleteProject(
     summary: `Deleted project from ${client.name}: ${project.name}`,
   });
 
-  // Unlink week items + delete project atomically.
-  // Note: existing audit records with this projectId are left intact
-  // (audit trail preserved).
+  // Unlink week items, null out audit FK references, then delete project.
+  // Audit records are preserved (projectId nulled, clientId + summary intact).
   await db.transaction(async (tx) => {
-    // Null out projectId on linked week items (preserve the items, just unlink)
     await tx
       .update(weekItems)
       .set({ projectId: null, updatedAt: new Date() })
       .where(eq(weekItems.projectId, project.id));
+
+    await tx
+      .update(updates)
+      .set({ projectId: null })
+      .where(eq(updates.projectId, project.id));
 
     await tx
       .delete(projects)

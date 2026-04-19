@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createMockDb } from "./operations-writes-test-helpers";
 
 // ── Mock state ──────────────────────────────────────────
-const { db: mockDb, mockInsertValues, mockUpdateSet } = createMockDb();
+const { db: mockDb, mockInsertValues, mockUpdateSet, mockTx } = createMockDb();
 
 vi.mock("@/lib/db/runway", () => ({
   getRunwayDb: () => mockDb,
@@ -406,5 +406,30 @@ describe("deleteProject", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.message).toContain("duplicate");
+  });
+
+  it("nulls out projectId on audit records before deleting project", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+    const { deleteProject } = await import("./operations-writes-project");
+    const result = await deleteProject({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+
+    // Transaction should have 3 calls: unlink week items, null audit projectIds, delete project
+    expect(mockTx.update).toHaveBeenCalledTimes(2);
+    expect(mockTx.delete).toHaveBeenCalledTimes(1);
+
+    // Second tx.update call should null out projectId on audit records
+    const secondUpdateSetCall = mockUpdateSet.mock.calls.find(
+      (call: unknown[]) => call[0] && typeof call[0] === "object" && "projectId" in (call[0] as Record<string, unknown>) && !("updatedAt" in (call[0] as Record<string, unknown>))
+    );
+    expect(secondUpdateSetCall).toBeDefined();
+    expect(secondUpdateSetCall![0]).toEqual({ projectId: null });
   });
 });
