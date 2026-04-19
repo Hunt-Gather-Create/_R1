@@ -90,6 +90,23 @@ describe("createTeamMember", () => {
     expect(mockInsertValues).toHaveBeenCalledTimes(2); // member + audit
   });
 
+  it("sets updatedAt on create", async () => {
+    mockFindTeamMember.mockResolvedValue(null);
+
+    const { createTeamMember } = await import("./operations-writes-team");
+    await createTeamMember({
+      name: "NewPerson",
+      updatedBy: "jason",
+    });
+
+    // First insert call is the member row, second is the audit record
+    const memberInsert = mockInsertValues.mock.calls[0][0];
+    expect(memberInsert.updatedAt).toBeDefined();
+    expect(typeof memberInsert.updatedAt).toBe("string");
+    // Should be a valid ISO date string
+    expect(new Date(memberInsert.updatedAt).toISOString()).toBe(memberInsert.updatedAt);
+  });
+
   it("returns error for duplicate name", async () => {
     mockFindTeamMember.mockResolvedValue(teamMember);
 
@@ -157,6 +174,24 @@ describe("updateTeamMember", () => {
       expect(result.data?.previousValue).toBe('["convergix"]');
       expect(result.data?.newValue).toBe('["convergix","lppc"]');
     }
+  });
+
+  it("sets updatedAt on update", async () => {
+    mockResolveTeamMember.mockResolvedValue({ ok: true, member: teamMember });
+
+    const { updateTeamMember } = await import("./operations-writes-team");
+    await updateTeamMember({
+      memberName: "Ronan",
+      field: "title",
+      newValue: "Senior PM",
+      updatedBy: "jason",
+    });
+
+    expect(mockUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ updatedAt: expect.any(String) })
+    );
+    const setCall = mockUpdateSet.mock.calls[0][0];
+    expect(new Date(setCall.updatedAt).toISOString()).toBe(setCall.updatedAt);
   });
 
   it("returns error for unknown member with available list", async () => {

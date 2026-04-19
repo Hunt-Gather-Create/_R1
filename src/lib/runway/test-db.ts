@@ -108,7 +108,8 @@ CREATE TABLE team_members (
   role_category TEXT,
   accounts_led TEXT,
   channel_purpose TEXT,
-  is_active INTEGER NOT NULL DEFAULT 1
+  is_active INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT
 );
 `;
 

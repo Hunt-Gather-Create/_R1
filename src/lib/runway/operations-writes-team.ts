@@ -90,6 +90,7 @@ export async function createTeamMember(
     nicknames: nicknames ?? null,
     channelPurpose: channelPurpose ?? null,
     isActive: 1,
+    updatedAt: new Date().toISOString(),
   });
 
   await insertAuditRecord({
@@ -152,7 +153,7 @@ export async function updateTeamMember(
 
   await db
     .update(teamMembers)
-    .set({ [columnKey]: dbValue })
+    .set({ [columnKey]: dbValue, updatedAt: new Date().toISOString() })
     .where(eq(teamMembers.id, member.id));
 
   await insertAuditRecord({
