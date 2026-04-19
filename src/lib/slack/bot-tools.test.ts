@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockSafePostUpdate, mockOps } = vi.hoisted(() => {
-  const mockSafePostUpdate = vi.fn().mockResolvedValue(undefined);
+const { mockPostMutationUpdate, mockOps } = vi.hoisted(() => {
+  const mockPostMutationUpdate = vi.fn().mockResolvedValue(undefined);
   const mockOps = {
     getClientsWithCounts: vi.fn().mockResolvedValue([{ name: "Convergix" }]),
     getProjectsFiltered: vi.fn().mockResolvedValue([
@@ -29,7 +29,7 @@ const { mockSafePostUpdate, mockOps } = vi.hoisted(() => {
     createTeamMember: vi.fn(),
     updateTeamMember: vi.fn(),
   };
-  return { mockSafePostUpdate, mockOps };
+  return { mockPostMutationUpdate, mockOps };
 });
 
 const { mockGetClientContactsStructured } = vi.hoisted(() => ({
@@ -37,7 +37,7 @@ const { mockGetClientContactsStructured } = vi.hoisted(() => ({
 }));
 
 vi.mock("./updates-channel", () => ({
-  safePostUpdate: (...args: unknown[]) => mockSafePostUpdate(...args),
+  postMutationUpdate: (...args: unknown[]) => mockPostMutationUpdate(...args),
 }));
 vi.mock("ai", () => ({ tool: vi.fn((config) => config) }));
 vi.mock("@/lib/runway/operations", () => mockOps);
@@ -96,8 +96,8 @@ describe("createBotTools", () => {
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect((result as Record<string, string>).result).toContain("Was: active, now: done");
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      clientName: "Convergix", updatedBy: "Kathy Horn",
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      fallbackClientName: "convergix", updatedBy: "Kathy Horn",
     }));
   });
 
@@ -108,7 +108,7 @@ describe("createBotTools", () => {
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(result).toEqual({ error: "Not found", available: ["CDS"] });
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
   });
 
   it("update_project_status succeeds even if safePostUpdate fails", async () => {
@@ -117,7 +117,7 @@ describe("createBotTools", () => {
       data: { clientName: "Convergix", projectName: "CDS", previousStatus: "active", newStatus: "done" },
     });
     // safePostUpdate catches errors internally — mock it to resolve normally
-    mockSafePostUpdate.mockResolvedValueOnce(undefined);
+    mockPostMutationUpdate.mockResolvedValueOnce(undefined);
     const result = await tools.update_project_status.execute(
       { clientSlug: "convergix", projectName: "CDS", newStatus: "done" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
@@ -135,7 +135,7 @@ describe("createBotTools", () => {
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(result).toEqual({ result: "Logged" });
-    expect(mockSafePostUpdate).toHaveBeenCalledOnce();
+    expect(mockPostMutationUpdate).toHaveBeenCalledOnce();
   });
 
   it("add_update returns error on failure", async () => {
@@ -145,7 +145,7 @@ describe("createBotTools", () => {
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(result).toEqual({ error: "Client not found" });
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
   });
 
   it("passes userName to operations as updatedBy", async () => {
@@ -171,7 +171,7 @@ describe("createBotTools", () => {
       { clientSlug: "convergix", projectName: "CDS", newStatus: "done", notes: "R1 approved" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ updateText: "active -> done (R1 approved)" })
     );
   });
@@ -182,7 +182,7 @@ describe("createBotTools", () => {
       { clientSlug: "convergix", projectName: "CDS", newStatus: "done" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
     expect((result as Record<string, string>).result).toBe("Updated (duplicate)");
   });
 
@@ -192,7 +192,7 @@ describe("createBotTools", () => {
       data: { clientName: "Convergix", projectName: "CDS" },
     });
     // safePostUpdate catches errors internally — mock it to resolve normally
-    mockSafePostUpdate.mockResolvedValueOnce(undefined);
+    mockPostMutationUpdate.mockResolvedValueOnce(undefined);
     const result = await tools.add_update.execute(
       { clientSlug: "convergix", summary: "Test note" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
@@ -206,7 +206,7 @@ describe("createBotTools", () => {
       { clientSlug: "convergix", summary: "Test" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
   });
 
   it("get_pipeline calls getPipelineData", async () => {
@@ -276,7 +276,7 @@ describe("createBotTools", () => {
       { clientSlug: "convergix", projectName: "CDS", newStatus: "completed" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ updateText: "active -> completed [+2 week items]" })
     );
   });
@@ -313,8 +313,8 @@ describe("createBotTools", () => {
     expect(mockOps.addProject).toHaveBeenCalledWith(
       expect.objectContaining({ clientSlug: "wilsonart", name: "Widget Design", updatedBy: "Kathy Horn" })
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "Wilsonart", projectName: "Widget Design" })
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackClientName: "wilsonart", updateText: "New project created" })
     );
     const text = (result as Record<string, string>).result;
     expect(text).toContain("Widget Design");
@@ -358,7 +358,7 @@ describe("createBotTools", () => {
     expect(mockOps.updateProjectField).toHaveBeenCalledWith(
       expect.objectContaining({ field: "dueDate", updatedBy: "Kathy Horn" })
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ updateText: expect.stringContaining("→") })
     );
     const text = (result as Record<string, string>).result;
@@ -402,8 +402,8 @@ describe("createBotTools", () => {
       { clientSlug: "convergix", title: "CDS Review", weekOf: "2026-04-06" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "Convergix" })
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackClientName: "Calendar" })
     );
   });
 
@@ -431,7 +431,7 @@ describe("createBotTools", () => {
       {}, { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(mockOps.undoLastChange).toHaveBeenCalledWith({ updatedBy: "Kathy Horn" });
-    expect(mockSafePostUpdate).toHaveBeenCalled();
+    expect(mockPostMutationUpdate).toHaveBeenCalled();
     expect((result as Record<string, string>).result).toContain("reverted");
   });
 
@@ -466,8 +466,8 @@ describe("createBotTools", () => {
       { weekOf: "2026-04-06", weekItemTitle: "CDS Review", field: "status", newValue: "completed" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "Calendar", updatedBy: "Kathy Horn" })
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackClientName: "Calendar", updatedBy: "Kathy Horn" })
     );
   });
 
@@ -493,7 +493,7 @@ describe("createBotTools", () => {
       { clientSlug: "convergix", projectName: "CDS", newStatus: "done" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
   });
 
   it("update_project_field skips postUpdate when value unchanged", async () => {
@@ -505,7 +505,7 @@ describe("createBotTools", () => {
       { clientSlug: "convergix", projectName: "CDS", field: "dueDate", newValue: "2026-04-28" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
   });
 
   it("update_week_item skips postUpdate when value unchanged", async () => {
@@ -517,7 +517,7 @@ describe("createBotTools", () => {
       { weekOf: "2026-04-06", weekItemTitle: "CDS Review", field: "status", newValue: "completed" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
   });
 
   it("update_project_field posts when field unchanged but cascades happened", async () => {
@@ -533,7 +533,7 @@ describe("createBotTools", () => {
       { clientSlug: "convergix", projectName: "CDS", field: "dueDate", newValue: "2026-04-28" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ updateText: expect.stringContaining("Cascaded dueDate to 2 calendar item(s)") })
     );
   });
@@ -551,7 +551,7 @@ describe("createBotTools", () => {
       { clientSlug: "convergix", projectName: "CDS", field: "dueDate", newValue: "2026-04-28" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
   });
 
   it("update_project_status posts when status unchanged but notes provided", async () => {
@@ -563,7 +563,7 @@ describe("createBotTools", () => {
       { clientSlug: "convergix", projectName: "CDS", newStatus: "done", notes: "Client confirmed delivery" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ updateText: expect.stringContaining("Client confirmed delivery") })
     );
   });
@@ -577,7 +577,7 @@ describe("createBotTools", () => {
       { weekOf: "2026-04-06", weekItemTitle: "CDS Deadline", field: "date", newValue: "2026-04-28" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ updateText: expect.stringContaining("also updated project dueDate") })
     );
   });
@@ -591,7 +591,7 @@ describe("createBotTools", () => {
       { weekOf: "2026-04-06", weekItemTitle: "CDS Deadline", field: "date", newValue: "2026-04-28" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ updateText: expect.stringContaining("also updated project dueDate") })
     );
   });
@@ -610,8 +610,8 @@ describe("createBotTools", () => {
     expect(mockOps.deleteProject).toHaveBeenCalledWith(
       expect.objectContaining({ clientSlug: "convergix", projectName: "Brand Refresh", updatedBy: "Kathy Horn" })
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "Convergix", updateText: "Deleted project: Brand Refresh" })
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackClientName: "convergix", updateText: "Deleted project: Brand Refresh" })
     );
     expect((result as Record<string, string>).result).toContain("Brand Refresh");
   });
@@ -623,7 +623,7 @@ describe("createBotTools", () => {
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(result).toEqual({ error: "Not found", available: ["CDS"] });
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
   });
 
   it("delete_project falls back to clientSlug when clientName missing", async () => {
@@ -632,8 +632,8 @@ describe("createBotTools", () => {
       { clientSlug: "convergix", projectName: "X" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "convergix" })
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackClientName: "convergix" })
     );
   });
 
@@ -649,8 +649,8 @@ describe("createBotTools", () => {
     expect(mockOps.deleteWeekItem).toHaveBeenCalledWith(
       expect.objectContaining({ weekOf: "2026-04-06", weekItemTitle: "CDS Review", updatedBy: "Kathy Horn" })
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "Convergix", updateText: "Removed: CDS Review" })
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackClientName: "Calendar", updateText: "Removed: CDS Review" })
     );
     expect((result as Record<string, string>).result).toContain("CDS Review");
   });
@@ -662,7 +662,7 @@ describe("createBotTools", () => {
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(result).toEqual({ error: "Week item not found", available: ["CDS Review"] });
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
   });
 
   it("delete_week_item falls back to Calendar when no clientName", async () => {
@@ -671,8 +671,8 @@ describe("createBotTools", () => {
       { weekOf: "2026-04-06", weekItemTitle: "Team Standup" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "Calendar" })
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackClientName: "Calendar" })
     );
   });
 
@@ -688,8 +688,8 @@ describe("createBotTools", () => {
     expect(mockOps.createPipelineItem).toHaveBeenCalledWith(
       expect.objectContaining({ clientSlug: "bonterra", name: "New SOW", status: "scoping", updatedBy: "Kathy Horn" })
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "Bonterra", updateText: "New pipeline item: New SOW" })
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackClientName: "bonterra", updateText: "New pipeline item: New SOW" })
     );
     expect((result as Record<string, string>).result).toContain("New SOW");
   });
@@ -701,7 +701,7 @@ describe("createBotTools", () => {
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(result).toEqual({ error: "Client not found" });
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
   });
 
   it("update_pipeline_item calls updatePipelineItem and posts update", async () => {
@@ -716,8 +716,8 @@ describe("createBotTools", () => {
     expect(mockOps.updatePipelineItem).toHaveBeenCalledWith(
       expect.objectContaining({ pipelineName: "New SOW", field: "status", newValue: "proposal", updatedBy: "Kathy Horn" })
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "Bonterra", updateText: "Pipeline New SOW: status updated" })
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackClientName: "bonterra", updateText: "Pipeline New SOW: status updated" })
     );
     expect((result as Record<string, string>).result).toContain("New SOW");
   });
@@ -729,7 +729,7 @@ describe("createBotTools", () => {
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(result).toEqual({ error: "Not found", available: ["Existing SOW"] });
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
   });
 
   it("delete_pipeline_item calls deletePipelineItem and posts update", async () => {
@@ -744,8 +744,8 @@ describe("createBotTools", () => {
     expect(mockOps.deletePipelineItem).toHaveBeenCalledWith(
       expect.objectContaining({ clientSlug: "bonterra", pipelineName: "Old SOW", updatedBy: "Kathy Horn" })
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "Bonterra", updateText: "Removed pipeline item: Old SOW" })
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackClientName: "bonterra", updateText: "Removed pipeline item: Old SOW" })
     );
     expect((result as Record<string, string>).result).toContain("Old SOW");
   });
@@ -757,7 +757,7 @@ describe("createBotTools", () => {
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(result).toEqual({ error: "Pipeline item not found", available: ["Existing SOW"] });
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
   });
 
   it("update_client_field calls updateClientField and posts update", async () => {
@@ -772,8 +772,8 @@ describe("createBotTools", () => {
     expect(mockOps.updateClientField).toHaveBeenCalledWith(
       expect.objectContaining({ clientSlug: "convergix", field: "team", newValue: "Kathy, Lane", updatedBy: "Kathy Horn" })
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "Convergix", updateText: "team updated" })
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackClientName: "convergix", updateText: "team updated" })
     );
     expect((result as Record<string, string>).result).toContain("Convergix");
   });
@@ -785,7 +785,7 @@ describe("createBotTools", () => {
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(result).toEqual({ error: "Client not found" });
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
   });
 
   it("create_team_member calls createTeamMember and posts update", async () => {
@@ -799,8 +799,8 @@ describe("createBotTools", () => {
     expect(mockOps.createTeamMember).toHaveBeenCalledWith(
       expect.objectContaining({ name: "Lane", fullName: "Lane Davis", title: "Developer", updatedBy: "Kathy Horn" })
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "Team", updateText: "New member: Lane" })
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackClientName: "Team", updateText: "New member: Lane" })
     );
     expect((result as Record<string, string>).result).toContain("Lane");
   });
@@ -812,7 +812,7 @@ describe("createBotTools", () => {
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(result).toEqual({ error: "Member already exists" });
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
   });
 
   it("update_team_member calls updateTeamMember and posts update", async () => {
@@ -827,8 +827,8 @@ describe("createBotTools", () => {
     expect(mockOps.updateTeamMember).toHaveBeenCalledWith(
       expect.objectContaining({ memberName: "Lane", field: "title", newValue: "Senior Developer", updatedBy: "Kathy Horn" })
     );
-    expect(mockSafePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "Team", updateText: "Lane: title updated" })
+    expect(mockPostMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackClientName: "Team", updateText: "Lane: title updated" })
     );
     expect((result as Record<string, string>).result).toContain("Lane");
   });
@@ -840,6 +840,6 @@ describe("createBotTools", () => {
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(result).toEqual({ error: "Not found", available: ["Kathy", "Lane"] });
-    expect(mockSafePostUpdate).not.toHaveBeenCalled();
+    expect(mockPostMutationUpdate).not.toHaveBeenCalled();
   });
 });

@@ -35,7 +35,7 @@ const { mockOps, registeredTools } = vi.hoisted(() => {
 
 vi.mock("@/lib/runway/operations", () => mockOps);
 vi.mock("@/lib/slack/updates-channel", () => ({
-  safePostUpdate: vi.fn().mockResolvedValue(undefined),
+  postMutationUpdate: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
   McpServer: class {
@@ -227,7 +227,7 @@ describe("registerRunwayTools", () => {
   });
 
   it("mutation tools post to Slack when not in batch mode", async () => {
-    const { safePostUpdate } = await import("@/lib/slack/updates-channel");
+    const { postMutationUpdate } = await import("@/lib/slack/updates-channel");
     mockOps.getBatchId.mockReturnValue(null);
     mockOps.updateProjectStatus.mockResolvedValue({
       ok: true, message: "Updated",
@@ -236,13 +236,13 @@ describe("registerRunwayTools", () => {
     await registeredTools.get("update_project_status")!({
       clientSlug: "convergix", projectName: "CDS", newStatus: "done", updatedBy: "mcp",
     });
-    expect(safePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "Convergix" })
+    expect(postMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackClientName: "convergix", updatedBy: "mcp" })
     );
   });
 
-  it("delete tools post clientName from result.data, not slug", async () => {
-    const { safePostUpdate } = await import("@/lib/slack/updates-channel");
+  it("delete tools pass result with clientName data", async () => {
+    const { postMutationUpdate } = await import("@/lib/slack/updates-channel");
     mockOps.getBatchId.mockReturnValue(null);
     mockOps.deletePipelineItem.mockResolvedValue({
       ok: true, message: "Deleted",
@@ -251,31 +251,34 @@ describe("registerRunwayTools", () => {
     await registeredTools.get("delete_pipeline_item")!({
       clientSlug: "convergix", pipelineName: "SOW Expansion", updatedBy: "mcp",
     });
-    expect(safePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "Convergix" })
+    expect(postMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        result: expect.objectContaining({ data: expect.objectContaining({ clientName: "Convergix" }) }),
+        fallbackClientName: "convergix",
+      })
     );
   });
 
-  it("delete tools fall back to slug when result.data is missing", async () => {
-    const { safePostUpdate } = await import("@/lib/slack/updates-channel");
+  it("delete tools pass slug as fallback when result.data is missing", async () => {
+    const { postMutationUpdate } = await import("@/lib/slack/updates-channel");
     mockOps.getBatchId.mockReturnValue(null);
     mockOps.deleteProject.mockResolvedValue({ ok: true, message: "Deleted" });
     await registeredTools.get("delete_project")!({
       clientSlug: "convergix", projectName: "CDS", updatedBy: "mcp",
     });
-    expect(safePostUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ clientName: "convergix" })
+    expect(postMutationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackClientName: "convergix" })
     );
   });
 
   it("mutation tools suppress Slack when in batch mode", async () => {
-    const { safePostUpdate } = await import("@/lib/slack/updates-channel");
+    const { postMutationUpdate } = await import("@/lib/slack/updates-channel");
     mockOps.getBatchId.mockReturnValue("batch-2026-04-18");
     mockOps.addProject.mockResolvedValue({ ok: true, message: "Added" });
     await registeredTools.get("add_project")!({
       clientSlug: "convergix", name: "New Site", updatedBy: "mcp",
     });
-    expect(safePostUpdate).not.toHaveBeenCalled();
+    expect(postMutationUpdate).not.toHaveBeenCalled();
   });
 
   it("mutation tools return error message on failure", async () => {

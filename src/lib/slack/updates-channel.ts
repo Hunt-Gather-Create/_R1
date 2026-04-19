@@ -14,12 +14,37 @@
 
 import { getSlackClient, getUpdatesChannelId } from "./client";
 import { MONTH_NAMES_SHORT } from "@/lib/runway/date-constants";
+import type { OperationResult } from "@/lib/runway/operations-utils";
 
 interface UpdatePost {
   clientName: string;
   projectName?: string;
   updateText: string;
   updatedBy: string;
+}
+
+export interface MutationNotifyParams {
+  result: OperationResult;
+  fallbackClientName: string;
+  projectName?: string;
+  updateText: string;
+  updatedBy: string;
+}
+
+/**
+ * Post a Slack notification for a successful mutation.
+ * Centralizes clientName resolution: prefers result.data.clientName
+ * over the raw slug fallback. Guards (batch mode, no-op checks)
+ * are the caller's responsibility.
+ */
+export async function postMutationUpdate(params: MutationNotifyParams): Promise<void> {
+  if (!params.result.ok) return;
+  await safePostUpdate({
+    clientName: (params.result.data?.clientName as string) ?? params.fallbackClientName,
+    projectName: params.projectName,
+    updateText: params.updateText,
+    updatedBy: params.updatedBy,
+  });
 }
 
 /**

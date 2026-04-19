@@ -7,7 +7,7 @@ vi.mock("./client", () => ({
   getUpdatesChannelId: () => "C123",
 }));
 
-import { formatTimestamp, safePostUpdate, postFormattedMessage } from "./updates-channel";
+import { formatTimestamp, safePostUpdate, postMutationUpdate, postFormattedMessage } from "./updates-channel";
 
 describe("formatTimestamp", () => {
   it("formats a morning time correctly", () => {
@@ -84,6 +84,91 @@ describe("safePostUpdate", () => {
     );
 
     consoleSpy.mockRestore();
+  });
+});
+
+describe("postMutationUpdate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("posts when result.ok is true, using clientName from result.data", async () => {
+    await postMutationUpdate({
+      result: { ok: true, message: "Done", data: { clientName: "Convergix" } },
+      fallbackClientName: "convergix",
+      updateText: "Status updated",
+      updatedBy: "Kathy",
+    });
+
+    expect(mockPostMessage).toHaveBeenCalledOnce();
+    const text = mockPostMessage.mock.calls[0][0].text as string;
+    expect(text).toContain("*Convergix*");
+    expect(text).toContain("Status updated");
+  });
+
+  it("falls back to fallbackClientName when result.data has no clientName", async () => {
+    await postMutationUpdate({
+      result: { ok: true, message: "Done", data: {} },
+      fallbackClientName: "convergix",
+      updateText: "Deleted",
+      updatedBy: "mcp",
+    });
+
+    expect(mockPostMessage).toHaveBeenCalledOnce();
+    const text = mockPostMessage.mock.calls[0][0].text as string;
+    expect(text).toContain("*convergix*");
+  });
+
+  it("falls back to fallbackClientName when result.data is undefined", async () => {
+    await postMutationUpdate({
+      result: { ok: true, message: "Done" },
+      fallbackClientName: "Calendar",
+      updateText: "Removed item",
+      updatedBy: "mcp",
+    });
+
+    expect(mockPostMessage).toHaveBeenCalledOnce();
+    const text = mockPostMessage.mock.calls[0][0].text as string;
+    expect(text).toContain("*Calendar*");
+  });
+
+  it("does not post when result.ok is false", async () => {
+    await postMutationUpdate({
+      result: { ok: false, error: "Not found" },
+      fallbackClientName: "convergix",
+      updateText: "Should not appear",
+      updatedBy: "mcp",
+    });
+
+    expect(mockPostMessage).not.toHaveBeenCalled();
+  });
+
+  it("passes projectName through to the Slack message", async () => {
+    await postMutationUpdate({
+      result: { ok: true, message: "Done", data: { clientName: "Bonterra" } },
+      fallbackClientName: "bonterra",
+      projectName: "Impact Report",
+      updateText: "dueDate updated",
+      updatedBy: "Jill",
+    });
+
+    expect(mockPostMessage).toHaveBeenCalledOnce();
+    const text = mockPostMessage.mock.calls[0][0].text as string;
+    expect(text).toContain("*Bonterra*");
+    expect(text).toContain("_Project:_ Impact Report");
+    expect(text).toContain("dueDate updated");
+  });
+
+  it("omits projectName line when not provided", async () => {
+    await postMutationUpdate({
+      result: { ok: true, message: "Done", data: { clientName: "Team" } },
+      fallbackClientName: "Team",
+      updateText: "New member: Lane",
+      updatedBy: "Kathy",
+    });
+
+    const text = mockPostMessage.mock.calls[0][0].text as string;
+    expect(text).not.toContain("_Project:_");
   });
 });
 

@@ -29,7 +29,7 @@ import {
   setBatchId,
   getBatchId,
 } from "@/lib/runway/operations";
-import { safePostUpdate } from "@/lib/slack/updates-channel";
+import { postMutationUpdate } from "@/lib/slack/updates-channel";
 
 function textResult(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
@@ -95,8 +95,9 @@ export function registerRunwayTools(server: McpServer) {
   }, async (params) => {
     const result = await updateProjectStatus(params);
     if (result.ok && !getBatchId()) {
-      await safePostUpdate({
-        clientName: (result.data?.clientName as string) ?? params.clientSlug,
+      await postMutationUpdate({
+        result,
+        fallbackClientName: params.clientSlug,
         projectName: result.data?.projectName as string,
         updateText: `Status: ${result.data?.previousStatus} → ${result.data?.newStatus}`,
         updatedBy: params.updatedBy,
@@ -114,8 +115,9 @@ export function registerRunwayTools(server: McpServer) {
   }, async (params) => {
     const result = await updateProjectField(params);
     if (result.ok && !getBatchId()) {
-      await safePostUpdate({
-        clientName: (result.data?.clientName as string) ?? params.clientSlug,
+      await postMutationUpdate({
+        result,
+        fallbackClientName: params.clientSlug,
         projectName: result.data?.projectName as string,
         updateText: `${params.field} updated`,
         updatedBy: params.updatedBy,
@@ -130,9 +132,10 @@ export function registerRunwayTools(server: McpServer) {
     updatedBy: z.string().default("mcp").describe("Person making the update"),
   }, async (params) => {
     const result = await deleteProject(params);
-    if (result.ok && !getBatchId()) {
-      await safePostUpdate({
-        clientName: (result.data?.clientName as string) ?? params.clientSlug,
+    if (!getBatchId()) {
+      await postMutationUpdate({
+        result,
+        fallbackClientName: params.clientSlug,
         updateText: `Deleted project: ${params.projectName}`,
         updatedBy: params.updatedBy,
       });
@@ -150,9 +153,10 @@ export function registerRunwayTools(server: McpServer) {
     updatedBy: z.string().default("mcp").describe("Person adding the project"),
   }, async (params) => {
     const result = await addProject(params);
-    if (result.ok && !getBatchId()) {
-      await safePostUpdate({
-        clientName: (result.data?.clientName as string) ?? params.clientSlug,
+    if (!getBatchId()) {
+      await postMutationUpdate({
+        result,
+        fallbackClientName: params.clientSlug,
         updateText: `New project: ${params.name}`,
         updatedBy: params.updatedBy,
       });
@@ -178,8 +182,9 @@ export function registerRunwayTools(server: McpServer) {
   }, async (params) => {
     const result = await createWeekItem(params);
     if (result.ok && !getBatchId() && result.data?.clientName) {
-      await safePostUpdate({
-        clientName: result.data.clientName as string,
+      await postMutationUpdate({
+        result,
+        fallbackClientName: params.clientSlug ?? "Calendar",
         updateText: `New week item: ${params.title}`,
         updatedBy: params.updatedBy,
       });
@@ -195,9 +200,10 @@ export function registerRunwayTools(server: McpServer) {
     updatedBy: z.string().default("mcp").describe("Person making the update"),
   }, async (params) => {
     const result = await updateWeekItemField(params);
-    if (result.ok && !getBatchId()) {
-      await safePostUpdate({
-        clientName: (result.data?.clientName as string) ?? "Calendar",
+    if (!getBatchId()) {
+      await postMutationUpdate({
+        result,
+        fallbackClientName: "Calendar",
         updateText: `Week item "${params.weekItemTitle}": ${params.field} updated`,
         updatedBy: params.updatedBy,
       });
@@ -212,9 +218,10 @@ export function registerRunwayTools(server: McpServer) {
     updatedBy: z.string().default("mcp").describe("Person making the update"),
   }, async (params) => {
     const result = await deleteWeekItem(params);
-    if (result.ok && !getBatchId()) {
-      await safePostUpdate({
-        clientName: (result.data?.clientName as string) ?? "Calendar",
+    if (!getBatchId()) {
+      await postMutationUpdate({
+        result,
+        fallbackClientName: "Calendar",
         updateText: `Removed: ${params.weekItemTitle ?? params.id}`,
         updatedBy: params.updatedBy,
       });
@@ -235,9 +242,10 @@ export function registerRunwayTools(server: McpServer) {
     updatedBy: z.string().default("mcp").describe("Person making the update"),
   }, async (params) => {
     const result = await createPipelineItem(params);
-    if (result.ok && !getBatchId()) {
-      await safePostUpdate({
-        clientName: (result.data?.clientName as string) ?? params.clientSlug,
+    if (!getBatchId()) {
+      await postMutationUpdate({
+        result,
+        fallbackClientName: params.clientSlug,
         updateText: `New pipeline item: ${params.name}`,
         updatedBy: params.updatedBy,
       });
@@ -253,9 +261,10 @@ export function registerRunwayTools(server: McpServer) {
     updatedBy: z.string().default("mcp").describe("Person making the update"),
   }, async (params) => {
     const result = await updatePipelineItem(params);
-    if (result.ok && !getBatchId()) {
-      await safePostUpdate({
-        clientName: (result.data?.clientName as string) ?? params.clientSlug,
+    if (!getBatchId()) {
+      await postMutationUpdate({
+        result,
+        fallbackClientName: params.clientSlug,
         updateText: `Pipeline ${params.pipelineName}: ${params.field} updated`,
         updatedBy: params.updatedBy,
       });
@@ -269,9 +278,10 @@ export function registerRunwayTools(server: McpServer) {
     updatedBy: z.string().default("mcp").describe("Person making the update"),
   }, async (params) => {
     const result = await deletePipelineItem(params);
-    if (result.ok && !getBatchId()) {
-      await safePostUpdate({
-        clientName: (result.data?.clientName as string) ?? params.clientSlug,
+    if (!getBatchId()) {
+      await postMutationUpdate({
+        result,
+        fallbackClientName: params.clientSlug,
         updateText: `Removed pipeline item: ${params.pipelineName}`,
         updatedBy: params.updatedBy,
       });
@@ -288,9 +298,10 @@ export function registerRunwayTools(server: McpServer) {
     updatedBy: z.string().default("mcp").describe("Person making the update"),
   }, async (params) => {
     const result = await updateClientField(params);
-    if (result.ok && !getBatchId()) {
-      await safePostUpdate({
-        clientName: (result.data?.clientName as string) ?? params.clientSlug,
+    if (!getBatchId()) {
+      await postMutationUpdate({
+        result,
+        fallbackClientName: params.clientSlug,
         updateText: `${params.field} updated`,
         updatedBy: params.updatedBy,
       });
@@ -309,9 +320,10 @@ export function registerRunwayTools(server: McpServer) {
     updatedBy: z.string().default("mcp").describe("Person making the update"),
   }, async (params) => {
     const result = await createTeamMember(params);
-    if (result.ok && !getBatchId()) {
-      await safePostUpdate({
-        clientName: "Team",
+    if (!getBatchId()) {
+      await postMutationUpdate({
+        result,
+        fallbackClientName: "Team",
         updateText: `New member: ${params.name}`,
         updatedBy: params.updatedBy,
       });
@@ -326,9 +338,10 @@ export function registerRunwayTools(server: McpServer) {
     updatedBy: z.string().default("mcp").describe("Person making the update"),
   }, async (params) => {
     const result = await updateTeamMember(params);
-    if (result.ok && !getBatchId()) {
-      await safePostUpdate({
-        clientName: "Team",
+    if (!getBatchId()) {
+      await postMutationUpdate({
+        result,
+        fallbackClientName: "Team",
         updateText: `${params.memberName}: ${params.field} updated`,
         updatedBy: params.updatedBy,
       });
@@ -345,11 +358,12 @@ export function registerRunwayTools(server: McpServer) {
     updatedBy: z.string().default("mcp").describe("Person making the update"),
   }, async (params) => {
     const result = await addUpdate(params);
-    if (result.ok && !getBatchId()) {
-      await safePostUpdate({
-        clientName: (result.data?.clientName as string) ?? params.clientSlug,
+    if (!getBatchId()) {
+      await postMutationUpdate({
+        result,
+        fallbackClientName: params.clientSlug,
         projectName: params.projectName,
-        updateText: `${params.summary}`,
+        updateText: params.summary,
         updatedBy: params.updatedBy,
       });
     }

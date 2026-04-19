@@ -2,7 +2,7 @@
 
 import { tool } from "ai";
 import { z } from "zod";
-import { safePostUpdate } from "./updates-channel";
+import { postMutationUpdate } from "./updates-channel";
 import {
   getClientsWithCounts,
   getProjectsFiltered,
@@ -103,8 +103,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         // Post to updates channel -- skip only true no-ops (no status change AND no notes)
         if (result.data && (result.data.previousStatus !== result.data.newStatus || notes)) {
           const updateText = `${result.data.previousStatus} -> ${result.data.newStatus}${notes ? ` (${notes})` : ""}${cascaded?.length ? ` [+${cascaded.length} week items]` : ""}`;
-          await safePostUpdate({
-            clientName: result.data.clientName as string,
+          await postMutationUpdate({
+            result,
+            fallbackClientName: clientSlug,
             projectName: result.data.projectName as string,
             updateText,
             updatedBy: userName,
@@ -147,8 +148,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
 
         // Post to updates channel (bot-specific behavior)
         if (result.data) {
-          await safePostUpdate({
-            clientName: result.data.clientName as string,
+          await postMutationUpdate({
+            result,
+            fallbackClientName: clientSlug,
             projectName: result.data.projectName as string | undefined,
             updateText: summary,
             updatedBy: userName,
@@ -216,8 +218,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         }
 
         if (result.data) {
-          await safePostUpdate({
-            clientName: result.data.clientName as string,
+          await postMutationUpdate({
+            result,
+            fallbackClientName: clientSlug,
             projectName: result.data.projectName as string,
             updateText: `New project created`,
             updatedBy: userName,
@@ -262,8 +265,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
             const updateText = changed
               ? `${field}: "${result.data.previousValue}" → "${result.data.newValue}"${cascaded?.length ? ` [+${cascaded.length} calendar items]` : ""}`
               : `Cascaded dueDate to ${cascaded!.length} calendar item(s): ${cascaded!.join(", ")}`;
-            await safePostUpdate({
-              clientName: result.data.clientName as string,
+            await postMutationUpdate({
+              result,
+              fallbackClientName: clientSlug,
               projectName: result.data.projectName as string,
               updateText,
               updatedBy: userName,
@@ -307,8 +311,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         }
 
         if (result.data?.clientName) {
-          await safePostUpdate({
-            clientName: result.data.clientName as string,
+          await postMutationUpdate({
+            result,
+            fallbackClientName: "Calendar",
             updateText: `New week item: ${result.data.title}`,
             updatedBy: userName,
           });
@@ -330,8 +335,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         }
 
         if (result.data?.revertedFrom) {
-          await safePostUpdate({
-            clientName: "Undo",
+          await postMutationUpdate({
+            result,
+            fallbackClientName: "Undo",
             updateText: `Reverted: "${result.data.revertedFrom}" back to "${result.data.revertedTo}"`,
             updatedBy: userName,
           });
@@ -386,8 +392,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           const reverseCascaded = result.data.reverseCascaded as boolean | undefined;
           if (changed || reverseCascaded) {
             const cascadeNote = reverseCascaded ? " (also updated project dueDate)" : "";
-            await safePostUpdate({
-              clientName: (result.data.clientName as string) ?? "Calendar",
+            await postMutationUpdate({
+              result,
+              fallbackClientName: "Calendar",
               updateText: `Week item "${weekItemTitle}": ${field} updated${cascadeNote}`,
               updatedBy: userName,
             });
@@ -407,8 +414,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
       execute: async ({ clientSlug, projectName }) => {
         const result = await deleteProject({ clientSlug, projectName, updatedBy: userName });
         if (!result.ok) return { error: result.error, available: result.available };
-        await safePostUpdate({
-          clientName: (result.data?.clientName as string) ?? clientSlug,
+        await postMutationUpdate({
+          result,
+          fallbackClientName: clientSlug,
           updateText: `Deleted project: ${projectName}`,
           updatedBy: userName,
         });
@@ -425,8 +433,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
       execute: async ({ weekOf, weekItemTitle }) => {
         const result = await deleteWeekItem({ weekOf, weekItemTitle, updatedBy: userName });
         if (!result.ok) return { error: result.error, available: result.available };
-        await safePostUpdate({
-          clientName: (result.data?.clientName as string) ?? "Calendar",
+        await postMutationUpdate({
+          result,
+          fallbackClientName: "Calendar",
           updateText: `Removed: ${weekItemTitle}`,
           updatedBy: userName,
         });
@@ -448,8 +457,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
       execute: async ({ clientSlug, name, owner, status, estimatedValue, waitingOn, notes }) => {
         const result = await createPipelineItem({ clientSlug, name, owner, status, estimatedValue, waitingOn, notes, updatedBy: userName });
         if (!result.ok) return { error: result.error };
-        await safePostUpdate({
-          clientName: (result.data?.clientName as string) ?? clientSlug,
+        await postMutationUpdate({
+          result,
+          fallbackClientName: clientSlug,
           updateText: `New pipeline item: ${name}`,
           updatedBy: userName,
         });
@@ -468,8 +478,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
       execute: async ({ clientSlug, pipelineName, field, newValue }) => {
         const result = await updatePipelineItem({ clientSlug, pipelineName, field, newValue, updatedBy: userName });
         if (!result.ok) return { error: result.error, available: result.available };
-        await safePostUpdate({
-          clientName: (result.data?.clientName as string) ?? clientSlug,
+        await postMutationUpdate({
+          result,
+          fallbackClientName: clientSlug,
           updateText: `Pipeline ${pipelineName}: ${field} updated`,
           updatedBy: userName,
         });
@@ -486,8 +497,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
       execute: async ({ clientSlug, pipelineName }) => {
         const result = await deletePipelineItem({ clientSlug, pipelineName, updatedBy: userName });
         if (!result.ok) return { error: result.error, available: result.available };
-        await safePostUpdate({
-          clientName: (result.data?.clientName as string) ?? clientSlug,
+        await postMutationUpdate({
+          result,
+          fallbackClientName: clientSlug,
           updateText: `Removed pipeline item: ${pipelineName}`,
           updatedBy: userName,
         });
@@ -505,8 +517,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
       execute: async ({ clientSlug, field, newValue }) => {
         const result = await updateClientField({ clientSlug, field, newValue, updatedBy: userName });
         if (!result.ok) return { error: result.error };
-        await safePostUpdate({
-          clientName: (result.data?.clientName as string) ?? clientSlug,
+        await postMutationUpdate({
+          result,
+          fallbackClientName: clientSlug,
           updateText: `${field} updated`,
           updatedBy: userName,
         });
@@ -526,8 +539,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
       execute: async ({ name, firstName, fullName, title, roleCategory }) => {
         const result = await createTeamMember({ name, firstName, fullName, title, roleCategory, updatedBy: userName });
         if (!result.ok) return { error: result.error };
-        await safePostUpdate({
-          clientName: "Team",
+        await postMutationUpdate({
+          result,
+          fallbackClientName: "Team",
           updateText: `New member: ${name}`,
           updatedBy: userName,
         });
@@ -545,8 +559,9 @@ export function createBotTools(userName: string, now: Date = new Date()) {
       execute: async ({ memberName, field, newValue }) => {
         const result = await updateTeamMember({ memberName, field, newValue, updatedBy: userName });
         if (!result.ok) return { error: result.error, available: result.available };
-        await safePostUpdate({
-          clientName: "Team",
+        await postMutationUpdate({
+          result,
+          fallbackClientName: "Team",
           updateText: `${memberName}: ${field} updated`,
           updatedBy: userName,
         });
