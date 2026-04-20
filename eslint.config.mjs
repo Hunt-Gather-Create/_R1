@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Legacy local assets from prior preview integration.
     "public/nutrient-viewer/**",
+    // docs/tmp is a scratch directory for investigation scripts and plan docs.
+    "docs/tmp/**",
   ]),
 ]);
 
