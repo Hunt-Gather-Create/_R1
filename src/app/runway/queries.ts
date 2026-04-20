@@ -33,6 +33,8 @@ function mapWeekItemToEntry(
     ...(item.resources ? { resources: item.resources } : {}),
     type: (item.category ?? "delivery") as DayItemType,
     ...(item.notes ? { notes: item.notes } : {}),
+    // v4: pass L2 status through so flag detectors can filter active items.
+    ...(item.status != null ? { status: item.status } : {}),
   };
 }
 

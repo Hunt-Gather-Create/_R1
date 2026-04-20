@@ -130,6 +130,20 @@ describe("detectResourceConflicts", () => {
     expect(flags).toHaveLength(0);
   });
 
+  it("skips completed L2 items when counting capacity", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-07", [
+        createDayItemEntry({ owner: "Kathy", account: "Convergix", status: "completed" }),
+        createDayItemEntry({ owner: "Kathy", account: "Convergix" }),
+        createDayItemEntry({ owner: "Kathy", account: "LPPC" }),
+      ]),
+    ];
+
+    // With the completed item filtered, Kathy has only 2 — below the 3+ threshold.
+    const flags = detectResourceConflicts(thisWeek, []);
+    expect(flags).toHaveLength(0);
+  });
+
   it("skips items with no owner", () => {
     const thisWeek: DayItem[] = [
       createDayItem("2026-04-07", [

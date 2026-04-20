@@ -35,6 +35,8 @@ export function detectResourceConflicts(
 
     for (const item of day.items) {
       if (!item.owner) continue;
+      // v4: skip completed L2s — they no longer count against capacity.
+      if (item.status === "completed") continue;
       const owner = item.owner;
 
       if (!ownerAccounts.has(owner)) ownerAccounts.set(owner, new Set());
