@@ -36,6 +36,12 @@ export const projects = sqliteTable("projects", {
   waitingOn: text("waiting_on"),
   target: text("target"),
   dueDate: text("due_date"),
+  // v4 convention (2026-04-21): timing fields
+  startDate: text("start_date"), // ISO date; derived from children, recomputed on L2 write
+  endDate: text("end_date"), // ISO date; derived from children, recomputed on L2 write
+  contractStart: text("contract_start"), // ISO date; manual override for retainers
+  contractEnd: text("contract_end"), // ISO date; manual override for retainers
+  engagementType: text("engagement_type"), // project, retainer, break-fix
   notes: text("notes"),
   staleDays: integer("stale_days"),
   sortOrder: integer("sort_order").notNull().default(0),
@@ -53,7 +59,11 @@ export const weekItems = sqliteTable("week_items", {
   clientId: text("client_id").references(() => clients.id),
   dayOfWeek: text("day_of_week"), // monday, tuesday, etc.
   weekOf: text("week_of"), // ISO date of the Monday (e.g. "2026-04-06")
-  date: text("date"), // exact date (e.g. "2026-04-07")
+  date: text("date"), // exact date (e.g. "2026-04-07") — legacy; replaced by startDate in v4
+  // v4 convention (2026-04-21): start/end dates + explicit dependencies
+  startDate: text("start_date"), // ISO date; backfilled from `date`. Treated as required post-backfill.
+  endDate: text("end_date"), // ISO date; null for single-day items
+  blockedBy: text("blocked_by"), // JSON array of week_item ids (e.g. `["abc","def"]`)
   title: text("title").notNull(),
   status: text("status"),
   category: text("category"), // delivery, review, kickoff, deadline, approval, launch
@@ -101,6 +111,8 @@ export const updates = sqliteTable("updates", {
   summary: text("summary"),
   metadata: text("metadata"),
   batchId: text("batch_id"),
+  // v4 convention (2026-04-21): cascade audit linkage (nullable self-reference, no FK constraint)
+  triggeredByUpdateId: text("triggered_by_update_id"),
   slackMessageTs: text("slack_message_ts"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()

@@ -35,6 +35,56 @@ function getMonday(dateStr: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Recompute project.start_date and project.end_date from its non-deleted
+ * children's start/end dates (v4 derivation rule).
+ *
+ * - start_date = MIN(children.start_date)
+ * - end_date   = MAX(children.end_date ?? children.start_date)   // single-day → use start
+ * - If projectId is null or no children exist, both become null.
+ *
+ * `contract_start` / `contract_end` on the project are NOT touched here —
+ * they are read-layer overrides, applied by reads (see v4 convention).
+ */
+export async function recomputeProjectDates(
+  projectId: string | null | undefined
+): Promise<{ startDate: string | null; endDate: string | null } | null> {
+  if (!projectId) return null;
+  const db = getRunwayDb();
+
+  const children = await db
+    .select({
+      startDate: weekItems.startDate,
+      endDate: weekItems.endDate,
+      date: weekItems.date,
+    })
+    .from(weekItems)
+    .where(eq(weekItems.projectId, projectId));
+
+  let minStart: string | null = null;
+  let maxEnd: string | null = null;
+
+  for (const child of children) {
+    // Fall back to legacy `date` if startDate missing (pre-backfill rows).
+    const start = child.startDate ?? child.date ?? null;
+    if (start) {
+      if (minStart === null || start < minStart) minStart = start;
+    }
+    // For end-of-range, prefer explicit end_date, else treat start as single-day.
+    const end = child.endDate ?? start;
+    if (end) {
+      if (maxEnd === null || end > maxEnd) maxEnd = end;
+    }
+  }
+
+  await db
+    .update(projects)
+    .set({ startDate: minStart, endDate: maxEnd, updatedAt: new Date() })
+    .where(eq(projects.id, projectId));
+
+  return { startDate: minStart, endDate: maxEnd };
+}
+
 // ── Create Week Item ─────────────────────────────────────
 
 export interface CreateWeekItemParams {
@@ -120,6 +170,8 @@ export async function createWeekItem(
     weekOf,
     dayOfWeek: dayOfWeek ?? null,
     date: date ?? null,
+    // v4: mirror legacy `date` into `start_date` on create so derivation sees it.
+    startDate: date ?? null,
     title,
     status: status ?? null,
     category: category ?? null,
@@ -137,6 +189,11 @@ export async function createWeekItem(
     newValue: title,
     summary: `New week item${clientName ? ` (${clientName})` : ""}: ${title}`,
   });
+
+  // v4: recompute parent project start/end dates from children.
+  if (projectId) {
+    await recomputeProjectDates(projectId);
+  }
 
   return {
     ok: true,
@@ -228,6 +285,15 @@ export async function updateWeekItemField(
     metadata: JSON.stringify({ field }),
   });
 
+  // v4: recompute parent project dates when a child date field changes.
+  // `date` is the legacy column; `startDate`/`endDate` are the v4 columns.
+  if (
+    item.projectId &&
+    (typedField === "date" || typedField === "startDate" || typedField === "endDate")
+  ) {
+    await recomputeProjectDates(item.projectId);
+  }
+
   return {
     ok: true,
     message: `Updated ${field} for '${item.title}'.`,
@@ -283,6 +349,7 @@ export async function deleteWeekItem(
   if (dup) return dup;
 
   const clientName = await getClientNameById(item.clientId);
+  const parentProjectId = item.projectId;
 
   await db.delete(weekItems).where(eq(weekItems.id, item.id));
 
@@ -294,6 +361,11 @@ export async function deleteWeekItem(
     previousValue: item.title,
     summary: `Deleted week item: ${item.title}`,
   });
+
+  // v4: recompute parent project dates after child removal.
+  if (parentProjectId) {
+    await recomputeProjectDates(parentProjectId);
+  }
 
   return {
     ok: true,
@@ -373,6 +445,13 @@ export async function linkWeekItemToProject(
     newValue: projectId,
     summary: `Week item '${item.title}': re-parented from ${previousProjectId ?? "(none)"} to ${project.name}`,
   });
+
+  // v4: recompute both the previous (if any) and new parent project dates,
+  // since the child membership changed on both.
+  if (previousProjectId && previousProjectId !== projectId) {
+    await recomputeProjectDates(previousProjectId);
+  }
+  await recomputeProjectDates(projectId);
 
   return {
     ok: true,

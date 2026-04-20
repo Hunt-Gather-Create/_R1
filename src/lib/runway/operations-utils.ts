@@ -347,6 +347,8 @@ export const PROJECT_FIELD_TO_COLUMN: Record<ProjectField, keyof typeof projects
  */
 export const WEEK_ITEM_FIELDS = [
   "title", "status", "date", "dayOfWeek", "weekOf", "owner", "resources", "notes", "category",
+  // v4 convention (2026-04-21): explicit start/end dates + dependency list.
+  "startDate", "endDate", "blockedBy",
 ] as const;
 
 export type WeekItemField = (typeof WEEK_ITEM_FIELDS)[number];
@@ -361,6 +363,9 @@ export const WEEK_ITEM_FIELD_TO_COLUMN: Record<WeekItemField, keyof typeof weekI
   resources: "resources",
   notes: "notes",
   category: "category",
+  startDate: "startDate",
+  endDate: "endDate",
+  blockedBy: "blockedBy",
 };
 
 /**

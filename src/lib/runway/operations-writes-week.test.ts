@@ -31,10 +31,14 @@ const mockGetWeekItemsForWeek = vi.fn();
 const mockCheckIdempotency = vi.fn();
 
 vi.mock("./operations-utils", () => ({
-  WEEK_ITEM_FIELDS: ["title", "status", "date", "dayOfWeek", "weekOf", "owner", "resources", "notes", "category"],
+  WEEK_ITEM_FIELDS: [
+    "title", "status", "date", "dayOfWeek", "weekOf", "owner", "resources", "notes", "category",
+    "startDate", "endDate", "blockedBy",
+  ],
   WEEK_ITEM_FIELD_TO_COLUMN: {
     title: "title", status: "status", date: "date", dayOfWeek: "dayOfWeek", weekOf: "weekOf",
     owner: "owner", resources: "resources", notes: "notes", category: "category",
+    startDate: "startDate", endDate: "endDate", blockedBy: "blockedBy",
   },
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
   generateId: () => "mock-id-12345678901234",
@@ -381,8 +385,8 @@ describe("updateWeekItemField", () => {
     });
 
     expect(result.ok).toBe(true);
-    // week item update + project dueDate update = 2 calls
-    expect(mockUpdateSet).toHaveBeenCalledTimes(2);
+    // week item update + project dueDate update + v4 recomputeProjectDates update = 3 calls
+    expect(mockUpdateSet).toHaveBeenCalledTimes(3);
     expect(mockUpdateSet).toHaveBeenCalledWith(
       expect.objectContaining({ dueDate: "2026-04-28" })
     );
@@ -405,8 +409,8 @@ describe("updateWeekItemField", () => {
       updatedBy: "kathy",
     });
 
-    // Only the week item update itself
-    expect(mockUpdateSet).toHaveBeenCalledTimes(1);
+    // week item update + v4 recomputeProjectDates update = 2 (no reverse cascade to dueDate)
+    expect(mockUpdateSet).toHaveBeenCalledTimes(2);
     expect(mockUpdateSet).not.toHaveBeenCalledWith(
       expect.objectContaining({ dueDate: "2026-04-28" })
     );
@@ -429,7 +433,7 @@ describe("updateWeekItemField", () => {
       updatedBy: "kathy",
     });
 
-    // Only the week item update itself
+    // Only the week item update (no projectId = no cascade, no recompute)
     expect(mockUpdateSet).toHaveBeenCalledTimes(1);
   });
 
@@ -450,7 +454,7 @@ describe("updateWeekItemField", () => {
       updatedBy: "kathy",
     });
 
-    // Only the week item update itself
+    // Only the week item update itself — status is not a date field, no recompute
     expect(mockUpdateSet).toHaveBeenCalledTimes(1);
     expect(mockUpdateSet).not.toHaveBeenCalledWith(
       expect.objectContaining({ dueDate: expect.anything() })
