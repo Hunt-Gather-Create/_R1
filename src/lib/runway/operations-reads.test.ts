@@ -17,6 +17,7 @@ const mockGetClientNameMap = vi.fn();
 
 vi.mock("@/lib/db/runway", () => ({ getRunwayDb: () => ({ select: () => ({ from: mockSelectFrom }) }) }));
 vi.mock("@/lib/db/runway-schema", () => ({
+  clients: { id: "id", contractStatus: "contractStatus" },
   projects: { sortOrder: "sortOrder", clientId: "clientId" },
   weekItems: { weekOf: "weekOf", date: "date", sortOrder: "sortOrder", projectId: "projectId" },
   pipelineItems: { sortOrder: "sortOrder" },
@@ -351,61 +352,93 @@ describe("getWeekItemsData — resource filter", () => {
   });
 });
 
-describe("getPersonWorkload", () => {
-  it("returns projects and week items for a person", async () => {
-    // First call = projects, second call = weekItems
+describe("getPersonWorkload (v4 contract)", () => {
+  // Fixed Monday 2026-04-20 (CDT). thisWeek: 04-20..04-26, nextWeek: 04-27..05-03.
+  const NOW = new Date("2026-04-20T17:00:00Z");
+
+  it("returns owned L1s and bucketed week items, with contract expiry flag", async () => {
+    // Projects, weekItems, clients issued via Promise.all — mock in that order.
     let callCount = 0;
     mockSelectFrom.mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
+        // projects
         return chainable([
-          { clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy/Lane", resources: null, target: "4/7", notes: "Gate" },
-          { clientId: "c1", name: "Website", status: "active", owner: "Leslie", resources: null, target: null, notes: null },
+          { id: "p1", clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy", resources: null, target: "4/7", notes: "Gate", engagementType: "project", contractEnd: null, startDate: null, endDate: null, staleDays: null, sortOrder: 0 },
+          { id: "p2", clientId: "c2", name: "Map", status: "in-production", owner: "Leslie", resources: null, target: null, notes: null, engagementType: "project", contractEnd: null, startDate: null, endDate: null, staleDays: null, sortOrder: 0 },
         ]);
       }
+      if (callCount === 2) {
+        // week items
+        return chainable([
+          { id: "w1", projectId: "p1", clientId: "c1", startDate: "2026-04-22", endDate: null, date: "2026-04-22", title: "CDS Review", owner: "Kathy", resources: null, category: "review", notes: null, status: null, sortOrder: 0, dayOfWeek: "wed", weekOf: "2026-04-20", blockedBy: null, createdAt: new Date(), updatedAt: new Date() },
+        ]);
+      }
+      // clients
       return chainable([
-        { date: "2026-04-06", clientId: "c1", title: "CDS Review", owner: "Kathy", resources: null, category: "review", notes: null },
-        { date: "2026-04-07", clientId: "c2", title: "Map R2", owner: "Leslie", resources: null, category: "delivery", notes: null },
+        { id: "c1", name: "Convergix", slug: "convergix", contractStatus: "signed" },
+        { id: "c2", name: "LPPC", slug: "lppc", contractStatus: "signed" },
       ]);
     });
 
     const { getPersonWorkload } = await import("./operations-reads");
-    const result = await getPersonWorkload("Kathy");
+    const result = await getPersonWorkload("Kathy", { now: NOW });
     expect(result.person).toBe("Kathy");
+    expect(result.ownedProjects.inProgress.map((p) => p.id)).toEqual(["p1"]);
+    expect(result.weekItems.thisWeek.map((i) => i.id)).toEqual(["w1"]);
     expect(result.totalProjects).toBe(1);
-    expect(result.totalWeekItems).toBe(1);
-    expect(result.projects[0].client).toBe("Convergix");
-    expect(result.weekItems[0].client).toBe("Convergix");
+    expect(result.totalActiveWeekItems).toBe(1);
+    expect(result.flags.contractExpired).toEqual([]);
   });
 
-  it("finds items where person is resource but not owner", async () => {
+  it("matches L2 items where person is a resource but not owner; L1 owner-only", async () => {
     let callCount = 0;
     mockSelectFrom.mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
+        // Roz is a resource on CDS but not the owner — should NOT surface L1.
         return chainable([
-          { clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy", resources: "Roz, Lane", target: null, notes: null },
+          { id: "p1", clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy", resources: "Roz, Lane", target: null, notes: null, engagementType: null, contractEnd: null, startDate: null, endDate: null, staleDays: null, sortOrder: 0 },
         ]);
       }
-      return chainable([
-        { date: "2026-04-06", clientId: "c1", title: "CDS Review", owner: "Kathy", resources: "Roz", category: "review", notes: null },
-      ]);
+      if (callCount === 2) {
+        return chainable([
+          { id: "w1", projectId: "p1", clientId: "c1", startDate: "2026-04-22", endDate: null, date: "2026-04-22", title: "CDS Review", owner: "Kathy", resources: "Roz", category: "review", notes: null, status: null, sortOrder: 0, dayOfWeek: "wed", weekOf: "2026-04-20", blockedBy: null, createdAt: new Date(), updatedAt: new Date() },
+        ]);
+      }
+      return chainable([]);
     });
 
     const { getPersonWorkload } = await import("./operations-reads");
-    const result = await getPersonWorkload("Roz");
-    expect(result.totalProjects).toBe(1);
-    expect(result.totalWeekItems).toBe(1);
+    const result = await getPersonWorkload("Roz", { now: NOW });
+    // Owner-only: Roz does not own any L1.
+    expect(result.ownedProjects.inProgress).toHaveLength(0);
+    expect(result.totalProjects).toBe(0);
+    // But week item matches on resources.
+    expect(result.weekItems.thisWeek.map((i) => i.id)).toEqual(["w1"]);
+    expect(result.totalActiveWeekItems).toBe(1);
   });
 
-  it("returns empty results for person with no assignments", async () => {
+  it("returns empty contract shape for person with no assignments", async () => {
     mockSelectFrom.mockReturnValue(chainable([]));
     const { getPersonWorkload } = await import("./operations-reads");
-    const result = await getPersonWorkload("Nobody");
+    const result = await getPersonWorkload("Nobody", { now: NOW });
     expect(result.totalProjects).toBe(0);
-    expect(result.totalWeekItems).toBe(0);
-    expect(result.projects).toEqual([]);
-    expect(result.weekItems).toEqual([]);
+    expect(result.totalActiveWeekItems).toBe(0);
+    expect(result.ownedProjects).toEqual({
+      inProgress: [],
+      awaitingClient: [],
+      blocked: [],
+      onHold: [],
+      completed: [],
+    });
+    expect(result.weekItems).toEqual({
+      overdue: [],
+      thisWeek: [],
+      nextWeek: [],
+      later: [],
+    });
+    expect(result.flags).toEqual({ contractExpired: [], retainerRenewalDue: [] });
   });
 });
 
