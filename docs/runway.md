@@ -119,6 +119,10 @@ Both forward and reverse cascades are wrapped in `db.transaction()` for atomicit
 
 Week items must be linked to projects (via `projectId` FK) for cascades to work. Use `scripts/backfill-week-item-links.ts` to link existing unlinked items (`--verbose` shows match reasoning, `--apply` commits).
 
+### FK Deletion Pattern
+
+Delete operations null out FK references in sibling tables (inside the same transaction) before deleting the target row. See [`docs/runway-fk-deletion-pattern.md`](./runway-fk-deletion-pattern.md) for the full pattern and guidance for future `deleteClient` / `deleteTeamMember` / `deletePipelineItem` operations.
+
 ### Idempotency
 
 All write operations generate a deterministic idempotency key (SHA-256 hash of operation parts). Duplicate requests return success without writing.
