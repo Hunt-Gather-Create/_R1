@@ -385,4 +385,45 @@ describe("detectBottlenecks", () => {
     const flags = detectBottlenecks([]);
     expect(flags).toHaveLength(0);
   });
+
+  it("excludes completed, blocked, on-hold, and awaiting-client items", () => {
+    const accounts: Account[] = [
+      createAccount({
+        name: "Convergix",
+        items: [
+          // All waiting on Daniel but in non-active states — should not count.
+          createTriageItem({ id: "a", status: "completed", waitingOn: "Daniel" }),
+          createTriageItem({ id: "b", status: "blocked", waitingOn: "Daniel" }),
+          createTriageItem({ id: "c", status: "on-hold", waitingOn: "Daniel" }),
+          createTriageItem({ id: "d", status: "awaiting-client", waitingOn: "Daniel" }),
+        ],
+      }),
+    ];
+
+    const flags = detectBottlenecks(accounts);
+    expect(flags).toHaveLength(0);
+  });
+
+  it("counts only active items toward the bottleneck threshold", () => {
+    const accounts: Account[] = [
+      createAccount({
+        name: "Convergix",
+        items: [
+          createTriageItem({ id: "a", status: "in-production", waitingOn: "Daniel" }),
+          createTriageItem({ id: "b", status: "in-production", waitingOn: "Daniel" }),
+          // Inactive — should not count.
+          createTriageItem({ id: "c", status: "completed", waitingOn: "Daniel" }),
+        ],
+      }),
+      createAccount({
+        name: "LPPC",
+        slug: "lppc",
+        items: [createTriageItem({ id: "d", status: "in-production", waitingOn: "Daniel" })],
+      }),
+    ];
+
+    const flags = detectBottlenecks(accounts);
+    expect(flags).toHaveLength(1);
+    expect(flags[0].title).toContain("3 items");
+  });
 });

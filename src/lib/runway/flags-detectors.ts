@@ -129,14 +129,27 @@ export function detectDeadlines(thisWeek: DayItem[]): RunwayFlag[] {
 }
 
 /**
- * Bottlenecks: person appears as waitingOn on 3+ items across clients.
+ * Bottlenecks: person appears as waitingOn on 3+ active items across clients.
+ *
+ * v4: only active projects count. Projects in terminal or paused states
+ * (completed/blocked/on-hold) and stubs whose client is in awaiting-client
+ * status are excluded — those are already flagged or dormant and should
+ * not contribute to the bottleneck signal.
  */
+const BOTTLENECK_EXCLUDED_STATUSES = new Set([
+  "completed",
+  "blocked",
+  "on-hold",
+  "awaiting-client",
+]);
+
 export function detectBottlenecks(accounts: Account[]): RunwayFlag[] {
   const waitingOnCounts = new Map<string, { count: number; clients: Set<string> }>();
 
   for (const account of accounts) {
     for (const item of account.items) {
       if (!item.waitingOn) continue;
+      if (BOTTLENECK_EXCLUDED_STATUSES.has(item.status)) continue;
       const person = item.waitingOn;
       if (!waitingOnCounts.has(person)) {
         waitingOnCounts.set(person, { count: 0, clients: new Set() });
