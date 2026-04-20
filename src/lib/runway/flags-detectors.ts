@@ -64,11 +64,17 @@ export function detectResourceConflicts(
 /**
  * Stale items: projects with staleDays >= 14.
  * Critical if >= 30, warning if >= 14.
+ *
+ * v4: excludes completed and on-hold projects — those are intentionally
+ * paused and should not surface as stale. Uses Set for O(1) lookup.
  */
+const STALE_EXCLUDED_STATUSES = new Set(["completed", "on-hold"]);
+
 export function detectStaleItems(accounts: Account[]): RunwayFlag[] {
   const flags: RunwayFlag[] = [];
   for (const account of accounts) {
     for (const item of account.items) {
+      if (STALE_EXCLUDED_STATUSES.has(item.status)) continue;
       if (item.staleDays != null && item.staleDays >= 14) {
         const severity: FlagSeverity = item.staleDays >= 30 ? "critical" : "warning";
         const waitingDetail = item.waitingOn

@@ -204,6 +204,28 @@ describe("detectStaleItems", () => {
     expect(flags[0].relatedPerson).toBe("Daniel");
   });
 
+  it("excludes completed projects even when staleDays >= 14", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [createTriageItem({ staleDays: 30, status: "completed" })],
+      }),
+    ];
+
+    const flags = detectStaleItems(accounts);
+    expect(flags).toHaveLength(0);
+  });
+
+  it("excludes on-hold projects even when staleDays >= 14", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [createTriageItem({ staleDays: 30, status: "on-hold" })],
+      }),
+    ];
+
+    const flags = detectStaleItems(accounts);
+    expect(flags).toHaveLength(0);
+  });
+
   it("includes account name in detail", () => {
     const accounts: Account[] = [
       createAccount({
