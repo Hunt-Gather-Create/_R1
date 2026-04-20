@@ -258,6 +258,22 @@ describe("getStaleWeekItems", () => {
     vi.useRealTimers();
   });
 
+  it("excludes completed items even when past-due with no update", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    // Past-due item with status='completed' — should be excluded regardless of updates
+    mockResults.push([createWeekItem({ date: "2026-04-06", status: "completed" })]);
+    mockResults.push([]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    expect(result).toHaveLength(0);
+
+    vi.useRealTimers();
+  });
+
   it("treats items without projectId as always stale", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-07T12:00:00"));

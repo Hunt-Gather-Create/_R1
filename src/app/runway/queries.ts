@@ -134,8 +134,10 @@ export async function getStaleWeekItems(): Promise<WeekDay[]> {
     .where(and(gte(weekItems.weekOf, lookbackISO), lte(weekItems.weekOf, mondayISO)))
     .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
 
-  // Filter to past days only
-  const pastItems = allItems.filter((item) => item.date != null && item.date < todayISO);
+  // Filter to past days only, excluding completed items (v4: status-aware)
+  const pastItems = allItems.filter(
+    (item) => item.date != null && item.date < todayISO && item.status !== "completed"
+  );
   if (pastItems.length === 0) return [];
 
   // Get all updates from this week to check for coverage
