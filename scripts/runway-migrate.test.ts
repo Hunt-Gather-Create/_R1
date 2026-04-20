@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { createMigrationContext, validateMigrationModule, type MigrationContext } from "./runway-migrate";
+import {
+  createMigrationContext,
+  deriveMigrationBatchId,
+  validateMigrationModule,
+  type MigrationContext,
+} from "./runway-migrate";
 
 describe("createMigrationContext", () => {
   it("creates context with dryRun=true by default", () => {
@@ -62,6 +67,49 @@ describe("migration script format", () => {
     await up(ctx);
     expect(mockUpdate).toHaveBeenCalled();
     expect(ctx.logs).toEqual(["Deactivating Ronan Lane"]);
+  });
+});
+
+describe("deriveMigrationBatchId", () => {
+  it("strips the directory path", () => {
+    expect(deriveMigrationBatchId("scripts/runway-migrations/001-example.ts")).toBe(
+      "001-example",
+    );
+  });
+
+  it("strips the file extension", () => {
+    expect(deriveMigrationBatchId("my-migration.ts")).toBe("my-migration");
+    expect(deriveMigrationBatchId("my-migration.js")).toBe("my-migration");
+  });
+
+  it("preserves alphanumerics, underscores, and hyphens", () => {
+    expect(deriveMigrationBatchId("bonterra-cleanup_2026-04-19.ts")).toBe(
+      "bonterra-cleanup_2026-04-19",
+    );
+  });
+
+  it("strips characters outside [a-zA-Z0-9_-]", () => {
+    const result = deriveMigrationBatchId("my-migration.2026-04-20.ts");
+    expect(result).toBe("my-migration.2026-04-20".replace(/\./g, ""));
+    expect(result).toMatch(/^[a-zA-Z0-9_\-]+$/);
+  });
+
+  it("strips spaces and special characters", () => {
+    const result = deriveMigrationBatchId("weird name!@#$%^&*().ts");
+    expect(result).toBe("weirdname");
+    expect(result).toMatch(/^[a-zA-Z0-9_\-]*$/);
+  });
+
+  it("returns only characters in the allowed set for any input", () => {
+    const inputs = [
+      "scripts/foo/bar.ts",
+      "/abs/path/to/mig-2026_04_20.ts",
+      "with spaces.ts",
+      "unicode-é-name.ts",
+    ];
+    for (const input of inputs) {
+      expect(deriveMigrationBatchId(input)).toMatch(/^[a-zA-Z0-9_\-]*$/);
+    }
   });
 });
 

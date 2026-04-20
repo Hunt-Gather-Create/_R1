@@ -46,6 +46,20 @@ export function validateMigrationModule(mod: unknown, path: string): MigrationMo
   return m as unknown as MigrationModule;
 }
 
+/**
+ * Derive a safe batchId from a migration file path.
+ *
+ * Strips the directory and extension, then removes any character outside
+ * `[a-zA-Z0-9_-]`. The hyphen is escaped in the character class to remove
+ * any ambiguity about range interpretation.
+ */
+export function deriveMigrationBatchId(migrationPath: string): string {
+  return basename(migrationPath, extname(migrationPath)).replace(
+    /[^a-zA-Z0-9_\-]/g,
+    "",
+  );
+}
+
 export function createMigrationContext(db: DrizzleDb, dryRun: boolean): MigrationContext {
   const logs: string[] = [];
   return {
@@ -144,8 +158,7 @@ async function run() {
   }
 
   // Derive batchId from migration filename for audit tagging
-  const migrationBatchId = basename(migrationPath, extname(migrationPath))
-    .replace(/[^a-zA-Z0-9_-]/g, "");
+  const migrationBatchId = deriveMigrationBatchId(migrationPath);
 
   // Run migration
   const ctx = createMigrationContext(db, !shouldApply);
