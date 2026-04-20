@@ -1,0 +1,128 @@
+{
+  "capturedAt": "2026-04-20T23:55:04.354Z",
+  "mode": "apply",
+  "batchId": "hdl-v4-realign-2026-04-21",
+  "client": {
+    "id": "9c43ae144b684a1dad702d44c",
+    "name": "High Desert Law",
+    "slug": "hdl",
+    "nicknames": "[\"HDL\",\"High Desert\",\"High Desert Law\"]",
+    "contractValue": "$73,000",
+    "contractTerm": "Aug 22, 2025 – Jan 31, 2026",
+    "contractStatus": "expired",
+    "team": "AM: Jill, CD: Lane, Dev: Leslie, PM: Jason",
+    "clientContacts": "[{\"name\":\"Chris\",\"role\":\"Copywriter\"},{\"name\":\"Jamie Lincoln\",\"role\":\"Ad Words\"}]",
+    "createdAt": "2026-04-17T20:07:16.000Z",
+    "updatedAt": "2026-04-20T06:45:39.000Z"
+  },
+  "l1BeforeUpdate": {
+    "id": "f9af344597ef4e45a8cca4743",
+    "clientId": "9c43ae144b684a1dad702d44c",
+    "name": "HDL Website Build",
+    "status": "in-production",
+    "category": "active",
+    "owner": "Jill",
+    "resources": "CD: Lane, Dev: Leslie",
+    "waitingOn": null,
+    "target": null,
+    "dueDate": null,
+    "startDate": "2026-04-24",
+    "endDate": "2026-06-30",
+    "contractStart": null,
+    "contractEnd": null,
+    "engagementType": null,
+    "notes": "14-phase website build for High Desert Law. Site Copy delivered (Chris unblocked). Full Site Design in-progress with Lane, target Fri 4/24. Dev starts Mon 4/27 with Leslie. Photo shoot slipped May → June per client. Site Live target 6/30 (at risk). **Contract EXPIRED 1/31/2026 — flag for business discussion.**",
+    "staleDays": null,
+    "sortOrder": 999,
+    "createdAt": "2026-04-20T06:45:21.000Z",
+    "updatedAt": "2026-04-20T23:06:58.000Z"
+  },
+  "l2sBeforeUpdate": [
+    {
+      "id": "2c0f97a782434adba161dfdeb",
+      "projectId": "f9af344597ef4e45a8cca4743",
+      "clientId": "9c43ae144b684a1dad702d44c",
+      "dayOfWeek": "monday",
+      "weekOf": "2026-04-27",
+      "date": "2026-04-27",
+      "startDate": "2026-04-27",
+      "endDate": null,
+      "blockedBy": null,
+      "title": "Full Site Design Approval",
+      "status": "blocked",
+      "category": "deadline",
+      "owner": "Jill",
+      "resources": null,
+      "notes": "HDL to approve design. Unblocks dev kickoff same day.",
+      "sortOrder": 0,
+      "createdAt": "2026-04-17T20:07:41.000Z",
+      "updatedAt": "2026-04-20T23:06:26.000Z"
+    },
+    {
+      "id": "b3eb2aea8bf942a8806fef84d",
+      "projectId": "f9af344597ef4e45a8cca4743",
+      "clientId": "9c43ae144b684a1dad702d44c",
+      "dayOfWeek": "monday",
+      "weekOf": "2026-05-11",
+      "date": "2026-05-11",
+      "startDate": "2026-05-11",
+      "endDate": null,
+      "blockedBy": null,
+      "title": "Ad Words",
+      "status": "blocked",
+      "category": "kickoff",
+      "owner": "Jill",
+      "resources": null,
+      "notes": "Jamie Lincoln (HDL side) to manage. Blocked on site readiness.",
+      "sortOrder": 999,
+      "createdAt": "2026-04-20T06:45:37.000Z",
+      "updatedAt": "2026-04-20T23:06:41.000Z"
+    },
+    {
+      "id": "5f1e1687f9bd44a7b04338e1c",
+      "projectId": "f9af344597ef4e45a8cca4743",
+      "clientId": "9c43ae144b684a1dad702d44c",
+      "dayOfWeek": "monday",
+      "weekOf": "2026-06-15",
+      "date": "2026-06-15",
+      "startDate": "2026-06-15",
+      "endDate": null,
+      "blockedBy": null,
+      "title": "Production Shoot",
+      "status": "blocked",
+      "category": "deadline",
+      "owner": "Jill",
+      "resources": null,
+      "notes": "Shoot moved from May to June per client. Outside original SOW timeline.",
+      "sortOrder": 999,
+      "createdAt": "2026-04-20T06:45:39.000Z",
+      "updatedAt": "2026-04-20T23:06:42.000Z"
+    }
+  ],
+  "plannedL1": {
+    "id": "f9af344597ef4e45a8cca4743",
+    "name": "Website Build",
+    "resources": "AM: Jill, CD: Lane, Dev: Leslie, PM: Jason",
+    "engagementType": "project"
+  },
+  "plannedL2s": [
+    {
+      "idPrefix": "2c0f97a7",
+      "expectedTitle": "Full Site Design Approval",
+      "expectedWeekOf": "2026-04-27",
+      "newResources": "HDL"
+    },
+    {
+      "idPrefix": "b3eb2aea",
+      "expectedTitle": "Ad Words",
+      "expectedWeekOf": "2026-05-11",
+      "newResources": "HDL"
+    },
+    {
+      "idPrefix": "5f1e1687",
+      "expectedTitle": "Production Shoot",
+      "expectedWeekOf": "2026-06-15",
+      "newResources": "HDL"
+    }
+  ]
+}
