@@ -24,7 +24,12 @@ import { projects, weekItems } from "@/lib/db/runway-schema";
 
 // ── Constants ────────────────────────────────────────────
 
-const SNAPSHOT_PATH = "docs/tmp/schema-backfill-v4-2026-04-21-snapshot.json";
+const DEFAULT_SNAPSHOT_PATH = "docs/tmp/schema-backfill-v4-2026-04-21-snapshot.json";
+
+/** Resolve the snapshot path. Tests override via env var to avoid clobbering the real prod artifact. */
+function getSnapshotPath(): string {
+  return process.env.SCHEMA_BACKFILL_V4_SNAPSHOT_PATH ?? DEFAULT_SNAPSHOT_PATH;
+}
 
 export const description =
   "v4 schema backfill (2026-04-21): copy week_items.date → start_date; derive projects.start_date/end_date from children.";
@@ -196,9 +201,10 @@ export async function up(ctx: MigrationContext): Promise<void> {
 
 function writeSnapshot(ctx: MigrationContext, snapshot: Snapshot): void {
   const suffix = ctx.dryRun ? "-dryrun" : "";
+  const base = getSnapshotPath();
   const outPath = resolvePath(
     process.cwd(),
-    SNAPSHOT_PATH.replace(".json", `${suffix}.json`)
+    base.replace(".json", `${suffix}.json`)
   );
   const dir = dirname(outPath);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });

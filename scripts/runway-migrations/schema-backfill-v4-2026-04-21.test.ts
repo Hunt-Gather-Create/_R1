@@ -8,6 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { unlinkSync, readFileSync, existsSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import type { Client } from "@libsql/client";
 import {
   createTestDb,
@@ -19,6 +20,11 @@ import {
 let testDb: TestDb;
 let libsqlClient: Client;
 let dbPath: string;
+
+// Per-test temp snapshot path — isolates tests from the real prod artifact
+// in docs/tmp/ and prevents parallel test runs from clobbering each other.
+let applySnapshotPath: string;
+let drySnapshotPath: string;
 
 vi.mock("@/lib/db/runway", () => ({
   getRunwayDb: () => testDb,
@@ -34,21 +40,24 @@ function makeCtx(db: TestDb, dryRun: boolean) {
   };
 }
 
-const APPLY_SNAPSHOT = "docs/tmp/schema-backfill-v4-2026-04-21-snapshot.json";
-const DRYRUN_SNAPSHOT = "docs/tmp/schema-backfill-v4-2026-04-21-snapshot-dryrun.json";
-
 beforeEach(async () => {
   const created = await createTestDb();
   testDb = created.db;
   libsqlClient = created.client;
   dbPath = created.dbPath;
   await seedTestDb(libsqlClient);
+
+  // Unique per-test snapshot path under /tmp to guarantee isolation.
+  const suffix = randomUUID().slice(0, 8);
+  applySnapshotPath = `/tmp/schema-backfill-v4-test-${suffix}.json`;
+  drySnapshotPath = applySnapshotPath.replace(".json", "-dryrun.json");
+  process.env.SCHEMA_BACKFILL_V4_SNAPSHOT_PATH = applySnapshotPath;
 });
 
 afterEach(() => {
   cleanupTestDb(dbPath);
-  for (const p of [APPLY_SNAPSHOT, DRYRUN_SNAPSHOT]) {
-    if (existsSync(p)) {
+  for (const p of [applySnapshotPath, drySnapshotPath]) {
+    if (p && existsSync(p)) {
       try {
         unlinkSync(p);
       } catch {
@@ -56,6 +65,7 @@ afterEach(() => {
       }
     }
   }
+  delete process.env.SCHEMA_BACKFILL_V4_SNAPSHOT_PATH;
 });
 
 describe("schema-backfill-v4-2026-04-21 — forward", () => {
@@ -72,10 +82,10 @@ describe("schema-backfill-v4-2026-04-21 — forward", () => {
     expect(rows.rows[0].n).toBe(0);
 
     // Dry-run snapshot written, apply snapshot absent.
-    expect(existsSync(DRYRUN_SNAPSHOT)).toBe(true);
-    expect(existsSync(APPLY_SNAPSHOT)).toBe(false);
+    expect(existsSync(drySnapshotPath)).toBe(true);
+    expect(existsSync(applySnapshotPath)).toBe(false);
 
-    const snap = JSON.parse(readFileSync(DRYRUN_SNAPSHOT, "utf8"));
+    const snap = JSON.parse(readFileSync(drySnapshotPath, "utf8"));
     expect(snap.mode).toBe("dry-run");
     // Seeded week items have `date` set but start_date null — all 8 should be candidates.
     expect(snap.weekItems.length).toBeGreaterThan(0);
@@ -104,8 +114,8 @@ describe("schema-backfill-v4-2026-04-21 — forward", () => {
     expect(row.end_date).toBe("2026-04-16"); // wi-cds-deliver is on 2026-04-16
 
     // Apply snapshot written with pre-state captured.
-    expect(existsSync(APPLY_SNAPSHOT)).toBe(true);
-    const snap = JSON.parse(readFileSync(APPLY_SNAPSHOT, "utf8"));
+    expect(existsSync(applySnapshotPath)).toBe(true);
+    const snap = JSON.parse(readFileSync(applySnapshotPath, "utf8"));
     expect(snap.mode).toBe("apply");
     // Pre-values: all week_items previously had start_date null.
     for (const op of snap.weekItems) {
@@ -117,11 +127,11 @@ describe("schema-backfill-v4-2026-04-21 — forward", () => {
     const { up } = await import("./schema-backfill-v4-2026-04-21");
 
     await up(makeCtx(testDb, false));
-    const firstSnap = JSON.parse(readFileSync(APPLY_SNAPSHOT, "utf8"));
+    const firstSnap = JSON.parse(readFileSync(applySnapshotPath, "utf8"));
     expect(firstSnap.weekItems.length).toBeGreaterThan(0);
 
     await up(makeCtx(testDb, false));
-    const secondSnap = JSON.parse(readFileSync(APPLY_SNAPSHOT, "utf8"));
+    const secondSnap = JSON.parse(readFileSync(applySnapshotPath, "utf8"));
 
     // Second run: no week_items need backfill (all already set), no project deltas.
     expect(secondSnap.weekItems.length).toBe(0);
@@ -170,7 +180,7 @@ describe("schema-backfill-v4-2026-04-21-REVERT", () => {
   it("warns when snapshot mode is 'dry-run'", async () => {
     // Seed a dry-run snapshot manually.
     writeFileSync(
-      APPLY_SNAPSHOT,
+      applySnapshotPath,
       JSON.stringify({
         capturedAt: new Date().toISOString(),
         mode: "dry-run",

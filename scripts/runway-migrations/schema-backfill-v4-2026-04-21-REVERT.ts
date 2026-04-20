@@ -20,7 +20,12 @@ import { eq } from "drizzle-orm";
 import type { MigrationContext } from "../runway-migrate";
 import { projects, weekItems } from "@/lib/db/runway-schema";
 
-const SNAPSHOT_PATH = "docs/tmp/schema-backfill-v4-2026-04-21-snapshot.json";
+const DEFAULT_SNAPSHOT_PATH = "docs/tmp/schema-backfill-v4-2026-04-21-snapshot.json";
+
+/** Resolve the snapshot path. Tests override via env var so they don't require the real prod artifact. */
+function getSnapshotPath(): string {
+  return process.env.SCHEMA_BACKFILL_V4_SNAPSHOT_PATH ?? DEFAULT_SNAPSHOT_PATH;
+}
 
 export const description =
   "REVERT v4 schema backfill (2026-04-21): restore week_items.start_date and projects.start_date/end_date from apply-mode snapshot.";
@@ -101,7 +106,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
 }
 
 function loadSnapshot(ctx: MigrationContext): Snapshot {
-  const path = resolvePath(process.cwd(), SNAPSHOT_PATH);
+  const path = resolvePath(process.cwd(), getSnapshotPath());
   if (!existsSync(path)) {
     throw new Error(
       `Snapshot not found at ${path}. REVERT requires the apply-mode snapshot from schema-backfill-v4-2026-04-21.ts. Abort.`

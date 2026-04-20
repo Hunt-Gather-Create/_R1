@@ -1,0 +1,485 @@
+{
+  "capturedAt": "2026-04-20T23:12:05.596941+00:00",
+  "mode": "apply",
+  "note": "Reconstructed from prod state after test teardown deleted original snapshot. All pre-values were null pre-backfill (columns added in same PR).",
+  "weekItems": [
+    {
+      "id": "be6c1dbf748445a89d6666eea",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "8ac945d67e874969a6eb2da34",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-24"
+    },
+    {
+      "id": "b6019f8d2eb748ec8efb3fedc",
+      "previousStartDate": null,
+      "newStartDate": "2026-05-18"
+    },
+    {
+      "id": "13bba3b1b3a043bc8ab63e322",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "eaf0ac303eb240a8b2b946443",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-30"
+    },
+    {
+      "id": "9c3fc2bb43c94ab489e075985",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-21"
+    },
+    {
+      "id": "2c0f97a782434adba161dfdeb",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-27"
+    },
+    {
+      "id": "0dc160b4b7e7484dada9e8ded",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-28"
+    },
+    {
+      "id": "813b04a5917a44caa71e4e3bd",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-30"
+    },
+    {
+      "id": "25a9af6879ed4ca9a64a140aa",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-30"
+    },
+    {
+      "id": "6e9ad9f66725430e91f4531fe",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-27"
+    },
+    {
+      "id": "671f2c6946964d8d80b8e77cd",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-27"
+    },
+    {
+      "id": "9e432ae4ccac4b24ab1628eaf",
+      "previousStartDate": null,
+      "newStartDate": "2026-05-04"
+    },
+    {
+      "id": "46bce31494d146378ef0719db",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-30"
+    },
+    {
+      "id": "ffe37e79a6014b1cb1171a595",
+      "previousStartDate": null,
+      "newStartDate": "2026-05-11"
+    },
+    {
+      "id": "3ddbdc5373a543dfa1d517340",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-15"
+    },
+    {
+      "id": "5a9e9cfcaa4f40eaaed24de2b",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "f447c981bd14470da5f8dbb3f",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "a55a6a77b88944bf9bb4f3f4a",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "35b86e337b0d4f2b95370bbf9",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "1e6fed737d834df4a3f73c243",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "d9444e920c01425f9d312b505",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "4bdaf887d26f4c9fa0d8a85af",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "c1d8bd92710d4ecabde903bf6",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-30"
+    },
+    {
+      "id": "d9e73c0c586846f89c12d5a75",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "66414d4db2d14fa1aa223bc7e",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-27"
+    },
+    {
+      "id": "d7d23aa63165449db5fe14cdf",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "767ace3ee00a4a1fb7cd8a757",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-30"
+    },
+    {
+      "id": "87a1c36509814c1586c60a2a2",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-30"
+    },
+    {
+      "id": "ac4ca38a1de746cfbae01c759",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-30"
+    },
+    {
+      "id": "43701263775d49c7a0f17ae60",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-30"
+    },
+    {
+      "id": "c13178e12ca3476fb88db9d92",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-30"
+    },
+    {
+      "id": "9d2f190311c1462797b4761df",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-24"
+    },
+    {
+      "id": "6a3833a8bad44a6289798b093",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-24"
+    },
+    {
+      "id": "a188206326334dec9476fc3ac",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "19f89ecf8b0241e5a4cae45f6",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "e9f423ef54394ae39b1620d39",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "95f9ce76acfd47e19b4cc05f2",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-20"
+    },
+    {
+      "id": "bd6521b30c2b452c9f67c45f9",
+      "previousStartDate": null,
+      "newStartDate": "2026-08-17"
+    },
+    {
+      "id": "46d5cedb3df74cef99c9e0cbc",
+      "previousStartDate": null,
+      "newStartDate": "2026-09-01"
+    },
+    {
+      "id": "2776d8836b4c426f9edc999e5",
+      "previousStartDate": null,
+      "newStartDate": "2026-10-14"
+    },
+    {
+      "id": "38ae73c908f840c19398923a5",
+      "previousStartDate": null,
+      "newStartDate": "2026-10-26"
+    },
+    {
+      "id": "8ef611c438614afebac651fd6",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "bc34aac73fe84feea6d1b8c8c",
+      "previousStartDate": null,
+      "newStartDate": "2026-05-04"
+    },
+    {
+      "id": "b3eb2aea8bf942a8806fef84d",
+      "previousStartDate": null,
+      "newStartDate": "2026-05-11"
+    },
+    {
+      "id": "b630f22ebafc4bfc96a4f8568",
+      "previousStartDate": null,
+      "newStartDate": "2026-05-18"
+    },
+    {
+      "id": "23039677d01e4e5f98c639fe6",
+      "previousStartDate": null,
+      "newStartDate": "2026-06-01"
+    },
+    {
+      "id": "56e46f3ad4024b3eb264e6eb8",
+      "previousStartDate": null,
+      "newStartDate": "2026-06-08"
+    },
+    {
+      "id": "5f1e1687f9bd44a7b04338e1c",
+      "previousStartDate": null,
+      "newStartDate": "2026-06-15"
+    },
+    {
+      "id": "51872fd14d764d2ab09aee1e2",
+      "previousStartDate": null,
+      "newStartDate": "2026-06-30"
+    },
+    {
+      "id": "ea35d61957e14fd48c4602369",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-20"
+    },
+    {
+      "id": "86f2a08752fe4217810e2c284",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-20"
+    },
+    {
+      "id": "87074daa09664bcc86b7dc6e1",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-23"
+    },
+    {
+      "id": "1ebbda276c7e4b4586a757c43",
+      "previousStartDate": null,
+      "newStartDate": "2026-05-04"
+    },
+    {
+      "id": "115868491898483a8bb67314a",
+      "previousStartDate": null,
+      "newStartDate": "2026-05-06"
+    },
+    {
+      "id": "05793ebe0358492c8f17d0f35",
+      "previousStartDate": null,
+      "newStartDate": "2026-05-07"
+    },
+    {
+      "id": "93ba098d8f7f4cbb8fbf8b110",
+      "previousStartDate": null,
+      "newStartDate": "2026-05-11"
+    },
+    {
+      "id": "db45cd50c4fe4f0a897ee491c",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-21"
+    },
+    {
+      "id": "827677babc4f4b7c860f85bda",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-30"
+    },
+    {
+      "id": "b238510c67e943de83778b891",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-30"
+    },
+    {
+      "id": "46ef1edc138048e1844d18e3f",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-29"
+    },
+    {
+      "id": "f88098fe32554222b0e65fd1d",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-20"
+    },
+    {
+      "id": "0c6656553bb04020ba9543094",
+      "previousStartDate": null,
+      "newStartDate": "2026-04-30"
+    }
+  ],
+  "projects": [
+    {
+      "id": "0c208308ff48427092776c0da",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-23",
+      "newEndDate": "2026-04-30"
+    },
+    {
+      "id": "3d5215f4a3964f38a1b2afda0",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-23",
+      "newEndDate": "2026-04-30"
+    },
+    {
+      "id": "135c5a61d5c343b1b5b39fe08",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-23",
+      "newEndDate": "2026-05-04"
+    },
+    {
+      "id": "394f9e5e5b864c2eb2260f468",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-23",
+      "newEndDate": "2026-04-23"
+    },
+    {
+      "id": "c0935359406e40709a0790372",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-23",
+      "newEndDate": "2026-04-23"
+    },
+    {
+      "id": "f391dff5ceaf45279a807ace9",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-23",
+      "newEndDate": "2026-04-27"
+    },
+    {
+      "id": "51f39e5cdfbe446992aa155d6",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-30",
+      "newEndDate": "2026-04-30"
+    },
+    {
+      "id": "68a4ee3791b24d72abb5afc62",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-23",
+      "newEndDate": "2026-04-23"
+    },
+    {
+      "id": "0e4214c60728476db177f4de1",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-23",
+      "newEndDate": "2026-04-30"
+    },
+    {
+      "id": "d7d7cc2f2df14fbd8ff8836e7",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-21",
+      "newEndDate": "2026-04-27"
+    },
+    {
+      "id": "35a75784236244cbbeb7bc170",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-30",
+      "newEndDate": "2026-04-30"
+    },
+    {
+      "id": "09ce8dd93ff44bf9b35dc7c94",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-30",
+      "newEndDate": "2026-04-30"
+    },
+    {
+      "id": "cf4d65755f54446c89aa392d1",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-21",
+      "newEndDate": "2026-04-21"
+    },
+    {
+      "id": "8279d9eb5a56495297ad50a25",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-23",
+      "newEndDate": "2026-04-23"
+    },
+    {
+      "id": "c323e450e0a14060b0ca8d216",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-30",
+      "newEndDate": "2026-04-30"
+    },
+    {
+      "id": "00a4e85558ba441f95c27c35c",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-20",
+      "newEndDate": "2026-04-30"
+    },
+    {
+      "id": "e4fc876e4e6341f3887f35474",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-15",
+      "newEndDate": "2026-05-11"
+    },
+    {
+      "id": "65b2cac113a048f592867a71c",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-30",
+      "newEndDate": "2026-04-30"
+    },
+    {
+      "id": "0157c4232d5c4db58333bb744",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-24",
+      "newEndDate": "2026-04-24"
+    },
+    {
+      "id": "1923fc1a36524a9c810a73763",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-23",
+      "newEndDate": "2026-04-23"
+    },
+    {
+      "id": "3a9c9051793b4d0cb2d396bdb",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-20",
+      "newEndDate": "2026-10-26"
+    },
+    {
+      "id": "f9af344597ef4e45a8cca4743",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-24",
+      "newEndDate": "2026-06-30"
+    },
+    {
+      "id": "6422e5f4b0fa483ea88c7b94e",
+      "previousStartDate": null,
+      "previousEndDate": null,
+      "newStartDate": "2026-04-20",
+      "newEndDate": "2026-05-11"
+    }
+  ]
+}
