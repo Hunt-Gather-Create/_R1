@@ -30,6 +30,7 @@ export interface DeleteProjectParams {
   updatedBy: string;
 }
 
+// FK deletion pattern — see docs/runway-fk-deletion-pattern.md
 export async function deleteProject(
   params: DeleteProjectParams
 ): Promise<OperationResult> {
