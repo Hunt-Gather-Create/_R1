@@ -24,10 +24,10 @@ const mockGetProjectsForClient = vi.fn();
 const mockCheckIdempotency = vi.fn();
 
 vi.mock("./operations-utils", () => ({
-  PROJECT_FIELDS: ["name", "dueDate", "owner", "resources", "waitingOn", "target", "notes"],
+  PROJECT_FIELDS: ["name", "dueDate", "owner", "resources", "waitingOn", "target", "notes", "category"],
   PROJECT_FIELD_TO_COLUMN: {
     name: "name", dueDate: "dueDate", owner: "owner", resources: "resources",
-    waitingOn: "waitingOn", target: "target", notes: "notes",
+    waitingOn: "waitingOn", target: "target", notes: "notes", category: "category",
   },
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
   getClientOrFail: async (slug: string) => {
@@ -70,6 +70,7 @@ const project = {
   id: "p1",
   name: "CDS Messaging",
   status: "in-production",
+  category: "active",
   dueDate: "2026-04-15",
   owner: "Kathy",
   resources: "Roz",
@@ -151,6 +152,41 @@ describe("updateProjectField", () => {
     expect(mockUpdateSet).toHaveBeenCalledWith(
       expect.objectContaining({ name: "CDS Engagement Videos" })
     );
+  });
+
+  it("updates category field and captures previous value in audit record", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+    const { updateProjectField } = await import("./operations-writes-project");
+    const result = await updateProjectField({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      field: "category",
+      newValue: "awaiting-client",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual({
+        clientName: "Convergix",
+        projectName: "CDS Messaging",
+        field: "category",
+        previousValue: "active",
+        newValue: "awaiting-client",
+        cascadedItems: [],
+      });
+    }
+    expect(mockUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ category: "awaiting-client" })
+    );
+    // Audit record captures the category change
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.updateType).toBe("field-change");
+    expect(insertCall.previousValue).toBe("active");
+    expect(insertCall.newValue).toBe("awaiting-client");
+    expect(insertCall.metadata).toBe(JSON.stringify({ field: "category" }));
   });
 
   it("returns error when client not found", async () => {

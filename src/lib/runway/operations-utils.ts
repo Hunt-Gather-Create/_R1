@@ -321,7 +321,7 @@ export async function checkIdempotency(idemKey: string): Promise<boolean> {
 
 /** Editable fields on a project (excludes status — that uses updateProjectStatus). */
 export const PROJECT_FIELDS = [
-  "name", "dueDate", "owner", "resources", "waitingOn", "target", "notes",
+  "name", "dueDate", "owner", "resources", "waitingOn", "target", "notes", "category",
 ] as const;
 
 export type ProjectField = (typeof PROJECT_FIELDS)[number];
@@ -334,6 +334,7 @@ export const PROJECT_FIELD_TO_COLUMN: Record<ProjectField, keyof typeof projects
   waitingOn: "waitingOn",
   target: "target",
   notes: "notes",
+  category: "category",
 };
 
 /**
@@ -363,12 +364,13 @@ export const WEEK_ITEM_FIELD_TO_COLUMN: Record<WeekItemField, keyof typeof weekI
 };
 
 /**
- * Fields that undo can revert — union of project fields + status + category.
+ * Fields that undo can revert — union of project fields + status.
  * Derived from PROJECT_FIELDS so additions to the project schema automatically
- * become undoable without maintaining a separate list.
+ * become undoable without maintaining a separate list. (`category` is now part
+ * of PROJECT_FIELDS so it's included via the spread.)
  */
 export const UNDO_FIELDS = [
-  ...PROJECT_FIELDS, "status", "category",
+  ...PROJECT_FIELDS, "status",
 ] as const;
 
 // ── Field Validation ─────────────────────────────────────
