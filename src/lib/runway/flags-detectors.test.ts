@@ -130,6 +130,20 @@ describe("detectResourceConflicts", () => {
     expect(flags).toHaveLength(0);
   });
 
+  it("skips completed L2 items when counting capacity", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-07", [
+        createDayItemEntry({ owner: "Kathy", account: "Convergix", status: "completed" }),
+        createDayItemEntry({ owner: "Kathy", account: "Convergix" }),
+        createDayItemEntry({ owner: "Kathy", account: "LPPC" }),
+      ]),
+    ];
+
+    // With the completed item filtered, Kathy has only 2 — below the 3+ threshold.
+    const flags = detectResourceConflicts(thisWeek, []);
+    expect(flags).toHaveLength(0);
+  });
+
   it("skips items with no owner", () => {
     const thisWeek: DayItem[] = [
       createDayItem("2026-04-07", [
@@ -202,6 +216,28 @@ describe("detectStaleItems", () => {
     const flags = detectStaleItems(accounts);
     expect(flags[0].title).toContain("waiting on Daniel");
     expect(flags[0].relatedPerson).toBe("Daniel");
+  });
+
+  it("excludes completed projects even when staleDays >= 14", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [createTriageItem({ staleDays: 30, status: "completed" })],
+      }),
+    ];
+
+    const flags = detectStaleItems(accounts);
+    expect(flags).toHaveLength(0);
+  });
+
+  it("excludes on-hold projects even when staleDays >= 14", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [createTriageItem({ staleDays: 30, status: "on-hold" })],
+      }),
+    ];
+
+    const flags = detectStaleItems(accounts);
+    expect(flags).toHaveLength(0);
   });
 
   it("includes account name in detail", () => {
@@ -348,5 +384,46 @@ describe("detectBottlenecks", () => {
   it("returns empty for empty accounts", () => {
     const flags = detectBottlenecks([]);
     expect(flags).toHaveLength(0);
+  });
+
+  it("excludes completed, blocked, on-hold, and awaiting-client items", () => {
+    const accounts: Account[] = [
+      createAccount({
+        name: "Convergix",
+        items: [
+          // All waiting on Daniel but in non-active states — should not count.
+          createTriageItem({ id: "a", status: "completed", waitingOn: "Daniel" }),
+          createTriageItem({ id: "b", status: "blocked", waitingOn: "Daniel" }),
+          createTriageItem({ id: "c", status: "on-hold", waitingOn: "Daniel" }),
+          createTriageItem({ id: "d", status: "awaiting-client", waitingOn: "Daniel" }),
+        ],
+      }),
+    ];
+
+    const flags = detectBottlenecks(accounts);
+    expect(flags).toHaveLength(0);
+  });
+
+  it("counts only active items toward the bottleneck threshold", () => {
+    const accounts: Account[] = [
+      createAccount({
+        name: "Convergix",
+        items: [
+          createTriageItem({ id: "a", status: "in-production", waitingOn: "Daniel" }),
+          createTriageItem({ id: "b", status: "in-production", waitingOn: "Daniel" }),
+          // Inactive — should not count.
+          createTriageItem({ id: "c", status: "completed", waitingOn: "Daniel" }),
+        ],
+      }),
+      createAccount({
+        name: "LPPC",
+        slug: "lppc",
+        items: [createTriageItem({ id: "d", status: "in-production", waitingOn: "Daniel" })],
+      }),
+    ];
+
+    const flags = detectBottlenecks(accounts);
+    expect(flags).toHaveLength(1);
+    expect(flags[0].title).toContain("3 items");
   });
 });

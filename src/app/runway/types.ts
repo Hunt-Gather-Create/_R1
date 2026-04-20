@@ -46,6 +46,9 @@ export interface DayItemEntry {
   resources?: string;
   type: DayItemType;
   notes?: string;
+  // v4: L2 status enables status-aware filters in flag detectors.
+  // null/undefined = not-started; "in-progress" | "blocked" | "completed".
+  status?: string | null;
 }
 
 export interface DayItem {

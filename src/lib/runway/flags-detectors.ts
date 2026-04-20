@@ -35,6 +35,8 @@ export function detectResourceConflicts(
 
     for (const item of day.items) {
       if (!item.owner) continue;
+      // v4: skip completed L2s — they no longer count against capacity.
+      if (item.status === "completed") continue;
       const owner = item.owner;
 
       if (!ownerAccounts.has(owner)) ownerAccounts.set(owner, new Set());
@@ -64,11 +66,17 @@ export function detectResourceConflicts(
 /**
  * Stale items: projects with staleDays >= 14.
  * Critical if >= 30, warning if >= 14.
+ *
+ * v4: excludes completed and on-hold projects — those are intentionally
+ * paused and should not surface as stale. Uses Set for O(1) lookup.
  */
+const STALE_EXCLUDED_STATUSES = new Set(["completed", "on-hold"]);
+
 export function detectStaleItems(accounts: Account[]): RunwayFlag[] {
   const flags: RunwayFlag[] = [];
   for (const account of accounts) {
     for (const item of account.items) {
+      if (STALE_EXCLUDED_STATUSES.has(item.status)) continue;
       if (item.staleDays != null && item.staleDays >= 14) {
         const severity: FlagSeverity = item.staleDays >= 30 ? "critical" : "warning";
         const waitingDetail = item.waitingOn
@@ -121,14 +129,27 @@ export function detectDeadlines(thisWeek: DayItem[]): RunwayFlag[] {
 }
 
 /**
- * Bottlenecks: person appears as waitingOn on 3+ items across clients.
+ * Bottlenecks: person appears as waitingOn on 3+ active items across clients.
+ *
+ * v4: only active projects count. Projects in terminal or paused states
+ * (completed/blocked/on-hold) and stubs whose client is in awaiting-client
+ * status are excluded — those are already flagged or dormant and should
+ * not contribute to the bottleneck signal.
  */
+const BOTTLENECK_EXCLUDED_STATUSES = new Set([
+  "completed",
+  "blocked",
+  "on-hold",
+  "awaiting-client",
+]);
+
 export function detectBottlenecks(accounts: Account[]): RunwayFlag[] {
   const waitingOnCounts = new Map<string, { count: number; clients: Set<string> }>();
 
   for (const account of accounts) {
     for (const item of account.items) {
       if (!item.waitingOn) continue;
+      if (BOTTLENECK_EXCLUDED_STATUSES.has(item.status)) continue;
       const person = item.waitingOn;
       if (!waitingOnCounts.has(person)) {
         waitingOnCounts.set(person, { count: 0, clients: new Set() });

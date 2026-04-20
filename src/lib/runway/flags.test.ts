@@ -205,19 +205,21 @@ describe("analyzeFlags", () => {
 
   // ── Bottlenecks ──────────────────────────────────────────
   describe("bottlenecks", () => {
-    it("flags person as waitingOn on 3+ items", () => {
+    it("flags person as waitingOn on 3+ active items", () => {
+      // v4: awaiting-client/blocked/on-hold/completed are excluded from
+      // bottleneck counting. Use in-production + not-started here.
       const accounts: Account[] = [
         {
           name: "Client A", slug: "client-a", contractStatus: "signed",
           items: [
-            { id: "1", title: "P1", status: "awaiting-client", category: "active", waitingOn: "Daniel" },
-            { id: "2", title: "P2", status: "awaiting-client", category: "active", waitingOn: "Daniel" },
+            { id: "1", title: "P1", status: "in-production", category: "active", waitingOn: "Daniel" },
+            { id: "2", title: "P2", status: "not-started", category: "active", waitingOn: "Daniel" },
           ],
         },
         {
           name: "Client B", slug: "client-b", contractStatus: "signed",
           items: [
-            { id: "3", title: "P3", status: "awaiting-client", category: "active", waitingOn: "Daniel" },
+            { id: "3", title: "P3", status: "in-production", category: "active", waitingOn: "Daniel" },
           ],
         },
       ];
@@ -233,8 +235,8 @@ describe("analyzeFlags", () => {
         {
           name: "Client A", slug: "client-a", contractStatus: "signed",
           items: [
-            { id: "1", title: "P1", status: "awaiting-client", category: "active", waitingOn: "Daniel" },
-            { id: "2", title: "P2", status: "awaiting-client", category: "active", waitingOn: "Daniel" },
+            { id: "1", title: "P1", status: "in-production", category: "active", waitingOn: "Daniel" },
+            { id: "2", title: "P2", status: "in-production", category: "active", waitingOn: "Daniel" },
           ],
         },
       ];
