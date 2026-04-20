@@ -301,3 +301,82 @@ export async function deleteWeekItem(
     data: { clientName },
   };
 }
+
+// ── Link Week Item To Project ───────────────────────────
+
+export interface LinkWeekItemToProjectParams {
+  weekItemId: string;
+  projectId: string;
+  updatedBy: string;
+}
+
+export async function linkWeekItemToProject(
+  params: LinkWeekItemToProjectParams
+): Promise<OperationResult> {
+  const { weekItemId, projectId, updatedBy } = params;
+  const db = getRunwayDb();
+
+  const itemRows = await db
+    .select()
+    .from(weekItems)
+    .where(eq(weekItems.id, weekItemId));
+  const item = itemRows[0];
+  if (!item) {
+    return { ok: false, error: `Week item '${weekItemId}' not found.` };
+  }
+
+  const projectRows = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  const project = projectRows[0];
+  if (!project) {
+    return { ok: false, error: `Project '${projectId}' not found.` };
+  }
+
+  if (item.clientId !== project.clientId) {
+    return {
+      ok: false,
+      error: `Week item '${item.title}' (client ${item.clientId ?? "none"}) cannot be linked to project '${project.name}' (client ${project.clientId}) — client mismatch.`,
+    };
+  }
+
+  const previousProjectId = item.projectId;
+  const clientName = await getClientNameById(item.clientId);
+
+  const idemKey = generateIdempotencyKey(
+    "link-week-item",
+    weekItemId,
+    projectId,
+    updatedBy
+  );
+
+  const dup = await checkDuplicate(idemKey, {
+    ok: true,
+    message: "Link already applied (duplicate request).",
+    data: { weekItemTitle: item.title, previousProjectId, newProjectId: projectId, clientName },
+  });
+  if (dup) return dup;
+
+  await db
+    .update(weekItems)
+    .set({ projectId, updatedAt: new Date() })
+    .where(eq(weekItems.id, weekItemId));
+
+  await insertAuditRecord({
+    idempotencyKey: idemKey,
+    projectId,
+    clientId: item.clientId,
+    updatedBy,
+    updateType: "week-reparent",
+    previousValue: previousProjectId ?? "(none)",
+    newValue: projectId,
+    summary: `Week item '${item.title}': re-parented from ${previousProjectId ?? "(none)"} to ${project.name}`,
+  });
+
+  return {
+    ok: true,
+    message: `Linked '${item.title}' to project '${project.name}'.`,
+    data: { weekItemTitle: item.title, previousProjectId, newProjectId: projectId, clientName },
+  };
+}

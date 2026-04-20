@@ -31,9 +31,9 @@ const mockGetWeekItemsForWeek = vi.fn();
 const mockCheckIdempotency = vi.fn();
 
 vi.mock("./operations-utils", () => ({
-  WEEK_ITEM_FIELDS: ["title", "status", "date", "dayOfWeek", "owner", "resources", "notes", "category"],
+  WEEK_ITEM_FIELDS: ["title", "status", "date", "dayOfWeek", "weekOf", "owner", "resources", "notes", "category"],
   WEEK_ITEM_FIELD_TO_COLUMN: {
-    title: "title", status: "status", date: "date", dayOfWeek: "dayOfWeek",
+    title: "title", status: "status", date: "date", dayOfWeek: "dayOfWeek", weekOf: "weekOf",
     owner: "owner", resources: "resources", notes: "notes", category: "category",
   },
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
@@ -535,5 +535,171 @@ describe("deleteWeekItem", () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.message).toContain("duplicate");
     expect(mockDeleteFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateWeekItemField — weekOf whitelist", () => {
+  const weekItem = {
+    id: "wi1",
+    title: "Dev Handoff",
+    status: null,
+    date: "2026-04-28",
+    dayOfWeek: "tuesday",
+    weekOf: "2026-04-20",
+    owner: "Jill",
+    resources: "Dev: Leslie",
+    notes: null,
+    category: "deadline",
+    clientId: "c1",
+    projectId: null,
+  };
+
+  it("writes weekOf through updateWeekItemField", async () => {
+    mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+    const { updateWeekItemField } = await import("./operations-writes-week");
+    const result = await updateWeekItemField({
+      weekOf: "2026-04-20",
+      weekItemTitle: "Dev Handoff",
+      field: "weekOf",
+      newValue: "2026-04-27",
+      updatedBy: "migration",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mockUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ weekOf: "2026-04-27" })
+    );
+  });
+});
+
+describe("linkWeekItemToProject", () => {
+  const weekItem = {
+    id: "wi1",
+    title: "Design Presentation",
+    clientId: "c1",
+    projectId: null,
+  };
+  const project = {
+    id: "p1",
+    name: "Impact Report",
+    clientId: "c1",
+  };
+
+  it("links orphan week item to project and writes audit", async () => {
+    mockSelectWhere
+      .mockReturnValueOnce([weekItem])
+      .mockReturnValueOnce([project]);
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "wi1",
+      projectId: "p1",
+      updatedBy: "migration",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.weekItemTitle).toBe("Design Presentation");
+      expect(result.data?.previousProjectId).toBeNull();
+      expect(result.data?.newProjectId).toBe("p1");
+      expect(result.data?.clientName).toBe("Convergix");
+    }
+    expect(mockUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "p1" })
+    );
+    const auditCall = mockInsertValues.mock.calls[0][0];
+    expect(auditCall.updateType).toBe("week-reparent");
+    expect(auditCall.previousValue).toBe("(none)");
+    expect(auditCall.newValue).toBe("p1");
+    expect(auditCall.summary).toContain("re-parented");
+    expect(auditCall.summary).toContain("Impact Report");
+  });
+
+  it("is idempotent on replay", async () => {
+    mockSelectWhere
+      .mockReturnValueOnce([weekItem])
+      .mockReturnValueOnce([project]);
+    mockCheckIdempotency.mockResolvedValue(true);
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "wi1",
+      projectId: "p1",
+      updatedBy: "migration",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.message).toContain("duplicate");
+    expect(mockUpdateSet).not.toHaveBeenCalled();
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+
+  it("returns error when week item id not found", async () => {
+    mockSelectWhere.mockReturnValueOnce([]);
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "missing",
+      projectId: "p1",
+      updatedBy: "migration",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("not found");
+    expect(mockUpdateSet).not.toHaveBeenCalled();
+  });
+
+  it("returns error when project id not found", async () => {
+    mockSelectWhere
+      .mockReturnValueOnce([weekItem])
+      .mockReturnValueOnce([]);
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "wi1",
+      projectId: "missing",
+      updatedBy: "migration",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("not found");
+    expect(mockUpdateSet).not.toHaveBeenCalled();
+  });
+
+  it("rejects cross-client linking", async () => {
+    mockSelectWhere
+      .mockReturnValueOnce([{ ...weekItem, clientId: "c1" }])
+      .mockReturnValueOnce([{ ...project, clientId: "c2" }]);
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "wi1",
+      projectId: "p1",
+      updatedBy: "migration",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("client mismatch");
+    expect(mockUpdateSet).not.toHaveBeenCalled();
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+
+  it("records previous projectId when re-parenting a linked item", async () => {
+    mockSelectWhere
+      .mockReturnValueOnce([{ ...weekItem, projectId: "p-old" }])
+      .mockReturnValueOnce([project]);
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "wi1",
+      projectId: "p1",
+      updatedBy: "migration",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data?.previousProjectId).toBe("p-old");
+    const auditCall = mockInsertValues.mock.calls[0][0];
+    expect(auditCall.previousValue).toBe("p-old");
   });
 });

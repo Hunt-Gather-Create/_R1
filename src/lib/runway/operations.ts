@@ -133,12 +133,14 @@ export {
   createWeekItem,
   updateWeekItemField,
   deleteWeekItem,
+  linkWeekItemToProject,
 } from "./operations-writes-week";
 
 export type {
   CreateWeekItemParams,
   UpdateWeekItemFieldParams,
   DeleteWeekItemParams,
+  LinkWeekItemToProjectParams,
 } from "./operations-writes-week";
 
 export {

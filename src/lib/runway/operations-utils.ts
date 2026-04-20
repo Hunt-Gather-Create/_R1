@@ -336,9 +336,16 @@ export const PROJECT_FIELD_TO_COLUMN: Record<ProjectField, keyof typeof projects
   notes: "notes",
 };
 
-/** Editable fields on a week item. */
+/**
+ * Editable fields on a week item.
+ *
+ * `weekOf` is here as a plain whitelist entry for now — callers updating it
+ * are responsible for keeping it consistent with `date` (Monday of the same
+ * week). Longer-term answer is a dedicated `updateWeekItemWeekBucket` helper
+ * that derives weekOf from date and validates the invariant.
+ */
 export const WEEK_ITEM_FIELDS = [
-  "title", "status", "date", "dayOfWeek", "owner", "resources", "notes", "category",
+  "title", "status", "date", "dayOfWeek", "weekOf", "owner", "resources", "notes", "category",
 ] as const;
 
 export type WeekItemField = (typeof WEEK_ITEM_FIELDS)[number];
@@ -348,6 +355,7 @@ export const WEEK_ITEM_FIELD_TO_COLUMN: Record<WeekItemField, keyof typeof weekI
   status: "status",
   date: "date",
   dayOfWeek: "dayOfWeek",
+  weekOf: "weekOf",
   owner: "owner",
   resources: "resources",
   notes: "notes",
