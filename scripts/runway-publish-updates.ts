@@ -2,8 +2,9 @@
  * Runway Publish Updates — query audit records, group, deduplicate, and post to Slack
  *
  * Usage:
- *   pnpm runway:publish-updates --batch "001-april-14-updates"          # dry-run (default)
- *   pnpm runway:publish-updates --batch "001-april-14-updates" --apply  # post to Slack
+ *   pnpm runway:publish-updates --batch "001-april-14-updates"            # dry-run (default; writes draft, no Slack)
+ *   pnpm runway:publish-updates --batch "001-april-14-updates" --dry-run  # explicit dry-run (alias)
+ *   pnpm runway:publish-updates --batch "001-april-14-updates" --apply    # post to Slack
  *   pnpm runway:publish-updates --batch "001-april-14-updates" --apply --file draft.md
  *   pnpm runway:publish-updates --by migration --since "2026-04-18"
  */
@@ -79,20 +80,74 @@ async function buildNameMaps(db: DrizzleDb) {
   return { clientNames, projectNames };
 }
 
+// Update types that represent a field change on a specific entity. Only these
+// types are safe to dedup (collapse first-prev → last-new) because they have
+// BOTH a stable per-entity discriminator in the summary AND a `metadata.field`.
+// Everything else (new-*, delete-*, week-reparent, note, etc.) is emitted as-is
+// because the old dedup key collapsed distinct entities into a single bullet.
+const DEDUPABLE_UPDATE_TYPES = new Set([
+  "field-change",          // project field
+  "week-field-change",
+  "client-field-change",
+  "pipeline-field-change",
+  "team-member-change",
+]);
+
+/**
+ * Extract a stable entity discriminator from a field-change summary. Writers
+ * format summaries as `<entity prefix>: <field> changed from "..." to "..."`,
+ * so the prefix uniquely identifies the entity (e.g. `Week item 'TITLE'`,
+ * `Team member 'Name'`, `ClientName`, `ClientName / ProjectName`). If we can't
+ * extract a prefix, return null and the record will NOT be deduped.
+ */
+function extractEntityKey(record: AuditRecord): string | null {
+  // team-member-change carries memberName in metadata — prefer it when present.
+  if (record.metadata) {
+    try {
+      const meta = JSON.parse(record.metadata);
+      if (typeof meta.memberName === "string" && meta.memberName.length > 0) {
+        return `member:${meta.memberName}`;
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (!record.summary) return null;
+  // Summary pattern: `<entity>: <field> changed from "..." to "..."`
+  const match = record.summary.match(/^(.+?): [^:]+ changed from "/);
+  if (match) return match[1];
+  return null;
+}
+
 /** Deduplicate records: for each (entity, field) pair, keep first previousValue and last newValue. */
 function deduplicateRecords(records: AuditRecord[]): AuditRecord[] {
-  // Group by (clientId, projectId, updateType, field from metadata)
   const groups = new Map<string, AuditRecord[]>();
 
   for (const record of records) {
-    let field = "";
-    if (record.metadata) {
-      try {
-        const meta = JSON.parse(record.metadata);
-        field = meta.field ?? "";
-      } catch { /* ignore */ }
+    const updateType = record.updateType ?? "";
+    const isDedupable = DEDUPABLE_UPDATE_TYPES.has(updateType);
+
+    let key: string;
+
+    if (isDedupable) {
+      let field = "";
+      if (record.metadata) {
+        try {
+          const meta = JSON.parse(record.metadata);
+          field = meta.field ?? "";
+        } catch { /* ignore */ }
+      }
+      const entityKey = extractEntityKey(record);
+      if (field && entityKey) {
+        key = `dedup|${record.clientId ?? ""}|${record.projectId ?? ""}|${updateType}|${field}|${entityKey}`;
+      } else {
+        // Safety net: if we can't cleanly identify the entity, don't dedup.
+        key = `norows|${record.id}`;
+      }
+    } else {
+      // new-*, delete-*, week-reparent, note, etc. — one bullet per row.
+      key = `norows|${record.id}`;
     }
-    const key = `${record.clientId ?? ""}|${record.projectId ?? ""}|${record.updateType ?? ""}|${field}`;
+
     const group = groups.get(key) ?? [];
     group.push(record);
     groups.set(key, group);
@@ -101,6 +156,11 @@ function deduplicateRecords(records: AuditRecord[]): AuditRecord[] {
   // For each group, produce a single record with first previousValue, last newValue
   const deduped: AuditRecord[] = [];
   for (const group of groups.values()) {
+    if (group.length === 1) {
+      deduped.push(group[0]);
+      continue;
+    }
+
     // Sort by createdAt ascending for first/last logic
     group.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
@@ -118,6 +178,9 @@ function deduplicateRecords(records: AuditRecord[]): AuditRecord[] {
       summary: last.summary,
     });
   }
+
+  // Preserve original ordering: sort by createdAt desc (matches query order).
+  deduped.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
   return deduped;
 }
@@ -191,13 +254,19 @@ async function run() {
   const since = sinceIdx !== -1 ? args[sinceIdx + 1] : undefined;
 
   const shouldApply = args.includes("--apply");
+  const explicitDryRun = args.includes("--dry-run");
+
+  if (shouldApply && explicitDryRun) {
+    console.error("Error: --apply and --dry-run are mutually exclusive.");
+    process.exit(1);
+  }
 
   const fileIdx = args.indexOf("--file");
   const filePath = fileIdx !== -1 ? args[fileIdx + 1] : undefined;
 
   if (!batchId && !updatedBy) {
-    console.error("Usage: pnpm runway:publish-updates --batch <id> [--apply] [--file <path>]");
-    console.error("   or: pnpm runway:publish-updates --by <updatedBy> --since <date> [--apply]");
+    console.error("Usage: pnpm runway:publish-updates --batch <id> [--apply|--dry-run] [--file <path>]");
+    console.error("   or: pnpm runway:publish-updates --by <updatedBy> --since <date> [--apply|--dry-run]");
     process.exit(1);
   }
 
@@ -245,7 +314,8 @@ async function run() {
 
   if (!shouldApply) {
     console.log("--- End Draft ---\n");
-    console.log("Dry-run complete. Review the draft above, edit if needed, then run with --apply.");
+    const mode = explicitDryRun ? "Dry-run (--dry-run)" : "Dry-run (default)";
+    console.log(`${mode} complete. Nothing posted to Slack. Review the draft above, edit if needed, then run with --apply.`);
     console.log(`  pnpm runway:publish-updates --batch "${batchId}" --apply`);
     console.log(`  pnpm runway:publish-updates --batch "${batchId}" --apply --file <edited-draft.md>`);
     return;
