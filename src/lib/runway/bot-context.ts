@@ -17,6 +17,7 @@ import {
   buildQueryRecipes,
   buildTeamRoster,
   buildClientMap,
+  buildV4ConventionSummary,
 } from "./bot-context-sections";
 import {
   buildGlossary,
@@ -85,6 +86,7 @@ Pipeline items (unsigned SOWs / new business) use: scoping, drafting, sow-sent, 
 
     buildDateContext(currentDate),
     buildIdentityContext(teamMember),
+    buildV4ConventionSummary(),
     buildQueryRecipes(),
     buildTeamRoster(teamRoster),
     buildClientMap(clientMap),
