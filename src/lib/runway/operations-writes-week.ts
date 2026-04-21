@@ -24,6 +24,13 @@ import {
 } from "./operations-utils";
 import type { OperationResult } from "./operations-utils";
 
+/**
+ * Minimal shape of a Drizzle transaction object we need for the recompute
+ * helper. Narrowed to the methods actually used so callers can pass either a
+ * top-level `db` or the `tx` handed into `db.transaction(tx => ...)`.
+ */
+type RecomputeExecutor = Pick<ReturnType<typeof getRunwayDb>, "select" | "update">;
+
 // ── Helpers ──────────────────────────────────────────────
 
 /** Compute the Monday (ISO date) of the week containing the given date. */
@@ -43,16 +50,33 @@ function getMonday(dateStr: string): string {
  * - end_date   = MAX(children.end_date ?? children.start_date)   // single-day → use start
  * - If projectId is null or no children exist, both become null.
  *
+ * Skips the `UPDATE projects` entirely when derived values are unchanged to
+ * avoid an unnecessary `updated_at` bump and the audit-noise it creates.
+ *
  * `contract_start` / `contract_end` on the project are NOT touched here —
  * they are read-layer overrides, applied by reads (see v4 convention).
+ *
+ * Convenience wrapper around `recomputeProjectDatesWith`. Use the `*With`
+ * variant when already inside a `db.transaction(...)` callback so the
+ * child write and parent recompute stay atomic (Chunk 5 / Wave 1 debt §2).
  */
 export async function recomputeProjectDates(
   projectId: string | null | undefined
 ): Promise<{ startDate: string | null; endDate: string | null } | null> {
   if (!projectId) return null;
-  const db = getRunwayDb();
+  return recomputeProjectDatesWith(getRunwayDb(), projectId);
+}
 
-  const children = await db
+/**
+ * Transaction-aware variant: uses the provided executor (top-level db or a
+ * transaction object) for both the read and write. Returns the derived dates
+ * for callers that need to thread them into audit metadata.
+ */
+export async function recomputeProjectDatesWith(
+  executor: RecomputeExecutor,
+  projectId: string
+): Promise<{ startDate: string | null; endDate: string | null }> {
+  const children = await executor
     .select({
       startDate: weekItems.startDate,
       endDate: weekItems.endDate,
@@ -77,7 +101,19 @@ export async function recomputeProjectDates(
     }
   }
 
-  await db
+  // No-op skip: only touch the row when derived dates actually changed.
+  // Avoids a spurious updated_at bump every time a child is updated without
+  // affecting the parent's aggregate range. (Chunk 5 / Wave 1 debt §8.)
+  const currentRows = await executor
+    .select({ startDate: projects.startDate, endDate: projects.endDate })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  const current = currentRows[0];
+  if (current && current.startDate === minStart && current.endDate === maxEnd) {
+    return { startDate: minStart, endDate: maxEnd };
+  }
+
+  await executor
     .update(projects)
     .set({ startDate: minStart, endDate: maxEnd, updatedAt: new Date() })
     .where(eq(projects.id, projectId));
@@ -173,22 +209,30 @@ export async function createWeekItem(
   if (dup) return dup;
 
   const itemId = generateId();
-  await db.insert(weekItems).values({
-    id: itemId,
-    clientId,
-    projectId,
-    weekOf,
-    dayOfWeek: dayOfWeek ?? null,
-    date: date ?? null,
-    // v4: mirror legacy `date` into `start_date` on create so derivation sees it.
-    startDate: date ?? null,
-    title,
-    status: status ?? null,
-    category: category ?? null,
-    owner: resolvedOwner,
-    resources: resources ?? null,
-    notes: notes ?? null,
-    sortOrder: 999,
+  // v4 (Chunk 5): wrap child insert + parent-date recompute in a single
+  // transaction so a crash between the two cannot leave the parent's
+  // derived dates stale.
+  await db.transaction(async (tx) => {
+    await tx.insert(weekItems).values({
+      id: itemId,
+      clientId,
+      projectId,
+      weekOf,
+      dayOfWeek: dayOfWeek ?? null,
+      date: date ?? null,
+      // v4: mirror legacy `date` into `start_date` on create so derivation sees it.
+      startDate: date ?? null,
+      title,
+      status: status ?? null,
+      category: category ?? null,
+      owner: resolvedOwner,
+      resources: resources ?? null,
+      notes: notes ?? null,
+      sortOrder: 999,
+    });
+    if (projectId) {
+      await recomputeProjectDatesWith(tx, projectId);
+    }
   });
 
   await insertAuditRecord({
@@ -199,11 +243,6 @@ export async function createWeekItem(
     newValue: title,
     summary: `New week item${clientName ? ` (${clientName})` : ""}: ${title}`,
   });
-
-  // v4: recompute parent project start/end dates from children.
-  if (projectId) {
-    await recomputeProjectDates(projectId);
-  }
 
   return {
     ok: true,
@@ -255,7 +294,8 @@ export async function updateWeekItemField(
   });
   if (dup) return dup;
 
-  // Wrap week item update + reverse cascade in a single transaction for atomicity
+  // Wrap week item update + reverse cascade + parent-date recompute in a
+  // single transaction so the three writes commit (or roll back) atomically.
   let reverseCascaded = false;
 
   await db.transaction(async (tx) => {
@@ -271,6 +311,15 @@ export async function updateWeekItemField(
         .set({ dueDate: newValue, updatedAt: new Date() })
         .where(eq(projects.id, item.projectId));
       reverseCascaded = true;
+    }
+
+    // v4: recompute parent project dates when a child date field changes.
+    // `date` is the legacy column; `startDate`/`endDate` are the v4 columns.
+    if (
+      item.projectId &&
+      (typedField === "date" || typedField === "startDate" || typedField === "endDate")
+    ) {
+      await recomputeProjectDatesWith(tx, item.projectId);
     }
   });
 
@@ -294,15 +343,6 @@ export async function updateWeekItemField(
     summary: `Week item '${item.title}': ${field} changed from "${previousValue}" to "${newValue}"`,
     metadata: JSON.stringify({ field }),
   });
-
-  // v4: recompute parent project dates when a child date field changes.
-  // `date` is the legacy column; `startDate`/`endDate` are the v4 columns.
-  if (
-    item.projectId &&
-    (typedField === "date" || typedField === "startDate" || typedField === "endDate")
-  ) {
-    await recomputeProjectDates(item.projectId);
-  }
 
   return {
     ok: true,
@@ -361,7 +401,13 @@ export async function deleteWeekItem(
   const clientName = await getClientNameById(item.clientId);
   const parentProjectId = item.projectId;
 
-  await db.delete(weekItems).where(eq(weekItems.id, item.id));
+  // v4 (Chunk 5): atomic delete + parent-date recompute.
+  await db.transaction(async (tx) => {
+    await tx.delete(weekItems).where(eq(weekItems.id, item.id));
+    if (parentProjectId) {
+      await recomputeProjectDatesWith(tx, parentProjectId);
+    }
+  });
 
   await insertAuditRecord({
     idempotencyKey: idemKey,
@@ -371,11 +417,6 @@ export async function deleteWeekItem(
     previousValue: item.title,
     summary: `Deleted week item: ${item.title}`,
   });
-
-  // v4: recompute parent project dates after child removal.
-  if (parentProjectId) {
-    await recomputeProjectDates(parentProjectId);
-  }
 
   return {
     ok: true,
@@ -440,10 +481,20 @@ export async function linkWeekItemToProject(
   });
   if (dup) return dup;
 
-  await db
-    .update(weekItems)
-    .set({ projectId, updatedAt: new Date() })
-    .where(eq(weekItems.id, weekItemId));
+  // v4 (Chunk 5): reparent + recompute both parents atomically. A crash
+  // between the three writes could leave one or both parents with stale
+  // derived dates; the transaction closes that window.
+  await db.transaction(async (tx) => {
+    await tx
+      .update(weekItems)
+      .set({ projectId, updatedAt: new Date() })
+      .where(eq(weekItems.id, weekItemId));
+
+    if (previousProjectId && previousProjectId !== projectId) {
+      await recomputeProjectDatesWith(tx, previousProjectId);
+    }
+    await recomputeProjectDatesWith(tx, projectId);
+  });
 
   await insertAuditRecord({
     idempotencyKey: idemKey,
@@ -455,13 +506,6 @@ export async function linkWeekItemToProject(
     newValue: projectId,
     summary: `Week item '${item.title}': re-parented from ${previousProjectId ?? "(none)"} to ${project.name}`,
   });
-
-  // v4: recompute both the previous (if any) and new parent project dates,
-  // since the child membership changed on both.
-  if (previousProjectId && previousProjectId !== projectId) {
-    await recomputeProjectDates(previousProjectId);
-  }
-  await recomputeProjectDates(projectId);
 
   return {
     ok: true,

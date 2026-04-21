@@ -2,13 +2,28 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createMockDb } from "./operations-writes-test-helpers";
 
 // ── Mock state ──────────────────────────────────────────
-const { db: mockDb, mockInsertValues, mockUpdateSet, mockDeleteFn } = createMockDb();
+const { db: mockDb, mockTx, mockInsertValues, mockUpdateSet } = createMockDb();
 
-// Track select calls for deleteWeekItem by ID
+// Track select calls for deleteWeekItem by ID.
+// `.where(...)` returns an array (for chainless callers); `.orderBy(...)` and
+// `.limit(...)` also terminate — the v4 recompute path uses `.where(...)`
+// without a terminator, so the array result doubles as the awaitable value.
 const mockSelectGet = vi.fn();
 const mockSelectWhere = vi.fn(() => mockSelectGet.mock.results[0]?.value ?? []);
-const mockSelectFrom = vi.fn(() => ({ where: mockSelectWhere }));
-(mockDb as Record<string, unknown>).select = vi.fn(() => ({ from: mockSelectFrom }));
+const mockSelectFrom = vi.fn(() => ({
+  where: mockSelectWhere,
+  orderBy: vi.fn(() => mockSelectGet.mock.results[0]?.value ?? []),
+  limit: vi.fn(() => mockSelectGet.mock.results[0]?.value ?? []),
+}));
+const mockSelectImpl = vi.fn(() => ({ from: mockSelectFrom }));
+(mockDb as Record<string, unknown>).select = mockSelectImpl;
+// Route the transaction object's select through the same chain so
+// `recomputeProjectDatesWith(tx, ...)` sees the test's select stubs.
+(mockTx as Record<string, unknown>).select = mockSelectImpl;
+
+// `deleteWeekItem` now runs its delete inside the transaction callback, so
+// assert against `mockTx.delete` in place of `mockDb.delete`.
+const mockDeleteFn = mockTx.delete as ReturnType<typeof vi.fn>;
 
 vi.mock("@/lib/db/runway", () => ({
   getRunwayDb: () => mockDb,

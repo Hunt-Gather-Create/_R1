@@ -194,4 +194,72 @@ describe("recomputeProjectDates — v4 derivation rule", () => {
     expect(project?.contractStart).toBe("2020-01-01");
     expect(project?.contractEnd).toBe("2030-12-31");
   });
+
+  it("skips the updated_at bump when derived dates are unchanged", async () => {
+    // Debt §8: recomputeProjectDates should no-op when the derivation matches
+    // the row's current state. Asserts via updated_at timestamp equality
+    // before/after a second recompute call.
+    await libsqlClient.execute("DELETE FROM week_items WHERE project_id = 'pj-cds'");
+    await insertWeekItem(libsqlClient, {
+      id: "wi-stable", projectId: "pj-cds", clientId: "cl-convergix",
+      startDate: "2026-06-01", endDate: "2026-06-10",
+    });
+
+    const { recomputeProjectDates } = await import("./operations-writes-week");
+    // First call — writes derived dates and bumps updated_at.
+    await recomputeProjectDates("pj-cds");
+
+    const firstRow = await libsqlClient.execute({
+      sql: `SELECT updated_at FROM projects WHERE id = 'pj-cds'`,
+      args: [],
+    });
+    const firstUpdatedAt = firstRow.rows[0].updated_at;
+
+    // Sleep long enough that if we DID bump updated_at the new value would differ.
+    await new Promise((r) => setTimeout(r, 1100));
+
+    // Second call — same children, derived values identical → should skip.
+    const result = await recomputeProjectDates("pj-cds");
+    expect(result).toEqual({ startDate: "2026-06-01", endDate: "2026-06-10" });
+
+    const secondRow = await libsqlClient.execute({
+      sql: `SELECT updated_at FROM projects WHERE id = 'pj-cds'`,
+      args: [],
+    });
+    const secondUpdatedAt = secondRow.rows[0].updated_at;
+    expect(secondUpdatedAt).toBe(firstUpdatedAt);
+  });
+
+  it("does bump updated_at when derived dates actually change", async () => {
+    await libsqlClient.execute("DELETE FROM week_items WHERE project_id = 'pj-cds'");
+    await insertWeekItem(libsqlClient, {
+      id: "wi-initial", projectId: "pj-cds", clientId: "cl-convergix",
+      startDate: "2026-06-01", endDate: "2026-06-10",
+    });
+
+    const { recomputeProjectDates } = await import("./operations-writes-week");
+    await recomputeProjectDates("pj-cds");
+
+    const firstRow = await libsqlClient.execute({
+      sql: `SELECT updated_at FROM projects WHERE id = 'pj-cds'`,
+      args: [],
+    });
+    const firstUpdatedAt = firstRow.rows[0].updated_at;
+
+    await new Promise((r) => setTimeout(r, 1100));
+
+    // Change a child date — derived end should shift and the parent should update.
+    await libsqlClient.execute({
+      sql: `UPDATE week_items SET end_date = ? WHERE id = 'wi-initial'`,
+      args: ["2026-06-20"],
+    });
+    const result = await recomputeProjectDates("pj-cds");
+    expect(result).toEqual({ startDate: "2026-06-01", endDate: "2026-06-20" });
+
+    const secondRow = await libsqlClient.execute({
+      sql: `SELECT updated_at FROM projects WHERE id = 'pj-cds'`,
+      args: [],
+    });
+    expect(secondRow.rows[0].updated_at).not.toBe(firstUpdatedAt);
+  });
 });
