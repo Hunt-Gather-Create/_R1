@@ -56,7 +56,8 @@ export function createBotTools(userName: string, now: Date = new Date()) {
     }),
 
     get_projects: tool({
-      description: "List projects, optionally filtered by client, owner, or waitingOn",
+      description:
+        "List L1 projects, optionally filtered. Each item has { id, name, client, status, category, owner, resources, waitingOn, target, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }. Filter by clientSlug, owner substring, or waitingOn substring.",
       inputSchema: z.object({
         clientSlug: z.string().optional().describe("Client slug (e.g. 'convergix')"),
         owner: z.string().optional().describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
@@ -184,7 +185,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
 
     get_person_workload: tool({
       description:
-        "Get all week items and projects where a person is owner OR resource, grouped by client. Powers 'what's on X's plate?' questions.",
+        "Get a person's workload bucketed per the v4 convention. Returns { person, ownedProjects: { inProgress, awaitingClient, blocked, onHold, completed } (L1s they own only), weekItems: { overdue, thisWeek, nextWeek, later } (L2s they own OR resource on, stub-filtered to hide L2s under awaiting-client L1s), flags: { contractExpired (ClientRow[]), retainerRenewalDue (ProjectRow[]) }, totalProjects, totalActiveWeekItems }. Date buckets are Chicago-anchored. Powers 'what's on X's plate?' — present the date buckets first, roll up owned L1 count at end, surface flags at the top.",
       inputSchema: z.object({
         personName: z.string().describe("Person's name (e.g. 'Kathy', 'Roz')"),
       }),

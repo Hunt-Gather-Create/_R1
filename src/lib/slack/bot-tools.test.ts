@@ -1019,4 +1019,32 @@ describe("createBotTools", () => {
     );
     expect(mockOps.getCascadeLog).toHaveBeenCalledWith(undefined);
   });
+
+  // ── Description drift assertions ──────────────────────────
+
+  it("get_person_workload description describes v4 buckets + flags (not 'grouped by client')", () => {
+    const desc = (tools.get_person_workload as { description: string }).description;
+    expect(desc).toContain("ownedProjects");
+    expect(desc).toContain("weekItems");
+    expect(desc).toContain("overdue");
+    expect(desc).toContain("thisWeek");
+    expect(desc).toContain("flags");
+    expect(desc).toContain("contractExpired");
+    expect(desc).toContain("retainerRenewalDue");
+    expect(desc).not.toMatch(/grouped by client/i);
+  });
+
+  it("get_projects description documents v4 enrichment keys", () => {
+    const desc = (tools.get_projects as { description: string }).description;
+    expect(desc).toContain("dueDate");
+    expect(desc).toContain("engagementType");
+    expect(desc).toContain("contractStart");
+    expect(desc).toContain("contractEnd");
+  });
+
+  it("get_clients description documents includeProjects option", () => {
+    const desc = (tools.get_clients as { description: string }).description;
+    expect(desc).toContain("includeProjects");
+    expect(desc).toContain("projectCount");
+  });
 });
