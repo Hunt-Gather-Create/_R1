@@ -25,8 +25,14 @@ import {
   pipelineItems,
   updates,
 } from "@/lib/db/runway-schema";
-import { eq } from "drizzle-orm";
-import { getBatchId } from "./operations-utils";
+import { eq, gte } from "drizzle-orm";
+import { getBatchId, getClientBySlug } from "./operations-utils";
+
+// Raw-row types for drift detection output.
+type ProjectRow = typeof projects.$inferSelect;
+type WeekItemRow = typeof weekItems.$inferSelect;
+type ClientRow = typeof clients.$inferSelect;
+type PipelineItemRow = typeof pipelineItems.$inferSelect;
 
 // ── Shared helpers ──────────────────────────────────────
 
@@ -480,5 +486,153 @@ export async function getDataHealth(): Promise<DataHealth> {
       distinctBatchIdsLast7Days: recentBatchIds.size,
     },
     lastUpdateAt,
+  };
+}
+
+// ── getRowsChangedSince ─────────────────────────────────
+
+/** Tables `getRowsChangedSince` can inspect. */
+export type ChangedSinceTable =
+  | "projects"
+  | "weekItems"
+  | "clients"
+  | "pipelineItems";
+
+const ALL_CHANGED_SINCE_TABLES: readonly ChangedSinceTable[] = [
+  "projects",
+  "weekItems",
+  "clients",
+  "pipelineItems",
+];
+
+export interface GetRowsChangedSinceOptions {
+  /** Limit to this subset of tables. Defaults to all four. */
+  tables?: ChangedSinceTable[];
+  /** When set, narrow results to rows belonging to the given client slug. */
+  clientSlug?: string;
+}
+
+export interface GetRowsChangedSinceResult {
+  /** Echo of the parsed-then-ISO `since` value used for the `>=` comparison. */
+  since: string;
+  counts: {
+    projects: number;
+    weekItems: number;
+    clients: number;
+    pipelineItems: number;
+  };
+  projects: ProjectRow[];
+  weekItems: WeekItemRow[];
+  clients: ClientRow[];
+  pipelineItems: PipelineItemRow[];
+}
+
+/**
+ * Return rows in projects / week_items / clients / pipeline_items whose
+ * `updated_at` is `>= since` (inclusive). Use this to answer questions like
+ * "what changed since <timestamp>?" — e.g. after a cleanup batch, or when a
+ * caller has stored state and wants the drift since a known point.
+ *
+ * Options:
+ *  - `tables` — subset of tables to query. Default: all four. Tables not in
+ *    the filter return `[]` with `0` in `counts` and no query is issued.
+ *  - `clientSlug` — narrow to one client. For projects/weekItems/pipelineItems
+ *    this filters by `client_id`; for the `clients` table it filters by
+ *    `slug`. Unknown slug returns empty results across every included table.
+ *
+ * Throws a clear error when `since` can't be parsed into a Date.
+ */
+export async function getRowsChangedSince(
+  since: string,
+  opts: GetRowsChangedSinceOptions = {},
+): Promise<GetRowsChangedSinceResult> {
+  const parsed = new Date(since);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(
+      `getRowsChangedSince: invalid 'since' value ${JSON.stringify(since)} — expected an ISO timestamp.`,
+    );
+  }
+
+  const tableSet = new Set<ChangedSinceTable>(
+    opts.tables && opts.tables.length > 0 ? opts.tables : ALL_CHANGED_SINCE_TABLES,
+  );
+
+  // Resolve clientSlug to a client id for projects/weekItems/pipelineItems
+  // filtering. A slug that doesn't resolve should produce empty results for
+  // those three tables (but still allow a `clients` slug match — handled
+  // below).
+  let clientId: string | null = null;
+  if (opts.clientSlug) {
+    const client = await getClientBySlug(opts.clientSlug);
+    clientId = client?.id ?? null;
+  }
+
+  const db = getRunwayDb();
+
+  const projectsPromise: Promise<ProjectRow[]> = tableSet.has("projects")
+    ? (async () => {
+        if (opts.clientSlug && !clientId) return [];
+        const rows = await db
+          .select()
+          .from(projects)
+          .where(gte(projects.updatedAt, parsed));
+        return clientId ? rows.filter((r) => r.clientId === clientId) : rows;
+      })()
+    : Promise.resolve([]);
+
+  const weekItemsPromise: Promise<WeekItemRow[]> = tableSet.has("weekItems")
+    ? (async () => {
+        if (opts.clientSlug && !clientId) return [];
+        const rows = await db
+          .select()
+          .from(weekItems)
+          .where(gte(weekItems.updatedAt, parsed));
+        return clientId ? rows.filter((r) => r.clientId === clientId) : rows;
+      })()
+    : Promise.resolve([]);
+
+  const pipelineItemsPromise: Promise<PipelineItemRow[]> = tableSet.has("pipelineItems")
+    ? (async () => {
+        if (opts.clientSlug && !clientId) return [];
+        const rows = await db
+          .select()
+          .from(pipelineItems)
+          .where(gte(pipelineItems.updatedAt, parsed));
+        return clientId ? rows.filter((r) => r.clientId === clientId) : rows;
+      })()
+    : Promise.resolve([]);
+
+  const clientsPromise: Promise<ClientRow[]> = tableSet.has("clients")
+    ? (async () => {
+        const rows = await db
+          .select()
+          .from(clients)
+          .where(gte(clients.updatedAt, parsed));
+        return opts.clientSlug
+          ? rows.filter((r) => r.slug === opts.clientSlug)
+          : rows;
+      })()
+    : Promise.resolve([]);
+
+  const [projectsRows, weekItemsRows, pipelineItemsRows, clientsRows] =
+    await Promise.all([
+      projectsPromise,
+      weekItemsPromise,
+      pipelineItemsPromise,
+      clientsPromise,
+    ]);
+
+  return {
+    since: parsed.toISOString(),
+    counts: {
+      projects: projectsRows.length,
+      weekItems: weekItemsRows.length,
+      clients: clientsRows.length,
+      pipelineItems: pipelineItemsRows.length,
+    },
+    projects: projectsRows,
+    weekItems: weekItemsRows,
+    clients: clientsRows,
+    pipelineItems: pipelineItemsRows,
   };
 }

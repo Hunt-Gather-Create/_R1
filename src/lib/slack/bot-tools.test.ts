@@ -29,6 +29,11 @@ const { mockPostMutationUpdate, mockOps } = vi.hoisted(() => {
     getCurrentBatch: vi.fn().mockResolvedValue({ active: false }),
     getBatchContents: vi.fn().mockResolvedValue({ batchId: "b1", totalUpdates: 0, groups: [] }),
     getCascadeLog: vi.fn().mockResolvedValue({ windowMinutes: 60, since: new Date(), totalCascadeRows: 0, groups: [] }),
+    getRowsChangedSince: vi.fn().mockResolvedValue({
+      since: "2026-04-20T00:00:00.000Z",
+      counts: { projects: 0, weekItems: 0, clients: 0, pipelineItems: 0 },
+      projects: [], weekItems: [], clients: [], pipelineItems: [],
+    }),
     getProjectStatus: vi.fn().mockResolvedValue({
       ok: true,
       status: {
@@ -81,7 +86,7 @@ describe("createBotTools", () => {
     tools = createBotTools("Kathy Horn");
   });
 
-  it("creates all 33 tools (23 legacy + 10 new in PR #86 v4)", () => {
+  it("creates all 34 tools (23 legacy + 10 tier-2/3 v4 + 1 drift in PR #88 Chunk C)", () => {
     const names = Object.keys(tools);
     expect(names).toEqual([
       "get_clients", "get_projects", "get_pipeline", "get_week_items",
@@ -98,6 +103,8 @@ describe("createBotTools", () => {
       // Tier 3 (v4)
       "get_flags", "get_data_health", "get_current_batch",
       "get_batch_contents", "get_cascade_log",
+      // PR #88 Chunk C — drift detection
+      "get_rows_changed_since",
     ]);
   });
 
@@ -1068,6 +1075,28 @@ describe("createBotTools", () => {
       {}, { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
     expect(mockOps.getCascadeLog).toHaveBeenCalledWith(undefined);
+  });
+
+  it("get_rows_changed_since passes since + filters", async () => {
+    await tools.get_rows_changed_since.execute(
+      { since: "2026-04-20T00:00:00.000Z", tables: ["projects"], clientSlug: "convergix" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getRowsChangedSince).toHaveBeenCalledWith(
+      "2026-04-20T00:00:00.000Z",
+      { tables: ["projects"], clientSlug: "convergix" },
+    );
+  });
+
+  it("get_rows_changed_since works with only `since`", async () => {
+    await tools.get_rows_changed_since.execute(
+      { since: "2026-04-20T00:00:00.000Z" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getRowsChangedSince).toHaveBeenCalledWith(
+      "2026-04-20T00:00:00.000Z",
+      { tables: undefined, clientSlug: undefined },
+    );
   });
 
   // ── Description drift assertions ──────────────────────────

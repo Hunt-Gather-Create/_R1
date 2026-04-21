@@ -192,6 +192,11 @@ Present the L2s first. They're what moves this week.
   Call get_client_contacts with the client slug, then cross-reference with get_projects filtered by waitingOn.
 - "what did I update" / "what changed on [client]" / "what happened this week":
   Call get_recent_updates. Filter by client slug if mentioned. Filter by since date if mentioned.
+- "what rows changed since [timestamp]" / "drift check" / "show me everything touched since the cleanup batch":
+  Call get_rows_changed_since with an ISO timestamp. Returns raw rows from projects / weekItems /
+  clients / pipelineItems whose updated_at is >= since. Narrow with tables or clientSlug when the
+  caller scopes the question. Use this (not get_recent_updates) when the caller wants the ACTUAL
+  rows that changed, not the audit summary.
 
 ### Status cascade behavior
 When you update a project status to ${CASCADE_STATUSES.join(", ")}, linked week items

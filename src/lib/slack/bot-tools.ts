@@ -20,6 +20,7 @@ import {
   getCurrentBatch,
   getBatchContents,
   getCascadeLog,
+  getRowsChangedSince,
   updateProjectStatus,
   addProject,
   addUpdate,
@@ -727,6 +728,24 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         windowMinutes: z.number().optional().describe("Look-back window in minutes. Default 60."),
       }),
       execute: async ({ windowMinutes }) => getCascadeLog(windowMinutes),
+    }),
+
+    get_rows_changed_since: tool({
+      description:
+        "Drift detection. Return rows in projects / weekItems / clients / pipelineItems whose updated_at is >= `since` (inclusive ISO timestamp). Returns { since, counts, projects, weekItems, clients, pipelineItems } with full raw columns. Use to answer 'what changed since <timestamp>?' after a cleanup batch or to detect drift from a known snapshot. Narrow with `tables` or `clientSlug`.",
+      inputSchema: z.object({
+        since: z.string().describe("ISO timestamp. Inclusive >= comparison against each table's updated_at."),
+        tables: z
+          .array(z.enum(["projects", "weekItems", "clients", "pipelineItems"]))
+          .optional()
+          .describe("Optional subset of tables to query. Default: all four."),
+        clientSlug: z
+          .string()
+          .optional()
+          .describe("Narrow to one client (client_id match for scoped tables, slug match for clients)."),
+      }),
+      execute: async ({ since, tables, clientSlug }) =>
+        getRowsChangedSince(since, { tables, clientSlug }),
     }),
   };
 }

@@ -23,6 +23,7 @@ import {
   getCurrentBatch,
   getBatchContents,
   getCascadeLog,
+  getRowsChangedSince,
   updateProjectStatus,
   addProject,
   addUpdate,
@@ -340,6 +341,26 @@ export function registerRunwayTools(server: McpServer) {
         .describe("Look-back window in minutes. Default 60."),
     },
     async ({ windowMinutes }) => textResult(await getCascadeLog(windowMinutes)),
+  );
+
+  server.tool(
+    "get_rows_changed_since",
+    "Drift detection. Return rows in projects / weekItems / clients / pipelineItems whose updated_at is >= `since` (inclusive ISO timestamp). Returns { since, counts: { projects, weekItems, clients, pipelineItems }, projects: ProjectRow[], weekItems: WeekItemRow[], clients: ClientRow[], pipelineItems: PipelineItemRow[] } with full raw columns. Use to answer 'what changed since <timestamp>?' after a cleanup batch or to detect drift from a known snapshot. Narrow with `tables` (subset) or `clientSlug` (client_id match for the three scoped tables, slug match for clients).",
+    {
+      since: z
+        .string()
+        .describe("ISO timestamp. Inclusive >= comparison against each table's updated_at."),
+      tables: z
+        .array(z.enum(["projects", "weekItems", "clients", "pipelineItems"]))
+        .optional()
+        .describe("Optional subset of tables to query. Default: all four. Tables outside the filter return []."),
+      clientSlug: z
+        .string()
+        .optional()
+        .describe("Narrow to one client. Filters projects/weekItems/pipelineItems by client_id; filters clients by slug."),
+    },
+    async ({ since, tables, clientSlug }) =>
+      textResult(await getRowsChangedSince(since, { tables, clientSlug })),
   );
 
   // ── Mutation tools — project ────────────────────────────

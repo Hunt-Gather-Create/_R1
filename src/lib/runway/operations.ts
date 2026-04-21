@@ -148,6 +148,7 @@ export {
   getCurrentBatch,
   getBatchContents,
   getCascadeLog,
+  getRowsChangedSince,
 } from "./operations-reads-health";
 
 export type {
@@ -164,6 +165,9 @@ export type {
   CascadeLogGroup,
   CascadeParent,
   CascadeChildEntry,
+  ChangedSinceTable,
+  GetRowsChangedSinceOptions,
+  GetRowsChangedSinceResult,
 } from "./operations-reads-health";
 
 export type {

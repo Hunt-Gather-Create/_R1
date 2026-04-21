@@ -540,3 +540,209 @@ describe("getCascadeLog", () => {
     expect(result.groups).toEqual([]);
   });
 });
+
+describe("getRowsChangedSince", () => {
+  /**
+   * Helper: bump a row's updated_at to the given epoch seconds. Seed data
+   * uses NOW_EPOCH for every row's updated_at, so these helpers let tests
+   * pin specific rows to "before" or "after" the `since` cutoff.
+   */
+  async function setProjectUpdatedAt(id: string, epochSeconds: number): Promise<void> {
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET updated_at = ? WHERE id = ?`,
+      args: [epochSeconds, id],
+    });
+  }
+  async function setWeekItemUpdatedAt(id: string, epochSeconds: number): Promise<void> {
+    await libsqlClient.execute({
+      sql: `UPDATE week_items SET updated_at = ? WHERE id = ?`,
+      args: [epochSeconds, id],
+    });
+  }
+  async function setClientUpdatedAt(id: string, epochSeconds: number): Promise<void> {
+    await libsqlClient.execute({
+      sql: `UPDATE clients SET updated_at = ? WHERE id = ?`,
+      args: [epochSeconds, id],
+    });
+  }
+  async function setPipelineItemUpdatedAt(id: string, epochSeconds: number): Promise<void> {
+    await libsqlClient.execute({
+      sql: `UPDATE pipeline_items SET updated_at = ? WHERE id = ?`,
+      args: [epochSeconds, id],
+    });
+  }
+
+  it("returns zero counts + empty arrays when no rows changed after `since`", async () => {
+    const { getRowsChangedSince } = await import("./operations-reads-health");
+
+    // Push every row to epoch 1000 (~ 1970) so nothing is >= a recent `since`.
+    await libsqlClient.execute({ sql: `UPDATE projects SET updated_at = 1000`, args: [] });
+    await libsqlClient.execute({ sql: `UPDATE week_items SET updated_at = 1000`, args: [] });
+    await libsqlClient.execute({ sql: `UPDATE clients SET updated_at = 1000`, args: [] });
+    await libsqlClient.execute({ sql: `UPDATE pipeline_items SET updated_at = 1000`, args: [] });
+    invalidateClientCache();
+
+    const result = await getRowsChangedSince(new Date().toISOString());
+    expect(result.counts).toEqual({
+      projects: 0,
+      weekItems: 0,
+      clients: 0,
+      pipelineItems: 0,
+    });
+    expect(result.projects).toEqual([]);
+    expect(result.weekItems).toEqual([]);
+    expect(result.clients).toEqual([]);
+    expect(result.pipelineItems).toEqual([]);
+  });
+
+  it("returns only rows with updated_at >= since across all four tables", async () => {
+    const { getRowsChangedSince } = await import("./operations-reads-health");
+
+    const oldSeconds = 1000;
+    const newSeconds = nowSeconds();
+    const cutoff = new Date((oldSeconds + newSeconds) / 2 * 1000).toISOString();
+
+    // Push every row old first.
+    await libsqlClient.execute({ sql: `UPDATE projects SET updated_at = ?`, args: [oldSeconds] });
+    await libsqlClient.execute({ sql: `UPDATE week_items SET updated_at = ?`, args: [oldSeconds] });
+    await libsqlClient.execute({ sql: `UPDATE clients SET updated_at = ?`, args: [oldSeconds] });
+    await libsqlClient.execute({ sql: `UPDATE pipeline_items SET updated_at = ?`, args: [oldSeconds] });
+    invalidateClientCache();
+
+    // Mark one row in each table as recently changed.
+    await setProjectUpdatedAt("pj-cds", newSeconds);
+    await setWeekItemUpdatedAt("wi-cds-review", newSeconds);
+    await setClientUpdatedAt("cl-convergix", newSeconds);
+    await setPipelineItemUpdatedAt("pl-cgx-sow", newSeconds);
+    invalidateClientCache();
+
+    const result = await getRowsChangedSince(cutoff);
+    expect(result.counts).toEqual({
+      projects: 1,
+      weekItems: 1,
+      clients: 1,
+      pipelineItems: 1,
+    });
+    expect(result.projects[0].id).toBe("pj-cds");
+    expect(result.weekItems[0].id).toBe("wi-cds-review");
+    expect(result.clients[0].id).toBe("cl-convergix");
+    expect(result.pipelineItems[0].id).toBe("pl-cgx-sow");
+  });
+
+  it("returns full raw columns on each row (not a projection)", async () => {
+    const { getRowsChangedSince } = await import("./operations-reads-health");
+
+    const sinceIso = new Date(0).toISOString();
+    const result = await getRowsChangedSince(sinceIso);
+
+    // Seed has >=1 row per table at NOW_EPOCH >= 1970. Spot-check a project
+    // carries v4-enriched fields.
+    const cdsProject = result.projects.find((p) => p.id === "pj-cds");
+    expect(cdsProject).toBeDefined();
+    expect(cdsProject!.clientId).toBe("cl-convergix");
+    expect(cdsProject!.name).toBe("CDS Messaging");
+    // endDate / contractEnd / engagementType columns exist on the row shape
+    // (null in seed is fine — presence matters).
+    expect(cdsProject).toHaveProperty("endDate");
+    expect(cdsProject).toHaveProperty("contractEnd");
+    expect(cdsProject).toHaveProperty("engagementType");
+  });
+
+  it("echoes the parsed ISO `since` in the result", async () => {
+    const { getRowsChangedSince } = await import("./operations-reads-health");
+
+    const iso = "2026-04-20T12:34:56.000Z";
+    const result = await getRowsChangedSince(iso);
+    // Parsing via Date and re-stringifying normalizes to the same ISO.
+    expect(result.since).toBe(new Date(iso).toISOString());
+  });
+
+  it("throws with a clear error when `since` can't be parsed", async () => {
+    const { getRowsChangedSince } = await import("./operations-reads-health");
+    await expect(getRowsChangedSince("not-a-real-date")).rejects.toThrow(/invalid 'since'/);
+  });
+
+  it("tables filter restricts to the named tables — others return [] and 0", async () => {
+    const { getRowsChangedSince } = await import("./operations-reads-health");
+
+    const sinceIso = new Date(0).toISOString();
+    const result = await getRowsChangedSince(sinceIso, { tables: ["projects"] });
+
+    expect(result.counts.projects).toBeGreaterThan(0);
+    expect(result.counts.weekItems).toBe(0);
+    expect(result.counts.clients).toBe(0);
+    expect(result.counts.pipelineItems).toBe(0);
+    expect(result.weekItems).toEqual([]);
+    expect(result.clients).toEqual([]);
+    expect(result.pipelineItems).toEqual([]);
+  });
+
+  it("tables filter accepts multiple tables", async () => {
+    const { getRowsChangedSince } = await import("./operations-reads-health");
+
+    const sinceIso = new Date(0).toISOString();
+    const result = await getRowsChangedSince(sinceIso, {
+      tables: ["projects", "clients"],
+    });
+
+    expect(result.counts.projects).toBeGreaterThan(0);
+    expect(result.counts.clients).toBeGreaterThan(0);
+    expect(result.counts.weekItems).toBe(0);
+    expect(result.counts.pipelineItems).toBe(0);
+  });
+
+  it("clientSlug narrows projects/weekItems/pipelineItems by client_id", async () => {
+    const { getRowsChangedSince } = await import("./operations-reads-health");
+
+    const sinceIso = new Date(0).toISOString();
+    const result = await getRowsChangedSince(sinceIso, { clientSlug: "convergix" });
+
+    // Every project/weekItem/pipelineItem returned must belong to Convergix.
+    for (const p of result.projects) expect(p.clientId).toBe("cl-convergix");
+    for (const w of result.weekItems) expect(w.clientId).toBe("cl-convergix");
+    for (const pl of result.pipelineItems) expect(pl.clientId).toBe("cl-convergix");
+
+    // Convergix has >=1 project and >=1 week item in the seed.
+    expect(result.counts.projects).toBeGreaterThan(0);
+    expect(result.counts.weekItems).toBeGreaterThan(0);
+  });
+
+  it("clientSlug narrows the `clients` table by slug", async () => {
+    const { getRowsChangedSince } = await import("./operations-reads-health");
+
+    const sinceIso = new Date(0).toISOString();
+    const result = await getRowsChangedSince(sinceIso, { clientSlug: "convergix" });
+
+    expect(result.counts.clients).toBe(1);
+    expect(result.clients[0].slug).toBe("convergix");
+  });
+
+  it("clientSlug that doesn't resolve returns empty results across every table", async () => {
+    const { getRowsChangedSince } = await import("./operations-reads-health");
+
+    const sinceIso = new Date(0).toISOString();
+    const result = await getRowsChangedSince(sinceIso, { clientSlug: "no-such-client" });
+
+    expect(result.counts).toEqual({
+      projects: 0,
+      weekItems: 0,
+      clients: 0,
+      pipelineItems: 0,
+    });
+  });
+
+  it("uses inclusive `>=` comparison (a row exactly at `since` is included)", async () => {
+    const { getRowsChangedSince } = await import("./operations-reads-health");
+
+    const cutoffSeconds = nowSeconds();
+    const cutoffIso = new Date(cutoffSeconds * 1000).toISOString();
+
+    // Push everything to 1 second before the cutoff, then bump one project
+    // to exactly the cutoff — it must appear in the result.
+    await libsqlClient.execute({ sql: `UPDATE projects SET updated_at = ?`, args: [cutoffSeconds - 1] });
+    await setProjectUpdatedAt("pj-cds", cutoffSeconds);
+
+    const result = await getRowsChangedSince(cutoffIso, { tables: ["projects"] });
+    expect(result.projects.map((p) => p.id)).toContain("pj-cds");
+  });
+});

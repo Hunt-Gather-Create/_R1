@@ -35,6 +35,11 @@ const { mockOps, registeredTools, registeredDescriptions } = vi.hoisted(() => {
     getCurrentBatch: vi.fn().mockResolvedValue({ active: false }),
     getBatchContents: vi.fn().mockResolvedValue({ batchId: "b1", totalUpdates: 0, groups: [] }),
     getCascadeLog: vi.fn().mockResolvedValue({ windowMinutes: 60, since: new Date(), totalCascadeRows: 0, groups: [] }),
+    getRowsChangedSince: vi.fn().mockResolvedValue({
+      since: "2026-04-20T00:00:00.000Z",
+      counts: { projects: 0, weekItems: 0, clients: 0, pipelineItems: 0 },
+      projects: [], weekItems: [], clients: [], pipelineItems: [],
+    }),
     getTeamMembersData: vi.fn().mockResolvedValue([{ name: "Kathy", title: "Account Manager" }]),
     getClientContacts: vi.fn().mockResolvedValue({ client: "Convergix", contacts: ["Daniel"] }),
     updateProjectStatus: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
@@ -397,6 +402,26 @@ describe("registerRunwayTools", () => {
   it("get_cascade_log defaults windowMinutes to undefined (operation defaults to 60)", async () => {
     await registeredTools.get("get_cascade_log")!({});
     expect(mockOps.getCascadeLog).toHaveBeenCalledWith(undefined);
+  });
+
+  it("get_rows_changed_since passes since with no options", async () => {
+    await registeredTools.get("get_rows_changed_since")!({ since: "2026-04-20T00:00:00.000Z" });
+    expect(mockOps.getRowsChangedSince).toHaveBeenCalledWith(
+      "2026-04-20T00:00:00.000Z",
+      { tables: undefined, clientSlug: undefined },
+    );
+  });
+
+  it("get_rows_changed_since forwards tables + clientSlug filters", async () => {
+    await registeredTools.get("get_rows_changed_since")!({
+      since: "2026-04-20T00:00:00.000Z",
+      tables: ["projects", "clients"],
+      clientSlug: "convergix",
+    });
+    expect(mockOps.getRowsChangedSince).toHaveBeenCalledWith(
+      "2026-04-20T00:00:00.000Z",
+      { tables: ["projects", "clients"], clientSlug: "convergix" },
+    );
   });
 
   // ── New mutation tool execution tests ──────────────────────
