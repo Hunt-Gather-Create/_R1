@@ -1,16 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockSelectFrom = vi.fn();
+const mockProjectsSelect = vi.fn();
 const mockGetClientBySlug = vi.fn();
 const mockGetClientNameMap = vi.fn();
 
 vi.mock("@/lib/db/runway", () => ({
   getRunwayDb: () => ({
-    select: () => ({ from: mockSelectFrom }),
+    select: () => ({
+      // Route by table identity — projects has `.__table === "projects"`
+      // (set in the schema mock below). Everything else routes through
+      // the generic `mockSelectFrom` used by pre-existing tests.
+      from: (table: unknown) => {
+        const t = table as { __table?: string };
+        if (t?.__table === "projects") return mockProjectsSelect();
+        return mockSelectFrom();
+      },
+    }),
   }),
 }));
 vi.mock("@/lib/db/runway-schema", () => ({
   clients: { name: "name", slug: "slug" },
+  projects: { __table: "projects" },
   updates: { createdAt: "createdAt", idempotencyKey: "idempotencyKey" },
   teamMembers: { isActive: "isActive", slackUserId: "slackUserId" },
 }));
@@ -21,6 +32,10 @@ vi.mock("drizzle-orm", () => ({
 vi.mock("./operations", () => ({
   getClientBySlug: (...args: unknown[]) => mockGetClientBySlug(...args),
   getClientNameMap: (...args: unknown[]) => mockGetClientNameMap(...args),
+  matchesSubstring: (value: string | null | undefined, search: string) => {
+    if (!value) return false;
+    return value.toLowerCase().includes(search.toLowerCase());
+  },
 }));
 
 function chainable(data: unknown[]) {
@@ -37,6 +52,8 @@ function chainable(data: unknown[]) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetClientNameMap.mockResolvedValue(new Map([["c1", "Convergix"]]));
+  // Default projects returned when the projectName filter triggers a lookup.
+  mockProjectsSelect.mockResolvedValue([]);
 });
 
 describe("getUpdatesData", () => {
@@ -158,6 +175,102 @@ describe("getUpdatesData — edge cases", () => {
     const { getUpdatesData } = await import("./operations-context");
     const result = await getUpdatesData({ clientSlug: "convergix" });
     expect(result).toEqual([]);
+  });
+});
+
+describe("getUpdatesData — v4 expanded params (since/until/batchId/updateType/projectName)", () => {
+  it("filters by since (inclusive lower bound on createdAt)", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "c1", updatedBy: "Kathy", updateType: "note", previousValue: null, newValue: null, summary: "recent", createdAt: new Date("2026-04-15T00:00:00Z") },
+      { clientId: "c1", updatedBy: "Kathy", updateType: "note", previousValue: null, newValue: null, summary: "old", createdAt: new Date("2026-03-01T00:00:00Z") },
+    ]));
+    const { getUpdatesData } = await import("./operations-context");
+    const result = await getUpdatesData({ since: "2026-04-01T00:00:00Z" });
+    expect(result).toHaveLength(1);
+    expect(result[0].summary).toBe("recent");
+  });
+
+  it("filters by until (inclusive upper bound on createdAt)", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "c1", updatedBy: "Kathy", updateType: "note", previousValue: null, newValue: null, summary: "keep", createdAt: new Date("2026-03-15T00:00:00Z") },
+      { clientId: "c1", updatedBy: "Kathy", updateType: "note", previousValue: null, newValue: null, summary: "too-new", createdAt: new Date("2026-04-15T00:00:00Z") },
+    ]));
+    const { getUpdatesData } = await import("./operations-context");
+    const result = await getUpdatesData({ until: "2026-04-01T00:00:00Z" });
+    expect(result).toHaveLength(1);
+    expect(result[0].summary).toBe("keep");
+  });
+
+  it("filters by batchId", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "c1", updatedBy: "Kathy", updateType: "note", batchId: "batch-1", previousValue: null, newValue: null, summary: "in-batch", createdAt: null },
+      { clientId: "c1", updatedBy: "Kathy", updateType: "note", batchId: null, previousValue: null, newValue: null, summary: "no-batch", createdAt: null },
+      { clientId: "c1", updatedBy: "Kathy", updateType: "note", batchId: "batch-2", previousValue: null, newValue: null, summary: "wrong-batch", createdAt: null },
+    ]));
+    const { getUpdatesData } = await import("./operations-context");
+    const result = await getUpdatesData({ batchId: "batch-1" });
+    expect(result).toHaveLength(1);
+    expect(result[0].summary).toBe("in-batch");
+  });
+
+  it("filters by updateType (exact match)", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "c1", updatedBy: "Kathy", updateType: "status-change", previousValue: null, newValue: null, summary: "status", createdAt: null },
+      { clientId: "c1", updatedBy: "Kathy", updateType: "note", previousValue: null, newValue: null, summary: "note", createdAt: null },
+    ]));
+    const { getUpdatesData } = await import("./operations-context");
+    const result = await getUpdatesData({ updateType: "status-change" });
+    expect(result).toHaveLength(1);
+    expect(result[0].summary).toBe("status");
+  });
+
+  it("filters by projectName (case-insensitive substring against linked project)", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "c1", projectId: "p1", updatedBy: "Kathy", updateType: "note", previousValue: null, newValue: null, summary: "cds-update", createdAt: null },
+      { clientId: "c1", projectId: "p2", updatedBy: "Kathy", updateType: "note", previousValue: null, newValue: null, summary: "brand-update", createdAt: null },
+      { clientId: "c1", projectId: null, updatedBy: "Kathy", updateType: "note", previousValue: null, newValue: null, summary: "no-project", createdAt: null },
+    ]));
+    mockProjectsSelect.mockResolvedValue([
+      { id: "p1", name: "CDS Messaging" },
+      { id: "p2", name: "Brand Refresh" },
+    ]);
+    const { getUpdatesData } = await import("./operations-context");
+    const result = await getUpdatesData({ projectName: "cds" });
+    expect(result).toHaveLength(1);
+    expect(result[0].summary).toBe("cds-update");
+  });
+
+  it("combines multiple filters (AND semantics)", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { clientId: "c1", updatedBy: "Kathy", updateType: "status-change", batchId: "b1", previousValue: null, newValue: null, summary: "keep", createdAt: new Date("2026-04-15T00:00:00Z") },
+      { clientId: "c1", updatedBy: "Kathy", updateType: "note",          batchId: "b1", previousValue: null, newValue: null, summary: "wrong-type", createdAt: new Date("2026-04-15T00:00:00Z") },
+      { clientId: "c1", updatedBy: "Kathy", updateType: "status-change", batchId: "b2", previousValue: null, newValue: null, summary: "wrong-batch", createdAt: new Date("2026-04-15T00:00:00Z") },
+    ]));
+    const { getUpdatesData } = await import("./operations-context");
+    const result = await getUpdatesData({
+      since: "2026-04-01",
+      batchId: "b1",
+      updateType: "status-change",
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].summary).toBe("keep");
+  });
+
+  it("applies limit post-filter", async () => {
+    const rows = Array.from({ length: 10 }, (_, i) => ({
+      clientId: "c1",
+      updatedBy: "Kathy",
+      updateType: "note",
+      batchId: "b1",
+      previousValue: null,
+      newValue: null,
+      summary: `u${i}`,
+      createdAt: new Date("2026-04-15T00:00:00Z"),
+    }));
+    mockSelectFrom.mockReturnValue(chainable(rows));
+    const { getUpdatesData } = await import("./operations-context");
+    const result = await getUpdatesData({ batchId: "b1", limit: 3 });
+    expect(result).toHaveLength(3);
   });
 });
 
