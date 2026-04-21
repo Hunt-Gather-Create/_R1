@@ -15,12 +15,16 @@ interface PlateSummaryProps {
 }
 
 /**
- * Plate summary — soft flags rendered at the top of the Week Of / board
- * view. Currently surfaces:
+ * Plate summary — informational pills rendered at the top of the Week Of /
+ * board view. Currently surfaces:
  *  - Retainer renewals within 30 days (chunk 3 #4)
  *  - Expired contracts with active work (chunk 3 #5)
  *
- * Pills render as muted, non-blocking copy; they inform but don't alarm.
+ * Header was renamed from "Soft Flags" to "In Flight" in PR #88 chunk A;
+ * the pills are informational (upcoming renewal, contract state), not
+ * urgent, so the emerald palette reads better than the old amber warning.
+ * Expired-contract pills keep the red palette (they are urgent).
+ *
  * Returns null when nothing applies so the layout collapses cleanly.
  */
 export function PlateSummary({ accounts, nowISO }: PlateSummaryProps) {
@@ -36,17 +40,17 @@ export function PlateSummary({ accounts, nowISO }: PlateSummaryProps) {
     <section
       aria-label="Plate summary"
       data-testid="plate-summary"
-      className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 sm:p-4"
+      className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 sm:p-4"
     >
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-300">
-        Soft Flags
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-300">
+        In Flight
       </p>
       <div className="flex flex-wrap gap-2">
         {renewalPills.map((pill) => (
           <span
             key={`renewal-${pill.projectName}-${pill.contractEnd}`}
             data-testid="retainer-renewal-pill"
-            className="rounded-full border border-amber-500/30 bg-background/50 px-2.5 py-1 text-xs text-amber-200"
+            className="rounded-full border border-emerald-500/30 bg-background/50 px-2.5 py-1 text-xs text-emerald-200"
           >
             {retainerPillText(pill)}
           </span>

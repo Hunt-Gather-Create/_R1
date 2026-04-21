@@ -159,26 +159,27 @@ describe("RunwayBoard", () => {
   });
 
   // Chunk 3 #6: In Flight toggle default ON + persistence hook
-  it("renders In Flight toggle checked by default", () => {
+  // (Toggle was extracted to InFlightToggle component in PR #88 chunk A.)
+  it("renders In Flight toggle on by default", () => {
     render(<RunwayBoard {...defaultProps} />);
-    const toggle = screen.getByTestId("in-flight-toggle") as HTMLInputElement;
-    expect(toggle.checked).toBe(true);
+    const toggle = screen.getByTestId("in-flight-toggle");
+    expect(toggle).toHaveAttribute("aria-checked", "true");
   });
 
   it("respects initialInFlightEnabled=false when explicitly off", () => {
     render(
       <RunwayBoard {...defaultProps} initialInFlightEnabled={false} />
     );
-    const toggle = screen.getByTestId("in-flight-toggle") as HTMLInputElement;
-    expect(toggle.checked).toBe(false);
+    const toggle = screen.getByTestId("in-flight-toggle");
+    expect(toggle).toHaveAttribute("aria-checked", "false");
   });
 
   it("flips toggle state and invokes server action on change", () => {
     mockToggleInFlight.mockClear();
     render(<RunwayBoard {...defaultProps} />);
-    const toggle = screen.getByTestId("in-flight-toggle") as HTMLInputElement;
+    const toggle = screen.getByTestId("in-flight-toggle");
     fireEvent.click(toggle);
-    expect(toggle.checked).toBe(false);
+    expect(toggle).toHaveAttribute("aria-checked", "false");
     expect(mockToggleInFlight).toHaveBeenCalledWith(false);
   });
 });
