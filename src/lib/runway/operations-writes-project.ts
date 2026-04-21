@@ -20,6 +20,7 @@ import {
   insertAuditRecord,
   validateAndResolveField,
   getPreviousValue,
+  normalizeResourcesString,
 } from "./operations-utils";
 import type { OperationResult } from "./operations-utils";
 
@@ -123,18 +124,22 @@ export async function updateProjectField(
 
   const previousValue = getPreviousValue(project, columnKey);
 
+  // v4 (Chunk 5): normalize resources string on write so storage is canonical.
+  const effectiveNewValue =
+    typedField === "resources" ? normalizeResourcesString(newValue) : newValue;
+
   const idemKey = generateIdempotencyKey(
     "field-change",
     project.id,
     field,
-    newValue,
+    effectiveNewValue,
     updatedBy
   );
 
   const dup = await checkDuplicate(idemKey, {
     ok: true,
     message: "Update already applied (duplicate request).",
-    data: { clientName: client.name, projectName: project.name, field, previousValue, newValue },
+    data: { clientName: client.name, projectName: project.name, field, previousValue, newValue: effectiveNewValue },
   });
   if (dup) return dup;
 
@@ -149,7 +154,7 @@ export async function updateProjectField(
   await db.transaction(async (tx) => {
     await tx
       .update(projects)
-      .set({ [columnKey]: newValue, updatedAt: new Date() })
+      .set({ [columnKey]: effectiveNewValue, updatedAt: new Date() })
       .where(eq(projects.id, project.id));
 
     // Cascade dueDate changes to linked deadline week items
@@ -158,7 +163,7 @@ export async function updateProjectField(
       for (const item of linkedDeadlines) {
         await tx
           .update(weekItems)
-          .set({ date: newValue, updatedAt: new Date() })
+          .set({ date: effectiveNewValue, updatedAt: new Date() })
           .where(eq(weekItems.id, item.id));
         cascadedItems.push(item.title);
         cascadedIds.push(item.id);
@@ -171,7 +176,7 @@ export async function updateProjectField(
       event: "runway_cascade_forward",
       projectId: project.id,
       field: "dueDate",
-      newValue,
+      newValue: effectiveNewValue,
       cascadedItems,
     }));
   }
@@ -184,8 +189,8 @@ export async function updateProjectField(
     updatedBy,
     updateType: "field-change",
     previousValue,
-    newValue,
-    summary: `${client.name} / ${project.name}: ${field} changed from "${previousValue}" to "${newValue}"`,
+    newValue: effectiveNewValue,
+    summary: `${client.name} / ${project.name}: ${field} changed from "${previousValue}" to "${effectiveNewValue}"`,
     metadata: JSON.stringify({ field }),
   });
 
@@ -197,7 +202,7 @@ export async function updateProjectField(
       "cascade-duedate",
       parentAuditId,
       itemId,
-      newValue
+      effectiveNewValue
     );
     await insertAuditRecord({
       idempotencyKey: childIdemKey,
@@ -206,8 +211,8 @@ export async function updateProjectField(
       updatedBy,
       updateType: "cascade-duedate",
       previousValue: null,
-      newValue,
-      summary: `Cascaded from ${project.name} dueDate change: ${itemTitle} → ${newValue}`,
+      newValue: effectiveNewValue,
+      summary: `Cascaded from ${project.name} dueDate change: ${itemTitle} → ${effectiveNewValue}`,
       metadata: JSON.stringify({ weekItemId: itemId, field: "date" }),
       triggeredByUpdateId: parentAuditId,
     });
@@ -221,7 +226,7 @@ export async function updateProjectField(
       projectName: project.name,
       field,
       previousValue,
-      newValue,
+      newValue: effectiveNewValue,
       cascadedItems,
     },
   };

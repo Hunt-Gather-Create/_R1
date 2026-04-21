@@ -41,6 +41,13 @@ function parseBlockedByIds(raw: string | null | undefined): string[] {
  * Resolve a week item's blockedBy id list to {id, title, status} refs.
  * Unresolved ids (blocker not in the provided map) are dropped — the UI
  * renders only visible blockers. Callers can still check raw ids if needed.
+ *
+ * Invariant (Chunk 5 debt §13.3): the `weekItemById` map must contain
+ * every L2 the caller needs to resolve — typically the full `items[]`
+ * the UI already has in hand. If a caller later scopes the map to a
+ * single-week slice, cross-week blockers will silently disappear from
+ * the rendered dependency chain. Keep the map's scope at least as wide
+ * as the items being rendered to avoid that foot-gun.
  */
 function resolveBlockedByRefs(
   raw: string | null | undefined,

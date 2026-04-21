@@ -21,13 +21,16 @@ interface InFlightSectionProps {
  * moving right now?" at a glance.
  */
 export function InFlightSection({ weekItems, nowISO, enabled }: InFlightSectionProps) {
-  const today = nowISO ?? new Date().toISOString().slice(0, 10);
-
+  // Chunk 5 debt §13.2: derive `today` inside the memo instead of on every
+  // render. Without this the `new Date()` call (when `nowISO` is undefined)
+  // produces a fresh string each render — primitive-equal in practice, but
+  // the allocation is still wasted work and obscures the dependency array.
   const inFlight = useMemo<DayItemEntry[]>(() => {
     if (!enabled) return [];
+    const today = nowISO ?? new Date().toISOString().slice(0, 10);
     const all = weekItems.flatMap((day) => day.items);
     return filterInFlight(all, today);
-  }, [enabled, weekItems, today]);
+  }, [enabled, weekItems, nowISO]);
 
   if (!enabled) return null;
   if (inFlight.length === 0) return null;

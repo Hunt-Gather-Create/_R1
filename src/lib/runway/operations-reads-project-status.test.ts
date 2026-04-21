@@ -268,6 +268,34 @@ describe("getProjectStatus", () => {
     expect(r.status.current.blockers).toEqual(["Waiting", "Upstream"]);
   });
 
+  it("logs a warning on malformed blocked_by JSON without failing the read", async () => {
+    // Chunk 5 debt §12.3: surface malformed payloads instead of silently
+    // swallowing the parse error.
+    mockProjectRow = mkProject();
+    mockDbRoutes({
+      weekItems: [
+        mkWeekItem({ id: "w-broken", title: "Broken", status: "blocked", startDate: "2026-04-21", blockedBy: "not-valid-json{" }),
+      ],
+      updates: [],
+      clientRow: { id: "c1", team: "" },
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { getProjectStatus } = await import("./operations-reads-project-status");
+      const r = await getProjectStatus({ clientSlug: "convergix", projectName: "X", now: NOW });
+      if (!r.ok) throw new Error("expected ok");
+      // Read still returns successfully; only blocked-status title surfaces.
+      expect(r.status.current.blockers).toEqual(["Broken"]);
+      // Warning logged with the event tag for debugging visibility.
+      expect(warnSpy).toHaveBeenCalled();
+      const payload = JSON.parse(String(warnSpy.mock.calls[0][0]));
+      expect(payload.event).toBe("runway_blocked_by_parse_error");
+      expect(payload.weekItemId).toBe("w-broken");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("suggests review when an in-progress L2 is past its end_date", async () => {
     mockProjectRow = mkProject();
     mockDbRoutes({

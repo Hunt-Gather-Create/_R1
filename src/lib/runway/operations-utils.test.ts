@@ -184,6 +184,24 @@ describe("field constants", () => {
     }
   });
 
+  it("PROJECT_FIELDS includes v4 retainer + contract metadata fields", async () => {
+    const { PROJECT_FIELDS, PROJECT_FIELD_TO_COLUMN } = await import("./operations-utils");
+    // v4 convention: `engagementType`, `contractStart`, `contractEnd` must be
+    // writable via updateProjectField (drives retainer renewal + contract expiry flows).
+    for (const field of ["engagementType", "contractStart", "contractEnd"] as const) {
+      expect(PROJECT_FIELDS).toContain(field);
+      expect(PROJECT_FIELD_TO_COLUMN[field]).toBe(field);
+    }
+  });
+
+  it("WEEK_ITEM_FIELDS includes v4 startDate/endDate/blockedBy", async () => {
+    const { WEEK_ITEM_FIELDS, WEEK_ITEM_FIELD_TO_COLUMN } = await import("./operations-utils");
+    for (const field of ["startDate", "endDate", "blockedBy"] as const) {
+      expect(WEEK_ITEM_FIELDS).toContain(field);
+      expect(WEEK_ITEM_FIELD_TO_COLUMN[field]).toBe(field);
+    }
+  });
+
   it("WEEK_ITEM_FIELD_TO_COLUMN maps every WEEK_ITEM_FIELD", async () => {
     const { WEEK_ITEM_FIELDS, WEEK_ITEM_FIELD_TO_COLUMN } = await import("./operations-utils");
     for (const field of WEEK_ITEM_FIELDS) {

@@ -61,6 +61,9 @@ vi.mock("./operations-utils", () => ({
     }
     return { ok: true, typedField: field, columnKey: fieldToColumn[field] };
   },
+  // v4 (Chunk 5): identity passthrough — real normalization asserted
+  // separately in operations-utils.test.ts.
+  normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
 }));
 
 const mockGetLinkedDeadlineItems = vi.fn();

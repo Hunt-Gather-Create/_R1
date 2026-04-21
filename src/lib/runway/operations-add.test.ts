@@ -29,6 +29,9 @@ vi.mock("./operations", () => ({
   insertAuditRecord: async (params: Record<string, unknown>) => {
     mockInsertValues(params);
   },
+  // v4 (Chunk 5): identity passthrough — real normalization asserted
+  // in operations-utils.test.ts.
+  normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
 }));
 
 const client = { id: "c1", name: "Convergix", slug: "convergix" };
