@@ -231,3 +231,80 @@ describe("getProjectsFiltered", () => {
     expect(cds.updatedAt).toBeInstanceOf(Date);
   });
 });
+
+describe("getClientDetail", () => {
+  it("returns null for unknown slug", async () => {
+    const { getClientDetail } = await import("./operations-reads-clients");
+    const result = await getClientDetail("nonexistent-slug");
+    expect(result).toBeNull();
+  });
+
+  it("returns full client detail with projects / pipeline / updates", async () => {
+    const epoch = Math.floor(Date.now() / 1000);
+    // Add a Convergix-specific update on top of the seed data.
+    await libsqlClient.execute({
+      sql: `INSERT INTO updates (id, project_id, client_id, updated_by, update_type, summary, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      args: ["up-1", "pj-cds", "cl-convergix", "kathy", "status-change", "active -> awaiting-client", epoch],
+    });
+
+    const { getClientDetail } = await import("./operations-reads-clients");
+    const result = await getClientDetail("convergix");
+
+    expect(result).not.toBeNull();
+    expect(result!.id).toBe("cl-convergix");
+    expect(result!.slug).toBe("convergix");
+    expect(result!.name).toBe("Convergix");
+
+    // Projects: 3 seeded (CDS, Social, ABM Brand).
+    expect(result!.projects).toHaveLength(3);
+    const cds = result!.projects.find((p) => p.id === "pj-cds");
+    expect(cds).toBeDefined();
+    expect(cds!.dueDate).toBe("2026-04-25");
+
+    // Pipeline: seed has one Convergix pipeline item (pl-cgx-sow).
+    expect(result!.pipelineItems.map((p) => p.id)).toEqual(["pl-cgx-sow"]);
+
+    // Updates: we just added one.
+    expect(result!.recentUpdates).toHaveLength(1);
+    expect(result!.recentUpdates[0].summary).toBe("active -> awaiting-client");
+  });
+
+  it("scopes pipeline and updates to the requested client only", async () => {
+    const epoch = Math.floor(Date.now() / 1000);
+    // Add a Convergix update + a Bonterra update. Seed already has per-client
+    // pipeline items — the scope assertion relies on that.
+    await libsqlClient.execute({
+      sql: `INSERT INTO updates (id, client_id, updated_by, update_type, summary, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      args: ["up-cgx", "cl-convergix", "kathy", "note", "cgx note", epoch],
+    });
+    await libsqlClient.execute({
+      sql: `INSERT INTO updates (id, client_id, updated_by, update_type, summary, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      args: ["up-bon", "cl-bonterra", "jill", "note", "bonterra note", epoch],
+    });
+
+    const { getClientDetail } = await import("./operations-reads-clients");
+    const result = await getClientDetail("convergix");
+
+    // Only the seed's Convergix pipeline row should appear (pl-cgx-sow).
+    expect(result!.pipelineItems.every((p) => p.id !== "pl-bonterra-renewal")).toBe(true);
+    expect(result!.pipelineItems.some((p) => p.id === "pl-cgx-sow")).toBe(true);
+    // Updates scoped to Convergix only.
+    expect(result!.recentUpdates.map((u) => u.id)).toEqual(["up-cgx"]);
+  });
+
+  it("respects recentUpdatesLimit", async () => {
+    const epoch = Math.floor(Date.now() / 1000);
+    for (let i = 0; i < 5; i++) {
+      await libsqlClient.execute({
+        sql: `INSERT INTO updates (id, client_id, updated_by, update_type, summary, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        args: [`up-${i}`, "cl-convergix", "kathy", "note", `update ${i}`, epoch + i],
+      });
+    }
+
+    const { getClientDetail } = await import("./operations-reads-clients");
+    const result = await getClientDetail("convergix", { recentUpdatesLimit: 3 });
+
+    expect(result!.recentUpdates).toHaveLength(3);
+  });
+});

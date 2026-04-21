@@ -89,6 +89,7 @@ export type {
 // ── Read operations ─────────────────────────────────────
 export {
   getClientsWithCounts,
+  getClientDetail,
   getProjectsFiltered,
   getLinkedWeekItems,
   getLinkedDeadlineItems,
@@ -105,6 +106,11 @@ export type {
   WeekItemRow,
   StaleAccountItem,
   GetClientsWithCountsOptions,
+  GetClientDetailOptions,
+  ClientDetail,
+  ClientDetailProject,
+  ClientDetailPipelineItem,
+  ClientDetailUpdate,
 } from "./operations-reads";
 
 export {
