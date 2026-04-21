@@ -69,14 +69,25 @@ export async function getProjectsFiltered(opts?: {
   }
 
   return projectList.map((p) => ({
+    id: p.id,
     name: p.name,
     client: clientNameById.get(p.clientId) ?? "Unknown",
     status: p.status,
     category: p.category,
     owner: p.owner,
+    resources: p.resources,
     waitingOn: p.waitingOn,
     target: p.target,
     notes: p.notes,
     staleDays: p.staleDays,
+    // v4 convention (2026-04-21): enriched timing + engagement fields for
+    // MCP + bot consumers. All nullable; existing callers ignore unknown keys.
+    dueDate: p.dueDate,
+    startDate: p.startDate,
+    endDate: p.endDate,
+    engagementType: p.engagementType,
+    contractStart: p.contractStart,
+    contractEnd: p.contractEnd,
+    updatedAt: p.updatedAt,
   }));
 }

@@ -160,4 +160,27 @@ describe("getProjectsFiltered", () => {
     expect(cds).toHaveProperty("notes");
     expect(cds).toHaveProperty("staleDays");
   });
+
+  it("includes v4 enriched fields: id, dueDate, resources, start/end, engagement, contract, updatedAt", async () => {
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+
+    const result = await getProjectsFiltered({ clientSlug: "convergix", status: "in-production" });
+
+    expect(result).toHaveLength(1);
+    const cds = result[0];
+    // Every enriched key must be present on the response shape.
+    expect(cds).toHaveProperty("id");
+    expect(cds.id).toBe("pj-cds");
+    expect(cds).toHaveProperty("dueDate");
+    expect(cds.dueDate).toBe("2026-04-25");
+    expect(cds).toHaveProperty("resources");
+    expect(cds).toHaveProperty("startDate");
+    expect(cds).toHaveProperty("endDate");
+    expect(cds).toHaveProperty("engagementType");
+    expect(cds).toHaveProperty("contractStart");
+    expect(cds).toHaveProperty("contractEnd");
+    expect(cds).toHaveProperty("updatedAt");
+    // updatedAt should be a Date (drizzle timestamp mode).
+    expect(cds.updatedAt).toBeInstanceOf(Date);
+  });
 });
