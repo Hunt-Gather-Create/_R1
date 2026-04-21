@@ -74,6 +74,18 @@ export type {
   ResourceEntry,
 } from "./operations-utils";
 
+// ── Structured mutation response shape (v4 / PR #86) ────
+export type {
+  MutationResponse,
+  MutationSuccess,
+  MutationFailure,
+  CascadedItemInfo,
+  ReverseCascadeInfo,
+  UpdateProjectStatusData,
+  UpdateProjectFieldData,
+  UpdateWeekItemFieldData,
+} from "./mutation-response";
+
 // ── Read operations ─────────────────────────────────────
 export {
   getClientsWithCounts,
