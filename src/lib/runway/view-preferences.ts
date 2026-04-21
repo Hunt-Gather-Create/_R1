@@ -49,14 +49,27 @@ function parsePreferences(raw: string | null): RunwayViewPreferences {
 export async function getViewPreferences(
   scope: string = GLOBAL_SCOPE
 ): Promise<RunwayViewPreferences> {
-  const db = getRunwayDb();
-  const rows = await db
-    .select()
-    .from(viewPreferences)
-    .where(eq(viewPreferences.scope, scope))
-    .limit(1);
-  if (rows.length === 0) return { ...DEFAULT_PREFERENCES };
-  return parsePreferences(rows[0].preferences);
+  // Graceful fallback: if the `view_preferences` table does not yet exist
+  // (i.e. schema not yet pushed to prod), return defaults rather than
+  // crashing the whole page. TP coordinates `pnpm runway:push` at
+  // integration; in the meantime the UI behaves as if the toggle is ON.
+  try {
+    const db = getRunwayDb();
+    const rows = await db
+      .select()
+      .from(viewPreferences)
+      .where(eq(viewPreferences.scope, scope))
+      .limit(1);
+    if (rows.length === 0) return { ...DEFAULT_PREFERENCES };
+    return parsePreferences(rows[0].preferences);
+  } catch (err) {
+    // SQLITE_ERROR: no such table — ignore quietly; any other error re-throws.
+    const message = err instanceof Error ? err.message : String(err);
+    if (/no such table|SQLITE_ERROR/i.test(message)) {
+      return { ...DEFAULT_PREFERENCES };
+    }
+    throw err;
+  }
 }
 
 /**
@@ -71,24 +84,32 @@ export async function setViewPreferences(
   const current = await getViewPreferences(scope);
   const next = { ...current, ...patch };
 
-  const db = getRunwayDb();
-  const existing = await db
-    .select()
-    .from(viewPreferences)
-    .where(eq(viewPreferences.scope, scope))
-    .limit(1);
+  try {
+    const db = getRunwayDb();
+    const existing = await db
+      .select()
+      .from(viewPreferences)
+      .where(eq(viewPreferences.scope, scope))
+      .limit(1);
 
-  if (existing.length === 0) {
-    await db.insert(viewPreferences).values({
-      scope,
-      preferences: JSON.stringify(next),
-      updatedAt: new Date(),
-    });
-  } else {
-    await db
-      .update(viewPreferences)
-      .set({ preferences: JSON.stringify(next), updatedAt: new Date() })
-      .where(eq(viewPreferences.scope, scope));
+    if (existing.length === 0) {
+      await db.insert(viewPreferences).values({
+        scope,
+        preferences: JSON.stringify(next),
+        updatedAt: new Date(),
+      });
+    } else {
+      await db
+        .update(viewPreferences)
+        .set({ preferences: JSON.stringify(next), updatedAt: new Date() })
+        .where(eq(viewPreferences.scope, scope));
+    }
+  } catch (err) {
+    // Same resilience as `getViewPreferences` — if the table does not exist
+    // yet, silently return the merged object. The next runway:push will
+    // bring persistence online.
+    const message = err instanceof Error ? err.message : String(err);
+    if (!/no such table|SQLITE_ERROR/i.test(message)) throw err;
   }
 
   return next;

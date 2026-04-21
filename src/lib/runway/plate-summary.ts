@@ -128,3 +128,26 @@ export function contractExpiredPills(accounts: Account[]): ContractExpiredPill[]
 export function contractExpiredPillText(pill: ContractExpiredPill): string {
   return `Contract expired: ${pill.clientName}`;
 }
+
+// ── #6: In Flight filter ─────────────────────────────────
+
+/**
+ * Return only the items that are actively "in flight" today:
+ *  - `status === 'in-progress'` AND
+ *  - today is between `start_date` and `end_date` (inclusive). `end_date`
+ *    null is treated as same as `start_date` (single-day item).
+ *
+ * Does NOT mutate its input. Used by the Week Of In Flight toggle section.
+ */
+export function filterInFlight<T extends { status?: string | null; startDate?: string | null; endDate?: string | null }>(
+  items: T[],
+  nowISO: string
+): T[] {
+  return items.filter((item) => {
+    if (item.status !== "in-progress") return false;
+    const start = item.startDate;
+    if (!start) return false;
+    const end = item.endDate ?? start;
+    return start <= nowISO && nowISO <= end;
+  });
+}

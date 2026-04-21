@@ -1,9 +1,16 @@
 "use client";
 
 import { useMemo } from "react";
-import type { Account, TriageItem } from "../types";
+import type { Account, TriageItem, DayItemEntry } from "../types";
 import { getOwnerResourcesDisplay } from "./display-utils";
 import { StatusBadge, StaleBadge, ContractBadge, MetadataLabel } from "./status-badge";
+
+/**
+ * Extended triage item with unified-view L2 milestones attached.
+ * Kept in this file as an optional prop field so AccountSection works for
+ * both the legacy (no milestones) and unified (with milestones) shapes.
+ */
+type TriageItemWithMilestones = TriageItem & { milestones?: DayItemEntry[] };
 
 const DATE_PATTERN = /(\d{1,2})\/(\d{1,2})/;
 
@@ -29,8 +36,12 @@ function formatContractTerm(term?: string): string | undefined {
     .replace(/\bNDA\b/g, "Non-Disclosure Agreement");
 }
 
-function ProjectCard({ item }: { item: TriageItem }) {
+function ProjectCard({ item }: { item: TriageItemWithMilestones }) {
   const { showOwnerSeparately, displayResources } = getOwnerResourcesDisplay(item);
+
+  // Chunk 3 #1 — unified Project View: L2 milestones rendered inline
+  // under each L1 when the caller provides them. Silent when absent.
+  const milestones = item.milestones ?? [];
 
   return (
     <div className="border-t border-border/30 py-3 first:border-t-0 first:pt-0">
@@ -59,12 +70,37 @@ function ProjectCard({ item }: { item: TriageItem }) {
             {item.notes}
           </p>
         ) : null}
+        {milestones.length > 0 ? (
+          <ul
+            data-testid="project-milestones"
+            className="mt-2 space-y-0.5 pl-3 text-xs text-muted-foreground/80"
+          >
+            {milestones.map((m, i) => (
+              <li key={`${m.id ?? m.title}-${i}`} className="flex items-center gap-1.5">
+                <span aria-hidden className="text-muted-foreground/40">&bull;</span>
+                <span>{m.title}</span>
+                {m.status ? (
+                  <span className="text-muted-foreground/60">({m.status})</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
     </div>
   );
 }
 
-export function AccountSection({ account }: { account: Account }) {
+interface AccountSectionProps {
+  /**
+   * Account with standard triage items. When the caller provides items that
+   * also carry `milestones` (unified Project View — chunk 3 #1), ProjectCard
+   * renders them inline without any additional prop plumbing.
+   */
+  account: Account | (Omit<Account, "items"> & { items: TriageItemWithMilestones[] });
+}
+
+export function AccountSection({ account }: AccountSectionProps) {
   const activeItems = useMemo(
     () =>
       account.items

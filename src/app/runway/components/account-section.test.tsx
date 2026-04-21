@@ -324,4 +324,43 @@ describe("AccountSection", () => {
     );
     expect(screen.getByText("Target: Late March")).toBeInTheDocument();
   });
+
+  // Chunk 3 #1 — unified Project View
+  it("renders inline L2 milestones when provided via unified shape", () => {
+    render(
+      <AccountSection
+        account={createAccount({
+          items: [
+            {
+              id: "p1",
+              title: "Impact Report",
+              status: "in-production",
+              category: "active",
+              milestones: [
+                { title: "Design Presentation", account: "Bonterra", type: "delivery", status: "in-progress" },
+                { title: "Dev Handoff", account: "Bonterra", type: "delivery" },
+              ],
+            },
+          ],
+        })}
+      />
+    );
+    const list = screen.getByTestId("project-milestones");
+    expect(list).toHaveTextContent("Design Presentation");
+    expect(list).toHaveTextContent("(in-progress)");
+    expect(list).toHaveTextContent("Dev Handoff");
+  });
+
+  it("does not render milestones list when items have no milestones", () => {
+    render(
+      <AccountSection
+        account={createAccount({
+          items: [
+            { id: "p1", title: "Project A", status: "in-production", category: "active" },
+          ],
+        })}
+      />
+    );
+    expect(screen.queryByTestId("project-milestones")).not.toBeInTheDocument();
+  });
 });

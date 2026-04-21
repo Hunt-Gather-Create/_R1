@@ -66,6 +66,7 @@ function mapWeekItemToEntry(
   const updatedMs = item.updatedAt ? item.updatedAt.getTime() : null;
   return {
     id: item.id,
+    projectId: item.projectId ?? null,
     title: item.title,
     account: item.clientId ? (clientNameById.get(item.clientId) ?? "") : "",
     ...(item.owner ? { owner: item.owner } : {}),

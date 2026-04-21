@@ -7,6 +7,7 @@ import {
   contractExpiredPills,
   contractExpiredPillText,
   daysBetween,
+  filterInFlight,
 } from "./plate-summary";
 import type { Account, DayItemEntry, TriageItem } from "@/app/runway/types";
 
@@ -252,5 +253,43 @@ describe("contractExpiredPills", () => {
     expect(contractExpiredPillText({ clientName: "High Desert Law" })).toBe(
       "Contract expired: High Desert Law"
     );
+  });
+});
+
+describe("filterInFlight", () => {
+  const NOW = "2026-04-20";
+
+  it("keeps in-progress items whose today is within start/end range", () => {
+    const items = [
+      { status: "in-progress", startDate: "2026-04-10", endDate: "2026-04-30", title: "A" },
+      { status: "in-progress", startDate: "2026-04-20", endDate: "2026-04-20", title: "B" },
+      { status: "in-progress", startDate: "2026-04-20", endDate: null, title: "C" },
+    ];
+    const result = filterInFlight(items, NOW);
+    expect(result.map((i) => i.title)).toEqual(["A", "B", "C"]);
+  });
+
+  it("excludes items whose status is not in-progress", () => {
+    const items = [
+      { status: "completed", startDate: "2026-04-10", endDate: "2026-04-30" },
+      { status: null, startDate: "2026-04-10", endDate: "2026-04-30" },
+      { status: "blocked", startDate: "2026-04-10", endDate: "2026-04-30" },
+    ];
+    expect(filterInFlight(items, NOW)).toHaveLength(0);
+  });
+
+  it("excludes items outside the start/end window", () => {
+    const items = [
+      { status: "in-progress", startDate: "2026-05-01", endDate: "2026-05-10" },
+      { status: "in-progress", startDate: "2026-04-01", endDate: "2026-04-10" },
+    ];
+    expect(filterInFlight(items, NOW)).toHaveLength(0);
+  });
+
+  it("excludes items without a start_date", () => {
+    const items = [
+      { status: "in-progress", startDate: null, endDate: "2026-04-30" },
+    ];
+    expect(filterInFlight(items, NOW)).toHaveLength(0);
   });
 });

@@ -46,6 +46,7 @@ export interface TriageItem {
 
 export interface DayItemEntry {
   id?: string;
+  projectId?: string | null;
   title: string;
   account: string;
   owner?: string;
