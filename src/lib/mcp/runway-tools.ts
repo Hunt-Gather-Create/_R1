@@ -6,7 +6,9 @@ import {
   getClientsWithCounts,
   getProjectsFiltered,
   getWeekItemsData,
+  getWeekItemsByProject,
   getPersonWorkload,
+  getProjectStatus,
   getPipelineData,
   getUpdatesData,
   getTeamMembersData,
@@ -63,6 +65,10 @@ export function registerRunwayTools(server: McpServer) {
     person: z.string().optional().describe("Filter where the person is owner OR resource (use this for plate queries, e.g. 'Kathy')"),
   }, async ({ weekOf, owner, resource, person }) => textResult(await getWeekItemsData(weekOf, owner, resource, person)));
 
+  server.tool("get_week_items_by_project", "List all non-completed week items (L2s) under a given project id. Use for drill-down 'what's left on Convergix / CDS?' queries.", {
+    projectId: z.string().describe("Project id (L1 id)"),
+  }, async ({ projectId }) => textResult(await getWeekItemsByProject(projectId)));
+
   server.tool("get_pipeline", "List all pipeline/unsigned SOWs", {},
     async () => textResult(await getPipelineData()));
 
@@ -77,6 +83,15 @@ export function registerRunwayTools(server: McpServer) {
   server.tool("get_person_workload", "Get all week items and projects assigned to a person, grouped by client", {
     personName: z.string().describe("Person's name (e.g. 'Kathy', 'Roz')"),
   }, async ({ personName }) => textResult(await getPersonWorkload(personName)));
+
+  server.tool("get_project_status", "Drill down on a single engagement. Returns structured data: owner, status, engagement type, contract range, blockers, in-flight and upcoming L2s, team, recent updates, suggested actions.", {
+    clientSlug: z.string().describe("Client slug (e.g. 'convergix')"),
+    projectName: z.string().describe("Project name (fuzzy match)"),
+  }, async ({ clientSlug, projectName }) => {
+    const result = await getProjectStatus({ clientSlug, projectName });
+    if (!result.ok) return textMessage(result.error);
+    return textResult(result.status);
+  });
 
   server.tool("get_client_contacts", "Get client-side contacts for a given client",
     { clientSlug: z.string().describe("Client slug") },

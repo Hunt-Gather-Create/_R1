@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getLinkedDeadlineItems, getPersonWorkload, chicagoISODate } from "./operations-reads-week";
+import {
+  getLinkedDeadlineItems,
+  getPersonWorkload,
+  getWeekItemsByProject,
+  chicagoISODate,
+} from "./operations-reads-week";
 import { projects, weekItems, clients } from "@/lib/db/runway-schema";
 
 // Mock the runway DB module
@@ -176,6 +181,63 @@ describe("getLinkedDeadlineItems", () => {
     await getLinkedDeadlineItems("proj-1");
 
     expect(getRunwayDb).toHaveBeenCalledOnce();
+  });
+});
+
+// Mock for select().from().where().orderBy() returning the provided rows.
+function mockProjectWeekItems(items: ReturnType<typeof createWeekItem>[]) {
+  const mockOrderBy = vi.fn().mockResolvedValue(items);
+  const mockWhere = vi.fn().mockReturnValue({ orderBy: mockOrderBy });
+  const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
+  const mockSelect = vi.fn().mockReturnValue({ from: mockFrom });
+  vi.mocked(getRunwayDb).mockReturnValue({ select: mockSelect } as never);
+}
+
+describe("getWeekItemsByProject", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns all non-completed L2s for the project", async () => {
+    const items = [
+      createWeekItem({ id: "w1", title: "Kickoff", status: null, startDate: "2026-04-10" }),
+      createWeekItem({ id: "w2", title: "Done thing", status: "completed", startDate: "2026-04-11" }),
+      createWeekItem({ id: "w3", title: "In progress", status: "in-progress", startDate: "2026-04-12" }),
+      createWeekItem({ id: "w4", title: "Blocked thing", status: "blocked", startDate: "2026-04-13" }),
+    ];
+    mockProjectWeekItems(items);
+
+    const result = await getWeekItemsByProject("proj-1");
+    expect(result.map((r) => r.id)).toEqual(["w1", "w3", "w4"]);
+  });
+
+  it("sorts by start_date ASC then sortOrder", async () => {
+    const items = [
+      createWeekItem({ id: "w-late", startDate: "2026-04-20", sortOrder: 1 }),
+      createWeekItem({ id: "w-early-b", startDate: "2026-04-10", sortOrder: 3 }),
+      createWeekItem({ id: "w-early-a", startDate: "2026-04-10", sortOrder: 1 }),
+    ];
+    mockProjectWeekItems(items);
+
+    const result = await getWeekItemsByProject("proj-1");
+    expect(result.map((r) => r.id)).toEqual(["w-early-a", "w-early-b", "w-late"]);
+  });
+
+  it("returns empty array when the project has no L2s", async () => {
+    mockProjectWeekItems([]);
+    const result = await getWeekItemsByProject("proj-1");
+    expect(result).toEqual([]);
+  });
+
+  it("falls back to legacy `date` when start_date is null", async () => {
+    const items = [
+      createWeekItem({ id: "w-legacy", startDate: null, date: "2026-04-09", sortOrder: 0 }),
+      createWeekItem({ id: "w-new", startDate: "2026-04-10", sortOrder: 0 }),
+    ];
+    mockProjectWeekItems(items);
+
+    const result = await getWeekItemsByProject("proj-1");
+    expect(result.map((r) => r.id)).toEqual(["w-legacy", "w-new"]);
   });
 });
 

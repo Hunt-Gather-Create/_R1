@@ -26,6 +26,32 @@ export async function getLinkedDeadlineItems(projectId: string): Promise<WeekIte
 }
 
 /**
+ * Get all non-completed L2 week items for a given project id, sorted by
+ * start/date ASC then sortOrder. Powers drill-down queries like
+ * `get_week_items_by_project` so callers can see an entire engagement's
+ * remaining work without a week-based filter.
+ */
+export async function getWeekItemsByProject(
+  projectId: string
+): Promise<WeekItemRow[]> {
+  const db = getRunwayDb();
+  const rows = await db
+    .select()
+    .from(weekItems)
+    .where(eq(weekItems.projectId, projectId))
+    .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
+  // v4: exclude completed L2s from drill-down listings.
+  const active = rows.filter((r) => r.status !== "completed");
+  // Stable sort by start_date (fall back to date) then sortOrder.
+  return [...active].sort((a, b) => {
+    const aStart = a.startDate ?? a.date ?? "";
+    const bStart = b.startDate ?? b.date ?? "";
+    if (aStart !== bStart) return aStart < bStart ? -1 : 1;
+    return a.sortOrder - b.sortOrder;
+  });
+}
+
+/**
  * Get week items, optionally filtered.
  *
  * Filtering semantics:

@@ -9,6 +9,7 @@ import {
   getPipelineData,
   getWeekItemsData,
   getPersonWorkload,
+  getProjectStatus,
   updateProjectStatus,
   addProject,
   addUpdate,
@@ -172,6 +173,20 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         personName: z.string().describe("Person's name (e.g. 'Kathy', 'Roz')"),
       }),
       execute: async ({ personName }) => getPersonWorkload(personName),
+    }),
+
+    get_project_status: tool({
+      description:
+        "Drill down on a single engagement. Returns a structured summary of one L1 project: owner, status, engagement type, contract range, who is blocking, in-flight and upcoming L2s, team roster, recent updates, and suggested next actions. Use when the user asks 'what's the deal with [client] / [project]' or 'how's [project] going' and you already know which project they mean. For 'what's on my plate' use get_person_workload instead.",
+      inputSchema: z.object({
+        clientSlug: z.string().describe("Client slug (e.g. 'convergix')"),
+        projectName: z.string().describe("Project name (fuzzy match, e.g. 'CDS Messaging')"),
+      }),
+      execute: async ({ clientSlug, projectName }) => {
+        const result = await getProjectStatus({ clientSlug, projectName });
+        if (!result.ok) return { error: result.error, available: result.available };
+        return result.status;
+      },
     }),
 
     get_client_contacts: tool({
