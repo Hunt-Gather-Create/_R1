@@ -125,6 +125,16 @@ export {
   getProjectStatus,
 } from "./operations-reads-project-status";
 
+// ── Flags aggregate surface ─────────────────────────────
+export {
+  getFlags,
+} from "./operations-reads-flags";
+
+export type {
+  GetFlagsOptions,
+  GetFlagsResult,
+} from "./operations-reads-flags";
+
 // ── Health / observability operations ──────────────────
 export {
   getDataHealth,
