@@ -3,9 +3,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const { mockOps, registeredTools } = vi.hoisted(() => {
   const mockOps = {
     getClientsWithCounts: vi.fn().mockResolvedValue([{ name: "Convergix", projectCount: 3 }]),
+    getClientDetail: vi.fn().mockResolvedValue({
+      id: "c1", name: "Convergix", slug: "convergix", projects: [], pipelineItems: [], recentUpdates: [],
+    }),
     getProjectsFiltered: vi.fn().mockResolvedValue([{ name: "CDS", status: "in-production" }]),
     getWeekItemsData: vi.fn().mockResolvedValue([{ date: "2026-04-06", title: "Review" }]),
     getWeekItemsByProject: vi.fn().mockResolvedValue([]),
+    getWeekItemsInRange: vi.fn().mockResolvedValue([{ id: "w1", title: "Launch" }]),
+    getOrphanWeekItems: vi.fn().mockResolvedValue([{ id: "w2", title: "Orphan", projectId: null }]),
     getPersonWorkload: vi.fn().mockResolvedValue({ person: "Kathy", projects: [], weekItems: [], totalProjects: 0, totalWeekItems: 0 }),
     getProjectStatus: vi.fn().mockResolvedValue({
       ok: true,
@@ -17,6 +22,19 @@ const { mockOps, registeredTools } = vi.hoisted(() => {
     }),
     getPipelineData: vi.fn().mockResolvedValue([{ name: "New SOW", status: "sow-sent" }]),
     getUpdatesData: vi.fn().mockResolvedValue([{ summary: "Status changed" }]),
+    findUpdates: vi.fn().mockResolvedValue([{ id: "u1", summary: "Changed", updateType: "status-change" }]),
+    getUpdateChain: vi.fn().mockResolvedValue({ root: { id: "u1" }, chain: [{ id: "u1" }, { id: "u2" }] }),
+    getFlags: vi.fn().mockResolvedValue({ flags: [], retainerRenewalDue: [], contractExpired: [] }),
+    getDataHealth: vi.fn().mockResolvedValue({
+      totals: { projects: 10, weekItems: 20, clients: 5, updates: 50, pipelineItems: 3 },
+      orphans: { weekItemsWithoutProject: 0, projectsWithoutClient: 0, updatesWithDanglingTriggeredBy: 0 },
+      stale: { staleProjects: 0, pastEndL2s: 0 },
+      batch: { activeBatchId: null, distinctBatchIdsLast7Days: 0 },
+      lastUpdateAt: null,
+    }),
+    getCurrentBatch: vi.fn().mockResolvedValue({ active: false }),
+    getBatchContents: vi.fn().mockResolvedValue({ batchId: "b1", totalUpdates: 0, groups: [] }),
+    getCascadeLog: vi.fn().mockResolvedValue({ windowMinutes: 60, since: new Date(), totalCascadeRows: 0, groups: [] }),
     getTeamMembersData: vi.fn().mockResolvedValue([{ name: "Kathy", title: "Account Manager" }]),
     getClientContacts: vi.fn().mockResolvedValue({ client: "Convergix", contacts: ["Daniel"] }),
     updateProjectStatus: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
@@ -196,6 +214,123 @@ describe("registerRunwayTools", () => {
     mockOps.getClientContacts.mockResolvedValueOnce(null);
     const result = await registeredTools.get("get_client_contacts")!({ clientSlug: "nonexistent" });
     expect(result).toEqual({ content: [{ type: "text", text: "Client 'nonexistent' not found." }] });
+  });
+
+  // ── Tier 2 read tools ──────────────────────────────────────
+
+  it("get_client_detail returns deep view when client exists", async () => {
+    const result = await registeredTools.get("get_client_detail")!({ slug: "convergix" });
+    expect(mockOps.getClientDetail).toHaveBeenCalledWith("convergix", { recentUpdatesLimit: undefined });
+    expect(result).toEqual({ content: [{ type: "text", text: expect.stringContaining("Convergix") }] });
+  });
+
+  it("get_client_detail passes recentUpdatesLimit when provided", async () => {
+    await registeredTools.get("get_client_detail")!({ slug: "convergix", recentUpdatesLimit: 5 });
+    expect(mockOps.getClientDetail).toHaveBeenCalledWith("convergix", { recentUpdatesLimit: 5 });
+  });
+
+  it("get_client_detail returns error message when slug missing", async () => {
+    mockOps.getClientDetail.mockResolvedValueOnce(null);
+    const result = await registeredTools.get("get_client_detail")!({ slug: "nope" });
+    expect(result).toEqual({ content: [{ type: "text", text: "Client 'nope' not found." }] });
+  });
+
+  it("get_orphan_week_items calls getOrphanWeekItems without slug", async () => {
+    const result = await registeredTools.get("get_orphan_week_items")!({});
+    expect(mockOps.getOrphanWeekItems).toHaveBeenCalledWith(undefined);
+    expect(result).toEqual({ content: [{ type: "text", text: expect.stringContaining("Orphan") }] });
+  });
+
+  it("get_orphan_week_items passes clientSlug when provided", async () => {
+    await registeredTools.get("get_orphan_week_items")!({ clientSlug: "convergix" });
+    expect(mockOps.getOrphanWeekItems).toHaveBeenCalledWith("convergix");
+  });
+
+  it("get_week_items_range passes all filters", async () => {
+    await registeredTools.get("get_week_items_range")!({
+      fromDate: "2026-04-01",
+      toDate: "2026-04-30",
+      clientSlug: "convergix",
+      owner: "Kathy",
+      category: "deadline",
+    });
+    expect(mockOps.getWeekItemsInRange).toHaveBeenCalledWith(
+      "2026-04-01", "2026-04-30", "convergix", "Kathy", "deadline",
+    );
+  });
+
+  it("get_week_items_range passes only required params", async () => {
+    await registeredTools.get("get_week_items_range")!({ fromDate: "2026-04-01", toDate: "2026-04-07" });
+    expect(mockOps.getWeekItemsInRange).toHaveBeenCalledWith(
+      "2026-04-01", "2026-04-07", undefined, undefined, undefined,
+    );
+  });
+
+  it("find_updates passes all filters", async () => {
+    const params = {
+      since: "2026-04-01",
+      until: "2026-04-30",
+      clientSlug: "convergix",
+      updatedBy: "Kathy",
+      updateType: "cascade-status-change",
+      batchId: "b1",
+      projectName: "CDS",
+      limit: 50,
+    };
+    const result = await registeredTools.get("find_updates")!(params);
+    expect(mockOps.findUpdates).toHaveBeenCalledWith(params);
+    expect(result).toEqual({ content: [{ type: "text", text: expect.stringContaining("u1") }] });
+  });
+
+  it("find_updates works with no filters", async () => {
+    await registeredTools.get("find_updates")!({});
+    expect(mockOps.findUpdates).toHaveBeenCalledWith({});
+  });
+
+  it("get_update_chain passes updateId", async () => {
+    const result = await registeredTools.get("get_update_chain")!({ updateId: "u1" });
+    expect(mockOps.getUpdateChain).toHaveBeenCalledWith("u1");
+    expect(result).toEqual({ content: [{ type: "text", text: expect.stringContaining("u1") }] });
+  });
+
+  // ── Tier 3 read tools ──────────────────────────────────────
+
+  it("get_flags calls getFlags without args", async () => {
+    const result = await registeredTools.get("get_flags")!({});
+    expect(mockOps.getFlags).toHaveBeenCalledWith({ clientSlug: undefined, personName: undefined });
+    expect(result).toEqual({ content: [{ type: "text", text: expect.stringContaining("flags") }] });
+  });
+
+  it("get_flags passes clientSlug and personName", async () => {
+    await registeredTools.get("get_flags")!({ clientSlug: "convergix", personName: "Kathy" });
+    expect(mockOps.getFlags).toHaveBeenCalledWith({ clientSlug: "convergix", personName: "Kathy" });
+  });
+
+  it("get_data_health returns snapshot", async () => {
+    const result = await registeredTools.get("get_data_health")!({});
+    expect(mockOps.getDataHealth).toHaveBeenCalledOnce();
+    expect(result).toEqual({ content: [{ type: "text", text: expect.stringContaining("totals") }] });
+  });
+
+  it("get_current_batch returns active=false when no batch", async () => {
+    const result = await registeredTools.get("get_current_batch")!({});
+    expect(mockOps.getCurrentBatch).toHaveBeenCalledOnce();
+    expect(result).toEqual({ content: [{ type: "text", text: expect.stringContaining("active") }] });
+  });
+
+  it("get_batch_contents passes batchId", async () => {
+    await registeredTools.get("get_batch_contents")!({ batchId: "cleanup-2026-04-18" });
+    expect(mockOps.getBatchContents).toHaveBeenCalledWith("cleanup-2026-04-18");
+  });
+
+  it("get_cascade_log passes windowMinutes", async () => {
+    await registeredTools.get("get_cascade_log")!({ windowMinutes: 30 });
+    expect(mockOps.getCascadeLog).toHaveBeenCalledWith(30);
+  });
+
+  it("get_cascade_log defaults windowMinutes to undefined (operation defaults to 60)", async () => {
+    await registeredTools.get("get_cascade_log")!({});
+    expect(mockOps.getCascadeLog).toHaveBeenCalledWith(undefined);
   });
 
   // ── New mutation tool execution tests ──────────────────────
