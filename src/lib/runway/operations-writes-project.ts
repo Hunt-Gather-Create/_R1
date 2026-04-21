@@ -105,7 +105,13 @@ export interface UpdateProjectFieldParams {
   clientSlug: string;
   projectName: string;
   field: string;
-  newValue: string;
+  /**
+   * New field value. `null` is a first-class write — stored as SQL NULL,
+   * audit-logged with `newValue = "(null)"` and an idempotency key that
+   * also uses `"(null)"` so repeat null writes collapse. v4 convention
+   * treats NULL as a canonical state (e.g., L2 status NULL = scheduled).
+   */
+  newValue: string | null;
   updatedBy: string;
 }
 
@@ -130,8 +136,12 @@ export async function updateProjectField(
   const previousValue = getPreviousValue(project, columnKey);
 
   // v4 (Chunk 5): normalize resources string on write so storage is canonical.
-  const effectiveNewValue =
-    typedField === "resources" ? normalizeResourcesString(newValue) : newValue;
+  // Null short-circuits the normalizer so null-to-null writes (and explicit
+  // null clears) flow through unchanged.
+  const effectiveNewValue: string | null =
+    typedField === "resources" && newValue !== null
+      ? normalizeResourcesString(newValue)
+      : newValue;
 
   // v4 (PR #88 Chunk F): parentProjectId accepts empty string as "clear".
   // Stored as NULL so `getProjectsFiltered({ parentProjectId: '__null__' })`
@@ -141,11 +151,14 @@ export async function updateProjectField(
       ? null
       : effectiveNewValue;
 
+  // Stable idempotency key for null writes — mirrors the "(null)" marker
+  // used in audit rows so repeat applies collapse.
+  const idemNewValue = effectiveNewValue ?? "(null)";
   const idemKey = generateIdempotencyKey(
     "field-change",
     project.id,
     field,
-    effectiveNewValue,
+    idemNewValue,
     updatedBy
   );
 
@@ -210,6 +223,10 @@ export async function updateProjectField(
     }));
   }
 
+  // For audit summaries and idempotency keys, surface null as the literal
+  // "(null)" marker so humans and re-run collapsing both have something stable.
+  const summaryNewValue = effectiveNewValue ?? "(null)";
+
   await insertAuditRecord({
     id: parentAuditId,
     idempotencyKey: idemKey,
@@ -219,7 +236,7 @@ export async function updateProjectField(
     updateType: "field-change",
     previousValue,
     newValue: effectiveNewValue,
-    summary: `${client.name} / ${project.name}: ${field} changed from "${previousValue}" to "${effectiveNewValue}"`,
+    summary: `${client.name} / ${project.name}: ${field} changed from "${previousValue}" to "${summaryNewValue}"`,
     metadata: JSON.stringify({ field }),
   });
 
@@ -235,7 +252,7 @@ export async function updateProjectField(
       "cascade-duedate",
       parentAuditId,
       itemId,
-      effectiveNewValue
+      idemNewValue
     );
     const childAuditId = await insertAuditRecord({
       idempotencyKey: childIdemKey,
@@ -245,7 +262,7 @@ export async function updateProjectField(
       updateType: "cascade-duedate",
       previousValue: null,
       newValue: effectiveNewValue,
-      summary: `Cascaded from ${project.name} dueDate change: ${itemTitle} → ${effectiveNewValue}`,
+      summary: `Cascaded from ${project.name} dueDate change: ${itemTitle} → ${summaryNewValue}`,
       metadata: JSON.stringify({ weekItemId: itemId, field: "date" }),
       triggeredByUpdateId: parentAuditId,
     });

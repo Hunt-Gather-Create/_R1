@@ -25,10 +25,14 @@ const mockCheckIdempotency = vi.fn();
 
 let _idCounter = 0;
 vi.mock("./operations-utils", () => ({
-  PROJECT_FIELDS: ["name", "dueDate", "owner", "resources", "waitingOn", "notes", "category"],
+  PROJECT_FIELDS: [
+    "name", "dueDate", "owner", "resources", "waitingOn", "notes", "category",
+    "engagementType", "contractStart", "contractEnd",
+  ],
   PROJECT_FIELD_TO_COLUMN: {
     name: "name", dueDate: "dueDate", owner: "owner", resources: "resources",
     waitingOn: "waitingOn", notes: "notes", category: "category",
+    engagementType: "engagementType", contractStart: "contractStart", contractEnd: "contractEnd",
   },
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
   generateId: () => `mock-id-${++_idCounter}`,
@@ -509,6 +513,112 @@ describe("updateProjectField", () => {
       expect(result.data?.cascadeDetail).toEqual([]);
       expect(result.data?.auditId).toBeTruthy();
       expect(mockGetLinkedDeadlineItems).not.toHaveBeenCalled();
+    });
+  });
+
+  // Null newValue support: retainer/v4 cleanup migrations clear fields like
+  // contractEnd, waitingOn, target. The helper accepts newValue: null as a
+  // first-class write — storing SQL NULL and audit-logging "(null)".
+  describe("null newValue writes", () => {
+    it("writes SQL NULL when newValue is null", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue({
+        ...project,
+        contractEnd: "2026-05-31",
+      });
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "contractEnd",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ contractEnd: null })
+      );
+    });
+
+    it("audit row newValue is null for null writes", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "waitingOn",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      const insertCall = mockInsertValues.mock.calls[0][0];
+      expect(insertCall.newValue).toBe(null);
+      expect(insertCall.summary).toContain('"(null)"');
+    });
+
+    it("idempotency key uses (null) marker so null writes collapse on re-run", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "waitingOn",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      // Mocked generateIdempotencyKey joins parts with "|" — the idemKey must
+      // contain the "(null)" marker rather than the literal string "null".
+      const auditCall = mockInsertValues.mock.calls[0][0];
+      expect(auditCall.idempotencyKey).toContain("|(null)|");
+    });
+
+    it("repeat null write returns duplicate result without re-writing", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+      mockCheckIdempotency.mockResolvedValue(true);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "waitingOn",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.message).toContain("duplicate");
+        expect(result.data?.newValue).toBe(null);
+      }
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("clearing resources with null skips normalizer and stores null", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "resources",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ resources: null })
+      );
+      if (result.ok) expect(result.data?.newValue).toBe(null);
     });
   });
 });

@@ -48,8 +48,8 @@ export type CascadedItemInfo = {
   field: "status" | "date";
   /** Prior L2 value (null if unset). */
   previousValue: string | null;
-  /** New L2 value applied by the cascade. */
-  newValue: string;
+  /** New L2 value applied by the cascade. `null` when the parent mutation cleared the field. */
+  newValue: string | null;
   /** Audit row id for the cascade entry; links back via `triggeredByUpdateId`. */
   auditId: string;
 };
@@ -69,8 +69,8 @@ export type ReverseCascadeInfo = {
   field: "dueDate";
   /** Prior dueDate on the parent (null if unset). */
   previousDueDate: string | null;
-  /** New dueDate applied (mirrors the L2's new `date`). */
-  newDueDate: string;
+  /** New dueDate applied (mirrors the L2's new `date`). `null` when the L2 write cleared `date`. */
+  newDueDate: string | null;
   /**
    * Audit row id of the `week-field-change` row that triggered the reverse
    * cascade. Today there is no separate audit row for the parent project
@@ -107,7 +107,8 @@ export interface UpdateProjectFieldData extends Record<string, unknown> {
   projectName: string;
   field: string;
   previousValue: string;
-  newValue: string;
+  /** New field value. `null` when the write cleared the column. */
+  newValue: string | null;
   /** Cascaded L2 titles — only populated when `field === "dueDate"`. */
   cascadedItems: string[];
   /** Structured per-item cascade trace — empty unless `field === "dueDate"`. */
@@ -121,7 +122,8 @@ export interface UpdateWeekItemFieldData extends Record<string, unknown> {
   weekItemTitle: string;
   field: string;
   previousValue: string;
-  newValue: string;
+  /** New field value. `null` when the write cleared the column. */
+  newValue: string | null;
   clientName?: string;
   /** True when the change propagated back to a parent project's dueDate. */
   reverseCascaded: boolean;

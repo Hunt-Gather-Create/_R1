@@ -673,6 +673,106 @@ describe("updateWeekItemField", () => {
       expect(result.data?.reverseCascadeDetail?.newDueDate).toBe("2026-04-28");
     });
   });
+
+  // Null newValue support: retainer/v4 cleanup migrations need to clear L2
+  // status (NULL = scheduled) without falling back to raw drizzle. The helper
+  // accepts newValue: null as a first-class write.
+  describe("null newValue writes", () => {
+    const blockedItem = {
+      ...weekItem,
+      status: "blocked",
+    };
+
+    it("writes SQL NULL when newValue is null", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(blockedItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "status",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ status: null })
+      );
+    });
+
+    it("audit row newValue is null and summary uses (null) marker", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(blockedItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "status",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      const insertCall = mockInsertValues.mock.calls[0][0];
+      expect(insertCall.newValue).toBe(null);
+      expect(insertCall.summary).toContain('"(null)"');
+    });
+
+    it("idempotency key uses (null) marker for repeat collapsing", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(blockedItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "status",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      const insertCall = mockInsertValues.mock.calls[0][0];
+      expect(insertCall.idempotencyKey).toContain("|(null)|");
+    });
+
+    it("duplicate null write returns success without re-writing", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(blockedItem);
+      mockCheckIdempotency.mockResolvedValue(true);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "status",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.message).toContain("duplicate");
+        expect(result.data?.newValue).toBe(null);
+      }
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("clearing resources with null skips normalizer", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "resources",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ resources: null })
+      );
+    });
+  });
 });
 
 describe("deleteWeekItem", () => {

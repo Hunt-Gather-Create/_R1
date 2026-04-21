@@ -265,7 +265,13 @@ export interface UpdateWeekItemFieldParams {
   weekOf: string;
   weekItemTitle: string;
   field: string;
-  newValue: string;
+  /**
+   * New field value. `null` is a first-class write — stored as SQL NULL,
+   * audit-logged with `newValue = "(null)"` and an idempotency key that
+   * also uses `"(null)"` so repeat null writes collapse. v4 convention
+   * treats NULL as a canonical state (e.g., L2 status NULL = scheduled).
+   */
+  newValue: string | null;
   updatedBy: string;
 }
 
@@ -288,14 +294,20 @@ export async function updateWeekItemField(
   const previousValue = getPreviousValue(item, columnKey);
 
   // v4 (Chunk 5): normalize resources on write so storage stays canonical.
-  const effectiveNewValue =
-    typedField === "resources" ? normalizeResourcesString(newValue) : newValue;
+  // Null short-circuits the normalizer so explicit null clears pass through.
+  const effectiveNewValue: string | null =
+    typedField === "resources" && newValue !== null
+      ? normalizeResourcesString(newValue)
+      : newValue;
 
+  // Stable idempotency key for null writes — mirrors the "(null)" marker
+  // used in audit rows so repeat applies collapse.
+  const idemNewValue = effectiveNewValue ?? "(null)";
   const idemKey = generateIdempotencyKey(
     "week-field-change",
     item.id,
     field,
-    effectiveNewValue,
+    idemNewValue,
     updatedBy
   );
 
@@ -376,6 +388,10 @@ export async function updateWeekItemField(
     }));
   }
 
+  // Surface null as the literal "(null)" marker in the human-readable summary
+  // so null writes render consistently.
+  const summaryNewValue = effectiveNewValue ?? "(null)";
+
   const auditId = await insertAuditRecord({
     idempotencyKey: idemKey,
     clientId: item.clientId,
@@ -383,7 +399,7 @@ export async function updateWeekItemField(
     updateType: "week-field-change",
     previousValue,
     newValue: effectiveNewValue,
-    summary: `Week item '${item.title}': ${field} changed from "${previousValue}" to "${effectiveNewValue}"`,
+    summary: `Week item '${item.title}': ${field} changed from "${previousValue}" to "${summaryNewValue}"`,
     metadata: JSON.stringify({ field }),
   });
 
