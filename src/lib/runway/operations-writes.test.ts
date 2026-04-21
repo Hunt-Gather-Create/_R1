@@ -5,8 +5,8 @@ const mockInsertValues = vi.fn();
 const mockUpdateSet = vi.fn();
 const mockUpdateWhere = vi.fn();
 
-vi.mock("@/lib/db/runway", () => ({
-  getRunwayDb: () => ({
+vi.mock("@/lib/db/runway", () => {
+  const tx = {
     insert: vi.fn(() => ({ values: mockInsertValues })),
     update: vi.fn(() => ({
       set: vi.fn((...args: unknown[]) => {
@@ -14,8 +14,20 @@ vi.mock("@/lib/db/runway", () => ({
         return { where: mockUpdateWhere };
       }),
     })),
-  }),
-}));
+  };
+  return {
+    getRunwayDb: () => ({
+      insert: vi.fn(() => ({ values: mockInsertValues })),
+      update: vi.fn(() => ({
+        set: vi.fn((...args: unknown[]) => {
+          mockUpdateSet(...args);
+          return { where: mockUpdateWhere };
+        }),
+      })),
+      transaction: vi.fn(async (fn: (arg: typeof tx) => Promise<unknown>) => fn(tx)),
+    }),
+  };
+});
 
 vi.mock("@/lib/db/runway-schema", () => ({
   projects: { id: "id" },
@@ -34,10 +46,12 @@ const mockGetProjectsForClient = vi.fn();
 const mockCheckIdempotency = vi.fn();
 const mockGetLinkedWeekItems = vi.fn();
 
+let _idCounter = 0;
 vi.mock("./operations-utils", () => ({
   CASCADE_STATUSES: ["completed", "blocked", "on-hold"],
   TERMINAL_ITEM_STATUSES: ["completed", "canceled"],
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
+  generateId: () => `mock-id-${++_idCounter}`,
   getClientOrFail: async (slug: string) => {
     const client = await mockGetClientBySlug(slug);
     if (!client) return { ok: false, error: `Client '${slug}' not found.` };
@@ -58,7 +72,9 @@ vi.mock("./operations-utils", () => ({
     return null;
   },
   insertAuditRecord: async (params: Record<string, unknown>) => {
-    mockInsertValues(params);
+    const id = (params.id as string | undefined) ?? `mock-id-${++_idCounter}`;
+    mockInsertValues({ ...params, id });
+    return id;
   },
 }));
 
@@ -71,6 +87,7 @@ const project = { id: "p1", name: "CDS Messaging", status: "in-production" };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  _idCounter = 0;
   mockCheckIdempotency.mockResolvedValue(false);
   mockGetLinkedWeekItems.mockResolvedValue([]);
 });
@@ -399,5 +416,89 @@ describe("updateProjectStatus", () => {
       expect(result.data?.cascadedItems).toEqual([]);
     }
     expect(mockGetLinkedWeekItems).not.toHaveBeenCalled();
+  });
+
+  // v4 §7: cascade fires for ALL L2 categories, not just `deadline`.
+  it("cascades completed to L2s regardless of category (review, kickoff, delivery, launch, approval)", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+    mockGetLinkedWeekItems.mockResolvedValue([
+      { id: "wi1", title: "Review", status: null, category: "review" },
+      { id: "wi2", title: "Kickoff", status: null, category: "kickoff" },
+      { id: "wi3", title: "Delivery", status: "in-progress", category: "delivery" },
+      { id: "wi4", title: "Launch", status: null, category: "launch" },
+      { id: "wi5", title: "Approval", status: null, category: "approval" },
+      { id: "wi6", title: "Deadline", status: null, category: "deadline" },
+    ]);
+
+    const { updateProjectStatus } = await import("./operations-writes");
+    const result = await updateProjectStatus({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      newStatus: "completed",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.cascadedItems).toEqual([
+        "Review", "Kickoff", "Delivery", "Launch", "Approval", "Deadline",
+      ]);
+    }
+  });
+
+  // v4 §8: cascade-generated audit rows carry triggeredByUpdateId FK.
+  it("emits per-item cascade audit rows linked to parent via triggeredByUpdateId", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+    mockGetLinkedWeekItems.mockResolvedValue([
+      { id: "wi1", title: "CDS Review", status: null },
+      { id: "wi2", title: "CDS Launch", status: "in-progress" },
+    ]);
+
+    const { updateProjectStatus } = await import("./operations-writes");
+    await updateProjectStatus({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      newStatus: "completed",
+      updatedBy: "kathy",
+    });
+
+    // First insert = parent status-change (with pre-generated id)
+    // Next two = cascade rows referencing the parent
+    const calls = mockInsertValues.mock.calls.map((c) => c[0]);
+    expect(calls).toHaveLength(3);
+
+    const parent = calls[0];
+    expect(parent.updateType).toBe("status-change");
+    expect(parent.id).toBeTruthy();
+
+    const cascades = calls.slice(1);
+    expect(cascades.every((c) => c.updateType === "cascade-status")).toBe(true);
+    expect(cascades.every((c) => c.triggeredByUpdateId === parent.id)).toBe(true);
+    expect(cascades.map((c) => c.summary)).toEqual([
+      "Cascaded from CDS Messaging status change: CDS Review → completed",
+      "Cascaded from CDS Messaging status change: CDS Launch → completed",
+    ]);
+  });
+
+  it("does not emit cascade audit rows when no items were cascaded", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+    mockGetLinkedWeekItems.mockResolvedValue([
+      { id: "wi1", title: "Done", status: "completed" },
+    ]);
+
+    const { updateProjectStatus } = await import("./operations-writes");
+    await updateProjectStatus({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      newStatus: "completed",
+      updatedBy: "kathy",
+    });
+
+    // Only the parent audit row — no cascade children.
+    expect(mockInsertValues.mock.calls).toHaveLength(1);
+    expect(mockInsertValues.mock.calls[0][0].updateType).toBe("status-change");
   });
 });

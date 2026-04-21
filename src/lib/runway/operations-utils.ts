@@ -430,6 +430,9 @@ export function setBatchId(id: string | null): void { _currentBatchId = id; }
 export function getBatchId(): string | null { return _currentBatchId; }
 
 export interface AuditRecordParams {
+  /** Optional: pre-generated id. Useful when the caller needs to link child records
+   *  via `triggeredByUpdateId` before insertion completes. Defaults to a fresh id. */
+  id?: string;
   idempotencyKey: string;
   projectId?: string | null;
   clientId?: string | null;
@@ -440,13 +443,16 @@ export interface AuditRecordParams {
   summary: string;
   metadata?: string;
   batchId?: string | null;
+  /** v4: id of the parent update that triggered this cascade-generated record. */
+  triggeredByUpdateId?: string | null;
 }
 
-/** Insert an audit record into the updates table. */
-export async function insertAuditRecord(params: AuditRecordParams): Promise<void> {
+/** Insert an audit record into the updates table. Returns the inserted row's id. */
+export async function insertAuditRecord(params: AuditRecordParams): Promise<string> {
   const db = getRunwayDb();
+  const id = params.id ?? generateId();
   await db.insert(updates).values({
-    id: generateId(),
+    id,
     idempotencyKey: params.idempotencyKey,
     projectId: params.projectId ?? null,
     clientId: params.clientId ?? null,
@@ -457,7 +463,9 @@ export async function insertAuditRecord(params: AuditRecordParams): Promise<void
     summary: params.summary,
     metadata: params.metadata,
     batchId: params.batchId ?? _currentBatchId ?? null,
+    triggeredByUpdateId: params.triggeredByUpdateId ?? null,
   });
+  return id;
 }
 
 /**

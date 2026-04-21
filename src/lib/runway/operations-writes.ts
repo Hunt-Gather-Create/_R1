@@ -14,6 +14,7 @@ import {
   CASCADE_STATUSES,
   TERMINAL_ITEM_STATUSES,
   generateIdempotencyKey,
+  generateId,
   getClientOrFail,
   resolveProjectOrFail,
   checkDuplicate,
@@ -63,12 +64,39 @@ export async function updateProjectStatus(
   });
   if (dup) return dup;
 
-  await db
-    .update(projects)
-    .set({ status: newStatus, updatedAt: new Date() })
-    .where(eq(projects.id, project.id));
+  // Pre-generate the parent audit id so cascade children can link via triggeredByUpdateId.
+  const parentAuditId = generateId();
 
+  // Cascade to ALL linked week items for terminal/blocking statuses (v4 §7:
+  // cascade applies to every L2 category, not just `deadline`).
+  const cascadedItems: string[] = [];
+  const shouldCascade = (CASCADE_STATUSES as readonly string[]).includes(newStatus);
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(projects)
+      .set({ status: newStatus, updatedAt: new Date() })
+      .where(eq(projects.id, project.id));
+
+    if (shouldCascade) {
+      const linkedItems = await getLinkedWeekItems(project.id);
+      for (const item of linkedItems) {
+        const itemAlreadyTerminal = (TERMINAL_ITEM_STATUSES as readonly string[]).includes(item.status ?? "");
+        if (!itemAlreadyTerminal) {
+          await tx
+            .update(weekItems)
+            .set({ status: newStatus, updatedAt: new Date() })
+            .where(eq(weekItems.id, item.id));
+          cascadedItems.push(item.title);
+        }
+      }
+    }
+  });
+
+  // Parent audit record (single row). Use the pre-generated id so child cascade
+  // rows can reference it via triggeredByUpdateId.
   await insertAuditRecord({
+    id: parentAuditId,
     idempotencyKey: idemKey,
     projectId: project.id,
     clientId: client.id,
@@ -79,22 +107,36 @@ export async function updateProjectStatus(
     summary: `${client.name} / ${project.name}: ${previousStatus} -> ${newStatus}${notes ? `. ${notes}` : ""}`,
   });
 
-  // Cascade to linked week items for terminal/blocking statuses
-  const cascadedItems: string[] = [];
-  const shouldCascade = (CASCADE_STATUSES as readonly string[]).includes(newStatus);
-
-  if (shouldCascade) {
+  // v4 §8: write a cascade audit row per affected L2, linked to the parent update.
+  // This gives the updates channel + undo tooling an explicit trail.
+  if (shouldCascade && cascadedItems.length > 0) {
     const linkedItems = await getLinkedWeekItems(project.id);
-    for (const item of linkedItems) {
-      const itemAlreadyTerminal = (TERMINAL_ITEM_STATUSES as readonly string[]).includes(item.status ?? "");
+    // Build lookup from title → id for the items we cascaded (uses current titles
+    // in the DB, which are stable within this request).
+    const byTitle = new Map<string, typeof linkedItems[number]>();
+    for (const li of linkedItems) byTitle.set(li.title, li);
 
-      if (!itemAlreadyTerminal) {
-        await db
-          .update(weekItems)
-          .set({ status: newStatus, updatedAt: new Date() })
-          .where(eq(weekItems.id, item.id));
-        cascadedItems.push(item.title);
-      }
+    for (const title of cascadedItems) {
+      const item = byTitle.get(title);
+      if (!item) continue;
+      const childIdemKey = generateIdempotencyKey(
+        "cascade-status",
+        parentAuditId,
+        item.id,
+        newStatus
+      );
+      await insertAuditRecord({
+        idempotencyKey: childIdemKey,
+        projectId: project.id,
+        clientId: client.id,
+        updatedBy,
+        updateType: "cascade-status",
+        previousValue: null,
+        newValue: newStatus,
+        summary: `Cascaded from ${project.name} status change: ${item.title} → ${newStatus}`,
+        metadata: JSON.stringify({ weekItemId: item.id, field: "status" }),
+        triggeredByUpdateId: parentAuditId,
+      });
     }
   }
 
