@@ -133,3 +133,19 @@ export const teamMembers = sqliteTable("team_members", {
   isActive: integer("is_active").notNull().default(1),
   updatedAt: text("updated_at"),
 });
+
+// ============================================================
+// View Preferences — per-scope UI state persistence
+// ============================================================
+// Runway is currently single-tenant (no workspaces in the Runway DB).
+// `scope` keys the row: "global" for shared board preferences; future
+// per-user keys (e.g. slack user id) can coexist without a migration.
+// `preferences` is a JSON blob: { inFlightToggle?: boolean, ... }.
+// v4 (2026-04-21): introduced for In Flight toggle persistence.
+export const viewPreferences = sqliteTable("view_preferences", {
+  scope: text("scope").primaryKey(),
+  preferences: text("preferences").notNull(), // JSON
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
