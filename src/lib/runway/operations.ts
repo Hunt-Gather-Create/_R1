@@ -121,6 +121,7 @@ export {
 export {
   getDataHealth,
   getCurrentBatch,
+  getBatchContents,
 } from "./operations-reads-health";
 
 export type {
@@ -130,6 +131,9 @@ export type {
   DataHealthStale,
   DataHealthBatch,
   CurrentBatch,
+  BatchContents,
+  BatchContentsGroup,
+  BatchUpdateEntry,
 } from "./operations-reads-health";
 
 export type {

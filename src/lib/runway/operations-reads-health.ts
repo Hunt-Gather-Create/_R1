@@ -105,6 +105,101 @@ export async function getCurrentBatch(): Promise<CurrentBatch> {
   };
 }
 
+// ── getBatchContents ────────────────────────────────────
+
+export interface BatchUpdateEntry {
+  id: string;
+  clientName: string | null;
+  projectName: string | null;
+  updateType: string | null;
+  summary: string | null;
+  updatedBy: string | null;
+  createdAt: Date | null;
+}
+
+export interface BatchContentsGroup {
+  clientName: string | null;
+  projectName: string | null;
+  updates: BatchUpdateEntry[];
+}
+
+export interface BatchContents {
+  batchId: string;
+  totalUpdates: number;
+  /** Groups ordered by (clientName, projectName). Within a group, updates
+   *  are ordered by createdAt ascending so the caller sees the sequence. */
+  groups: BatchContentsGroup[];
+}
+
+/**
+ * Return all audit rows tagged with the given batch id, grouped by
+ * (client, project) for readability. Uses in-memory joins via name maps
+ * to avoid N+1 lookups.
+ */
+export async function getBatchContents(batchId: string): Promise<BatchContents> {
+  const db = getRunwayDb();
+
+  const [rows, allProjects, allClients] = await Promise.all([
+    db.select().from(updates).where(eq(updates.batchId, batchId)),
+    db.select().from(projects),
+    db.select().from(clients),
+  ]);
+
+  const projectNameMap = new Map(allProjects.map((p) => [p.id, p.name]));
+  const clientNameMap = new Map(allClients.map((c) => [c.id, c.name]));
+
+  const groupKey = (clientName: string | null, projectName: string | null) =>
+    `${clientName ?? ""}::${projectName ?? ""}`;
+
+  const groupMap = new Map<string, BatchContentsGroup>();
+
+  for (const r of rows) {
+    const clientName = r.clientId ? clientNameMap.get(r.clientId) ?? null : null;
+    const projectName = r.projectId ? projectNameMap.get(r.projectId) ?? null : null;
+    const key = groupKey(clientName, projectName);
+    let group = groupMap.get(key);
+    if (!group) {
+      group = { clientName, projectName, updates: [] };
+      groupMap.set(key, group);
+    }
+    group.updates.push({
+      id: r.id,
+      clientName,
+      projectName,
+      updateType: r.updateType,
+      summary: r.summary,
+      updatedBy: r.updatedBy,
+      createdAt: r.createdAt,
+    });
+  }
+
+  const groups = [...groupMap.values()];
+  // Sort groups: client name asc (null last), then project name asc (null last).
+  groups.sort((a, b) => {
+    const ca = a.clientName ?? "\uFFFF";
+    const cb = b.clientName ?? "\uFFFF";
+    if (ca !== cb) return ca.localeCompare(cb);
+    const pa = a.projectName ?? "\uFFFF";
+    const pb = b.projectName ?? "\uFFFF";
+    return pa.localeCompare(pb);
+  });
+  // Sort entries within each group by createdAt ascending (nulls last).
+  for (const g of groups) {
+    g.updates.sort((a, b) => {
+      if (!a.createdAt && !b.createdAt) return 0;
+      if (!a.createdAt) return 1;
+      if (!b.createdAt) return -1;
+      return a.createdAt.getTime() - b.createdAt.getTime();
+    });
+  }
+
+  return {
+    batchId,
+    totalUpdates: rows.length,
+    groups,
+  };
+}
+
 // ── getDataHealth ───────────────────────────────────────
 
 export interface DataHealthTotals {

@@ -262,3 +262,107 @@ describe("getCurrentBatch", () => {
     expect(result.mostRecentAt!.getTime()).toBe(latest * 1000);
   });
 });
+
+describe("getBatchContents", () => {
+  it("returns empty groups when batch id has no rows", async () => {
+    const { getBatchContents } = await import("./operations-reads-health");
+    const result = await getBatchContents("nonexistent");
+    expect(result.batchId).toBe("nonexistent");
+    expect(result.totalUpdates).toBe(0);
+    expect(result.groups).toEqual([]);
+  });
+
+  it("groups rows by (client, project) with names resolved", async () => {
+    const { getBatchContents } = await import("./operations-reads-health");
+
+    await insertUpdate({
+      id: "u1",
+      batchId: "b-1",
+      clientId: "cl-convergix",
+      projectId: "pj-cds",
+      updateType: "status-change",
+      summary: "CDS completed",
+    });
+    await insertUpdate({
+      id: "u2",
+      batchId: "b-1",
+      clientId: "cl-convergix",
+      projectId: "pj-cds",
+      updateType: "note",
+      summary: "another cds update",
+    });
+    await insertUpdate({
+      id: "u3",
+      batchId: "b-1",
+      clientId: "cl-bonterra",
+      projectId: "pj-impact",
+      updateType: "note",
+      summary: "bonterra update",
+    });
+    // Different batch — must be excluded.
+    await insertUpdate({
+      id: "u-other",
+      batchId: "b-other",
+      clientId: "cl-convergix",
+      projectId: "pj-cds",
+      summary: "should not appear",
+    });
+
+    const result = await getBatchContents("b-1");
+    expect(result.totalUpdates).toBe(3);
+    expect(result.groups).toHaveLength(2);
+
+    // Sorted alphabetically: Bonterra before Convergix.
+    expect(result.groups[0].clientName).toBe("Bonterra");
+    expect(result.groups[0].projectName).toBe("Impact Report");
+    expect(result.groups[0].updates).toHaveLength(1);
+    expect(result.groups[0].updates[0].id).toBe("u3");
+
+    expect(result.groups[1].clientName).toBe("Convergix");
+    expect(result.groups[1].projectName).toBe("CDS Messaging");
+    expect(result.groups[1].updates).toHaveLength(2);
+  });
+
+  it("orders updates within a group by createdAt ascending", async () => {
+    const { getBatchContents } = await import("./operations-reads-health");
+
+    const now = Math.floor(Date.now() / 1000);
+    await insertUpdate({
+      id: "u-late",
+      batchId: "b-ord",
+      clientId: "cl-convergix",
+      projectId: "pj-cds",
+      createdAtSeconds: now,
+    });
+    await insertUpdate({
+      id: "u-early",
+      batchId: "b-ord",
+      clientId: "cl-convergix",
+      projectId: "pj-cds",
+      createdAtSeconds: now - 3600,
+    });
+
+    const result = await getBatchContents("b-ord");
+    expect(result.groups[0].updates[0].id).toBe("u-early");
+    expect(result.groups[0].updates[1].id).toBe("u-late");
+  });
+
+  it("handles rows without client or project (null group key)", async () => {
+    const { getBatchContents } = await import("./operations-reads-health");
+
+    await insertUpdate({
+      id: "u-bare",
+      batchId: "b-bare",
+      // no clientId, no projectId
+      updateType: "system",
+      summary: "system-level note",
+    });
+
+    const result = await getBatchContents("b-bare");
+    expect(result.totalUpdates).toBe(1);
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0].clientName).toBe(null);
+    expect(result.groups[0].projectName).toBe(null);
+    expect(result.groups[0].updates[0].id).toBe("u-bare");
+  });
+});
