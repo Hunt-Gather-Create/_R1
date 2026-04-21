@@ -198,6 +198,26 @@ describeOrSkip("retainer-v4-cleanup-2026-04-21 - forward DRY_RUN", () => {
 
     cleanup();
   });
+
+  it("field-name validator throws on bogus field in DRY_RUN", async () => {
+    const mod = await import("./retainer-v4-cleanup-2026-04-21");
+    const bogus = {
+      specId: "TEST.BOGUS",
+      clientSlug: "convergix",
+      projectName: "Brand Guide v2 (secondary palette)",
+      field: "bogusField",
+      newValue: "x",
+      pre: null,
+    };
+    mod.L1_FIELD_PLANS.push(bogus);
+    try {
+      await expect(mod.up(makeCtx(true))).rejects.toThrow(/bogusField.*whitelist/);
+    } finally {
+      const idx = mod.L1_FIELD_PLANS.indexOf(bogus);
+      if (idx >= 0) mod.L1_FIELD_PLANS.splice(idx, 1);
+    }
+    cleanup();
+  });
 });
 
 describeOrSkip("retainer-v4-cleanup-2026-04-21-REVERT - DRY_RUN round-trip", () => {

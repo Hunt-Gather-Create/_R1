@@ -66,9 +66,11 @@ import {
   generateIdempotencyKey,
   getClientOrFail,
   insertAuditRecord,
+  PROJECT_FIELDS,
   setBatchId,
   updateProjectField,
   updateWeekItemField,
+  WEEK_ITEM_FIELDS,
 } from "@/lib/runway/operations";
 import { runIfDirect } from "../lib/run-script";
 
@@ -132,7 +134,7 @@ interface L1FieldPlan {
 }
 
 // Section A misc (A.2-A.5) + Section B (B.1-B.4) + Section C (C.1)
-const L1_FIELD_PLANS: L1FieldPlan[] = [
+export const L1_FIELD_PLANS: L1FieldPlan[] = [
   // A.2 - Asprey Social Retainer - Wind Down
   { specId: "A.2", clientSlug: "dave-asprey", projectName: "Social Retainer — Wind Down", field: "contractStart", newValue: "2025-11-14", pre: null },
 
@@ -187,7 +189,7 @@ interface L2FieldPlan {
   parentName?: string;
 }
 
-const L2_FIELD_PLANS: L2FieldPlan[] = [
+export const L2_FIELD_PLANS: L2FieldPlan[] = [
   // Section B L2 ops
   { specId: "B.5", clientSlug: "convergix", title: "Events Page — 2026 Updates Live", field: "status", newValue: "in-progress", pre: null },
   { specId: "B.5", clientSlug: "convergix", title: "Events Page — 2026 Updates Live", field: "endDate", newValue: "2026-04-23", pre: null },
@@ -300,6 +302,44 @@ const D6_APPEND_TEXT =
   " Pending from LPPC: Bill collecting member photo/video contributions - no timeline yet (per Kathy 4/17 Slack).";
 
 // =====================================================================
+// Pre-writes field-name validator
+// =====================================================================
+
+// L1 endDate/startDate are v4-derived columns excluded from PROJECT_FIELDS.
+// applyL1FieldWrite handles them via raw-drizzle, so the validator exempts
+// them. Any other field name must be in the helper whitelist.
+const L1_RAW_DRIZZLE_FIELDS = new Set(["endDate", "startDate"]);
+
+/** Throws if any plan references a field not in the helper whitelist.
+ *  Runs in both DRY_RUN and APPLY before the snapshot so a field-name typo
+ *  fails in DRY_RUN rather than partway through apply. */
+export function validateFieldNames(): void {
+  for (const plan of L1_FIELD_PLANS) {
+    if (L1_RAW_DRIZZLE_FIELDS.has(plan.field)) continue;
+    if (!PROJECT_FIELDS.includes(plan.field as (typeof PROJECT_FIELDS)[number])) {
+      throw new Error(
+        `Field validation failed (${plan.specId}): field '${plan.field}' not in PROJECT_FIELDS whitelist. Allowed: ${PROJECT_FIELDS.join(", ")}.`
+      );
+    }
+  }
+  // A.1 Convergix sweep writes these three fields per L1. Validate them too.
+  for (const field of ["engagementType", "contractStart", "contractEnd"] as const) {
+    if (!PROJECT_FIELDS.includes(field)) {
+      throw new Error(
+        `Field validation failed (A.1 sweep): field '${field}' not in PROJECT_FIELDS whitelist. Allowed: ${PROJECT_FIELDS.join(", ")}.`
+      );
+    }
+  }
+  for (const plan of L2_FIELD_PLANS) {
+    if (!WEEK_ITEM_FIELDS.includes(plan.field as (typeof WEEK_ITEM_FIELDS)[number])) {
+      throw new Error(
+        `Field validation failed (${plan.specId}): field '${plan.field}' not in WEEK_ITEM_FIELDS whitelist. Allowed: ${WEEK_ITEM_FIELDS.join(", ")}.`
+      );
+    }
+  }
+}
+
+// =====================================================================
 // Exports (for pnpm runway:migrate) and standalone main
 // =====================================================================
 
@@ -309,6 +349,9 @@ export const description =
 export async function up(ctx: MigrationContext): Promise<void> {
   ctx.log(`=== Retainer + v4 Cleanup (${BATCH_ID}) ===`);
   ctx.log(`Mode: ${ctx.dryRun ? "DRY-RUN" : "APPLY"}`);
+
+  validateFieldNames();
+  ctx.log("Field-name validation passed.");
 
   const snapshotPath = resolveSnapshotPath(ctx.dryRun);
   const createdIdsPath = resolveCreatedIdsPath();
