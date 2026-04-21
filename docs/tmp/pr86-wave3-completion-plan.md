@@ -61,10 +61,18 @@ Mark PR #86 as open in memory pointer. Operator reviews TP decisions doc + known
 
 ## Step 10 — Post-merge follow-ups (operator-driven)
 Once PR #86 merges to upstream/runway:
-1. Run `/code-review` + `/pr-ready` + `/atomic-commits` at operator level if they want pre-Llama cleanup
+1. (Optional) Operator invokes `/code-review`, `/pr-ready`, `/atomic-commits` at their session level for any extra inspection — these have no-agent flags so TP could not run them during autonomous flow; QA sub-agents applied their premises instead during Wave 1-3
 2. Fire remaining-6 cleanup agent: `docs/tmp/cc-prompts/cc-prompt-remaining-6-postmerge.md`
 3. Answer 4 operator questions: `docs/brain/remaining-6-client-state-questions.md`
 4. Review TP autonomous decisions for ratification/normalization
+
+## Note on quality skills
+
+Per brain-RULES, `/code-review`, `/pr-ready`, `/atomic-commits` are operator-invoked only (no-agent flags). TP honored this during Wave 1-3 by:
+- QA sub-agents applied the premises of these skills against diffs (adversarial review pattern)
+- TP ran only `/preflight` (test + build + lint) which has no no-agent flag
+
+So PR opens without operator-invoked quality runs. Operator can run them post-merge or between merge and Llama review if desired — they read current branch state, not the PR diff.
 
 ---
 

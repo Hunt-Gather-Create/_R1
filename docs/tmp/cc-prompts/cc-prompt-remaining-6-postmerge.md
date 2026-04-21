@@ -27,12 +27,23 @@ HALT if PR #86 not yet merged to runway — this agent is post-merge only.
 
 ## Locked TP decisions (consistent with Wave 1/2)
 
-- Team roster: engaged-roles-per-L1 interpretation (union of L2 roles + L1 owner role; if L1 has no L2s, fall back to full `clients.team`)
+- Team roster: engaged-roles-per-L1 interpretation (union of L2 roles + L1 owner role; if L1 has no L2s, fall back to full `clients.team`). Soundly used full-team-on-each; others used engaged-roles — stay with engaged-roles for consistency with majority pattern
 - `engagement_type='project'` default on most clients unless evidence of retainer
 - Null L2 resources OK if single-person work (v4 rule)
-- PROJECT_FIELDS whitelist gap may be fixed in Chunk 5 — if still present, use raw `ctx.db.update()` + `insertAuditRecord()` pattern
+- Client-led L2s: resources = plain client name (e.g., `"HDL"`), no role prefix, per v4 convention
+- PROJECT_FIELDS whitelist — by the time you run (post-Chunk-5-merge), the whitelist SHOULD include `engagementType`, `contractStart`, `contractEnd`. Use `updateProjectField` helper. If still missing, fall back to raw `ctx.db.update()` + `insertAuditRecord()` pattern (matches bonterra-cleanup-2026-04-19.ts)
 - Title format: `[Project Name] — [Milestone]`, em-dash, no client prefix, no category word
-- Dormant L1s with no historical evidence: leave resources null
+- Dormant L1s with no historical evidence of engaged team: leave resources null
+- Client `team` field must be in v4 role-prefix format (e.g., `AM: Jill, CD: Lane, Dev: Leslie, PM: Jason`); normalize if legacy format found
+- Client slugs may differ from names (e.g., Asprey's slug is `dave-asprey`); scan prod first to confirm
+
+## Patterns from Wave 1/2 (apply these)
+
+- **batchId tagging**: ensure your forward script passes a batch id to audit record writes (pattern from convergix/bonterra/tap/lppc scripts). If using `updateProjectField`, it auto-tags via `deriveMigrationBatchId()`. If using raw `ctx.db.update()`, pass `batchId` explicitly via `insertAuditRecord()`.
+- **Co-locate tests with feature commits**: if you add any tests (unlikely for this cleanup), bundle them with the subject code, not as an omnibus end-of-branch test commit.
+- **Reverse script fidelity**: reverse script reads pre-snapshot and restores every field captured. Even fields that weren't intended to change — this catches drift.
+- **Dry-run halt discipline**: if dry-run surfaces any op you didn't plan, HALT. Don't proceed to apply on "close enough" assumptions.
+- **linkWeekItemToProject for FK changes**: if a migration reparents a week_item, use the helper (already on base branch).
 
 ## Per-client direction
 
