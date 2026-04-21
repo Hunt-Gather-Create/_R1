@@ -14,10 +14,16 @@ import {
   detectStaleItems,
   detectDeadlines,
   detectBottlenecks,
+  detectPastEndL2s,
 } from "./flags-detectors";
 
 export type FlagSeverity = "critical" | "warning" | "info";
-export type FlagType = "resource-conflict" | "stale" | "deadline" | "bottleneck";
+export type FlagType =
+  | "resource-conflict"
+  | "stale"
+  | "deadline"
+  | "bottleneck"
+  | "past-end-l2";
 
 export interface RunwayFlag {
   id: string;
@@ -45,6 +51,7 @@ export function analyzeFlags(
     ...detectStaleItems(accounts),
     ...detectDeadlines(thisWeek),
     ...detectBottlenecks(accounts),
+    ...detectPastEndL2s(thisWeek, upcoming),
   ];
 
   const severityOrder: Record<FlagSeverity, number> = {
