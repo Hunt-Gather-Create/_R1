@@ -23,6 +23,7 @@ const mockFindProjectByFuzzyName = vi.fn();
 const mockGetProjectsForClient = vi.fn();
 const mockCheckIdempotency = vi.fn();
 
+let _idCounter = 0;
 vi.mock("./operations-utils", () => ({
   PROJECT_FIELDS: ["name", "dueDate", "owner", "resources", "waitingOn", "target", "notes", "category"],
   PROJECT_FIELD_TO_COLUMN: {
@@ -30,6 +31,7 @@ vi.mock("./operations-utils", () => ({
     waitingOn: "waitingOn", target: "target", notes: "notes", category: "category",
   },
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
+  generateId: () => `mock-id-${++_idCounter}`,
   getClientOrFail: async (slug: string) => {
     const client = await mockGetClientBySlug(slug);
     if (!client) return { ok: false, error: `Client '${slug}' not found.` };
@@ -48,7 +50,9 @@ vi.mock("./operations-utils", () => ({
     return null;
   },
   insertAuditRecord: async (params: Record<string, unknown>) => {
-    mockInsertValues(params);
+    const id = (params.id as string | undefined) ?? `mock-id-${++_idCounter}`;
+    mockInsertValues({ ...params, id });
+    return id;
   },
   getPreviousValue: (entity: Record<string, unknown>, columnKey: string) => String(entity[columnKey] ?? ""),
   validateAndResolveField: (field: string, allowed: readonly string[], fieldToColumn: Record<string, string>) => {
@@ -81,6 +85,7 @@ const project = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  _idCounter = 0;
   mockCheckIdempotency.mockResolvedValue(false);
   mockGetLinkedDeadlineItems.mockResolvedValue([]);
 });
@@ -373,6 +378,59 @@ describe("updateProjectField", () => {
     }
     // Only the project update itself
     expect(mockUpdateSet).toHaveBeenCalledTimes(1);
+  });
+
+  // v4 §8: cascade-generated audit rows carry triggeredByUpdateId FK.
+  it("emits per-item cascade audit rows linked to parent via triggeredByUpdateId", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+    mockGetLinkedDeadlineItems.mockResolvedValue([
+      { id: "wi-1", title: "Code handoff", category: "deadline" },
+      { id: "wi-2", title: "Go live", category: "deadline" },
+    ]);
+
+    const { updateProjectField } = await import("./operations-writes-project");
+    await updateProjectField({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      field: "dueDate",
+      newValue: "2026-04-28",
+      updatedBy: "kathy",
+    });
+
+    const calls = mockInsertValues.mock.calls.map((c) => c[0]);
+    expect(calls).toHaveLength(3);
+
+    const parent = calls[0];
+    expect(parent.updateType).toBe("field-change");
+    expect(parent.id).toBeTruthy();
+    expect(parent.triggeredByUpdateId).toBeFalsy();
+
+    const cascades = calls.slice(1);
+    expect(cascades.every((c) => c.updateType === "cascade-duedate")).toBe(true);
+    expect(cascades.every((c) => c.triggeredByUpdateId === parent.id)).toBe(true);
+    expect(cascades.map((c) => c.summary)).toEqual([
+      "Cascaded from CDS Messaging dueDate change: Code handoff → 2026-04-28",
+      "Cascaded from CDS Messaging dueDate change: Go live → 2026-04-28",
+    ]);
+  });
+
+  it("does not emit cascade audit rows when no linked deadline items", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+    mockGetLinkedDeadlineItems.mockResolvedValue([]);
+
+    const { updateProjectField } = await import("./operations-writes-project");
+    await updateProjectField({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      field: "dueDate",
+      newValue: "2026-04-28",
+      updatedBy: "kathy",
+    });
+
+    expect(mockInsertValues.mock.calls).toHaveLength(1);
+    expect(mockInsertValues.mock.calls[0][0].updateType).toBe("field-change");
   });
 });
 

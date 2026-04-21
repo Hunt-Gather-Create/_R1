@@ -25,7 +25,51 @@ export async function getLinkedDeadlineItems(projectId: string): Promise<WeekIte
     .where(and(eq(weekItems.projectId, projectId), eq(weekItems.category, "deadline")));
 }
 
-export async function getWeekItemsData(weekOf?: string, owner?: string, resource?: string) {
+/**
+ * Get all non-completed L2 week items for a given project id, sorted by
+ * start/date ASC then sortOrder. Powers drill-down queries like
+ * `get_week_items_by_project` so callers can see an entire engagement's
+ * remaining work without a week-based filter.
+ */
+export async function getWeekItemsByProject(
+  projectId: string
+): Promise<WeekItemRow[]> {
+  const db = getRunwayDb();
+  const rows = await db
+    .select()
+    .from(weekItems)
+    .where(eq(weekItems.projectId, projectId))
+    .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
+  // v4: exclude completed L2s from drill-down listings.
+  const active = rows.filter((r) => r.status !== "completed");
+  // Stable sort by start_date (fall back to date) then sortOrder.
+  return [...active].sort((a, b) => {
+    const aStart = a.startDate ?? a.date ?? "";
+    const bStart = b.startDate ?? b.date ?? "";
+    if (aStart !== bStart) return aStart < bStart ? -1 : 1;
+    return a.sortOrder - b.sortOrder;
+  });
+}
+
+/**
+ * Get week items, optionally filtered.
+ *
+ * Filtering semantics:
+ * - `owner` (string): substring-match on the owner column.
+ * - `resource` (string): substring-match on the resources column.
+ * - `person` (string): substring-match on owner OR resources. Use when the caller
+ *   wants "everything this person touches" (e.g. bot plate queries). The v4
+ *   convention treats owner and resources as two facets of the same person —
+ *   "what's on Kathy's plate" should surface items she's doing the work on even
+ *   when she isn't the accountable owner. When `person` is given alongside
+ *   `owner` and/or `resource`, all filters apply (AND), matching SQL intuition.
+ */
+export async function getWeekItemsData(
+  weekOf?: string,
+  owner?: string,
+  resource?: string,
+  person?: string
+) {
   const db = getRunwayDb();
   const clientNameById = await getClientNameMap();
 
@@ -46,6 +90,13 @@ export async function getWeekItemsData(weekOf?: string, owner?: string, resource
 
   if (resource) {
     items = items.filter((item) => matchesSubstring(item.resources, resource));
+  }
+
+  if (person) {
+    items = items.filter(
+      (item) =>
+        matchesSubstring(item.owner, person) || matchesSubstring(item.resources, person)
+    );
   }
 
   return items.map((item) => ({

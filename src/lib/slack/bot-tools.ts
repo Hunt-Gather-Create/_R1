@@ -9,6 +9,7 @@ import {
   getPipelineData,
   getWeekItemsData,
   getPersonWorkload,
+  getProjectStatus,
   updateProjectStatus,
   addProject,
   addUpdate,
@@ -57,23 +58,27 @@ export function createBotTools(userName: string, now: Date = new Date()) {
     }),
 
     get_week_items: tool({
-      description: `Get calendar items for a given week, optionally filtered by owner or resource. Owner = who is accountable. Resource = who is doing the work. The weekOf parameter defaults to the current week (${currentMonday}) — do not ask the user for a date.`,
+      description: `Get calendar items for a given week, optionally filtered by person (owner OR resource), owner, or resource. Prefer the 'person' filter when the user asks what X has this week — it matches items where X is either accountable or doing the work. Use 'owner' only when they specifically ask who's accountable and 'resource' only when they specifically ask who's doing the work. The weekOf parameter defaults to the current week (${currentMonday}) — do not ask the user for a date.`,
       inputSchema: z.object({
         weekOf: z
           .string()
           .default(currentMonday)
           .describe(`ISO date of the Monday for the week to query. Defaults to ${currentMonday} (this week). Use this for "next week" or "last week" queries — never ask the user for a raw date.`),
+        person: z
+          .string()
+          .optional()
+          .describe("Filter to items where the person is owner OR resource (case-insensitive substring, e.g. 'Kathy'). Use this for plate queries."),
         owner: z
           .string()
           .optional()
-          .describe("Filter by owner name (person accountable, case-insensitive substring, e.g. 'Kathy')"),
+          .describe("Filter by owner name only (person accountable, case-insensitive substring, e.g. 'Kathy')"),
         resource: z
           .string()
           .optional()
-          .describe("Filter by resource name (person doing the work, case-insensitive substring, e.g. 'Roz')"),
+          .describe("Filter by resource name only (person doing the work, case-insensitive substring, e.g. 'Roz')"),
       }),
-      execute: async ({ weekOf, owner, resource }) => {
-        return getWeekItemsData(weekOf, owner, resource);
+      execute: async ({ weekOf, owner, resource, person }) => {
+        return getWeekItemsData(weekOf, owner, resource, person);
       },
     }),
 
@@ -168,6 +173,20 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         personName: z.string().describe("Person's name (e.g. 'Kathy', 'Roz')"),
       }),
       execute: async ({ personName }) => getPersonWorkload(personName),
+    }),
+
+    get_project_status: tool({
+      description:
+        "Drill down on a single engagement. Returns a structured summary of one L1 project: owner, status, engagement type, contract range, who is blocking, in-flight and upcoming L2s, team roster, recent updates, and suggested next actions. Use when the user asks 'what's the deal with [client] / [project]' or 'how's [project] going' and you already know which project they mean. For 'what's on my plate' use get_person_workload instead.",
+      inputSchema: z.object({
+        clientSlug: z.string().describe("Client slug (e.g. 'convergix')"),
+        projectName: z.string().describe("Project name (fuzzy match, e.g. 'CDS Messaging')"),
+      }),
+      execute: async ({ clientSlug, projectName }) => {
+        const result = await getProjectStatus({ clientSlug, projectName });
+        if (!result.ok) return { error: result.error, available: result.available };
+        return result.status;
+      },
     }),
 
     get_client_contacts: tool({

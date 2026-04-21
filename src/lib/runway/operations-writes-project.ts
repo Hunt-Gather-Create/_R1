@@ -13,6 +13,7 @@ import {
   PROJECT_FIELDS,
   PROJECT_FIELD_TO_COLUMN,
   generateIdempotencyKey,
+  generateId,
   getClientOrFail,
   resolveProjectOrFail,
   checkDuplicate,
@@ -137,8 +138,13 @@ export async function updateProjectField(
   });
   if (dup) return dup;
 
-  // Wrap project update + cascade in a single transaction for atomicity
+  // Pre-generate parent audit id so cascade rows can link via triggeredByUpdateId.
+  const parentAuditId = generateId();
+
+  // Wrap project update + cascade in a single transaction for atomicity.
+  // Track the cascaded week-item ids for audit row emission after commit.
   const cascadedItems: string[] = [];
+  const cascadedIds: string[] = [];
 
   await db.transaction(async (tx) => {
     await tx
@@ -155,6 +161,7 @@ export async function updateProjectField(
           .set({ date: newValue, updatedAt: new Date() })
           .where(eq(weekItems.id, item.id));
         cascadedItems.push(item.title);
+        cascadedIds.push(item.id);
       }
     }
   });
@@ -170,6 +177,7 @@ export async function updateProjectField(
   }
 
   await insertAuditRecord({
+    id: parentAuditId,
     idempotencyKey: idemKey,
     projectId: project.id,
     clientId: client.id,
@@ -180,6 +188,30 @@ export async function updateProjectField(
     summary: `${client.name} / ${project.name}: ${field} changed from "${previousValue}" to "${newValue}"`,
     metadata: JSON.stringify({ field }),
   });
+
+  // v4 §8: emit child audit rows for each cascaded week item, linked to parent.
+  for (let i = 0; i < cascadedIds.length; i++) {
+    const itemId = cascadedIds[i];
+    const itemTitle = cascadedItems[i];
+    const childIdemKey = generateIdempotencyKey(
+      "cascade-duedate",
+      parentAuditId,
+      itemId,
+      newValue
+    );
+    await insertAuditRecord({
+      idempotencyKey: childIdemKey,
+      projectId: project.id,
+      clientId: client.id,
+      updatedBy,
+      updateType: "cascade-duedate",
+      previousValue: null,
+      newValue,
+      summary: `Cascaded from ${project.name} dueDate change: ${itemTitle} → ${newValue}`,
+      metadata: JSON.stringify({ weekItemId: itemId, field: "date" }),
+      triggeredByUpdateId: parentAuditId,
+    });
+  }
 
   return {
     ok: true,

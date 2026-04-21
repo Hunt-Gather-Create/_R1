@@ -59,6 +59,8 @@ export {
   mergeJsonArray,
   setBatchId,
   getBatchId,
+  parseResources,
+  normalizeResourcesString,
 } from "./operations-utils";
 
 export type {
@@ -69,6 +71,7 @@ export type {
   PipelineItemField,
   ClientField,
   TeamMemberField,
+  ResourceEntry,
 } from "./operations-utils";
 
 // ── Read operations ─────────────────────────────────────
@@ -78,6 +81,7 @@ export {
   getLinkedWeekItems,
   getLinkedDeadlineItems,
   getWeekItemsData,
+  getWeekItemsByProject,
   getPersonWorkload,
   getPipelineData,
   getStaleItemsForAccounts,
@@ -96,6 +100,20 @@ export type {
   RecentUpdate,
   GetRecentUpdatesParams,
 } from "./operations-reads-updates";
+
+export {
+  getProjectStatus,
+} from "./operations-reads-project-status";
+
+export type {
+  ProjectStatus,
+  ProjectStatusEnum,
+  ProjectStatusWeekItem,
+  ProjectStatusUpdate,
+  EngagementType,
+  GetProjectStatusParams,
+  GetProjectStatusResult,
+} from "./operations-reads-project-status";
 
 // ── Context operations ──────────────────────────────────
 export {

@@ -696,3 +696,141 @@ describe("getPreviousValue", () => {
     expect(getPreviousValue({ isActive: 1 }, "isActive")).toBe("1");
   });
 });
+
+// ── v4 Resources Parser ─────────────────────────────────
+
+describe("parseResources", () => {
+  it("returns empty array for null / undefined / empty input", async () => {
+    const { parseResources } = await import("./operations-utils");
+    expect(parseResources(null)).toEqual([]);
+    expect(parseResources(undefined)).toEqual([]);
+    expect(parseResources("")).toEqual([]);
+    expect(parseResources("   ")).toEqual([]);
+  });
+
+  it("parses a single entry", async () => {
+    const { parseResources } = await import("./operations-utils");
+    expect(parseResources("CD: Lane")).toEqual([
+      { role: "CD", person: "Lane", handoffPosition: 0, isConcurrent: false },
+    ]);
+  });
+
+  it("parses comma-joined peers as concurrent at position 0", async () => {
+    const { parseResources } = await import("./operations-utils");
+    expect(parseResources("CD: Lane, Dev: Leslie")).toEqual([
+      { role: "CD", person: "Lane", handoffPosition: 0, isConcurrent: true },
+      { role: "Dev", person: "Leslie", handoffPosition: 0, isConcurrent: true },
+    ]);
+  });
+
+  it("parses arrow-joined handoffs with incremented handoffPosition", async () => {
+    const { parseResources } = await import("./operations-utils");
+    expect(parseResources("CD: Lane -> Dev: Leslie")).toEqual([
+      { role: "CD", person: "Lane", handoffPosition: 0, isConcurrent: false },
+      { role: "Dev", person: "Leslie", handoffPosition: 1, isConcurrent: false },
+    ]);
+  });
+
+  it("parses a 3-stage handoff chain", async () => {
+    const { parseResources } = await import("./operations-utils");
+    expect(parseResources("CW: Kathy -> CD: Lane -> Dev: Leslie")).toEqual([
+      { role: "CW", person: "Kathy", handoffPosition: 0, isConcurrent: false },
+      { role: "CD", person: "Lane", handoffPosition: 1, isConcurrent: false },
+      { role: "Dev", person: "Leslie", handoffPosition: 2, isConcurrent: false },
+    ]);
+  });
+
+  it("mixes arrow and comma: handoff then concurrent peers", async () => {
+    const { parseResources } = await import("./operations-utils");
+    expect(parseResources("CD: Lane -> Dev: Leslie, CW: Kathy")).toEqual([
+      { role: "CD", person: "Lane", handoffPosition: 0, isConcurrent: false },
+      { role: "Dev", person: "Leslie", handoffPosition: 1, isConcurrent: true },
+      { role: "CW", person: "Kathy", handoffPosition: 1, isConcurrent: true },
+    ]);
+  });
+
+  it("normalizes unicode arrow → to canonical ->", async () => {
+    const { parseResources } = await import("./operations-utils");
+    expect(parseResources("CD: Lane → Dev: Leslie")).toEqual([
+      { role: "CD", person: "Lane", handoffPosition: 0, isConcurrent: false },
+      { role: "Dev", person: "Leslie", handoffPosition: 1, isConcurrent: false },
+    ]);
+  });
+
+  it("normalizes => to canonical ->", async () => {
+    const { parseResources } = await import("./operations-utils");
+    expect(parseResources("CD: Lane => Dev: Leslie")).toEqual([
+      { role: "CD", person: "Lane", handoffPosition: 0, isConcurrent: false },
+      { role: "Dev", person: "Leslie", handoffPosition: 1, isConcurrent: false },
+    ]);
+  });
+
+  it("normalizes >> to canonical ->", async () => {
+    const { parseResources } = await import("./operations-utils");
+    expect(parseResources("CD: Lane >> Dev: Leslie")).toEqual([
+      { role: "CD", person: "Lane", handoffPosition: 0, isConcurrent: false },
+      { role: "Dev", person: "Leslie", handoffPosition: 1, isConcurrent: false },
+    ]);
+  });
+
+  it("treats entries without a role prefix as bare person (role='')", async () => {
+    const { parseResources } = await import("./operations-utils");
+    expect(parseResources("Bonterra")).toEqual([
+      { role: "", person: "Bonterra", handoffPosition: 0, isConcurrent: false },
+    ]);
+  });
+
+  it("skips empty segments from stray commas", async () => {
+    const { parseResources } = await import("./operations-utils");
+    expect(parseResources("CD: Lane,,")).toEqual([
+      { role: "CD", person: "Lane", handoffPosition: 0, isConcurrent: false },
+    ]);
+  });
+
+  it("skips malformed `Role:` segments where person is empty", async () => {
+    const { parseResources } = await import("./operations-utils");
+    expect(parseResources("CD: , Dev: Leslie")).toEqual([
+      { role: "Dev", person: "Leslie", handoffPosition: 0, isConcurrent: true },
+    ]);
+  });
+
+  it("trims whitespace around roles and people", async () => {
+    const { parseResources } = await import("./operations-utils");
+    expect(parseResources("  CD :  Lane  ,  Dev : Leslie  ")).toEqual([
+      { role: "CD", person: "Lane", handoffPosition: 0, isConcurrent: true },
+      { role: "Dev", person: "Leslie", handoffPosition: 0, isConcurrent: true },
+    ]);
+  });
+});
+
+describe("normalizeResourcesString", () => {
+  it("returns empty string for null / undefined / empty input", async () => {
+    const { normalizeResourcesString } = await import("./operations-utils");
+    expect(normalizeResourcesString(null)).toBe("");
+    expect(normalizeResourcesString(undefined)).toBe("");
+    expect(normalizeResourcesString("")).toBe("");
+  });
+
+  it("converts unicode → to canonical ->", async () => {
+    const { normalizeResourcesString } = await import("./operations-utils");
+    expect(normalizeResourcesString("CD: Lane → Dev: Leslie")).toBe("CD: Lane -> Dev: Leslie");
+  });
+
+  it("converts => and >> to canonical ->", async () => {
+    const { normalizeResourcesString } = await import("./operations-utils");
+    expect(normalizeResourcesString("CD: Lane => Dev: Leslie")).toBe("CD: Lane -> Dev: Leslie");
+    expect(normalizeResourcesString("CD: Lane >> Dev: Leslie")).toBe("CD: Lane -> Dev: Leslie");
+  });
+
+  it("collapses surrounding whitespace around , and ->", async () => {
+    const { normalizeResourcesString } = await import("./operations-utils");
+    expect(normalizeResourcesString("CD: Lane   ->   Dev: Leslie,   CW: Kathy")).toBe(
+      "CD: Lane -> Dev: Leslie, CW: Kathy"
+    );
+  });
+
+  it("drops stray trailing commas", async () => {
+    const { normalizeResourcesString } = await import("./operations-utils");
+    expect(normalizeResourcesString("CD: Lane, ,")).toBe("CD: Lane");
+  });
+});

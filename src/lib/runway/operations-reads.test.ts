@@ -352,6 +352,52 @@ describe("getWeekItemsData — resource filter", () => {
   });
 });
 
+describe("getWeekItemsData — person filter (owner OR resource)", () => {
+  it("matches items where person is owner OR resource", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      // Kathy as owner, not in resources
+      { date: "2026-04-06", dayOfWeek: "monday", title: "CDS Review", clientId: "c1", category: "review", owner: "Kathy", resources: "Lane", notes: null },
+      // Kathy in resources, not owner
+      { date: "2026-04-07", dayOfWeek: "tuesday", title: "Impact Handoff", clientId: "c2", category: "delivery", owner: "Ronan", resources: "Kathy, Leslie", notes: null },
+      // Not Kathy anywhere
+      { date: "2026-04-08", dayOfWeek: "wednesday", title: "Map R2", clientId: "c2", category: "delivery", owner: "Ronan", resources: "Leslie", notes: null },
+    ]));
+    const { getWeekItemsData } = await import("./operations-reads");
+    const result = await getWeekItemsData(undefined, undefined, undefined, "Kathy");
+    expect(result).toHaveLength(2);
+    expect(result.map((r) => r.title).sort()).toEqual(["CDS Review", "Impact Handoff"]);
+  });
+
+  it("is case-insensitive", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { date: "2026-04-06", dayOfWeek: "monday", title: "CDS", clientId: "c1", category: "review", owner: "KATHY", resources: null, notes: null },
+    ]));
+    const { getWeekItemsData } = await import("./operations-reads");
+    const result = await getWeekItemsData(undefined, undefined, undefined, "kathy");
+    expect(result).toHaveLength(1);
+  });
+
+  it("returns empty array when person matches nothing", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { date: "2026-04-06", dayOfWeek: "monday", title: "CDS Review", clientId: "c1", category: "review", owner: "Kathy", resources: "Lane", notes: null },
+    ]));
+    const { getWeekItemsData } = await import("./operations-reads");
+    const result = await getWeekItemsData(undefined, undefined, undefined, "Nobody");
+    expect(result).toEqual([]);
+  });
+
+  it("combines weekOf and person filters (AND)", async () => {
+    mockSelectFrom.mockReturnValue(chainable([
+      { date: "2026-04-06", dayOfWeek: "monday", title: "Match", clientId: "c1", category: "review", owner: "Ronan", resources: "Kathy", notes: null },
+      { date: "2026-04-06", dayOfWeek: "monday", title: "No", clientId: "c1", category: "review", owner: "Lane", resources: null, notes: null },
+    ]));
+    const { getWeekItemsData } = await import("./operations-reads");
+    const result = await getWeekItemsData("2026-04-06", undefined, undefined, "Kathy");
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toBe("Match");
+  });
+});
+
 describe("getPersonWorkload (v4 contract)", () => {
   // Fixed Monday 2026-04-20 (CDT). thisWeek: 04-20..04-26, nextWeek: 04-27..05-03.
   const NOW = new Date("2026-04-20T17:00:00Z");

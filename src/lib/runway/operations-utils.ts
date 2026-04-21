@@ -430,6 +430,9 @@ export function setBatchId(id: string | null): void { _currentBatchId = id; }
 export function getBatchId(): string | null { return _currentBatchId; }
 
 export interface AuditRecordParams {
+  /** Optional: pre-generated id. Useful when the caller needs to link child records
+   *  via `triggeredByUpdateId` before insertion completes. Defaults to a fresh id. */
+  id?: string;
   idempotencyKey: string;
   projectId?: string | null;
   clientId?: string | null;
@@ -440,13 +443,16 @@ export interface AuditRecordParams {
   summary: string;
   metadata?: string;
   batchId?: string | null;
+  /** v4: id of the parent update that triggered this cascade-generated record. */
+  triggeredByUpdateId?: string | null;
 }
 
-/** Insert an audit record into the updates table. */
-export async function insertAuditRecord(params: AuditRecordParams): Promise<void> {
+/** Insert an audit record into the updates table. Returns the inserted row's id. */
+export async function insertAuditRecord(params: AuditRecordParams): Promise<string> {
   const db = getRunwayDb();
+  const id = params.id ?? generateId();
   await db.insert(updates).values({
-    id: generateId(),
+    id,
     idempotencyKey: params.idempotencyKey,
     projectId: params.projectId ?? null,
     clientId: params.clientId ?? null,
@@ -457,7 +463,9 @@ export async function insertAuditRecord(params: AuditRecordParams): Promise<void
     summary: params.summary,
     metadata: params.metadata,
     batchId: params.batchId ?? _currentBatchId ?? null,
+    triggeredByUpdateId: params.triggeredByUpdateId ?? null,
   });
+  return id;
 }
 
 /**
@@ -721,4 +729,98 @@ export function mergeJsonArray(
   const existing: string[] = current ? JSON.parse(current) : [];
   const merged = [...new Set([...existing, ...toAdd])];
   return JSON.stringify(merged);
+}
+
+// ── v4 Resources Parser ─────────────────────────────────
+
+/**
+ * A single parsed entry from a resources string.
+ *
+ * @see docs/tmp/runway-v4-convention.md §"Resources field format"
+ */
+export type ResourceEntry = {
+  /** Role abbreviation: AM, CD, Dev, CW, PM, CM, Strat. Empty string when no prefix was given. */
+  role: string;
+  /** Person name (trimmed). For client-led work this may be the client name. */
+  person: string;
+  /**
+   * 0 for first position in an arrow chain, 1 for second, etc.
+   * Comma-joined entries at the same arrow position share the same number.
+   */
+  handoffPosition: number;
+  /** True when this entry is comma-joined at its handoff position (peer collaboration). */
+  isConcurrent: boolean;
+};
+
+/** Matches unicode/alternative arrow forms accepted by the parser. Canonical arrow is `->`. */
+const ARROW_NORMALIZE_RE = /\s*(?:->|→|=>|>>)\s*/g;
+
+/**
+ * Normalize a resources string to canonical form:
+ * - Converts `→`, `=>`, `>>` to `->`
+ * - Trims and collapses whitespace around `->` and `,`
+ * - Preserves order; does not dedupe or validate entries
+ *
+ * Used on write to persist resources in a consistent format.
+ */
+export function normalizeResourcesString(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return raw
+    .replace(ARROW_NORMALIZE_RE, " -> ")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .join(", ");
+}
+
+/**
+ * Parse a resources string into typed entries.
+ *
+ * Format rules (v4):
+ * - `,` separates concurrent collaborators at the same handoff position
+ * - `->` (or `→` / `=>` / `>>`) separates sequential handoff positions
+ * - Each entry is `Role: Person` or bare `Person` (no role prefix)
+ *
+ * Examples:
+ *   "CD: Lane"                           → [{role:"CD", person:"Lane", handoffPosition:0, isConcurrent:false}]
+ *   "CD: Lane, Dev: Leslie"              → both at position 0, isConcurrent=true
+ *   "CD: Lane -> Dev: Leslie"            → Lane at 0, Leslie at 1, both isConcurrent=false
+ *   "CD: Lane -> Dev: Leslie, CW: Kathy" → Lane at 0 (solo), Leslie+Kathy at 1 (concurrent)
+ *
+ * Returns an empty array for null/undefined/empty input or when every segment
+ * is malformed (empty). Individual malformed entries are skipped silently.
+ */
+export function parseResources(raw: string | null | undefined): ResourceEntry[] {
+  if (!raw) return [];
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+
+  // Normalize all arrow forms to a single canonical token for splitting.
+  const withCanonicalArrows = trimmed.replace(ARROW_NORMALIZE_RE, "->");
+  const stages = withCanonicalArrows.split("->");
+
+  const entries: ResourceEntry[] = [];
+  for (let stageIdx = 0; stageIdx < stages.length; stageIdx++) {
+    const stage = stages[stageIdx];
+    const peers = stage.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+    const isConcurrent = peers.length > 1;
+    for (const peer of peers) {
+      const colonIdx = peer.indexOf(":");
+      let role = "";
+      let person = peer;
+      if (colonIdx > -1) {
+        role = peer.slice(0, colonIdx).trim();
+        person = peer.slice(colonIdx + 1).trim();
+      }
+      if (!person) continue; // skip malformed `Role:` with no person
+      entries.push({
+        role,
+        person,
+        handoffPosition: stageIdx,
+        isConcurrent,
+      });
+    }
+  }
+
+  return entries;
 }

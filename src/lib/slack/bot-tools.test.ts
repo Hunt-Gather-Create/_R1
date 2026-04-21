@@ -11,6 +11,14 @@ const { mockPostMutationUpdate, mockOps } = vi.hoisted(() => {
     getPipelineData: vi.fn().mockResolvedValue([]),
     getWeekItemsData: vi.fn().mockResolvedValue([]),
     getPersonWorkload: vi.fn().mockResolvedValue({ person: "Kathy", projects: [], weekItems: [], totalProjects: 0, totalWeekItems: 0 }),
+    getProjectStatus: vi.fn().mockResolvedValue({
+      ok: true,
+      status: {
+        name: "CDS Messaging", client: "Convergix", owner: "Kathy", status: "in-production",
+        engagement_type: "project", contractRange: {}, current: {}, inFlight: [], upcoming: [],
+        team: "CD: Lane", recentUpdates: [], suggestedActions: [],
+      },
+    }),
     getClientBySlug: vi.fn(),
     updateProjectStatus: vi.fn(),
     addProject: vi.fn(),
@@ -55,11 +63,12 @@ describe("createBotTools", () => {
     tools = createBotTools("Kathy Horn");
   });
 
-  it("creates all 22 tools", () => {
+  it("creates all 23 tools", () => {
     const names = Object.keys(tools);
     expect(names).toEqual([
       "get_clients", "get_projects", "get_pipeline", "get_week_items",
-      "update_project_status", "add_update", "get_person_workload", "get_client_contacts",
+      "update_project_status", "add_update", "get_person_workload",
+      "get_project_status", "get_client_contacts",
       "create_project", "update_project_field", "create_week_item",
       "undo_last_change", "get_recent_updates", "update_week_item",
       "delete_project", "delete_week_item",
@@ -215,14 +224,17 @@ describe("createBotTools", () => {
     expect(result).toEqual([]);
   });
 
-  it("get_week_items passes weekOf, owner, and resource parameters", async () => {
-    await tools.get_week_items.execute({ weekOf: "2026-04-06", owner: "Kathy", resource: "Roz" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", "Kathy", "Roz");
+  it("get_week_items passes weekOf, owner, resource, and person parameters", async () => {
+    await tools.get_week_items.execute(
+      { weekOf: "2026-04-06", owner: "Kathy", resource: "Roz", person: "Lane" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", "Kathy", "Roz", "Lane");
   });
 
   it("get_week_items passes undefined when no params given", async () => {
     await tools.get_week_items.execute({}, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined, undefined);
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined, undefined, undefined);
   });
 
   it("get_person_workload calls getPersonWorkload", async () => {

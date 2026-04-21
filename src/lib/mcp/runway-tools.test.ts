@@ -5,7 +5,16 @@ const { mockOps, registeredTools } = vi.hoisted(() => {
     getClientsWithCounts: vi.fn().mockResolvedValue([{ name: "Convergix", projectCount: 3 }]),
     getProjectsFiltered: vi.fn().mockResolvedValue([{ name: "CDS", status: "in-production" }]),
     getWeekItemsData: vi.fn().mockResolvedValue([{ date: "2026-04-06", title: "Review" }]),
+    getWeekItemsByProject: vi.fn().mockResolvedValue([]),
     getPersonWorkload: vi.fn().mockResolvedValue({ person: "Kathy", projects: [], weekItems: [], totalProjects: 0, totalWeekItems: 0 }),
+    getProjectStatus: vi.fn().mockResolvedValue({
+      ok: true,
+      status: {
+        name: "CDS", client: "Convergix", owner: "Kathy", status: "in-production",
+        engagement_type: "project", contractRange: {}, current: {}, inFlight: [], upcoming: [],
+        team: "", recentUpdates: [], suggestedActions: [],
+      },
+    }),
     getPipelineData: vi.fn().mockResolvedValue([{ name: "New SOW", status: "sow-sent" }]),
     getUpdatesData: vi.fn().mockResolvedValue([{ summary: "Status changed" }]),
     getTeamMembersData: vi.fn().mockResolvedValue([{ name: "Kathy", title: "Account Manager" }]),
@@ -66,9 +75,28 @@ describe("registerRunwayTools", () => {
     expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: "convergix", status: "blocked", owner: "Kathy", waitingOn: "Daniel" });
   });
 
-  it("get_week_items passes weekOf and owner", async () => {
-    await registeredTools.get("get_week_items")!({ weekOf: "2026-04-06", owner: "Kathy" });
-    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", "Kathy");
+  it("get_week_items passes weekOf, owner, resource, and person", async () => {
+    await registeredTools.get("get_week_items")!({ weekOf: "2026-04-06", owner: "Kathy", resource: "Roz", person: "Lane" });
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", "Kathy", "Roz", "Lane");
+  });
+
+  it("get_week_items_by_project calls getWeekItemsByProject", async () => {
+    await registeredTools.get("get_week_items_by_project")!({ projectId: "p1" });
+    expect(mockOps.getWeekItemsByProject).toHaveBeenCalledWith("p1");
+  });
+
+  it("get_project_status returns structured data when ok", async () => {
+    const result = await registeredTools.get("get_project_status")!({ clientSlug: "convergix", projectName: "CDS" });
+    expect(mockOps.getProjectStatus).toHaveBeenCalledWith({ clientSlug: "convergix", projectName: "CDS" });
+    expect(result).toEqual({
+      content: [{ type: "text", text: expect.stringContaining("CDS") }],
+    });
+  });
+
+  it("get_project_status returns error message on not-found", async () => {
+    mockOps.getProjectStatus.mockResolvedValueOnce({ ok: false, error: "Project 'nope' not found." });
+    const result = await registeredTools.get("get_project_status")!({ clientSlug: "convergix", projectName: "nope" });
+    expect(result).toEqual({ content: [{ type: "text", text: "Project 'nope' not found." }] });
   });
 
   it("get_person_workload calls getPersonWorkload", async () => {
