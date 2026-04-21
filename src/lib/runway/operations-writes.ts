@@ -69,7 +69,13 @@ export async function updateProjectStatus(
 
   // Cascade to ALL linked week items for terminal/blocking statuses (v4 §7:
   // cascade applies to every L2 category, not just `deadline`).
-  const cascadedItems: string[] = [];
+  //
+  // Chunk 5 debt §12.2: capture (id, title) tuples inside the transaction
+  // so post-commit audit rows don't need to re-query getLinkedWeekItems.
+  // The second query could race against concurrent writes and would be
+  // vulnerable to title collisions within a single project. The tuple
+  // shape also mirrors updateProjectField for consistency.
+  const cascaded: Array<{ id: string; title: string }> = [];
   const shouldCascade = (CASCADE_STATUSES as readonly string[]).includes(newStatus);
 
   await db.transaction(async (tx) => {
@@ -87,7 +93,7 @@ export async function updateProjectStatus(
             .update(weekItems)
             .set({ status: newStatus, updatedAt: new Date() })
             .where(eq(weekItems.id, item.id));
-          cascadedItems.push(item.title);
+          cascaded.push({ id: item.id, title: item.title });
         }
       }
     }
@@ -109,35 +115,25 @@ export async function updateProjectStatus(
 
   // v4 §8: write a cascade audit row per affected L2, linked to the parent update.
   // This gives the updates channel + undo tooling an explicit trail.
-  if (shouldCascade && cascadedItems.length > 0) {
-    const linkedItems = await getLinkedWeekItems(project.id);
-    // Build lookup from title → id for the items we cascaded (uses current titles
-    // in the DB, which are stable within this request).
-    const byTitle = new Map<string, typeof linkedItems[number]>();
-    for (const li of linkedItems) byTitle.set(li.title, li);
-
-    for (const title of cascadedItems) {
-      const item = byTitle.get(title);
-      if (!item) continue;
-      const childIdemKey = generateIdempotencyKey(
-        "cascade-status",
-        parentAuditId,
-        item.id,
-        newStatus
-      );
-      await insertAuditRecord({
-        idempotencyKey: childIdemKey,
-        projectId: project.id,
-        clientId: client.id,
-        updatedBy,
-        updateType: "cascade-status",
-        previousValue: null,
-        newValue: newStatus,
-        summary: `Cascaded from ${project.name} status change: ${item.title} → ${newStatus}`,
-        metadata: JSON.stringify({ weekItemId: item.id, field: "status" }),
-        triggeredByUpdateId: parentAuditId,
-      });
-    }
+  for (const { id: itemId, title } of cascaded) {
+    const childIdemKey = generateIdempotencyKey(
+      "cascade-status",
+      parentAuditId,
+      itemId,
+      newStatus
+    );
+    await insertAuditRecord({
+      idempotencyKey: childIdemKey,
+      projectId: project.id,
+      clientId: client.id,
+      updatedBy,
+      updateType: "cascade-status",
+      previousValue: null,
+      newValue: newStatus,
+      summary: `Cascaded from ${project.name} status change: ${title} → ${newStatus}`,
+      metadata: JSON.stringify({ weekItemId: itemId, field: "status" }),
+      triggeredByUpdateId: parentAuditId,
+    });
   }
 
   return {
@@ -148,7 +144,7 @@ export async function updateProjectStatus(
       projectName: project.name,
       previousStatus,
       newStatus,
-      cascadedItems,
+      cascadedItems: cascaded.map((c) => c.title),
     },
   };
 }
