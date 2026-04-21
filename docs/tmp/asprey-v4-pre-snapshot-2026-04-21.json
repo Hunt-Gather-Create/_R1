@@ -1,0 +1,133 @@
+{
+  "capturedAt": "2026-04-20T23:45:00.000Z",
+  "mode": "pre-scan",
+  "source": "prod Turso query via scripts/runway-migrations/_asprey-query-prod.ts (ad-hoc, not committed)",
+  "note": "Captured before running asprey-v4-touchup-2026-04-21.ts. The migration script writes its own apply-mode pre-apply snapshot at run time (consumed by REVERT).",
+  "client": {
+    "id": "7d22f3b6e72640499e78dbfd1",
+    "name": "Dave Asprey",
+    "slug": "dave-asprey",
+    "nicknames": "[\"Dave\",\"Dave Asprey\"]",
+    "contractValue": null,
+    "contractTerm": "Through Apr 30, 2026",
+    "contractStatus": "signed",
+    "team": "Allison (lead)",
+    "clientContacts": null,
+    "createdAt": "2026-04-17T20:07:17.000Z",
+    "updatedAt": "2026-04-17T20:07:17.000Z"
+  },
+  "L1s": [
+    {
+      "id": "00a4e85558ba441f95c27c35c",
+      "clientId": "7d22f3b6e72640499e78dbfd1",
+      "name": "Social Retainer — Wind Down",
+      "status": "in-production",
+      "category": "active",
+      "owner": "Allison",
+      "resources": "AM: Allison, CM: Sami, PM: Jason",
+      "waitingOn": null,
+      "target": "Retainer ends 4/30",
+      "dueDate": null,
+      "startDate": "2026-04-20",
+      "endDate": "2026-04-30",
+      "contractStart": null,
+      "contractEnd": null,
+      "engagementType": null,
+      "notes": "Daily social posts + ManyChat automations through 4/30. Account closes EOM April. Sami executing day-to-day under Allison. Jason handling Google Sheet/ManyChat disconnect as part of cutoff.",
+      "staleDays": null,
+      "sortOrder": 0,
+      "createdAt": "2026-04-17T20:07:33.000Z",
+      "updatedAt": "2026-04-20T23:06:56.000Z"
+    }
+  ],
+  "L2s": [
+    {
+      "id": "46ef1edc138048e1844d18e3f",
+      "projectId": "00a4e85558ba441f95c27c35c",
+      "clientId": "7d22f3b6e72640499e78dbfd1",
+      "dayOfWeek": "wednesday",
+      "weekOf": "2026-04-27",
+      "date": "2026-04-29",
+      "startDate": "2026-04-29",
+      "endDate": null,
+      "blockedBy": null,
+      "title": "Disconnect Google Sheet from ManyChat",
+      "status": null,
+      "category": "deadline",
+      "owner": "Jason",
+      "resources": "PM: Jason",
+      "notes": "Clean cutoff task. Part of retainer wind-down.",
+      "sortOrder": 999,
+      "createdAt": "2026-04-20T12:50:19.000Z",
+      "updatedAt": "2026-04-20T23:06:48.000Z"
+    },
+    {
+      "id": "f88098fe32554222b0e65fd1d",
+      "projectId": "00a4e85558ba441f95c27c35c",
+      "clientId": "7d22f3b6e72640499e78dbfd1",
+      "dayOfWeek": "monday",
+      "weekOf": "2026-04-20",
+      "date": "2026-04-20",
+      "startDate": "2026-04-20",
+      "endDate": null,
+      "blockedBy": null,
+      "title": "Daily Social Posts + ManyChat — Retainer (through 4/30)",
+      "status": "in-progress",
+      "category": "delivery",
+      "owner": "Allison",
+      "resources": null,
+      "notes": "Daily posts weekdays + pre-scheduled weekend content. ManyChat flow maintenance. Retainer ends 4/30 EOM. Do not split into daily items — this represents the ongoing workstream.",
+      "sortOrder": 999,
+      "createdAt": "2026-04-20T12:50:20.000Z",
+      "updatedAt": "2026-04-20T23:06:49.000Z"
+    },
+    {
+      "id": "0c6656553bb04020ba9543094",
+      "projectId": "00a4e85558ba441f95c27c35c",
+      "clientId": "7d22f3b6e72640499e78dbfd1",
+      "dayOfWeek": "thursday",
+      "weekOf": "2026-04-27",
+      "date": "2026-04-30",
+      "startDate": "2026-04-30",
+      "endDate": null,
+      "blockedBy": null,
+      "title": "Retainer Close — Final Post",
+      "status": null,
+      "category": "deadline",
+      "owner": "Allison",
+      "resources": null,
+      "notes": "Last day of retainer. Final post published. Account closeout. No work after this date.",
+      "sortOrder": 999,
+      "createdAt": "2026-04-20T12:50:21.000Z",
+      "updatedAt": "2026-04-20T23:06:49.000Z"
+    }
+  ],
+  "analysis": {
+    "changesRequired": [
+      "L1 engagement_type: null -> 'retainer' (raw UPDATE + audit; field not in PROJECT_FIELDS)",
+      "L1 contract_end: null -> '2026-04-30' (raw UPDATE + audit; field not in PROJECT_FIELDS)",
+      "Client team: 'Allison (lead)' -> 'AM: Allison, CM: Sami, PM: Jason' (v4 role-prefix format, engaged-roles-per-L1 semantics; team IS in CLIENT_FIELDS so updateClientField is used)"
+    ],
+    "verifications": [
+      "L1 owner = 'Allison' — already v4 compliant (single accountable person, no role prefix)",
+      "L1 resources = 'AM: Allison, CM: Sami, PM: Jason' — already v4 compliant (full engaged roster, role-prefix format)",
+      "L1 status='in-production' / category='active' — accurate (L2s are in-flight with 'in-progress' status)",
+      "L1 startDate=2026-04-20, endDate=2026-04-30 — already derived correctly from L2s (MIN=4/20, MAX=4/30)",
+      "L2 owners all set (Jason, Allison, Allison). Null resources on 2 L2s is OK per v4 (single-person inferred from L1)",
+      "No L2 orphans (all 3 have projectId pointing to the single L1)"
+    ],
+    "derivationCheck": {
+      "expectedStartDate": "2026-04-20",
+      "expectedEndDate": "2026-04-30",
+      "actual": { "startDate": "2026-04-20", "endDate": "2026-04-30" },
+      "conclusion": "Already matches; explicit recomputeProjectDates call still made at end of migration for safety (TP decision #4)."
+    },
+    "l2ResourceNullDecision": {
+      "items": [
+        { "idPrefix": "f88098fe", "title": "Daily Social Posts + ManyChat — Retainer (through 4/30)", "owner": "Allison", "leaveResourcesNull": true },
+        { "idPrefix": "0c665655", "title": "Retainer Close — Final Post", "owner": "Allison", "leaveResourcesNull": true }
+      ],
+      "reasoning": "Per v4 rules: 'Null OK if single person (inferred from L1)'. Both tasks are owner-only Allison work. No team > 1 so resources stays null."
+    }
+  }
+}
