@@ -120,6 +120,7 @@ export {
 // ── Health / observability operations ──────────────────
 export {
   getDataHealth,
+  getCurrentBatch,
 } from "./operations-reads-health";
 
 export type {
@@ -128,6 +129,7 @@ export type {
   DataHealthOrphans,
   DataHealthStale,
   DataHealthBatch,
+  CurrentBatch,
 } from "./operations-reads-health";
 
 export type {

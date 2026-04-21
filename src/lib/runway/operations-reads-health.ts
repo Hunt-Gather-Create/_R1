@@ -25,6 +25,7 @@ import {
   pipelineItems,
   updates,
 } from "@/lib/db/runway-schema";
+import { eq } from "drizzle-orm";
 import { getBatchId } from "./operations-utils";
 
 // ── Shared helpers ──────────────────────────────────────
@@ -38,6 +39,70 @@ const STALE_EXCLUDED_STATUSES: ReadonlySet<string> = new Set([
 /** Return today's date as an ISO YYYY-MM-DD string in UTC. */
 function todayISODate(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// ── getCurrentBatch ─────────────────────────────────────
+
+/**
+ * Result of `getCurrentBatch()`. When `active === false` no other fields are
+ * populated, so callers can narrow on `active` and read batch details safely.
+ */
+export type CurrentBatch =
+  | { active: false }
+  | {
+      active: true;
+      batchId: string;
+      /** Number of audit rows written under this batch id so far. */
+      itemCount: number;
+      /** Earliest createdAt of the rows in this batch (null if no rows yet). */
+      startedAt: Date | null;
+      /** updatedBy of the earliest row (best-effort since no real `startedBy` is tracked). */
+      startedBy: string | null;
+      /** Latest createdAt of the rows in this batch. */
+      mostRecentAt: Date | null;
+    };
+
+/**
+ * Return info about the currently-active batch for this process.
+ *
+ * The batch id lives in module-level state inside `operations-utils`
+ * (`setBatchId` / `getBatchId`) — it is per-process, not persisted in the
+ * DB. So this observability answers "is THIS process currently batching?".
+ * When active, we enrich from the updates table: count, earliest/latest
+ * timestamps, and the updater of the earliest row.
+ */
+export async function getCurrentBatch(): Promise<CurrentBatch> {
+  const batchId = getBatchId();
+  if (!batchId) return { active: false };
+
+  const db = getRunwayDb();
+  const rows = await db
+    .select()
+    .from(updates)
+    .where(eq(updates.batchId, batchId));
+
+  let startedAt: Date | null = null;
+  let mostRecentAt: Date | null = null;
+  let startedBy: string | null = null;
+  for (const r of rows) {
+    if (!r.createdAt) continue;
+    if (!startedAt || r.createdAt < startedAt) {
+      startedAt = r.createdAt;
+      startedBy = r.updatedBy ?? null;
+    }
+    if (!mostRecentAt || r.createdAt > mostRecentAt) {
+      mostRecentAt = r.createdAt;
+    }
+  }
+
+  return {
+    active: true,
+    batchId,
+    itemCount: rows.length,
+    startedAt,
+    startedBy,
+    mostRecentAt,
+  };
 }
 
 // ── getDataHealth ───────────────────────────────────────

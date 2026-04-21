@@ -196,3 +196,69 @@ describe("getDataHealth", () => {
     expect(health.lastUpdateAt).toBe(null);
   });
 });
+
+describe("getCurrentBatch", () => {
+  it("returns { active: false } when no batch is set", async () => {
+    const { getCurrentBatch } = await import("./operations-reads-health");
+    const result = await getCurrentBatch();
+    expect(result).toEqual({ active: false });
+  });
+
+  it("returns batch details when a batch is active with no audit rows yet", async () => {
+    const { getCurrentBatch } = await import("./operations-reads-health");
+    setBatchId("batch-empty");
+
+    const result = await getCurrentBatch();
+    expect(result.active).toBe(true);
+    if (!result.active) throw new Error("unreachable");
+    expect(result.batchId).toBe("batch-empty");
+    expect(result.itemCount).toBe(0);
+    expect(result.startedAt).toBe(null);
+    expect(result.startedBy).toBe(null);
+    expect(result.mostRecentAt).toBe(null);
+  });
+
+  it("counts audit rows and derives startedAt/startedBy from the earliest row", async () => {
+    const { getCurrentBatch } = await import("./operations-reads-health");
+    setBatchId("batch-live");
+
+    const earliest = Math.floor(Date.now() / 1000) - 3600;
+    const middle = Math.floor(Date.now() / 1000) - 1800;
+    const latest = Math.floor(Date.now() / 1000);
+
+    await insertUpdate({
+      id: "u-live-1",
+      batchId: "batch-live",
+      updatedBy: "kathy",
+      createdAtSeconds: earliest,
+    });
+    await insertUpdate({
+      id: "u-live-2",
+      batchId: "batch-live",
+      updatedBy: "jason",
+      createdAtSeconds: middle,
+    });
+    await insertUpdate({
+      id: "u-live-3",
+      batchId: "batch-live",
+      updatedBy: "lane",
+      createdAtSeconds: latest,
+    });
+    // A row from a different batch — should be ignored.
+    await insertUpdate({
+      id: "u-other",
+      batchId: "other-batch",
+      updatedBy: "noise",
+      createdAtSeconds: latest,
+    });
+
+    const result = await getCurrentBatch();
+    expect(result.active).toBe(true);
+    if (!result.active) throw new Error("unreachable");
+    expect(result.batchId).toBe("batch-live");
+    expect(result.itemCount).toBe(3);
+    expect(result.startedBy).toBe("kathy");
+    expect(result.startedAt!.getTime()).toBe(earliest * 1000);
+    expect(result.mostRecentAt!.getTime()).toBe(latest * 1000);
+  });
+});
