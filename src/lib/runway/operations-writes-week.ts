@@ -24,6 +24,11 @@ import {
   normalizeResourcesString,
 } from "./operations-utils";
 import type { OperationResult } from "./operations-utils";
+import type {
+  MutationResponse,
+  ReverseCascadeInfo,
+  UpdateWeekItemFieldData,
+} from "./mutation-response";
 
 /**
  * Minimal shape of a Drizzle transaction object we need for the recompute
@@ -267,7 +272,7 @@ export interface UpdateWeekItemFieldParams {
 
 export async function updateWeekItemField(
   params: UpdateWeekItemFieldParams
-): Promise<OperationResult> {
+): Promise<MutationResponse<UpdateWeekItemFieldData>> {
   const { weekOf, weekItemTitle, field, newValue, updatedBy } = params;
   const db = getRunwayDb();
 
@@ -298,9 +303,40 @@ export async function updateWeekItemField(
   const dup = await checkDuplicate(idemKey, {
     ok: true,
     message: "Update already applied (duplicate request).",
-    data: { weekItemTitle: item.title, field, previousValue, newValue: effectiveNewValue },
+    data: {
+      weekItemTitle: item.title,
+      field,
+      previousValue,
+      newValue: effectiveNewValue,
+      reverseCascaded: false,
+      reverseCascadeDetail: null,
+      clientName,
+    },
   });
-  if (dup) return dup;
+  if (dup) return dup as MutationResponse<UpdateWeekItemFieldData>;
+
+  // Determine whether this write will reverse-cascade; if so, snapshot the
+  // parent project BEFORE the transaction so we can surface the prior
+  // `dueDate` + name in the structured response (PR #86). We still set the
+  // actual cascade flag inside the transaction.
+  const willReverseCascade =
+    typedField === "date" && item.category === "deadline" && !!item.projectId;
+  let parentSnapshot: { id: string; name: string; dueDate: string | null } | null =
+    null;
+  if (willReverseCascade && item.projectId) {
+    const rows = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, item.projectId));
+    const row = rows[0];
+    if (row) {
+      parentSnapshot = {
+        id: row.id,
+        name: row.name,
+        dueDate: row.dueDate ?? null,
+      };
+    }
+  }
 
   // Wrap week item update + reverse cascade + parent-date recompute in a
   // single transaction so the three writes commit (or roll back) atomically.
@@ -341,7 +377,7 @@ export async function updateWeekItemField(
     }));
   }
 
-  await insertAuditRecord({
+  const auditId = await insertAuditRecord({
     idempotencyKey: idemKey,
     clientId: item.clientId,
     updatedBy,
@@ -352,6 +388,21 @@ export async function updateWeekItemField(
     metadata: JSON.stringify({ field }),
   });
 
+  // Populate reverseCascadeDetail only when the cascade fired AND we
+  // successfully snapshotted the parent. A missing snapshot would leave the
+  // detail incomplete, so we degrade to null rather than invent values.
+  const reverseCascadeDetail: ReverseCascadeInfo | null =
+    reverseCascaded && parentSnapshot
+      ? {
+          projectId: parentSnapshot.id,
+          projectName: parentSnapshot.name,
+          field: "dueDate",
+          previousDueDate: parentSnapshot.dueDate,
+          newDueDate: effectiveNewValue,
+          auditId,
+        }
+      : null;
+
   return {
     ok: true,
     message: `Updated ${field} for '${item.title}'.`,
@@ -361,7 +412,9 @@ export async function updateWeekItemField(
       previousValue,
       newValue: effectiveNewValue,
       reverseCascaded,
+      reverseCascadeDetail,
       clientName,
+      auditId,
     },
   };
 }

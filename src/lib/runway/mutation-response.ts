@@ -71,7 +71,12 @@ export type ReverseCascadeInfo = {
   previousDueDate: string | null;
   /** New dueDate applied (mirrors the L2's new `date`). */
   newDueDate: string;
-  /** Audit row id for the parent `field-change` record. */
+  /**
+   * Audit row id of the `week-field-change` row that triggered the reverse
+   * cascade. Today there is no separate audit row for the parent project
+   * update (the week item write owns the audit trail), so this doubles as
+   * the link-back id for the reverse cascade itself.
+   */
   auditId: string;
 };
 

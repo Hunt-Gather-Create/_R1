@@ -92,7 +92,9 @@ vi.mock("./operations-utils", () => ({
     return null;
   },
   insertAuditRecord: async (params: Record<string, unknown>) => {
-    mockInsertValues(params);
+    const id = (params.id as string | undefined) ?? "mock-audit-id";
+    mockInsertValues({ ...params, id });
+    return id;
   },
   getPreviousValue: (entity: Record<string, unknown>, columnKey: string) => String(entity[columnKey] ?? ""),
   validateAndResolveField: (field: string, allowed: readonly string[], fieldToColumn: Record<string, string>) => {
@@ -371,7 +373,10 @@ describe("updateWeekItemField", () => {
         previousValue: "",
         newValue: "completed",
         reverseCascaded: false,
+        // PR #86: structured reverse cascade info — null when no cascade fired.
+        reverseCascadeDetail: null,
         clientName: "Convergix",
+        auditId: expect.any(String),
       });
     }
     expect(mockUpdateSet).toHaveBeenCalledWith(
@@ -565,6 +570,108 @@ describe("updateWeekItemField", () => {
     expect(mockUpdateSet).not.toHaveBeenCalledWith(
       expect.objectContaining({ dueDate: expect.anything() })
     );
+  });
+
+  // PR #86: MCP/bot consumers parse the reverse cascade outcome from
+  // `data.reverseCascadeDetail`. Today the bot tool reads `reverseCascaded`
+  // (a bool) — the new detail gives consumers the parent project id + name
+  // + prior dueDate + audit id so they can render a full breadcrumb.
+  describe("structured response (reverseCascadeDetail + auditId)", () => {
+    it("returns reverseCascadeDetail snapshot when a deadline date cascades", async () => {
+      const deadlineItem = {
+        ...weekItem,
+        category: "deadline",
+        projectId: "p1",
+        date: "2026-04-23",
+      };
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(deadlineItem);
+      // Parent snapshot — first select call (pre-transaction) reads the project row.
+      // Subsequent selects (recomputeProjectDates) also hit this mock; returning
+      // the same row is harmless because recompute only consumes startDate/endDate.
+      // Seed mockSelectGet's results[] so mockSelectWhere can find a payload.
+      mockSelectGet.mockReturnValue([
+        { id: "p1", name: "CDS Messaging", dueDate: "2026-04-15" },
+      ]);
+      // Prime `mock.results[0]` — the `where`/`orderBy`/`limit` stubs read
+      // `mockSelectGet.mock.results[0]?.value`, which only populates after
+      // an actual invocation. Calling it here mirrors how other tests in the
+      // file (not shown) shape select payloads.
+      mockSelectGet();
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "date",
+        newValue: "2026-04-28",
+        updatedBy: "kathy",
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.reverseCascaded).toBe(true);
+      expect(result.data?.reverseCascadeDetail).toEqual({
+        projectId: "p1",
+        projectName: "CDS Messaging",
+        field: "dueDate",
+        previousDueDate: "2026-04-15",
+        newDueDate: "2026-04-28",
+        auditId: expect.any(String),
+      });
+      expect(result.data?.auditId).toBe(
+        result.data?.reverseCascadeDetail?.auditId
+      );
+    });
+
+    it("reverseCascadeDetail is null when the cascade does not fire", async () => {
+      const reviewItem = {
+        ...weekItem,
+        category: "review",
+        projectId: "p1",
+      };
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(reviewItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "date",
+        newValue: "2026-04-28",
+        updatedBy: "kathy",
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.reverseCascaded).toBe(false);
+      expect(result.data?.reverseCascadeDetail).toBeNull();
+    });
+
+    it("reverseCascadeDetail preserves null previousDueDate when parent was unset", async () => {
+      const deadlineItem = {
+        ...weekItem,
+        category: "deadline",
+        projectId: "p1",
+      };
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(deadlineItem);
+      mockSelectGet.mockReturnValue([
+        { id: "p1", name: "CDS Messaging", dueDate: null },
+      ]);
+      mockSelectGet(); // prime mock.results[0]
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "date",
+        newValue: "2026-04-28",
+        updatedBy: "kathy",
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.reverseCascadeDetail?.previousDueDate).toBeNull();
+      expect(result.data?.reverseCascadeDetail?.newDueDate).toBe("2026-04-28");
+    });
   });
 });
 
