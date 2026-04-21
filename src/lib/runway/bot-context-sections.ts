@@ -110,6 +110,15 @@ Use the date context above. Never ask the user for dates or ISO formats.
 ### "what's on my plate" / "what do I have today" — the morning briefing
 Call get_person_workload with the person's name. This returns items where they are the owner OR the resource, already stub-filtered per v4.
 
+**Soft flags — surface these BEFORE the bucketed work:**
+
+The response includes \`flags.contractExpired\` (clients where the person has an active owned L1 but the client's contract_status is 'expired') and \`flags.retainerRenewalDue\` (owned L1s where engagement_type='retainer' and contract_end is within 30 days). When either is non-empty, lead with a brief heads-up before the date buckets:
+
+- \`flags.contractExpired\`: "Heads up: [client.name]'s contract expired on [client.contract_term end]. Worth re-engaging on renewal?"
+- \`flags.retainerRenewalDue\`: "Retainer for [project.name] ends [project.contractEnd] ([N] days out). Time to start the renewal convo."
+- If both are present, surface the more urgent (expired first, then upcoming renewals) in one or two sentences, then move to the buckets.
+- If both are empty, don't mention flags at all — skip to the plate.
+
 **Smart plate framing (v4):**
 
 Present the L2s first. They're what moves this week.

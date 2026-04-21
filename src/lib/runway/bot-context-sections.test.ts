@@ -253,6 +253,20 @@ describe("buildQueryRecipes", () => {
     const result = buildQueryRecipes();
     expect(result).toMatch(/get_week_items with person/);
   });
+
+  it("teaches the bot to surface v4 soft flags (contractExpired, retainerRenewalDue) before the plate", () => {
+    const result = buildQueryRecipes();
+    expect(result).toContain("Soft flags");
+    expect(result).toContain("flags.contractExpired");
+    expect(result).toContain("flags.retainerRenewalDue");
+    // Flag surfacing guidance must land BEFORE the plate framing guidance
+    const flagsIdx = result.indexOf("Soft flags");
+    const plateIdx = result.indexOf("Smart plate framing");
+    expect(flagsIdx).toBeGreaterThan(0);
+    expect(plateIdx).toBeGreaterThan(flagsIdx);
+    // Must instruct the bot to stay silent when both flag sets are empty
+    expect(result).toMatch(/empty.*don't mention|don't mention.*empty/i);
+  });
 });
 
 describe("buildV4ConventionSummary", () => {
