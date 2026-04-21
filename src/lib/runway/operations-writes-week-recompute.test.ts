@@ -12,6 +12,7 @@ import {
   seedTestDb,
   cleanupTestDb,
   getProject,
+  getWeekItem,
   type TestDb,
 } from "./test-db";
 
@@ -228,6 +229,31 @@ describe("recomputeProjectDates — v4 derivation rule", () => {
     });
     const secondUpdatedAt = secondRow.rows[0].updated_at;
     expect(secondUpdatedAt).toBe(firstUpdatedAt);
+  });
+
+  it("normalizes resources on createWeekItem write (v4 §\"resources\")", async () => {
+    // Chunk 5 debt §12.1: wire normalizeResourcesString into write paths.
+    // Asserts alt arrows (`=>`, `→`) and whitespace collapse in storage.
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      date: "2026-04-22",
+      title: "Chunk 5 resources normalization test",
+      resources: " CD: Lane   =>Dev: Leslie, CW: Kathy",
+      updatedBy: "jason",
+    });
+    expect(result.ok).toBe(true);
+    const rows = await libsqlClient.execute({
+      sql: `SELECT id, resources FROM week_items WHERE title = ?`,
+      args: ["Chunk 5 resources normalization test"],
+    });
+    expect(rows.rows).toHaveLength(1);
+    // Canonical form: `->` with single surrounding spaces, trimmed entries.
+    expect(rows.rows[0].resources).toBe("CD: Lane -> Dev: Leslie, CW: Kathy");
+    // Verify the helper round-trip by re-reading via drizzle:
+    const item = await getWeekItem(testDb, rows.rows[0].id as string);
+    expect(item?.resources).toBe("CD: Lane -> Dev: Leslie, CW: Kathy");
   });
 
   it("does bump updated_at when derived dates actually change", async () => {

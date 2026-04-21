@@ -20,6 +20,7 @@ import {
   insertAuditRecord,
   validateAndResolveField,
   getPreviousValue,
+  normalizeResourcesString,
 } from "./operations-utils";
 import type { OperationResult } from "./operations-utils";
 
@@ -124,7 +125,7 @@ export async function updateClientField(
 
   const fieldResult = validateAndResolveField(field, CLIENT_FIELDS, CLIENT_FIELD_TO_COLUMN);
   if (!fieldResult.ok) return fieldResult;
-  const { columnKey } = fieldResult;
+  const { typedField, columnKey } = fieldResult;
 
   const lookup = await getClientOrFail(clientSlug);
   if (!lookup.ok) return lookup;
@@ -132,24 +133,29 @@ export async function updateClientField(
 
   const previousValue = getPreviousValue(client, columnKey);
 
+  // v4 (Chunk 5): normalize `team` on write — it uses the same role-prefix
+  // roster format as L1/L2 resources.
+  const effectiveNewValue =
+    typedField === "team" ? normalizeResourcesString(newValue) : newValue;
+
   const idemKey = generateIdempotencyKey(
     "client-field-change",
     client.id,
     field,
-    newValue,
+    effectiveNewValue,
     updatedBy
   );
 
   const dup = await checkDuplicate(idemKey, {
     ok: true,
     message: "Update already applied (duplicate request).",
-    data: { clientName: client.name, field, previousValue, newValue },
+    data: { clientName: client.name, field, previousValue, newValue: effectiveNewValue },
   });
   if (dup) return dup;
 
   await db
     .update(clients)
-    .set({ [columnKey]: newValue, updatedAt: new Date() })
+    .set({ [columnKey]: effectiveNewValue, updatedAt: new Date() })
     .where(eq(clients.id, client.id));
 
   // Invalidate cache since client data changed
@@ -161,14 +167,14 @@ export async function updateClientField(
     updatedBy,
     updateType: "client-field-change",
     previousValue,
-    newValue,
-    summary: `${client.name}: ${field} changed from "${previousValue}" to "${newValue}"`,
+    newValue: effectiveNewValue,
+    summary: `${client.name}: ${field} changed from "${previousValue}" to "${effectiveNewValue}"`,
     metadata: JSON.stringify({ field }),
   });
 
   return {
     ok: true,
     message: `Updated ${field} for ${client.name}.`,
-    data: { clientName: client.name, field, previousValue, newValue },
+    data: { clientName: client.name, field, previousValue, newValue: effectiveNewValue },
   };
 }

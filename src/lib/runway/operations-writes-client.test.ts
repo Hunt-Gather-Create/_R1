@@ -52,6 +52,9 @@ vi.mock("./operations-utils", () => ({
     }
     return { ok: true, typedField: field, columnKey: fieldToColumn[field] };
   },
+  // v4 (Chunk 5): identity passthrough keeps existing assertions stable
+  // while proving the write path invokes normalize.
+  normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
 }));
 
 const client = { id: "c1", name: "Convergix", slug: "convergix", team: "PM: Ronan", contractStatus: null };

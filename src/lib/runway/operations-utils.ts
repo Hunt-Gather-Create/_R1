@@ -768,7 +768,10 @@ const ARROW_NORMALIZE_RE = /\s*(?:->|→|=>|>>)\s*/g;
  * - Trims and collapses whitespace around `->` and `,`
  * - Preserves order; does not dedupe or validate entries
  *
- * Used on write to persist resources in a consistent format.
+ * Used on write (Chunk 5) to persist resources in a consistent format.
+ * Wired into: `createWeekItem`, `updateWeekItemField` (field === "resources"),
+ * `addProject`, `updateProjectField` (field === "resources"),
+ * `updateClientField` (field === "team"). Read paths consume storage as-is.
  */
 export function normalizeResourcesString(raw: string | null | undefined): string {
   if (!raw) return "";

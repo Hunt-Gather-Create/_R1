@@ -21,6 +21,7 @@ import {
   insertAuditRecord,
   validateAndResolveField,
   getPreviousValue,
+  normalizeResourcesString,
 } from "./operations-utils";
 import type { OperationResult } from "./operations-utils";
 
@@ -209,6 +210,9 @@ export async function createWeekItem(
   if (dup) return dup;
 
   const itemId = generateId();
+  // v4 (Chunk 5): normalize resources string on write so storage is
+  // canonical (`->` over alt arrows, trimmed entries). `null` preserved.
+  const normalizedResources = resources ? normalizeResourcesString(resources) : null;
   // v4 (Chunk 5): wrap child insert + parent-date recompute in a single
   // transaction so a crash between the two cannot leave the parent's
   // derived dates stale.
@@ -226,7 +230,7 @@ export async function createWeekItem(
       status: status ?? null,
       category: category ?? null,
       owner: resolvedOwner,
-      resources: resources ?? null,
+      resources: normalizedResources,
       notes: notes ?? null,
       sortOrder: 999,
     });
@@ -279,18 +283,22 @@ export async function updateWeekItemField(
 
   const previousValue = getPreviousValue(item, columnKey);
 
+  // v4 (Chunk 5): normalize resources on write so storage stays canonical.
+  const effectiveNewValue =
+    typedField === "resources" ? normalizeResourcesString(newValue) : newValue;
+
   const idemKey = generateIdempotencyKey(
     "week-field-change",
     item.id,
     field,
-    newValue,
+    effectiveNewValue,
     updatedBy
   );
 
   const dup = await checkDuplicate(idemKey, {
     ok: true,
     message: "Update already applied (duplicate request).",
-    data: { weekItemTitle: item.title, field, previousValue, newValue },
+    data: { weekItemTitle: item.title, field, previousValue, newValue: effectiveNewValue },
   });
   if (dup) return dup;
 
@@ -301,14 +309,14 @@ export async function updateWeekItemField(
   await db.transaction(async (tx) => {
     await tx
       .update(weekItems)
-      .set({ [columnKey]: newValue, updatedAt: new Date() })
+      .set({ [columnKey]: effectiveNewValue, updatedAt: new Date() })
       .where(eq(weekItems.id, item.id));
 
     // Reverse cascade: deadline date changes sync back to project.dueDate
     if (typedField === "date" && item.category === "deadline" && item.projectId) {
       await tx
         .update(projects)
-        .set({ dueDate: newValue, updatedAt: new Date() })
+        .set({ dueDate: effectiveNewValue, updatedAt: new Date() })
         .where(eq(projects.id, item.projectId));
       reverseCascaded = true;
     }
@@ -329,7 +337,7 @@ export async function updateWeekItemField(
       weekItemId: item.id,
       projectId: item.projectId,
       field: "dueDate",
-      newValue,
+      newValue: effectiveNewValue,
     }));
   }
 
@@ -339,15 +347,22 @@ export async function updateWeekItemField(
     updatedBy,
     updateType: "week-field-change",
     previousValue,
-    newValue,
-    summary: `Week item '${item.title}': ${field} changed from "${previousValue}" to "${newValue}"`,
+    newValue: effectiveNewValue,
+    summary: `Week item '${item.title}': ${field} changed from "${previousValue}" to "${effectiveNewValue}"`,
     metadata: JSON.stringify({ field }),
   });
 
   return {
     ok: true,
     message: `Updated ${field} for '${item.title}'.`,
-    data: { weekItemTitle: item.title, field, previousValue, newValue, reverseCascaded, clientName },
+    data: {
+      weekItemTitle: item.title,
+      field,
+      previousValue,
+      newValue: effectiveNewValue,
+      reverseCascaded,
+      clientName,
+    },
   };
 }
 

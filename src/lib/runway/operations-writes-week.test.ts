@@ -101,6 +101,10 @@ vi.mock("./operations-utils", () => ({
     }
     return { ok: true, typedField: field, columnKey: fieldToColumn[field] };
   },
+  // v4 (Chunk 5): identity passthrough — preserves existing assertions that
+  // assume raw `newValue` flows straight to the db. Real normalization is
+  // asserted in operations-utils.test.ts.
+  normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
 }));
 
 const client = { id: "c1", name: "Convergix", slug: "convergix" };

@@ -14,6 +14,7 @@ import {
   findProjectByFuzzyName,
   resolveProjectOrFail,
   normalizeForMatch,
+  normalizeResourcesString,
   checkDuplicate,
   insertAuditRecord,
 } from "./operations";
@@ -84,6 +85,8 @@ export async function addProject(
   if (dup) return dup;
 
   const projectId = generateId();
+  // v4 (Chunk 5): normalize resources on write so storage stays canonical.
+  const normalizedResources = resources ? normalizeResourcesString(resources) : null;
   await db.insert(projects).values({
     id: projectId,
     clientId: client.id,
@@ -91,7 +94,7 @@ export async function addProject(
     status,
     category,
     owner: owner ?? null,
-    resources: resources ?? null,
+    resources: normalizedResources,
     dueDate: dueDate ?? null,
     target: target ?? null,
     waitingOn: waitingOn ?? null,
