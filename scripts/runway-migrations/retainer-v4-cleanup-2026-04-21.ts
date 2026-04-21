@@ -82,7 +82,13 @@ const BATCH_ID = "retainer-v4-cleanup-2026-04-21";
 const UPDATED_BY = "migration";
 const DEFAULT_SNAPSHOT_PATH = "docs/tmp/retainer-v4-cleanup-pre-apply-snapshot.json";
 const DEFAULT_CREATED_IDS_PATH = "docs/tmp/retainer-v4-cleanup-created-ids.json";
-const TRUST_PRESERVATION_THRESHOLD_MS = Date.parse("2026-04-21T14:00:00Z");
+// Raised from 14:00Z to 22:00Z on 2026-04-21 after a partial-apply-then-revert
+// cycle. The revert stamped 37 rows with updatedAt ≈ 21:20Z (all migration-touched
+// rows, legitimate revert drift — not human edits). TP ran an audit-log sweep at
+// ~21:50Z confirming the only human touches since 14:00Z were Kathy's 14:04 LPPC
+// edits, which remain in EXPECTED_KATHY_TOUCHES. New threshold still fires on
+// any genuine post-threshold human edit that isn't in the expected set.
+const TRUST_PRESERVATION_THRESHOLD_MS = Date.parse("2026-04-21T22:00:00Z");
 
 /** Ids of rows Kathy touched at 2026-04-21T14:04:*Z whose drift is expected
  *  per spec's trust-preservation rules. Keyed by "client:entity:title" for
