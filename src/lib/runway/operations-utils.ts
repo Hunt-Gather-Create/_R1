@@ -771,7 +771,8 @@ const ARROW_NORMALIZE_RE = /\s*(?:->|→|=>|>>)\s*/g;
  * Used on write (Chunk 5) to persist resources in a consistent format.
  * Wired into: `createWeekItem`, `updateWeekItemField` (field === "resources"),
  * `addProject`, `updateProjectField` (field === "resources"),
- * `updateClientField` (field === "team"). Read paths consume storage as-is.
+ * `createClient` (team field), `updateClientField` (field === "team").
+ * Read paths consume storage as-is.
  */
 export function normalizeResourcesString(raw: string | null | undefined): string {
   if (!raw) return "";

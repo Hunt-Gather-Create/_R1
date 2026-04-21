@@ -77,12 +77,15 @@ export async function createClient(
   if (dup) return dup;
 
   const clientId = generateId();
+  // v4 (Chunk 5 debt §14.1): normalize `team` on write — mirrors
+  // updateClientField so create/update paths store canonical roster format.
+  const normalizedTeam = team ? normalizeResourcesString(team) : null;
   await db.insert(clients).values({
     id: clientId,
     name,
     slug,
     nicknames: nicknames ?? null,
-    team: team ?? null,
+    team: normalizedTeam,
     contractValue: contractValue ?? null,
     contractTerm: contractTerm ?? null,
     contractStatus: contractStatus ?? null,
