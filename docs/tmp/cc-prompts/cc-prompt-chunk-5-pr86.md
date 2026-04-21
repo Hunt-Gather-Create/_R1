@@ -14,9 +14,20 @@ Final chunk. Add past-end L2 detector to flags rail. Audit batch-update skill fo
 
 ## Context
 
-**Working directory:** `{WORKTREE_PATH_CHUNK_5}` (off `feature/runway-pr86-wave2`)
-**Branch:** `feature/runway-pr86-chunk-5`
-**Base:** `feature/runway-pr86-wave2` (Chunks 1-4 + all data migrations integrated)
+**Working directory:** isolated worktree via Agent tool
+**Branch:** `feature/runway-pr86-chunk-5` (rename auto-created branch)
+**Base:** `origin/feature/runway-pr86-base` — unified integration line (all Chunks 1, 4 and 7 data migrations already merged here)
+
+## STEP 0 — MANDATORY base correction
+
+```bash
+git branch --show-current
+git fetch origin
+git log --oneline origin/feature/runway-pr86-base -5   # should include Chunk 2 + Chunk 3 merges by the time you run
+git checkout -B feature/runway-pr86-chunk-5 origin/feature/runway-pr86-base
+```
+
+HALT if fails.
 
 Convention reference: `docs/tmp/runway-v4-convention.md` §"Convention-driven behaviors §4."
 
@@ -36,20 +47,36 @@ If any fail, STOP.
 
 ## Scope — strict
 
-**IN:**
+**IN (primary items):**
 
-1. **Past-end L2 detector** — add to `src/lib/runway/flags-detectors.ts`. Criteria: `end_date < today AND status='in-progress'`. Returns a flag object compatible with existing flags rail format. Wire into flags page and bot's plate response.
+1. **Past-end L2 detector** — add to `src/lib/runway/flags-detectors.ts`. Criteria: `end_date < today AND status='in-progress'`. Returns a flag object compatible with existing flags rail format. Wire into flags page and bot's plate response. See v4 convention doc §"Convention-driven behaviors §4."
 
-2. **Batch-update skill audit** — read `.claude/skills/batch-update/SKILL.md`. Evaluate:
-   - Does it support filter + multi-field update?
-   - Does it support dry-run with diff output?
-   - Does it tag batchId on audit records?
-   - Does it support bulk L2-owner backfill (for operator-initiated "apply L1 owner to all L2s of this project")?
-   - Any gaps → propose lightweight additions (max 30 lines of code). If the skill is solid, document as-is and skip.
+2. **Batch-update skill audit** — read `.claude/skills/batch-update/SKILL.md`. Evaluate: filter + multi-field update support, dry-run with diff, batchId tagging on audit, bulk L2-owner backfill. Lightweight additions (≤30 LoC) allowed if gaps.
 
-3. **Minor polish** — any surfaced items from Wave 1-2 integration notes (check `docs/tmp/pr86-wave-1-details.md` and `pr86-wave-2-details.md` for any deferred polish items TP flagged).
+3. **Tests** for the detector and batch-update additions.
 
-4. **Tests** for the detector and any batch-update additions.
+## IN (known debt from Wave 1/2 — see `docs/brain/pr86-chunk4-known-debt.md`)
+
+4. **Extend `PROJECT_FIELDS` whitelist** to include `engagementType`, `contractStart`, `contractEnd`. Also verify `WEEK_ITEM_FIELDS` includes `startDate`, `endDate`, `blockedBy` (Chunk 4 should have added these — verify). Update `PROJECT_FIELD_TO_COLUMN` and `WEEK_ITEM_FIELD_TO_COLUMN` accordingly.
+
+5. **`bucketWeekItem` in `getPersonWorkload` (Chunk 1)** — add `status !== 'completed'` filter to `thisWeek / nextWeek / later` bucketing. Future-dated completed L2s should not inflate counts. Add test covering this case.
+
+6. **`recomputeProjectDates` transaction safety** — move recompute INSIDE the write transaction in all 4 call sites: `createWeekItem`, `updateWeekItemField`, `deleteWeekItem`, `linkWeekItemToProject`. Mirror the pattern `updateWeekItemField` already uses for `dueDate` reverse-cascade. Add test for concurrent-crash-between-write-and-recompute if feasible; otherwise document the invariant with a comment.
+
+7. **Drizzle snapshot/SQL drift** — `drizzle-runway/0001_melted_weapon_omega.sql` was trimmed to only Chunk 4 columns, but `meta/0001_snapshot.json` still contains 4 pre-existing columns (`clients.nicknames`, `clients.updated_at`, `team_members.full_name`, `team_members.nicknames`, `team_members.updated_at`, `updates.batch_id`) from prior unpushed-as-sql migrations. Either regenerate snapshot to match SQL, or expand SQL to match snapshot. Goal: fresh-DB replay via drizzle-kit migrate works cleanly.
+
+8. **Unconditional `updated_at` bump on no-op recompute** — `recomputeProjectDates` writes `UPDATE ... SET updated_at = ...` even when computed dates equal current. Skip the update when no change. Small perf + audit noise improvement.
+
+## Defer (do NOT fix in Chunk 5, document only in PR message)
+
+- Missing Bonterra Design L2s (pre-existing, investigation needed post-merge)
+- Soundly audit rows missing batchId tag (minor, affects publish-updates filtering)
+- Chunk 1 commit `23d56eb` not bisect-safe in isolation (squash-merge eliminates if operator prefers)
+- Team roster interpretation inconsistency (Soundly full-team vs others engaged-roles) — flag for operator post-merge normalization
+
+## Minor polish
+
+Check `docs/brain/pr86-chunk4-known-debt.md` for any remaining items. Scan Wave 1 + Wave 2 integration state for anomalies.
 
 **OUT:**
 - Anything in Chunks 1-4 scope (already merged)
