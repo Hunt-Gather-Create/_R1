@@ -248,8 +248,18 @@ export async function getProjectStatus(
         const title = byId.get(bid);
         if (title && !blockerTitles.includes(title)) blockerTitles.push(title);
       }
-    } catch {
-      // Malformed blocked_by payload — ignore.
+    } catch (err) {
+      // Chunk 5 debt §12.3: surface malformed payloads at debug level so ops
+      // can spot data-integrity drift without failing the read. Deliberately
+      // silent on the user-facing path (the L2's upstream blockers will not
+      // surface in blockerTitles, but the response still returns).
+      console.warn(JSON.stringify({
+        event: "runway_blocked_by_parse_error",
+        projectId: project.id,
+        weekItemId: item.id,
+        rawLength: item.blockedBy.length,
+        message: err instanceof Error ? err.message : String(err),
+      }));
     }
   }
 
