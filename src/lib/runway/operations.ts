@@ -92,6 +92,7 @@ export {
   getProjectsFiltered,
   getLinkedWeekItems,
   getLinkedDeadlineItems,
+  getOrphanWeekItems,
   getWeekItemsData,
   getWeekItemsByProject,
   getPersonWorkload,
@@ -102,6 +103,7 @@ export {
 export type {
   WeekItemRow,
   StaleAccountItem,
+  GetClientsWithCountsOptions,
 } from "./operations-reads";
 
 export {
@@ -162,6 +164,7 @@ export {
 
 export type {
   TeamMemberRecord,
+  GetUpdatesDataOptions,
 } from "./operations-context";
 
 // ── Write operations ────────────────────────────────────

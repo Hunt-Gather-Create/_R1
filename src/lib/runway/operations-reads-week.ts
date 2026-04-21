@@ -4,8 +4,9 @@
 
 import { getRunwayDb } from "@/lib/db/runway";
 import { clients, projects, weekItems } from "@/lib/db/runway-schema";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import {
+  getClientBySlug,
   getClientNameMap,
   matchesSubstring,
 } from "./operations";
@@ -13,6 +14,31 @@ import {
 export type WeekItemRow = typeof weekItems.$inferSelect;
 export type ProjectRow = typeof projects.$inferSelect;
 export type ClientRow = typeof clients.$inferSelect;
+
+/**
+ * Return week items with `projectId IS NULL` (unlinked "orphan" L2s).
+ *
+ * Optionally filter by `clientSlug` so callers can inspect a single account's
+ * stubs. Useful for the MCP + bot to spot L2s that drifted off their parent
+ * L1 during imports or cascades. v4 convention (2026-04-21).
+ */
+export async function getOrphanWeekItems(
+  clientSlug?: string
+): Promise<WeekItemRow[]> {
+  const db = getRunwayDb();
+
+  const rows = await db
+    .select()
+    .from(weekItems)
+    .where(isNull(weekItems.projectId))
+    .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
+
+  if (!clientSlug) return rows;
+
+  const client = await getClientBySlug(clientSlug);
+  if (!client) return [];
+  return rows.filter((r) => r.clientId === client.id);
+}
 
 export async function getLinkedWeekItems(projectId: string): Promise<WeekItemRow[]> {
   const db = getRunwayDb();

@@ -10,7 +10,8 @@
  */
 
 export { getClientsWithCounts, getProjectsFiltered } from "./operations-reads-clients";
-export { getLinkedWeekItems, getLinkedDeadlineItems, getWeekItemsData, getWeekItemsByProject, getPersonWorkload } from "./operations-reads-week";
+export type { GetClientsWithCountsOptions } from "./operations-reads-clients";
+export { getLinkedWeekItems, getLinkedDeadlineItems, getOrphanWeekItems, getWeekItemsData, getWeekItemsByProject, getPersonWorkload } from "./operations-reads-week";
 export type { WeekItemRow } from "./operations-reads-week";
 export { getPipelineData, getStaleItemsForAccounts } from "./operations-reads-pipeline";
 export type { StaleAccountItem } from "./operations-reads-pipeline";
