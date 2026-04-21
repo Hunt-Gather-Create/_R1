@@ -103,7 +103,6 @@ export async function getFlags(
       owner: p.owner ?? undefined,
       resources: p.resources ?? undefined,
       waitingOn: p.waitingOn ?? undefined,
-      target: p.target ?? undefined,
       notes: p.notes ?? undefined,
       staleDays: p.staleDays ?? undefined,
       startDate: p.startDate ?? null,
@@ -114,6 +113,8 @@ export async function getFlags(
         | "break-fix"
         | null,
       contractEnd: p.contractEnd ?? null,
+      // v4 convention (2026-04-21 / PR #88 Chunk F): retainer wrapper parent.
+      parentProjectId: p.parentProjectId ?? null,
     }));
     return {
       name: c.name,

@@ -25,10 +25,10 @@ const mockCheckIdempotency = vi.fn();
 
 let _idCounter = 0;
 vi.mock("./operations-utils", () => ({
-  PROJECT_FIELDS: ["name", "dueDate", "owner", "resources", "waitingOn", "target", "notes", "category"],
+  PROJECT_FIELDS: ["name", "dueDate", "owner", "resources", "waitingOn", "notes", "category"],
   PROJECT_FIELD_TO_COLUMN: {
     name: "name", dueDate: "dueDate", owner: "owner", resources: "resources",
-    waitingOn: "waitingOn", target: "target", notes: "notes", category: "category",
+    waitingOn: "waitingOn", notes: "notes", category: "category",
   },
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
   generateId: () => `mock-id-${++_idCounter}`,
@@ -82,7 +82,6 @@ const project = {
   owner: "Kathy",
   resources: "Roz",
   waitingOn: null,
-  target: null,
   notes: null,
 };
 

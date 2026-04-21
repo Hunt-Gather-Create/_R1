@@ -54,7 +54,7 @@ const client = {
   createdAt: new Date(), updatedAt: new Date(),
   items: [{
     id: "p1", clientId: "c1", name: "CDS Messaging", status: "in-production",
-    category: "active", owner: "Kathy", waitingOn: null, target: null,
+    category: "active", owner: "Kathy", waitingOn: null,
     dueDate: null, notes: "Gate for CDS", staleDays: null, sortOrder: 0,
     createdAt: new Date(), updatedAt: new Date(),
   }],

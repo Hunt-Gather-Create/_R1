@@ -13,12 +13,19 @@ vi.mock("@/lib/db/runway", () => ({
   getRunwayDb: vi.fn(),
 }));
 
-// Keep operations helpers pure where possible; only mock getClientNameMap to avoid DB fetch.
+// Keep operations helpers pure where possible; only mock getClientNameMap + getClientBySlug to
+// avoid DB fetches. Tests that need a specific slug→client mapping override `mockGetClientBySlug`
+// per-case via mockResolvedValueOnce.
+const mockGetClientBySlug = vi.fn<
+  (slug: string) => Promise<{ id: string; slug: string; name: string } | null>
+>();
+
 vi.mock("./operations", async () => {
   const actual = await vi.importActual<typeof import("./operations")>("./operations");
   return {
     ...actual,
     getClientNameMap: vi.fn(async () => new Map<string, string>()),
+    getClientBySlug: (slug: string) => mockGetClientBySlug(slug),
   };
 });
 
@@ -36,7 +43,9 @@ function createWeekItem(overrides: Record<string, unknown> = {}) {
     endDate: null,
     blockedBy: null,
     title: "Test Item",
-    status: null,
+    // v4 (PR 88 Chunk D): new L2s default to the explicit 'scheduled' status.
+    // Tests that need legacy NULL semantics should pass `status: null` explicitly.
+    status: "scheduled",
     category: "deadline",
     owner: null,
     resources: null,
@@ -58,7 +67,6 @@ function createProject(overrides: Record<string, unknown> = {}) {
     owner: null,
     resources: null,
     waitingOn: null,
-    target: null,
     dueDate: null,
     startDate: null,
     endDate: null,
@@ -626,5 +634,204 @@ describe("getWeekItemsData — v4 enriched response shape", () => {
       category: "deadline",
       notes: "n/a",
     });
+  });
+});
+
+describe("getWeekItemsData — status filter (v4 PR #88 Chunk B)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function mockWeekItemsDb(rows: ReturnType<typeof createWeekItem>[]) {
+    const mockOrderBy = vi.fn().mockResolvedValue(rows);
+    const mockWhere = vi.fn().mockReturnValue({ orderBy: mockOrderBy });
+    const mockFrom = vi.fn().mockReturnValue({
+      where: mockWhere,
+      orderBy: mockOrderBy,
+    });
+    vi.mocked(getRunwayDb).mockReturnValue({
+      select: vi.fn().mockReturnValue({ from: mockFrom }),
+    } as never);
+  }
+
+  it("filters to exact status match (in-progress)", async () => {
+    mockWeekItemsDb([
+      createWeekItem({ id: "wi-a", status: "in-progress" }),
+      createWeekItem({ id: "wi-b", status: "blocked" }),
+      createWeekItem({ id: "wi-c", status: null }),
+    ]);
+
+    const result = await getWeekItemsData(undefined, undefined, undefined, undefined, "in-progress");
+    expect(result.map((r) => r.id)).toEqual(["wi-a"]);
+  });
+
+  it("filters to blocked status", async () => {
+    mockWeekItemsDb([
+      createWeekItem({ id: "wi-a", status: "in-progress" }),
+      createWeekItem({ id: "wi-b", status: "blocked" }),
+      createWeekItem({ id: "wi-c", status: "blocked" }),
+    ]);
+
+    const result = await getWeekItemsData(undefined, undefined, undefined, undefined, "blocked");
+    expect(result.map((r) => r.id)).toEqual(["wi-b", "wi-c"]);
+  });
+
+  it("treats status='scheduled' as NULL-status sentinel (v4 convention)", async () => {
+    mockWeekItemsDb([
+      createWeekItem({ id: "wi-scheduled-a", status: null }),
+      createWeekItem({ id: "wi-scheduled-b", status: null }),
+      createWeekItem({ id: "wi-active", status: "in-progress" }),
+    ]);
+
+    const result = await getWeekItemsData(undefined, undefined, undefined, undefined, "scheduled");
+    expect(result.map((r) => r.id)).toEqual(["wi-scheduled-a", "wi-scheduled-b"]);
+  });
+
+  it("matches both NULL and explicit 'scheduled' when filtering status='scheduled' (PR 88 Chunk D)", async () => {
+    // After the backfill migration runs, most rows will be explicit 'scheduled'.
+    // Before it runs, rows are still NULL. The filter must cover both during
+    // the rollout window.
+    mockWeekItemsDb([
+      createWeekItem({ id: "wi-null", status: null }),
+      createWeekItem({ id: "wi-explicit", status: "scheduled" }),
+      createWeekItem({ id: "wi-active", status: "in-progress" }),
+    ]);
+
+    const result = await getWeekItemsData(undefined, undefined, undefined, undefined, "scheduled");
+    expect(result.map((r) => r.id)).toEqual(["wi-null", "wi-explicit"]);
+  });
+
+  it("does not match NULL-status items when status is a non-sentinel value", async () => {
+    mockWeekItemsDb([
+      createWeekItem({ id: "wi-null", status: null }),
+      createWeekItem({ id: "wi-done", status: "completed" }),
+    ]);
+
+    const result = await getWeekItemsData(undefined, undefined, undefined, undefined, "completed");
+    expect(result.map((r) => r.id)).toEqual(["wi-done"]);
+  });
+
+  it("combines status with owner filter (AND semantics)", async () => {
+    mockWeekItemsDb([
+      createWeekItem({ id: "wi-a", status: "blocked", owner: "Kathy" }),
+      createWeekItem({ id: "wi-b", status: "blocked", owner: "Roz" }),
+      createWeekItem({ id: "wi-c", status: "in-progress", owner: "Kathy" }),
+    ]);
+
+    const result = await getWeekItemsData(undefined, "Kathy", undefined, undefined, "blocked");
+    expect(result.map((r) => r.id)).toEqual(["wi-a"]);
+  });
+
+  it("returns empty array when no items match the status", async () => {
+    mockWeekItemsDb([
+      createWeekItem({ id: "wi-a", status: "in-progress" }),
+    ]);
+
+    const result = await getWeekItemsData(undefined, undefined, undefined, undefined, "completed");
+    expect(result).toEqual([]);
+  });
+});
+
+describe("getWeekItemsData — clientSlug filter (v4 PR #88 Chunk B)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function mockWeekItemsDb(rows: ReturnType<typeof createWeekItem>[]) {
+    const mockOrderBy = vi.fn().mockResolvedValue(rows);
+    const mockWhere = vi.fn().mockReturnValue({ orderBy: mockOrderBy });
+    const mockFrom = vi.fn().mockReturnValue({
+      where: mockWhere,
+      orderBy: mockOrderBy,
+    });
+    vi.mocked(getRunwayDb).mockReturnValue({
+      select: vi.fn().mockReturnValue({ from: mockFrom }),
+    } as never);
+  }
+
+  it("narrows to week items whose clientId matches the resolved slug", async () => {
+    mockGetClientBySlug.mockResolvedValueOnce({
+      id: "cl-convergix",
+      slug: "convergix",
+      name: "Convergix",
+    });
+    mockWeekItemsDb([
+      createWeekItem({ id: "wi-cgx-1", clientId: "cl-convergix" }),
+      createWeekItem({ id: "wi-cgx-2", clientId: "cl-convergix" }),
+      createWeekItem({ id: "wi-other", clientId: "cl-bonterra" }),
+    ]);
+
+    const result = await getWeekItemsData(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "convergix",
+    );
+    expect(result.map((r) => r.id)).toEqual(["wi-cgx-1", "wi-cgx-2"]);
+  });
+
+  it("returns empty array when the slug doesn't resolve to a client", async () => {
+    mockGetClientBySlug.mockResolvedValueOnce(null);
+    mockWeekItemsDb([
+      createWeekItem({ id: "wi-a", clientId: "cl-convergix" }),
+    ]);
+
+    const result = await getWeekItemsData(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "nonexistent",
+    );
+    expect(result).toEqual([]);
+  });
+
+  it("combines clientSlug with person filter (AND semantics)", async () => {
+    mockGetClientBySlug.mockResolvedValueOnce({
+      id: "cl-convergix",
+      slug: "convergix",
+      name: "Convergix",
+    });
+    mockWeekItemsDb([
+      createWeekItem({ id: "wi-cgx-kathy", clientId: "cl-convergix", owner: "Kathy" }),
+      createWeekItem({ id: "wi-cgx-roz", clientId: "cl-convergix", owner: "Roz" }),
+      createWeekItem({ id: "wi-other-kathy", clientId: "cl-bonterra", owner: "Kathy" }),
+    ]);
+
+    const result = await getWeekItemsData(
+      undefined,
+      undefined,
+      undefined,
+      "Kathy",
+      undefined,
+      "convergix",
+    );
+    expect(result.map((r) => r.id)).toEqual(["wi-cgx-kathy"]);
+  });
+
+  it("combines clientSlug with status filter", async () => {
+    mockGetClientBySlug.mockResolvedValueOnce({
+      id: "cl-convergix",
+      slug: "convergix",
+      name: "Convergix",
+    });
+    mockWeekItemsDb([
+      createWeekItem({ id: "wi-cgx-blocked", clientId: "cl-convergix", status: "blocked" }),
+      createWeekItem({ id: "wi-cgx-active", clientId: "cl-convergix", status: "in-progress" }),
+      createWeekItem({ id: "wi-other-blocked", clientId: "cl-bonterra", status: "blocked" }),
+    ]);
+
+    const result = await getWeekItemsData(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "blocked",
+      "convergix",
+    );
+    expect(result.map((r) => r.id)).toEqual(["wi-cgx-blocked"]);
   });
 });

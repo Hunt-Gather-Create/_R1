@@ -178,12 +178,35 @@ Present the L2s first. They're what moves this week.
   inFlight first, then upcoming, then blockers, then suggestedActions if any.
 - "what's the deal with [client]" (client-level, no project named):
   Call get_projects with the client slug.
+- "who's on [client] this week" / "what's [client] got this week":
+  Call get_week_items with clientSlug and weekOf = this week's Monday.
+- "what's blocked" / "what's in progress this week":
+  Call get_week_items with status filter. Valid values: 'in-progress', 'blocked',
+  'at-risk', 'completed', 'canceled', 'scheduled'. 'scheduled' is the default for
+  new L2s and also matches legacy NULL-status rows during the Chunk D backfill
+  rollout (status IS NULL OR status = 'scheduled').
+- "which retainers are we running" / "list our retainer engagements":
+  Call get_projects with engagementType='retainer'. Other values: 'project', 'break-fix'.
+  Pass engagementType='__null__' to list projects that have no engagement_type set.
+- "what's under [retainer wrapper]" / "which L1s are nested under [wrapper]":
+  Call get_projects with parentProjectId=<wrapper-id>. Returns every deliverable L1
+  nested under that retainer wrapper. PR #88 Chunk F introduced parent_project_id so a
+  retainer contract L1 can wrap multiple deliverable L1s; the UI renders a 3-level
+  hierarchy (wrapper -> children -> L2s). To attach a deliverable L1 to a wrapper,
+  call update_project_field with field='parentProjectId' and the wrapper's id.
+  To clear the link, pass newValue=''. Pass parentProjectId='__null__' to list
+  only top-level L1s (the default view when no wrapper exists).
 - "what's in the pipeline":
   Call get_pipeline.
 - "who's holding things up at [client]":
   Call get_client_contacts with the client slug, then cross-reference with get_projects filtered by waitingOn.
 - "what did I update" / "what changed on [client]" / "what happened this week":
   Call get_recent_updates. Filter by client slug if mentioned. Filter by since date if mentioned.
+- "what rows changed since [timestamp]" / "drift check" / "show me everything touched since the cleanup batch":
+  Call get_rows_changed_since with an ISO timestamp. Returns raw rows from projects / weekItems /
+  clients / pipelineItems whose updated_at is >= since. Narrow with tables or clientSlug when the
+  caller scopes the question. Use this (not get_recent_updates) when the caller wants the ACTUAL
+  rows that changed, not the audit summary.
 
 ### Status cascade behavior
 When you update a project status to ${CASCADE_STATUSES.join(", ")}, linked week items

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { AccountSection } from "./account-section";
-import type { Account } from "../types";
+import type { Account, TriageItem } from "../types";
 
 function createAccount(overrides: Partial<Account> = {}): Account {
   return {
@@ -111,7 +111,7 @@ describe("AccountSection", () => {
     expect(screen.getByText("2w waiting")).toBeInTheDocument();
   });
 
-  it("renders owner, target, and notes for items", () => {
+  it("renders owner and notes for items", () => {
     render(
       <AccountSection
         account={createAccount({
@@ -122,7 +122,6 @@ describe("AccountSection", () => {
               status: "in-production",
               category: "active",
               owner: "Kathy",
-              target: "4/11",
               notes: "Gate for content",
             },
           ],
@@ -130,7 +129,6 @@ describe("AccountSection", () => {
       />
     );
     expect(screen.getByText("Resources: Kathy")).toBeInTheDocument();
-    expect(screen.getByText("Target: 4/11")).toBeInTheDocument();
     expect(screen.getByText("Gate for content")).toBeInTheDocument();
   });
 
@@ -220,13 +218,13 @@ describe("AccountSection", () => {
     expect(container.textContent).not.toContain("On Hold");
   });
 
-  it("sorts active items by target date", () => {
+  it("sorts active items by startDate, with no-startDate items at the end", () => {
     const { container } = render(
       <AccountSection
         account={createAccount({
           items: [
-            { id: "p1", title: "Later", status: "in-production", category: "active", target: "5/1" },
-            { id: "p2", title: "Earlier", status: "in-production", category: "active", target: "4/8" },
+            { id: "p1", title: "Later", status: "in-production", category: "active", startDate: "2026-05-01" },
+            { id: "p2", title: "Earlier", status: "in-production", category: "active", startDate: "2026-04-08" },
             { id: "p3", title: "No Date", status: "in-production", category: "active" },
           ],
         })}
@@ -238,19 +236,6 @@ describe("AccountSection", () => {
     const noDateIdx = text.indexOf("No Date");
     expect(earlierIdx).toBeLessThan(laterIdx);
     expect(laterIdx).toBeLessThan(noDateIdx);
-  });
-
-  it("shows target date via MetadataLabel", () => {
-    render(
-      <AccountSection
-        account={createAccount({
-          items: [
-            { id: "p1", title: "Dated Item", status: "in-production", category: "active", target: "R1 to Daniel 4/7" },
-          ],
-        })}
-      />
-    );
-    expect(screen.getByText("Target: R1 to Daniel 4/7")).toBeInTheDocument();
   });
 
   it("expands MSA abbreviation in contract terms", () => {
@@ -280,49 +265,34 @@ describe("AccountSection", () => {
     expect(screen.queryByText(/Feb/)).not.toBeInTheDocument();
   });
 
-  it("sorts items with unparseable targets before no-target items", () => {
+  it("keeps items without startDate after items with startDate", () => {
     const { container } = render(
       <AccountSection
         account={createAccount({
           items: [
             { id: "p1", title: "No Date", status: "in-production", category: "active" },
-            { id: "p2", title: "Vague", status: "in-production", category: "active", target: "Late March" },
-            { id: "p3", title: "Exact", status: "in-production", category: "active", target: "4/15" },
+            { id: "p2", title: "Exact", status: "in-production", category: "active", startDate: "2026-04-15" },
           ],
         })}
       />
     );
     const text = container.textContent!;
-    expect(text.indexOf("Exact")).toBeLessThan(text.indexOf("Vague"));
-    expect(text.indexOf("Vague")).toBeLessThan(text.indexOf("No Date"));
+    expect(text.indexOf("Exact")).toBeLessThan(text.indexOf("No Date"));
   });
 
-  it("sorts by first date when target has a date range", () => {
+  it("sorts by startDate ISO order when both items have one", () => {
     const { container } = render(
       <AccountSection
         account={createAccount({
           items: [
-            { id: "p1", title: "Later", status: "in-production", category: "active", target: "4/10-4/22 dev window" },
-            { id: "p2", title: "Earlier", status: "in-production", category: "active", target: "4/8" },
+            { id: "p1", title: "Later", status: "in-production", category: "active", startDate: "2026-04-10" },
+            { id: "p2", title: "Earlier", status: "in-production", category: "active", startDate: "2026-04-08" },
           ],
         })}
       />
     );
     const text = container.textContent!;
     expect(text.indexOf("Earlier")).toBeLessThan(text.indexOf("Later"));
-  });
-
-  it("shows full target text via MetadataLabel for text-only targets", () => {
-    render(
-      <AccountSection
-        account={createAccount({
-          items: [
-            { id: "p1", title: "Vague Item", status: "in-production", category: "active", target: "Late March" },
-          ],
-        })}
-      />
-    );
-    expect(screen.getByText("Target: Late March")).toBeInTheDocument();
   });
 
   // Chunk 3 #1 — unified Project View
@@ -362,5 +332,104 @@ describe("AccountSection", () => {
       />
     );
     expect(screen.queryByTestId("project-milestones")).not.toBeInTheDocument();
+  });
+
+  // ── Retainer wrapper 3-level hierarchy (PR #88 Chunk F) ──
+
+  function makeChild(id: string, title: string): TriageItem {
+    return { id, title, status: "in-production", category: "active" };
+  }
+
+  it("falls back to 2-level render when parentProjectId is null (no children attached)", () => {
+    // Zero visual change from the pre-Chunk-F behavior for top-level L1s.
+    render(
+      <AccountSection
+        account={createAccount({
+          items: [
+            { id: "p1", title: "Standalone Project", status: "in-production", category: "active" },
+          ],
+        })}
+      />
+    );
+    expect(screen.getByText("Standalone Project")).toBeInTheDocument();
+    expect(screen.queryByTestId("project-wrapper-card")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("project-wrapper-toggle")).not.toBeInTheDocument();
+  });
+
+  it("renders 3-level hierarchy when a wrapper has children", () => {
+    render(
+      <AccountSection
+        account={createAccount({
+          items: [
+            {
+              id: "wrap",
+              title: "Convergix Retainer 2026",
+              status: "in-production",
+              category: "active",
+              children: [
+                makeChild("c1", "CDS Messaging"),
+                makeChild("c2", "CDS Landing Page"),
+              ],
+            } as TriageItem,
+          ],
+        })}
+      />
+    );
+    expect(screen.getByText("Convergix Retainer 2026")).toBeInTheDocument();
+    const card = screen.getByTestId("project-wrapper-card");
+    expect(card).toBeInTheDocument();
+    const childrenList = screen.getByTestId("project-wrapper-children");
+    expect(childrenList).toHaveTextContent("CDS Messaging");
+    expect(childrenList).toHaveTextContent("CDS Landing Page");
+  });
+
+  it("auto-expands wrappers with fewer than 5 children (toggle reads 'Collapse')", () => {
+    render(
+      <AccountSection
+        account={createAccount({
+          items: [
+            {
+              id: "wrap",
+              title: "Small Retainer",
+              status: "in-production",
+              category: "active",
+              children: [makeChild("c1", "Child 1"), makeChild("c2", "Child 2")],
+            } as TriageItem,
+          ],
+        })}
+      />
+    );
+    expect(screen.getByTestId("project-wrapper-children")).toBeInTheDocument();
+    expect(screen.getByTestId("project-wrapper-toggle")).toHaveTextContent("Collapse");
+  });
+
+  it("auto-collapses wrappers with 5+ children by default (PR #88 Chunk F)", () => {
+    const children = Array.from({ length: 6 }, (_, i) =>
+      makeChild(`c${i}`, `Child ${i}`),
+    );
+    render(
+      <AccountSection
+        account={createAccount({
+          items: [
+            {
+              id: "wrap",
+              title: "Big Retainer",
+              status: "in-production",
+              category: "active",
+              children,
+            } as TriageItem,
+          ],
+        })}
+      />
+    );
+    // Collapsed: children list not rendered, toggle invites expansion.
+    expect(screen.queryByTestId("project-wrapper-children")).not.toBeInTheDocument();
+    const toggle = screen.getByTestId("project-wrapper-toggle");
+    expect(toggle).toHaveTextContent("Expand (6)");
+
+    // Clicking expands.
+    fireEvent.click(toggle);
+    expect(screen.getByTestId("project-wrapper-children")).toBeInTheDocument();
+    expect(toggle).toHaveTextContent("Collapse");
   });
 });

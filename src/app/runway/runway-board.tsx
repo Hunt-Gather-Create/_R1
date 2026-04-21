@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useTransition } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { DayItem, Account, PipelineItem } from "./types";
 import type { UnifiedAccount } from "./unified-view";
@@ -14,6 +14,7 @@ import { PipelineRow } from "./components/pipeline-row";
 import { FlagsPanel } from "./components/flags-panel";
 import { NeedsUpdateSection } from "./components/needs-update-section";
 import { InFlightSection } from "./components/in-flight-section";
+import { InFlightToggle } from "./components/in-flight-toggle";
 import { PlateSummary } from "./components/plate-summary";
 import { toggleInFlightAction } from "./actions";
 
@@ -99,7 +100,6 @@ export function RunwayBoard({
   const router = useRouter();
   const [view, setView] = useState<View>("triage");
   const [inFlightEnabled, setInFlightEnabled] = useState(initialInFlightEnabled);
-  const [isPending, startTransition] = useTransition();
   const { pipelineTotal, todayColumn, restOfWeek, upcomingWeeks } = useBoardData(thisWeek, upcoming, pipeline);
 
   // Combined week-items source for In Flight — today's day, rest of this
@@ -108,14 +108,6 @@ export function RunwayBoard({
     () => [...thisWeek, ...upcoming],
     [thisWeek, upcoming]
   );
-
-  const handleToggleInFlight = (next: boolean) => {
-    // Optimistic: flip local state immediately, persist in background.
-    setInFlightEnabled(next);
-    startTransition(async () => {
-      await toggleInFlightAction(next);
-    });
-  };
 
   useEffect(() => {
     const id = setInterval(() => router.refresh(), REFRESH_INTERVAL_MS);
@@ -152,25 +144,12 @@ export function RunwayBoard({
           <div className="min-w-0 flex-1">
             {view === "triage" ? (
               <div className="space-y-6 sm:space-y-10">
+                <InFlightToggle
+                  initialEnabled={initialInFlightEnabled}
+                  onToggle={toggleInFlightAction}
+                  onChange={setInFlightEnabled}
+                />
                 <PlateSummary accounts={accounts} />
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-muted-foreground">
-                    {inFlightEnabled
-                      ? "Showing in-flight L2s above Today."
-                      : "In Flight hidden."}
-                  </div>
-                  <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      data-testid="in-flight-toggle"
-                      checked={inFlightEnabled}
-                      disabled={isPending}
-                      onChange={(e) => handleToggleInFlight(e.target.checked)}
-                      className="h-4 w-4 rounded border-border bg-card/50"
-                    />
-                    In Flight
-                  </label>
-                </div>
                 <NeedsUpdateSection staleItems={staleItems} />
                 <InFlightSection
                   weekItems={allWeekItems}

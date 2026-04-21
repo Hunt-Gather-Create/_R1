@@ -132,7 +132,7 @@ export async function getWeekItemsByProject(
 /**
  * Get week items, optionally filtered.
  *
- * Filtering semantics:
+ * Filtering semantics (all filters AND together):
  * - `owner` (string): substring-match on the owner column.
  * - `resource` (string): substring-match on the resources column.
  * - `person` (string): substring-match on owner OR resources. Use when the caller
@@ -141,12 +141,22 @@ export async function getWeekItemsByProject(
  *   "what's on Kathy's plate" should surface items she's doing the work on even
  *   when she isn't the accountable owner. When `person` is given alongside
  *   `owner` and/or `resource`, all filters apply (AND), matching SQL intuition.
+ * - `status` (string): exact status match (e.g. `"in-progress"`, `"blocked"`,
+ *   `"completed"`). v4 convention (2026-04-21, PR 88 Chunk D): `"scheduled"`
+ *   is a first-class L2 status. For backward compatibility during rollout,
+ *   `status="scheduled"` matches rows where `status IS NULL OR status =
+ *   'scheduled'`. The backfill migration flips existing NULLs to the
+ *   explicit value so the NULL branch becomes dead once applied.
+ * - `clientSlug` (string): narrow to week items whose client resolves from the
+ *   given slug. Unknown slugs short-circuit to an empty list.
  */
 export async function getWeekItemsData(
   weekOf?: string,
   owner?: string,
   resource?: string,
-  person?: string
+  person?: string,
+  status?: string,
+  clientSlug?: string
 ) {
   const db = getRunwayDb();
   const clientNameById = await getClientNameMap();
@@ -162,6 +172,12 @@ export async function getWeekItemsData(
         .from(weekItems)
         .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
 
+  if (clientSlug) {
+    const client = await getClientBySlug(clientSlug);
+    if (!client) return [];
+    items = items.filter((item) => item.clientId === client.id);
+  }
+
   if (owner) {
     items = items.filter((item) => matchesSubstring(item.owner, owner));
   }
@@ -175,6 +191,18 @@ export async function getWeekItemsData(
       (item) =>
         matchesSubstring(item.owner, person) || matchesSubstring(item.resources, person)
     );
+  }
+
+  if (status) {
+    // v4 convention (PR 88 Chunk D): `scheduled` is a first-class status value
+    // alongside in-progress / blocked / completed / canceled / at-risk. For
+    // backward compat during rollout the `scheduled` branch also matches rows
+    // with status=NULL so callers don't need to know whether the backfill has
+    // run yet. The backfill migration flips NULL -> 'scheduled' so the NULL
+    // side becomes dead post-apply.
+    items = status === "scheduled"
+      ? items.filter((item) => item.status === null || item.status === "scheduled")
+      : items.filter((item) => item.status === status);
   }
 
   return items.map((item) => ({

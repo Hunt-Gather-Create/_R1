@@ -183,7 +183,6 @@ async function seed() {
         category: item.category,
         owner: item.owner ?? null,
         waitingOn: item.waitingOn ?? null,
-        target: item.target ?? null,
         notes: item.notes ?? null,
         staleDays: item.staleDays ?? null,
         sortOrder: i,

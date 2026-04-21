@@ -23,6 +23,7 @@ import {
   getCurrentBatch,
   getBatchContents,
   getCascadeLog,
+  getRowsChangedSince,
   updateProjectStatus,
   addProject,
   addUpdate,
@@ -84,7 +85,7 @@ export function registerRunwayTools(server: McpServer) {
 
   server.tool(
     "get_clients",
-    "List all clients. Returns objects with { id, name, slug, contractValue, contractStatus, contractTerm, team, projectCount, updatedAt }. Pass includeProjects=true to include a nested `projects` array with each client's full v4-enriched project rows (id, name, client, status, category, owner, resources, waitingOn, target, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt).",
+    "List all clients. Returns objects with { id, name, slug, contractValue, contractStatus, contractTerm, team, projectCount, updatedAt }. Pass includeProjects=true to include a nested `projects` array with each client's full v4-enriched project rows (id, name, client, status, category, owner, resources, waitingOn, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt).",
     {
       includeProjects: z
         .boolean()
@@ -96,28 +97,52 @@ export function registerRunwayTools(server: McpServer) {
 
   server.tool(
     "get_projects",
-    "List L1 projects, optionally filtered. Returns { id, name, client, status, category, owner, resources, waitingOn, target, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }. Filter by clientSlug, exact status, owner substring, or waitingOn substring.",
+    "List L1 projects, optionally filtered. Returns { id, name, client, status, category, owner, resources, waitingOn, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, parentProjectId, updatedAt }. Filter by clientSlug, exact status, owner substring, waitingOn substring, engagementType (exact — pass '__null__' to match projects with NULL engagement_type), or parentProjectId (exact — pass '__null__' to match top-level projects, or a wrapper's id to list its children).",
     {
       clientSlug: z.string().optional().describe("Filter by client slug (e.g. 'convergix')"),
       status: z.string().optional().describe("Exact status match (e.g. 'in-production', 'blocked', 'awaiting-client')"),
       owner: z.string().optional().describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
       waitingOn: z.string().optional().describe("Filter by waitingOn name (case-insensitive substring, e.g. 'Daniel')"),
+      engagementType: z
+        .string()
+        .optional()
+        .describe(
+          "Exact match on engagement_type (e.g. 'retainer', 'project', 'break-fix'). Pass the sentinel '__null__' to narrow to projects with NULL engagement_type.",
+        ),
+      parentProjectId: z
+        .string()
+        .optional()
+        .describe(
+          "Exact match on parent_project_id (retainer wrapper linkage, PR #88 Chunk F). Pass a wrapper's id to list its deliverable L1s. Pass '__null__' to narrow to top-level L1s that are not nested under a wrapper.",
+        ),
     },
-    async ({ clientSlug, status, owner, waitingOn }) =>
-      textResult(await getProjectsFiltered({ clientSlug, status, owner, waitingOn })),
+    async ({ clientSlug, status, owner, waitingOn, engagementType, parentProjectId }) =>
+      textResult(
+        await getProjectsFiltered({ clientSlug, status, owner, waitingOn, engagementType, parentProjectId }),
+      ),
   );
 
   server.tool(
     "get_week_items",
-    "Get L2 week items for a specific week. Returns { id, projectId, clientId, date, dayOfWeek, title, account, category, status, owner, resources, notes, startDate, endDate, blockedBy, updatedAt }. Filter by person (owner OR resource — preferred for plate queries), owner only, or resource only. When weekOf is omitted, returns all weeks.",
+    "Get L2 week items for a specific week. Returns { id, projectId, clientId, date, dayOfWeek, title, account, category, status, owner, resources, notes, startDate, endDate, blockedBy, updatedAt }. Filter by person (owner OR resource — preferred for plate queries), owner only, resource only, status, or clientSlug. When weekOf is omitted, returns all weeks. All filters AND together.",
     {
       weekOf: z.string().optional().describe("ISO date of the Monday (e.g. '2026-04-06'). Omit to return all weeks."),
       owner: z.string().optional().describe("Filter by owner name only (case-insensitive substring, e.g. 'Kathy')"),
       resource: z.string().optional().describe("Filter by resource name only (case-insensitive substring, e.g. 'Roz')"),
       person: z.string().optional().describe("Filter where the person is owner OR resource (use this for plate queries, e.g. 'Kathy')"),
+      status: z
+        .string()
+        .optional()
+        .describe(
+          "Exact status match. Valid values: 'in-progress', 'blocked', 'at-risk', 'completed', 'canceled', 'scheduled'. 'scheduled' is the default for new L2s (PR 88 Chunk D) and also matches legacy NULL-status rows during the rollout backfill (status IS NULL OR status = 'scheduled').",
+        ),
+      clientSlug: z
+        .string()
+        .optional()
+        .describe("Narrow to week items whose client resolves from this slug (e.g. 'convergix')."),
     },
-    async ({ weekOf, owner, resource, person }) =>
-      textResult(await getWeekItemsData(weekOf, owner, resource, person)),
+    async ({ weekOf, owner, resource, person, status, clientSlug }) =>
+      textResult(await getWeekItemsData(weekOf, owner, resource, person, status, clientSlug)),
   );
 
   server.tool("get_week_items_by_project", "List all non-completed week items (L2s) under a given project id. Use for drill-down 'what's left on Convergix / CDS?' queries.", {
@@ -326,6 +351,26 @@ export function registerRunwayTools(server: McpServer) {
     async ({ windowMinutes }) => textResult(await getCascadeLog(windowMinutes)),
   );
 
+  server.tool(
+    "get_rows_changed_since",
+    "Drift detection. Return rows in projects / weekItems / clients / pipelineItems whose updated_at is >= `since` (inclusive ISO timestamp). Returns { since, counts: { projects, weekItems, clients, pipelineItems }, projects: ProjectRow[], weekItems: WeekItemRow[], clients: ClientRow[], pipelineItems: PipelineItemRow[] } with full raw columns. Use to answer 'what changed since <timestamp>?' after a cleanup batch or to detect drift from a known snapshot. Narrow with `tables` (subset) or `clientSlug` (client_id match for the three scoped tables, slug match for clients).",
+    {
+      since: z
+        .string()
+        .describe("ISO timestamp. Inclusive >= comparison against each table's updated_at."),
+      tables: z
+        .array(z.enum(["projects", "weekItems", "clients", "pipelineItems"]))
+        .optional()
+        .describe("Optional subset of tables to query. Default: all four. Tables outside the filter return []."),
+      clientSlug: z
+        .string()
+        .optional()
+        .describe("Narrow to one client. Filters projects/weekItems/pipelineItems by client_id; filters clients by slug."),
+    },
+    async ({ since, tables, clientSlug }) =>
+      textResult(await getRowsChangedSince(since, { tables, clientSlug })),
+  );
+
   // ── Mutation tools — project ────────────────────────────
 
   server.tool(
@@ -355,12 +400,22 @@ export function registerRunwayTools(server: McpServer) {
 
   server.tool(
     "update_project_field",
-    "Update a specific field on a project. On success returns { message, data } where data includes { clientName, projectName, field, previousValue, newValue, cascadedItems, cascadeDetail ([{ itemId, itemTitle, field: 'date', previousValue, newValue, auditId }] — only populated when field='dueDate'), auditId }.",
+    "Update a specific field on a project. On success returns { message, data } where data includes { clientName, projectName, field, previousValue, newValue, cascadedItems, cascadeDetail ([{ itemId, itemTitle, field: 'date', previousValue, newValue, auditId }] — only populated when field='dueDate'), auditId }. Setting `parentProjectId` attaches a deliverable L1 to a retainer wrapper; pass an empty string to clear it (PR #88 Chunk F).",
     {
       clientSlug: z.string().describe("Client slug"),
       projectName: z.string().describe("Project name (fuzzy match)"),
-      field: z.enum(["name", "dueDate", "owner", "resources", "waitingOn", "target", "notes"]).describe("Field to update"),
-      newValue: z.string().describe("New value"),
+      field: z
+        .enum([
+          "name",
+          "dueDate",
+          "owner",
+          "resources",
+          "waitingOn",
+          "notes",
+          "parentProjectId",
+        ])
+        .describe("Field to update"),
+      newValue: z.string().describe("New value (pass empty string to clear parentProjectId)"),
       updatedBy: z.string().default("mcp").describe("Person making the update"),
     },
     async (params) => {

@@ -96,6 +96,8 @@ describe("createRunwayMcpServer", () => {
       "get_current_batch",
       "get_batch_contents",
       "get_cascade_log",
+      // Drift detection (PR #88 Chunk C)
+      "get_rows_changed_since",
       // Mutation tools — project
       "update_project_status",
       "update_project_field",

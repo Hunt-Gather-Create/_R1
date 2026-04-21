@@ -54,7 +54,9 @@ export function createWeekItem(overrides: Record<string, unknown> = {}) {
     weekOf: "2026-04-06",
     date: "2026-04-06",
     title: "CDS Review",
-    status: null,
+    // v4 (PR 88 Chunk D): new L2s default to the explicit 'scheduled' status.
+    // Tests that need legacy NULL semantics should pass `status: null` explicitly.
+    status: "scheduled",
     category: "review",
     owner: "Kathy",
     notes: null,

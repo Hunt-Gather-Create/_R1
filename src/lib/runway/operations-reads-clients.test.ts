@@ -101,6 +101,8 @@ describe("getClientsWithCounts", () => {
     // Enrichment wired through from getProjectsFiltered shape.
     expect(cds).toHaveProperty("engagementType");
     expect(cds).toHaveProperty("dueDate");
+    // v4 PR #88 Chunk F: retainer wrapper parent linkage.
+    expect(cds).toHaveProperty("parentProjectId");
   });
 
   it("returns empty projects array when includeProjects=true for zero-project client", async () => {
@@ -203,7 +205,6 @@ describe("getProjectsFiltered", () => {
     expect(cds.owner).toBe("Kathy");
     expect(cds).toHaveProperty("category");
     expect(cds).toHaveProperty("waitingOn");
-    expect(cds).toHaveProperty("target");
     expect(cds).toHaveProperty("notes");
     expect(cds).toHaveProperty("staleDays");
   });
@@ -229,6 +230,147 @@ describe("getProjectsFiltered", () => {
     expect(cds).toHaveProperty("updatedAt");
     // updatedAt should be a Date (drizzle timestamp mode).
     expect(cds.updatedAt).toBeInstanceOf(Date);
+  });
+
+  // ── engagementType filter (PR #88 Chunk B) ────────────────
+
+  it("filters by engagementType (exact match on 'retainer')", async () => {
+    // Seed data leaves engagement_type NULL — tag two projects as retainer.
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET engagement_type = 'retainer' WHERE id IN ('pj-cds', 'pj-impact')`,
+      args: [],
+    });
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET engagement_type = 'project' WHERE id = 'pj-map'`,
+      args: [],
+    });
+
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered({ engagementType: "retainer" });
+
+    const ids = result.map((p) => p.id);
+    expect(ids).toEqual(expect.arrayContaining(["pj-cds", "pj-impact"]));
+    expect(ids).not.toContain("pj-map");
+    expect(result.every((p) => p.engagementType === "retainer")).toBe(true);
+  });
+
+  it("filters by engagementType='project' (excludes retainer + NULL)", async () => {
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET engagement_type = 'project' WHERE id = 'pj-map'`,
+      args: [],
+    });
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET engagement_type = 'retainer' WHERE id = 'pj-cds'`,
+      args: [],
+    });
+
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered({ engagementType: "project" });
+
+    expect(result.map((p) => p.id)).toEqual(["pj-map"]);
+  });
+
+  it("matches NULL engagement_type rows when engagementType='__null__' sentinel is passed", async () => {
+    // Tag pj-cds as retainer so only seven-minus-one rows are still NULL.
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET engagement_type = 'retainer' WHERE id = 'pj-cds'`,
+      args: [],
+    });
+
+    const { getProjectsFiltered, ENGAGEMENT_TYPE_NULL_SENTINEL } = await import(
+      "./operations-reads-clients"
+    );
+    expect(ENGAGEMENT_TYPE_NULL_SENTINEL).toBe("__null__");
+
+    const result = await getProjectsFiltered({ engagementType: ENGAGEMENT_TYPE_NULL_SENTINEL });
+
+    // Every row returned must have NULL engagement_type, and pj-cds (retainer) must not appear.
+    expect(result.length).toBeGreaterThan(0);
+    expect(result.every((p) => p.engagementType === null)).toBe(true);
+    expect(result.map((p) => p.id)).not.toContain("pj-cds");
+  });
+
+  it("returns empty array when no project matches the engagementType", async () => {
+    // No row has engagement_type = 'break-fix'.
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered({ engagementType: "break-fix" });
+    expect(result).toEqual([]);
+  });
+
+  it("combines engagementType with clientSlug filter (AND semantics)", async () => {
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET engagement_type = 'retainer' WHERE id IN ('pj-cds', 'pj-impact')`,
+      args: [],
+    });
+
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered({
+      clientSlug: "convergix",
+      engagementType: "retainer",
+    });
+
+    expect(result.map((p) => p.id)).toEqual(["pj-cds"]);
+  });
+
+  // ── parentProjectId filter (PR #88 Chunk F) ─────────────
+
+  it("exposes parentProjectId on the enriched response shape", async () => {
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered({ clientSlug: "convergix" });
+    for (const p of result) {
+      expect(p).toHaveProperty("parentProjectId");
+    }
+  });
+
+  it("returns parentProjectId=null for top-level projects (default seed)", async () => {
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered();
+    // No seed row sets parent_project_id, so every row is a top-level L1.
+    expect(result.every((p) => p.parentProjectId === null)).toBe(true);
+  });
+
+  it("filters by parentProjectId to a specific wrapper's children", async () => {
+    // Make pj-cds a wrapper for pj-social-cgx + pj-brand.
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET parent_project_id = 'pj-cds' WHERE id IN ('pj-social-cgx', 'pj-brand')`,
+      args: [],
+    });
+
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered({ parentProjectId: "pj-cds" });
+
+    const ids = result.map((p) => p.id).sort();
+    expect(ids).toEqual(["pj-brand", "pj-social-cgx"]);
+    expect(result.every((p) => p.parentProjectId === "pj-cds")).toBe(true);
+  });
+
+  it("returns only top-level L1s when parentProjectId='__null__' sentinel is passed", async () => {
+    // Nest two projects under pj-cds.
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET parent_project_id = 'pj-cds' WHERE id IN ('pj-social-cgx', 'pj-brand')`,
+      args: [],
+    });
+
+    const { getProjectsFiltered, PARENT_PROJECT_ID_NULL_SENTINEL } = await import(
+      "./operations-reads-clients"
+    );
+    expect(PARENT_PROJECT_ID_NULL_SENTINEL).toBe("__null__");
+
+    const result = await getProjectsFiltered({
+      parentProjectId: PARENT_PROJECT_ID_NULL_SENTINEL,
+    });
+
+    const ids = result.map((p) => p.id);
+    expect(ids).not.toContain("pj-social-cgx");
+    expect(ids).not.toContain("pj-brand");
+    expect(ids).toContain("pj-cds"); // wrapper itself is top-level
+    expect(result.every((p) => p.parentProjectId === null)).toBe(true);
+  });
+
+  it("returns empty array when no project matches a given parentProjectId", async () => {
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered({ parentProjectId: "pj-nonexistent" });
+    expect(result).toEqual([]);
   });
 });
 
@@ -261,6 +403,9 @@ describe("getClientDetail", () => {
     const cds = result!.projects.find((p) => p.id === "pj-cds");
     expect(cds).toBeDefined();
     expect(cds!.dueDate).toBe("2026-04-25");
+    // v4 PR #88 Chunk F: parentProjectId surfaces on the deep-view shape.
+    expect(cds).toHaveProperty("parentProjectId");
+    expect(cds!.parentProjectId).toBeNull();
 
     // Pipeline: seed has one Convergix pipeline item (pl-cgx-sow).
     expect(result!.pipelineItems.map((p) => p.id)).toEqual(["pl-cgx-sow"]);

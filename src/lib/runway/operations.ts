@@ -88,6 +88,10 @@ export type {
 
 // ── Read operations ─────────────────────────────────────
 export {
+  ENGAGEMENT_TYPE_NULL_SENTINEL,
+  PARENT_PROJECT_ID_NULL_SENTINEL,
+} from "./operations-reads-clients";
+export {
   getClientsWithCounts,
   getClientDetail,
   getProjectsFiltered,
@@ -147,6 +151,7 @@ export {
   getCurrentBatch,
   getBatchContents,
   getCascadeLog,
+  getRowsChangedSince,
 } from "./operations-reads-health";
 
 export type {
@@ -163,6 +168,9 @@ export type {
   CascadeLogGroup,
   CascadeParent,
   CascadeChildEntry,
+  ChangedSinceTable,
+  GetRowsChangedSinceOptions,
+  GetRowsChangedSinceResult,
 } from "./operations-reads-health";
 
 export type {

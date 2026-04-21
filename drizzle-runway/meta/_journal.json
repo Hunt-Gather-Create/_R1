@@ -22,6 +22,20 @@
       "when": 1776733664932,
       "tag": "0002_view_preferences_table",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1776799062660,
+      "tag": "0003_lovely_firestar",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1776800995198,
+      "tag": "0004_add_parent_project_id",
+      "breakpoints": true
     }
   ]
 }

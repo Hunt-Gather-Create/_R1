@@ -133,6 +133,14 @@ export async function updateProjectField(
   const effectiveNewValue =
     typedField === "resources" ? normalizeResourcesString(newValue) : newValue;
 
+  // v4 (PR #88 Chunk F): parentProjectId accepts empty string as "clear".
+  // Stored as NULL so `getProjectsFiltered({ parentProjectId: '__null__' })`
+  // and the UI's "no wrapper" checks work uniformly.
+  const persistedValue =
+    typedField === "parentProjectId" && effectiveNewValue === ""
+      ? null
+      : effectiveNewValue;
+
   const idemKey = generateIdempotencyKey(
     "field-change",
     project.id,
@@ -169,7 +177,7 @@ export async function updateProjectField(
   await db.transaction(async (tx) => {
     await tx
       .update(projects)
-      .set({ [columnKey]: effectiveNewValue, updatedAt: new Date() })
+      .set({ [columnKey]: persistedValue, updatedAt: new Date() })
       .where(eq(projects.id, project.id));
 
     // Cascade dueDate changes to linked deadline week items

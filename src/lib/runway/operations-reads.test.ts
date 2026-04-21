@@ -101,7 +101,7 @@ describe("getClientsWithCounts", () => {
 describe("getProjectsFiltered", () => {
   it("returns all projects when no filters", async () => {
     mockSelectFrom.mockReturnValue(chainable([
-      { clientId: "c1", name: "CDS", status: "in-production", category: "active", owner: "Kathy", waitingOn: null, target: null, notes: null, staleDays: null },
+      { clientId: "c1", name: "CDS", status: "in-production", category: "active", owner: "Kathy", waitingOn: null, notes: null, staleDays: null },
     ]));
     const { getProjectsFiltered } = await import("./operations-reads");
     const result = await getProjectsFiltered();
@@ -236,8 +236,8 @@ describe("getClientsWithCounts — edge cases", () => {
 describe("getProjectsFiltered — owner filter", () => {
   it("filters by owner (case-insensitive substring)", async () => {
     mockSelectFrom.mockReturnValue(chainable([
-      { clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy/Lane", waitingOn: null, target: null, notes: null, staleDays: null },
-      { clientId: "c1", name: "Website", status: "active", owner: "Leslie", waitingOn: null, target: null, notes: null, staleDays: null },
+      { clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy/Lane", waitingOn: null, notes: null, staleDays: null },
+      { clientId: "c1", name: "Website", status: "active", owner: "Leslie", waitingOn: null, notes: null, staleDays: null },
     ]));
     const { getProjectsFiltered } = await import("./operations-reads");
     const result = await getProjectsFiltered({ owner: "Kathy" });
@@ -247,7 +247,7 @@ describe("getProjectsFiltered — owner filter", () => {
 
   it("matches partial owner names (e.g. 'Kathy' in 'Kathy/Lane')", async () => {
     mockSelectFrom.mockReturnValue(chainable([
-      { clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy/Lane", waitingOn: null, target: null, notes: null, staleDays: null },
+      { clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy/Lane", waitingOn: null, notes: null, staleDays: null },
     ]));
     const { getProjectsFiltered } = await import("./operations-reads");
     const result = await getProjectsFiltered({ owner: "lane" });
@@ -256,7 +256,7 @@ describe("getProjectsFiltered — owner filter", () => {
 
   it("returns empty when owner matches nothing", async () => {
     mockSelectFrom.mockReturnValue(chainable([
-      { clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy", waitingOn: null, target: null, notes: null, staleDays: null },
+      { clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy", waitingOn: null, notes: null, staleDays: null },
     ]));
     const { getProjectsFiltered } = await import("./operations-reads");
     const result = await getProjectsFiltered({ owner: "Nobody" });
@@ -267,8 +267,8 @@ describe("getProjectsFiltered — owner filter", () => {
 describe("getProjectsFiltered — waitingOn filter", () => {
   it("filters by waitingOn (case-insensitive substring)", async () => {
     mockSelectFrom.mockReturnValue(chainable([
-      { clientId: "c1", name: "Brochure", status: "awaiting-client", owner: null, waitingOn: "Daniel", target: null, notes: null, staleDays: null },
-      { clientId: "c1", name: "Website", status: "active", owner: null, waitingOn: null, target: null, notes: null, staleDays: null },
+      { clientId: "c1", name: "Brochure", status: "awaiting-client", owner: null, waitingOn: "Daniel", notes: null, staleDays: null },
+      { clientId: "c1", name: "Website", status: "active", owner: null, waitingOn: null, notes: null, staleDays: null },
     ]));
     const { getProjectsFiltered } = await import("./operations-reads");
     const result = await getProjectsFiltered({ waitingOn: "daniel" });
@@ -278,7 +278,7 @@ describe("getProjectsFiltered — waitingOn filter", () => {
 
   it("matches partial waitingOn (e.g. 'Daniel' in 'Daniel/Nicole')", async () => {
     mockSelectFrom.mockReturnValue(chainable([
-      { clientId: "c1", name: "Templates", status: "awaiting-client", owner: null, waitingOn: "Daniel/Nicole", target: null, notes: null, staleDays: null },
+      { clientId: "c1", name: "Templates", status: "awaiting-client", owner: null, waitingOn: "Daniel/Nicole", notes: null, staleDays: null },
     ]));
     const { getProjectsFiltered } = await import("./operations-reads");
     const result = await getProjectsFiltered({ waitingOn: "Nicole" });
@@ -410,8 +410,8 @@ describe("getPersonWorkload (v4 contract)", () => {
       if (callCount === 1) {
         // projects
         return chainable([
-          { id: "p1", clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy", resources: null, target: "4/7", notes: "Gate", engagementType: "project", contractEnd: null, startDate: null, endDate: null, staleDays: null, sortOrder: 0 },
-          { id: "p2", clientId: "c2", name: "Map", status: "in-production", owner: "Leslie", resources: null, target: null, notes: null, engagementType: "project", contractEnd: null, startDate: null, endDate: null, staleDays: null, sortOrder: 0 },
+          { id: "p1", clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy", resources: null, notes: "Gate", engagementType: "project", contractEnd: null, startDate: null, endDate: null, staleDays: null, sortOrder: 0 },
+          { id: "p2", clientId: "c2", name: "Map", status: "in-production", owner: "Leslie", resources: null, notes: null, engagementType: "project", contractEnd: null, startDate: null, endDate: null, staleDays: null, sortOrder: 0 },
         ]);
       }
       if (callCount === 2) {
@@ -444,7 +444,7 @@ describe("getPersonWorkload (v4 contract)", () => {
       if (callCount === 1) {
         // Roz is a resource on CDS but not the owner — should NOT surface L1.
         return chainable([
-          { id: "p1", clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy", resources: "Roz, Lane", target: null, notes: null, engagementType: null, contractEnd: null, startDate: null, endDate: null, staleDays: null, sortOrder: 0 },
+          { id: "p1", clientId: "c1", name: "CDS", status: "in-production", owner: "Kathy", resources: "Roz, Lane", notes: null, engagementType: null, contractEnd: null, startDate: null, endDate: null, staleDays: null, sortOrder: 0 },
         ]);
       }
       if (callCount === 2) {

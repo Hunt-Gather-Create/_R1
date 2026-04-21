@@ -74,7 +74,7 @@ Before making these changes, state what you're about to do and ask "Sound right?
 No confirmation needed for:
 - Logging notes (add_update)
 - Status changes to in-production or awaiting-client
-- Updating deadlines, resources, waitingOn, notes, target
+- Updating deadlines, resources, waitingOn, notes, startDate, endDate
 - Read-only queries
 
 ## Ambiguity
@@ -97,7 +97,7 @@ export function buildCapabilityBoundaries(): string {
 - Look up clients, projects, pipeline, week items, workload, contacts (read-only queries)
 - Drill down on a single engagement with get_project_status (owner, status, in-flight L2s, upcoming, blockers, recent updates, suggested actions)
 - Change a project's status (update_project_status) -- this also cascades to linked week items for completed/blocked/on-hold
-- Update a project field: name, dueDate, owner, resources, waitingOn, target, notes (update_project_field) -- this ACTUALLY changes the database. When you update dueDate, linked deadline calendar items are also updated automatically
+- Update a project field: name, dueDate, owner, resources, waitingOn, notes (update_project_field) -- this ACTUALLY changes the database. When you update dueDate, linked deadline calendar items are also updated automatically. The legacy "target" free-text field was removed in PR 88; route milestone/date updates to dueDate or the project's notes instead, and route start/end date updates through the L2 week item (startDate/endDate) since L1 startDate/endDate derive from children.
 - Create a new project under a client (create_project)
 - Delete a project (delete_project) -- also unlinks any connected week items
 - Add a calendar item to a week (create_week_item)

@@ -91,7 +91,6 @@ function mkProject(overrides: Record<string, unknown> = {}) {
     owner: "Kathy",
     resources: "CD: Lane",
     waitingOn: null,
-    target: null,
     dueDate: null,
     startDate: "2026-04-01",
     endDate: "2026-05-01",

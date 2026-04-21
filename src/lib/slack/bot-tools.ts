@@ -20,6 +20,7 @@ import {
   getCurrentBatch,
   getBatchContents,
   getCascadeLog,
+  getRowsChangedSince,
   updateProjectStatus,
   addProject,
   addUpdate,
@@ -57,14 +58,26 @@ export function createBotTools(userName: string, now: Date = new Date()) {
 
     get_projects: tool({
       description:
-        "List L1 projects, optionally filtered. Each item has { id, name, client, status, category, owner, resources, waitingOn, target, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }. Filter by clientSlug, owner substring, or waitingOn substring.",
+        "List L1 projects, optionally filtered. Each item has { id, name, client, status, category, owner, resources, waitingOn, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, parentProjectId, updatedAt }. Filter by clientSlug, owner substring, waitingOn substring, engagementType (exact — pass '__null__' to match projects with NULL engagement_type), or parentProjectId (exact — pass '__null__' for top-level projects, or a wrapper's id to list its children).",
       inputSchema: z.object({
         clientSlug: z.string().optional().describe("Client slug (e.g. 'convergix')"),
         owner: z.string().optional().describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
         waitingOn: z.string().optional().describe("Filter by waitingOn name (case-insensitive substring, e.g. 'Daniel')"),
+        engagementType: z
+          .string()
+          .optional()
+          .describe(
+            "Exact engagement_type match (e.g. 'retainer', 'project', 'break-fix'). Pass '__null__' to narrow to projects with NULL engagement_type.",
+          ),
+        parentProjectId: z
+          .string()
+          .optional()
+          .describe(
+            "Exact parent_project_id match (retainer wrapper linkage, PR #88 Chunk F). Pass a wrapper's id to list its deliverable L1s. Pass '__null__' to narrow to top-level L1s.",
+          ),
       }),
-      execute: async ({ clientSlug, owner, waitingOn }) => {
-        return getProjectsFiltered({ clientSlug, owner, waitingOn });
+      execute: async ({ clientSlug, owner, waitingOn, engagementType, parentProjectId }) => {
+        return getProjectsFiltered({ clientSlug, owner, waitingOn, engagementType, parentProjectId });
       },
     }),
 
@@ -75,7 +88,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
     }),
 
     get_week_items: tool({
-      description: `Get calendar items for a given week, optionally filtered by person (owner OR resource), owner, or resource. Prefer the 'person' filter when the user asks what X has this week — it matches items where X is either accountable or doing the work. Use 'owner' only when they specifically ask who's accountable and 'resource' only when they specifically ask who's doing the work. The weekOf parameter defaults to the current week (${currentMonday}) — do not ask the user for a date.`,
+      description: `Get calendar items for a given week, optionally filtered by person (owner OR resource), owner, resource, status, or clientSlug. Prefer the 'person' filter when the user asks what X has this week — it matches items where X is either accountable or doing the work. Use 'owner' only when they specifically ask who's accountable and 'resource' only when they specifically ask who's doing the work. The weekOf parameter defaults to the current week (${currentMonday}) — do not ask the user for a date. All filters AND together.`,
       inputSchema: z.object({
         weekOf: z
           .string()
@@ -93,9 +106,19 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           .string()
           .optional()
           .describe("Filter by resource name only (person doing the work, case-insensitive substring, e.g. 'Roz')"),
+        status: z
+          .string()
+          .optional()
+          .describe(
+            "Exact status match. Valid values: 'in-progress', 'blocked', 'at-risk', 'completed', 'canceled', 'scheduled'. 'scheduled' is the default for new L2s (PR 88 Chunk D) and also matches legacy NULL-status rows during the rollout backfill (status IS NULL OR status = 'scheduled').",
+          ),
+        clientSlug: z
+          .string()
+          .optional()
+          .describe("Narrow to items whose client resolves from this slug (e.g. 'convergix')."),
       }),
-      execute: async ({ weekOf, owner, resource, person }) => {
-        return getWeekItemsData(weekOf, owner, resource, person);
+      execute: async ({ weekOf, owner, resource, person, status, clientSlug }) => {
+        return getWeekItemsData(weekOf, owner, resource, person, status, clientSlug);
       },
     }),
 
@@ -231,11 +254,10 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         owner: z.string().optional().describe("Project owner"),
         resources: z.string().optional().describe("Comma-separated resources"),
         dueDate: z.string().optional().describe("Due date (ISO format)"),
-        target: z.string().optional().describe("Target date or milestone"),
         waitingOn: z.string().optional().describe("Who/what we're waiting on"),
         notes: z.string().optional().describe("Project notes"),
       }),
-      execute: async ({ clientSlug, name, status, owner, resources, dueDate, target, waitingOn, notes }) => {
+      execute: async ({ clientSlug, name, status, owner, resources, dueDate, waitingOn, notes }) => {
         const result = await addProject({
           clientSlug,
           name,
@@ -243,7 +265,6 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           owner,
           resources,
           dueDate,
-          target,
           waitingOn,
           notes,
           updatedBy: userName,
@@ -272,12 +293,22 @@ export function createBotTools(userName: string, now: Date = new Date()) {
 
     update_project_field: tool({
       description:
-        "Update a specific field on a project. This ACTUALLY changes the database field. Use for deadlines, owner, resources, name changes. Do NOT use add_update for field changes.",
+        "Update a specific field on a project. This ACTUALLY changes the database field. Use for deadlines, owner, resources, name changes. Do NOT use add_update for field changes. Set `parentProjectId` to attach a deliverable L1 to a retainer wrapper (PR #88 Chunk F); pass an empty string to clear it.",
       inputSchema: z.object({
         clientSlug: z.string().describe("Client slug"),
         projectName: z.string().describe("Project name (fuzzy match)"),
-        field: z.enum(["name", "dueDate", "owner", "resources", "waitingOn", "target", "notes"]).describe("Field to update"),
-        newValue: z.string().describe("New value for the field"),
+        field: z
+          .enum([
+            "name",
+            "dueDate",
+            "owner",
+            "resources",
+            "waitingOn",
+            "notes",
+            "parentProjectId",
+          ])
+          .describe("Field to update"),
+        newValue: z.string().describe("New value for the field (pass empty string to clear parentProjectId)"),
       }),
       execute: async ({ clientSlug, projectName, field, newValue }) => {
         const result = await updateProjectField({
@@ -711,6 +742,24 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         windowMinutes: z.number().optional().describe("Look-back window in minutes. Default 60."),
       }),
       execute: async ({ windowMinutes }) => getCascadeLog(windowMinutes),
+    }),
+
+    get_rows_changed_since: tool({
+      description:
+        "Drift detection. Return rows in projects / weekItems / clients / pipelineItems whose updated_at is >= `since` (inclusive ISO timestamp). Returns { since, counts, projects, weekItems, clients, pipelineItems } with full raw columns. Use to answer 'what changed since <timestamp>?' after a cleanup batch or to detect drift from a known snapshot. Narrow with `tables` or `clientSlug`.",
+      inputSchema: z.object({
+        since: z.string().describe("ISO timestamp. Inclusive >= comparison against each table's updated_at."),
+        tables: z
+          .array(z.enum(["projects", "weekItems", "clients", "pipelineItems"]))
+          .optional()
+          .describe("Optional subset of tables to query. Default: all four."),
+        clientSlug: z
+          .string()
+          .optional()
+          .describe("Narrow to one client (client_id match for scoped tables, slug match for clients)."),
+      }),
+      execute: async ({ since, tables, clientSlug }) =>
+        getRowsChangedSince(since, { tables, clientSlug }),
     }),
   };
 }

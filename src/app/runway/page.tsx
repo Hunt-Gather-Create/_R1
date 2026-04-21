@@ -55,7 +55,6 @@ export default async function RunwayPage() {
       owner: p.owner ?? undefined,
       resources: p.resources ?? undefined,
       waitingOn: p.waitingOn ?? undefined,
-      target: p.target ?? undefined,
       notes: p.notes ?? undefined,
       staleDays: p.staleDays ?? undefined,
       // v4 timing + retainer metadata (chunk 3 #4, #5)
@@ -67,6 +66,8 @@ export default async function RunwayPage() {
         | "break-fix"
         | null,
       contractEnd: p.contractEnd ?? null,
+      // v4 (PR #88 Chunk F): retainer wrapper linkage.
+      parentProjectId: p.parentProjectId ?? null,
     })),
   }));
 

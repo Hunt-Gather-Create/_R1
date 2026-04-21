@@ -28,7 +28,6 @@ export interface AddProjectParams {
   owner?: string;
   resources?: string;
   dueDate?: string;
-  target?: string;
   waitingOn?: string;
   notes?: string;
   updatedBy: string;
@@ -52,7 +51,6 @@ export async function addProject(
     owner,
     resources,
     dueDate,
-    target,
     waitingOn,
     notes,
     updatedBy,
@@ -98,7 +96,6 @@ export async function addProject(
     owner: owner ?? null,
     resources: normalizedResources,
     dueDate: dueDate ?? null,
-    target: target ?? null,
     waitingOn: waitingOn ?? null,
     notes: notes ?? null,
     sortOrder: 999,

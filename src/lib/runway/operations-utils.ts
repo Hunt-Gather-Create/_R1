@@ -321,11 +321,14 @@ export async function checkIdempotency(idemKey: string): Promise<boolean> {
 
 /** Editable fields on a project (excludes status — that uses updateProjectStatus). */
 export const PROJECT_FIELDS = [
-  "name", "dueDate", "owner", "resources", "waitingOn", "target", "notes", "category",
+  "name", "dueDate", "owner", "resources", "waitingOn", "notes", "category",
   // v4 convention (2026-04-21): retainer + contract metadata writable via
   // updateProjectField. `startDate` / `endDate` remain derived from children
   // and are recomputed by `recomputeProjectDates`, not set directly here.
   "engagementType", "contractStart", "contractEnd",
+  // v4 convention (2026-04-21 / PR #88 Chunk F): retainer wrapper parent
+  // link. Null/empty-string clears, any string sets. No FK enforcement.
+  "parentProjectId",
 ] as const;
 
 export type ProjectField = (typeof PROJECT_FIELDS)[number];
@@ -336,12 +339,12 @@ export const PROJECT_FIELD_TO_COLUMN: Record<ProjectField, keyof typeof projects
   owner: "owner",
   resources: "resources",
   waitingOn: "waitingOn",
-  target: "target",
   notes: "notes",
   category: "category",
   engagementType: "engagementType",
   contractStart: "contractStart",
   contractEnd: "contractEnd",
+  parentProjectId: "parentProjectId",
 };
 
 /**

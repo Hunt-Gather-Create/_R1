@@ -34,7 +34,6 @@ export const projects = sqliteTable("projects", {
   owner: text("owner"),
   resources: text("resources"), // comma-separated list of people doing the work
   waitingOn: text("waiting_on"),
-  target: text("target"),
   dueDate: text("due_date"),
   // v4 convention (2026-04-21): timing fields
   startDate: text("start_date"), // ISO date; derived from children, recomputed on L2 write
@@ -42,6 +41,12 @@ export const projects = sqliteTable("projects", {
   contractStart: text("contract_start"), // ISO date; manual override for retainers
   contractEnd: text("contract_end"), // ISO date; manual override for retainers
   engagementType: text("engagement_type"), // project, retainer, break-fix
+  // v4 convention (2026-04-21 / PR #88 Chunk F): optional self-reference for
+  // retainer wrappers. When set, this project is a deliverable L1 nested
+  // under a retainer wrapper L1. Null for top-level projects. No DB-level
+  // FK constraint (self-references complicate drizzle-kit migrations on
+  // SQLite) -- runtime enforcement lives in the application layer.
+  parentProjectId: text("parent_project_id"),
   notes: text("notes"),
   staleDays: integer("stale_days"),
   sortOrder: integer("sort_order").notNull().default(0),
@@ -65,6 +70,13 @@ export const weekItems = sqliteTable("week_items", {
   endDate: text("end_date"), // ISO date; null for single-day items
   blockedBy: text("blocked_by"), // JSON array of week_item ids (e.g. `["abc","def"]`)
   title: text("title").notNull(),
+  // L2 status values (v4 convention, PR #88 Chunk D):
+  //   completed | in-progress | blocked | at-risk | scheduled | canceled | null (legacy)
+  // `scheduled` is the explicit default for new L2s. NULL remains readable
+  // during the rollout and is treated equivalently to 'scheduled' by the
+  // bucket + filter paths. The backfill script
+  // scripts/runway-migrations/2026-04-21-backfill-scheduled-status.ts flips
+  // existing NULLs to the explicit value.
   status: text("status"),
   category: text("category"), // delivery, review, kickoff, deadline, approval, launch
   owner: text("owner"),
