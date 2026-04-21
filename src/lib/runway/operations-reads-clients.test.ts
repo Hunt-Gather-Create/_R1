@@ -203,7 +203,6 @@ describe("getProjectsFiltered", () => {
     expect(cds.owner).toBe("Kathy");
     expect(cds).toHaveProperty("category");
     expect(cds).toHaveProperty("waitingOn");
-    expect(cds).toHaveProperty("target");
     expect(cds).toHaveProperty("notes");
     expect(cds).toHaveProperty("staleDays");
   });

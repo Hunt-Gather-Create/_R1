@@ -34,7 +34,6 @@ export interface TriageItem {
   owner?: string;
   resources?: string;
   waitingOn?: string;
-  target?: string;
   notes?: string;
   staleDays?: number;
   // v4: timing + retainer metadata for soft surfaces

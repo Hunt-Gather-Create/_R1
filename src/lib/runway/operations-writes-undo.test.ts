@@ -49,7 +49,7 @@ vi.mock("drizzle-orm", () => ({
 const mockCheckIdempotency = vi.fn();
 
 vi.mock("./operations-utils", () => ({
-  UNDO_FIELDS: ["name", "dueDate", "owner", "resources", "waitingOn", "target", "notes", "status", "category"],
+  UNDO_FIELDS: ["name", "dueDate", "owner", "resources", "waitingOn", "notes", "status", "category"],
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
   checkIdempotency: (...args: unknown[]) => mockCheckIdempotency(...args),
   insertAuditRecord: async (params: Record<string, unknown>) => {

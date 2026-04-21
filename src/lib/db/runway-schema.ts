@@ -34,7 +34,6 @@ export const projects = sqliteTable("projects", {
   owner: text("owner"),
   resources: text("resources"), // comma-separated list of people doing the work
   waitingOn: text("waiting_on"),
-  target: text("target"),
   dueDate: text("due_date"),
   // v4 convention (2026-04-21): timing fields
   startDate: text("start_date"), // ISO date; derived from children, recomputed on L2 write

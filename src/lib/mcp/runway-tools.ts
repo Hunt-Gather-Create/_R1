@@ -85,7 +85,7 @@ export function registerRunwayTools(server: McpServer) {
 
   server.tool(
     "get_clients",
-    "List all clients. Returns objects with { id, name, slug, contractValue, contractStatus, contractTerm, team, projectCount, updatedAt }. Pass includeProjects=true to include a nested `projects` array with each client's full v4-enriched project rows (id, name, client, status, category, owner, resources, waitingOn, target, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt).",
+    "List all clients. Returns objects with { id, name, slug, contractValue, contractStatus, contractTerm, team, projectCount, updatedAt }. Pass includeProjects=true to include a nested `projects` array with each client's full v4-enriched project rows (id, name, client, status, category, owner, resources, waitingOn, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt).",
     {
       includeProjects: z
         .boolean()
@@ -97,7 +97,7 @@ export function registerRunwayTools(server: McpServer) {
 
   server.tool(
     "get_projects",
-    "List L1 projects, optionally filtered. Returns { id, name, client, status, category, owner, resources, waitingOn, target, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }. Filter by clientSlug, exact status, owner substring, waitingOn substring, or engagementType (exact match — pass '__null__' to match projects with NULL engagement_type).",
+    "List L1 projects, optionally filtered. Returns { id, name, client, status, category, owner, resources, waitingOn, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }. Filter by clientSlug, exact status, owner substring, waitingOn substring, or engagementType (exact match — pass '__null__' to match projects with NULL engagement_type).",
     {
       clientSlug: z.string().optional().describe("Filter by client slug (e.g. 'convergix')"),
       status: z.string().optional().describe("Exact status match (e.g. 'in-production', 'blocked', 'awaiting-client')"),
@@ -396,7 +396,7 @@ export function registerRunwayTools(server: McpServer) {
     {
       clientSlug: z.string().describe("Client slug"),
       projectName: z.string().describe("Project name (fuzzy match)"),
-      field: z.enum(["name", "dueDate", "owner", "resources", "waitingOn", "target", "notes"]).describe("Field to update"),
+      field: z.enum(["name", "dueDate", "owner", "resources", "waitingOn", "notes"]).describe("Field to update"),
       newValue: z.string().describe("New value"),
       updatedBy: z.string().default("mcp").describe("Person making the update"),
     },

@@ -103,7 +103,6 @@ export async function getFlags(
       owner: p.owner ?? undefined,
       resources: p.resources ?? undefined,
       waitingOn: p.waitingOn ?? undefined,
-      target: p.target ?? undefined,
       notes: p.notes ?? undefined,
       staleDays: p.staleDays ?? undefined,
       startDate: p.startDate ?? null,

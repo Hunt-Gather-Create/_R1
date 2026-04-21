@@ -59,7 +59,6 @@ export async function getClientsWithCounts(opts?: GetClientsWithCountsOptions) {
       owner: p.owner,
       resources: p.resources,
       waitingOn: p.waitingOn,
-      target: p.target,
       notes: p.notes,
       staleDays: p.staleDays,
       dueDate: p.dueDate,
@@ -138,7 +137,6 @@ export async function getProjectsFiltered(opts?: {
     owner: p.owner,
     resources: p.resources,
     waitingOn: p.waitingOn,
-    target: p.target,
     notes: p.notes,
     staleDays: p.staleDays,
     // v4 convention (2026-04-21): enriched timing + engagement fields for
@@ -170,7 +168,6 @@ export interface ClientDetailProject {
   owner: string | null;
   resources: string | null;
   waitingOn: string | null;
-  target: string | null;
   notes: string | null;
   staleDays: number | null;
   dueDate: string | null;
@@ -284,7 +281,6 @@ export async function getClientDetail(
       owner: p.owner,
       resources: p.resources,
       waitingOn: p.waitingOn,
-      target: p.target,
       notes: p.notes,
       staleDays: p.staleDays,
       dueDate: p.dueDate,

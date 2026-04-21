@@ -65,7 +65,6 @@ function createProject(overrides: Record<string, unknown> = {}) {
     owner: null,
     resources: null,
     waitingOn: null,
-    target: null,
     dueDate: null,
     startDate: null,
     endDate: null,

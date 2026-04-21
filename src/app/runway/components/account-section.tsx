@@ -12,17 +12,17 @@ import { StatusBadge, StaleBadge, ContractBadge, MetadataLabel } from "./status-
  */
 type TriageItemWithMilestones = TriageItem & { milestones?: DayItemEntry[] };
 
-const DATE_PATTERN = /(\d{1,2})\/(\d{1,2})/;
-
 /**
- * Parse a target string like "4/11", "w/o 4/20", "Late March", "May" into a sortable value.
- * Returns a large number for unparseable values so they sort to the end.
+ * Sort key built on ISO `startDate` (YYYY-MM-DD). Items with no startDate
+ * sort to the end. Lexicographic comparison on the ISO string preserves
+ * chronological order without parsing into a Date.
+ *
+ * Replaces the legacy `targetSortKey` free-text parser (PR 88 Wave 2) —
+ * the `projects.target` column was dropped in favor of structured
+ * startDate/endDate.
  */
-function targetSortKey(target?: string): number {
-  if (!target) return 99999;
-  const match = target.match(DATE_PATTERN);
-  if (match) return parseInt(match[1]) * 100 + parseInt(match[2]);
-  return 99998;
+function startDateSortKey(startDate?: string | null): string {
+  return startDate ?? "\uffff";
 }
 
 /**
@@ -60,9 +60,6 @@ function ProjectCard({ item }: { item: TriageItemWithMilestones }) {
           ) : null}
           {item.waitingOn ? (
             <MetadataLabel label="Waiting on" value={item.waitingOn} className="text-xs text-amber-400/80" />
-          ) : null}
-          {item.target ? (
-            <MetadataLabel label="Target" value={item.target} className="text-xs text-sky-400/80" />
           ) : null}
         </div>
         {item.notes ? (
@@ -107,7 +104,13 @@ export function AccountSection({ account }: AccountSectionProps) {
         .filter(
           (i) => i.category === "active" || i.category === "awaiting-client"
         )
-        .sort((a, b) => targetSortKey(a.target) - targetSortKey(b.target)),
+        .slice()
+        .sort((a, b) => {
+          const keyA = startDateSortKey(a.startDate);
+          const keyB = startDateSortKey(b.startDate);
+          if (keyA !== keyB) return keyA < keyB ? -1 : 1;
+          return 0;
+        }),
     [account.items]
   );
 

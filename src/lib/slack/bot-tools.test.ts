@@ -424,17 +424,17 @@ describe("createBotTools", () => {
     expect(text).toContain("Due: 2026-04-25");
   });
 
-  it("create_project passes target and waitingOn to addProject", async () => {
+  it("create_project passes waitingOn to addProject", async () => {
     mockOps.addProject.mockResolvedValue({
       ok: true, message: "Added project 'Widget Design' to Wilsonart.",
       data: { clientName: "Wilsonart", projectName: "Widget Design" },
     });
     await tools.create_project.execute(
-      { clientSlug: "wilsonart", name: "Widget Design", target: "Q2 launch", waitingOn: "Daniel for assets" },
+      { clientSlug: "wilsonart", name: "Widget Design", waitingOn: "Daniel for assets" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(mockOps.addProject).toHaveBeenCalledWith(
-      expect.objectContaining({ target: "Q2 launch", waitingOn: "Daniel for assets" })
+      expect.objectContaining({ waitingOn: "Daniel for assets" })
     );
   });
 

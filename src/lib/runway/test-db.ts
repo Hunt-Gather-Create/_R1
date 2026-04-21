@@ -38,7 +38,6 @@ CREATE TABLE projects (
   owner TEXT,
   resources TEXT,
   waiting_on TEXT,
-  target TEXT,
   due_date TEXT,
   start_date TEXT,
   end_date TEXT,

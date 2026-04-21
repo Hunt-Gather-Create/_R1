@@ -111,7 +111,7 @@ describe("AccountSection", () => {
     expect(screen.getByText("2w waiting")).toBeInTheDocument();
   });
 
-  it("renders owner, target, and notes for items", () => {
+  it("renders owner and notes for items", () => {
     render(
       <AccountSection
         account={createAccount({
@@ -122,7 +122,6 @@ describe("AccountSection", () => {
               status: "in-production",
               category: "active",
               owner: "Kathy",
-              target: "4/11",
               notes: "Gate for content",
             },
           ],
@@ -130,7 +129,6 @@ describe("AccountSection", () => {
       />
     );
     expect(screen.getByText("Resources: Kathy")).toBeInTheDocument();
-    expect(screen.getByText("Target: 4/11")).toBeInTheDocument();
     expect(screen.getByText("Gate for content")).toBeInTheDocument();
   });
 
@@ -220,13 +218,13 @@ describe("AccountSection", () => {
     expect(container.textContent).not.toContain("On Hold");
   });
 
-  it("sorts active items by target date", () => {
+  it("sorts active items by startDate, with no-startDate items at the end", () => {
     const { container } = render(
       <AccountSection
         account={createAccount({
           items: [
-            { id: "p1", title: "Later", status: "in-production", category: "active", target: "5/1" },
-            { id: "p2", title: "Earlier", status: "in-production", category: "active", target: "4/8" },
+            { id: "p1", title: "Later", status: "in-production", category: "active", startDate: "2026-05-01" },
+            { id: "p2", title: "Earlier", status: "in-production", category: "active", startDate: "2026-04-08" },
             { id: "p3", title: "No Date", status: "in-production", category: "active" },
           ],
         })}
@@ -238,19 +236,6 @@ describe("AccountSection", () => {
     const noDateIdx = text.indexOf("No Date");
     expect(earlierIdx).toBeLessThan(laterIdx);
     expect(laterIdx).toBeLessThan(noDateIdx);
-  });
-
-  it("shows target date via MetadataLabel", () => {
-    render(
-      <AccountSection
-        account={createAccount({
-          items: [
-            { id: "p1", title: "Dated Item", status: "in-production", category: "active", target: "R1 to Daniel 4/7" },
-          ],
-        })}
-      />
-    );
-    expect(screen.getByText("Target: R1 to Daniel 4/7")).toBeInTheDocument();
   });
 
   it("expands MSA abbreviation in contract terms", () => {
@@ -280,49 +265,34 @@ describe("AccountSection", () => {
     expect(screen.queryByText(/Feb/)).not.toBeInTheDocument();
   });
 
-  it("sorts items with unparseable targets before no-target items", () => {
+  it("keeps items without startDate after items with startDate", () => {
     const { container } = render(
       <AccountSection
         account={createAccount({
           items: [
             { id: "p1", title: "No Date", status: "in-production", category: "active" },
-            { id: "p2", title: "Vague", status: "in-production", category: "active", target: "Late March" },
-            { id: "p3", title: "Exact", status: "in-production", category: "active", target: "4/15" },
+            { id: "p2", title: "Exact", status: "in-production", category: "active", startDate: "2026-04-15" },
           ],
         })}
       />
     );
     const text = container.textContent!;
-    expect(text.indexOf("Exact")).toBeLessThan(text.indexOf("Vague"));
-    expect(text.indexOf("Vague")).toBeLessThan(text.indexOf("No Date"));
+    expect(text.indexOf("Exact")).toBeLessThan(text.indexOf("No Date"));
   });
 
-  it("sorts by first date when target has a date range", () => {
+  it("sorts by startDate ISO order when both items have one", () => {
     const { container } = render(
       <AccountSection
         account={createAccount({
           items: [
-            { id: "p1", title: "Later", status: "in-production", category: "active", target: "4/10-4/22 dev window" },
-            { id: "p2", title: "Earlier", status: "in-production", category: "active", target: "4/8" },
+            { id: "p1", title: "Later", status: "in-production", category: "active", startDate: "2026-04-10" },
+            { id: "p2", title: "Earlier", status: "in-production", category: "active", startDate: "2026-04-08" },
           ],
         })}
       />
     );
     const text = container.textContent!;
     expect(text.indexOf("Earlier")).toBeLessThan(text.indexOf("Later"));
-  });
-
-  it("shows full target text via MetadataLabel for text-only targets", () => {
-    render(
-      <AccountSection
-        account={createAccount({
-          items: [
-            { id: "p1", title: "Vague Item", status: "in-production", category: "active", target: "Late March" },
-          ],
-        })}
-      />
-    );
-    expect(screen.getByText("Target: Late March")).toBeInTheDocument();
   });
 
   // Chunk 3 #1 — unified Project View

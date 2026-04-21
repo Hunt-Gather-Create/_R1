@@ -58,7 +58,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
 
     get_projects: tool({
       description:
-        "List L1 projects, optionally filtered. Each item has { id, name, client, status, category, owner, resources, waitingOn, target, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }. Filter by clientSlug, owner substring, waitingOn substring, or engagementType (exact — pass '__null__' to match projects with NULL engagement_type).",
+        "List L1 projects, optionally filtered. Each item has { id, name, client, status, category, owner, resources, waitingOn, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }. Filter by clientSlug, owner substring, waitingOn substring, or engagementType (exact — pass '__null__' to match projects with NULL engagement_type).",
       inputSchema: z.object({
         clientSlug: z.string().optional().describe("Client slug (e.g. 'convergix')"),
         owner: z.string().optional().describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
@@ -248,11 +248,10 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         owner: z.string().optional().describe("Project owner"),
         resources: z.string().optional().describe("Comma-separated resources"),
         dueDate: z.string().optional().describe("Due date (ISO format)"),
-        target: z.string().optional().describe("Target date or milestone"),
         waitingOn: z.string().optional().describe("Who/what we're waiting on"),
         notes: z.string().optional().describe("Project notes"),
       }),
-      execute: async ({ clientSlug, name, status, owner, resources, dueDate, target, waitingOn, notes }) => {
+      execute: async ({ clientSlug, name, status, owner, resources, dueDate, waitingOn, notes }) => {
         const result = await addProject({
           clientSlug,
           name,
@@ -260,7 +259,6 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           owner,
           resources,
           dueDate,
-          target,
           waitingOn,
           notes,
           updatedBy: userName,
@@ -293,7 +291,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
       inputSchema: z.object({
         clientSlug: z.string().describe("Client slug"),
         projectName: z.string().describe("Project name (fuzzy match)"),
-        field: z.enum(["name", "dueDate", "owner", "resources", "waitingOn", "target", "notes"]).describe("Field to update"),
+        field: z.enum(["name", "dueDate", "owner", "resources", "waitingOn", "notes"]).describe("Field to update"),
         newValue: z.string().describe("New value for the field"),
       }),
       execute: async ({ clientSlug, projectName, field, newValue }) => {

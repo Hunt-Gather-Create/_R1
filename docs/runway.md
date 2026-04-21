@@ -215,10 +215,9 @@ Day columns use `max-h-[60vh] overflow-y-auto` so they scroll internally instead
 
 ### Account View
 
-`AccountSection` shows projects as divider-separated sections (border-t between items) sorted by target date. Key behaviors:
+`AccountSection` shows projects as divider-separated sections (border-t between items) sorted by startDate. Key behaviors:
 
-- **Date sorting**: `targetSortKey()` parses `M/D` patterns from free-text target strings. Items with no parseable date sort to the end.
-- **Target display**: Target dates are shown via `MetadataLabel` inline with owner and waiting-on fields — no separate short date on the right side.
+- **Date sorting**: `startDateSortKey()` returns the ISO `startDate` (YYYY-MM-DD), falling back to a high-sentinel string so items without a startDate sort to the end. Lexicographic ISO comparison preserves chronological order without parsing Dates.
 - **Contract label expansion**: `formatContractTerm()` expands abbreviations (MSA, SOW, NDA) in contract term strings for readability.
 - **Graceful nulls**: Missing `contractValue` or `contractTerm` fields are simply not rendered (no empty elements).
 

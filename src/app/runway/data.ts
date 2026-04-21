@@ -20,7 +20,6 @@ export interface AccountData {
     category: string;
     owner?: string;
     waitingOn?: string;
-    target?: string;
     notes?: string;
     staleDays?: number;
   }[];
@@ -59,14 +58,14 @@ export const accounts: AccountData[] = [
     contractStatus: "signed",
     team: "CD: Lane, Copy: Kathy, Design: Roz, Dev: Leslie, PM: Ronan",
     items: [
-      { title: "CDS Messaging & Pillars R1", status: "in-production", category: "active", owner: "Kathy/Lane", target: "R1 to Daniel 4/7", notes: "Gate for all CDS content pieces" },
-      { title: "CDS Creative Wrapper R1", status: "in-production", category: "active", owner: "Roz/Lane", target: "On track ~4/6-4/7", notes: "Independent track from messaging" },
-      { title: "CDS Social Posts (5)", status: "not-started", category: "active", target: "KO ~4/21, delivery ~5/12", notes: "Blocked by messaging approval" },
-      { title: "CDS Landing Page", status: "not-started", category: "active", target: "KO ~4/25, launch ~6/10", notes: "Blocked by messaging approval" },
-      { title: "CDS Case Study + Brochure", status: "not-started", category: "active", target: "KO ~5/5, delivery ~6/12", notes: "Blocked by messaging approval" },
-      { title: "New Capacity (PPT, brochure, one-pager)", status: "in-production", category: "active", owner: "Roz/Lane", target: "Revisions Mon 4/7, deliver Tues 4/8", notes: "2 slides left. Just got JJ feedback." },
-      { title: "Fanuc Award Article + LI Post", status: "not-started", category: "active", owner: "Lane/Kathy", target: "Enters schedule w/o 4/20, event 4/28", notes: "Keep off plate until 4/20. Sales Excellence Award, Fanuc photo op 4/28." },
-      { title: "Events Page Updates (5 tradeshows)", status: "not-started", category: "active", owner: "Kathy/Leslie", target: "Kathy starts Mon 4/7, to Leslie by Wed 4/9", notes: "AIST (May), AUTOMATE (Jun), Med Tech Ireland (Sep), PackExpo (Oct), Automation Fair (Nov)" },
+      { title: "CDS Messaging & Pillars R1", status: "in-production", category: "active", owner: "Kathy/Lane", notes: "Target: R1 to Daniel 4/7 | Gate for all CDS content pieces" },
+      { title: "CDS Creative Wrapper R1", status: "in-production", category: "active", owner: "Roz/Lane", notes: "Target: On track ~4/6-4/7 | Independent track from messaging" },
+      { title: "CDS Social Posts (5)", status: "not-started", category: "active", notes: "Target: KO ~4/21, delivery ~5/12 | Blocked by messaging approval" },
+      { title: "CDS Landing Page", status: "not-started", category: "active", notes: "Target: KO ~4/25, launch ~6/10 | Blocked by messaging approval" },
+      { title: "CDS Case Study + Brochure", status: "not-started", category: "active", notes: "Target: KO ~5/5, delivery ~6/12 | Blocked by messaging approval" },
+      { title: "New Capacity (PPT, brochure, one-pager)", status: "in-production", category: "active", owner: "Roz/Lane", notes: "Target: Revisions Mon 4/7, deliver Tues 4/8 | 2 slides left. Just got JJ feedback." },
+      { title: "Fanuc Award Article + LI Post", status: "not-started", category: "active", owner: "Lane/Kathy", notes: "Target: Enters schedule w/o 4/20, event 4/28 | Keep off plate until 4/20. Sales Excellence Award, Fanuc photo op 4/28." },
+      { title: "Events Page Updates (5 tradeshows)", status: "not-started", category: "active", owner: "Kathy/Leslie", notes: "Target: Kathy starts Mon 4/7, to Leslie by Wed 4/9 | AIST (May), AUTOMATE (Jun), Med Tech Ireland (Sep), PackExpo (Oct), Automation Fair (Nov)" },
       { title: "Rockwell PartnerNetwork Article", status: "awaiting-client", category: "awaiting-client", waitingOn: "Daniel", notes: "Sent 4/2, asked for feedback by 4/3", staleDays: 4 },
       { title: "Texas Instruments Article", status: "awaiting-client", category: "awaiting-client", waitingOn: "Daniel", notes: "Copy doc sent 4/2", staleDays: 4 },
       { title: "Social Content (12 posts/mo)", status: "in-production", category: "active", owner: "Roz/Ronan", notes: "Full April copy went to creative, designs back Wed for Thu status" },
@@ -88,11 +87,11 @@ export const accounts: AccountData[] = [
     contractStatus: "signed",
     team: "CD: Lane, Copy: Kathy, Design: Roz, Dev: Leslie, PM: Ronan",
     items: [
-      { title: "Interactive Map", status: "in-production", category: "active", owner: "Roz/Leslie", target: "R2 next week, launch w/o 5/4", notes: "R1 presented 4/2, minor feedback" },
+      { title: "Interactive Map", status: "in-production", category: "active", owner: "Roz/Leslie", notes: "Target: R2 next week, launch w/o 5/4 | R1 presented 4/2, minor feedback" },
       { title: "Website Refresh — Homepage + Private Use", status: "in-production", category: "active", owner: "Roz/Leslie", notes: "Design presented 4/3, dev can start" },
       { title: "Website Refresh — Permitting Reform", status: "awaiting-client", category: "awaiting-client", waitingOn: "LPPC", notes: "Copy expected Mon/Tues 4/7-4/8" },
       { title: "Website Refresh — FEMA", status: "awaiting-client", category: "awaiting-client", waitingOn: "LPPC", notes: "Copy expected Mon/Tues 4/7-4/8" },
-      { title: "Website Refresh — Launch", status: "not-started", category: "active", target: "w/o 5/4", notes: "Two launches together (map + site) would be clean" },
+      { title: "Website Refresh — Launch", status: "not-started", category: "active", notes: "Target: w/o 5/4 | Two launches together (map + site) would be clean" },
       { title: "Year End Report", status: "completed", category: "completed", notes: "Done. Charged for printing." },
       { title: "Spring CEO Meeting Invite", status: "completed", category: "completed", notes: "Sent." },
       { title: "Additional Website Posts", status: "not-started", category: "on-hold", notes: "Hours redirected from YER. No timeline." },
@@ -126,7 +125,7 @@ export const accounts: AccountData[] = [
     contractTerm: "Sep 2025 – Aug 2026",
     contractStatus: "signed",
     items: [
-      { title: "iFrame Provider Search", status: "in-production", category: "active", owner: "Leslie", target: "Launch evening 4/21, live 4/22", notes: "90% done, waiting on UHG iframe testing" },
+      { title: "iFrame Provider Search", status: "in-production", category: "active", owner: "Leslie", notes: "Target: Launch evening 4/21, live 4/22 | 90% done, waiting on UHG iframe testing" },
       { title: "Payment Gateway Page", status: "in-production", category: "active", owner: "Leslie", notes: "Under signed $30K SOW, through May 2026" },
       { title: "AARP Member Login + Landing Page", status: "not-started", category: "active", owner: "Josefina/Roz/Ronan/Lane", notes: "NOT STARTING until SOW signed. Launch 7/15. HIGH PRIORITY: contractor can't be held indefinitely." },
     ],
@@ -138,7 +137,7 @@ export const accounts: AccountData[] = [
     contractTerm: "Jan – Dec 2026",
     contractStatus: "signed",
     items: [
-      { title: "Brand Refresh Website", status: "in-production", category: "active", owner: "Leslie", target: "End of April — National Burger Day", notes: "Design done, holding for launch" },
+      { title: "Brand Refresh Website", status: "in-production", category: "active", owner: "Leslie", notes: "Target: End of April — National Burger Day | Design done, holding for launch" },
       { title: "Digital Retainer (195 hrs)", status: "in-production", category: "active", notes: "Current burn unknown. Check with Ronan." },
     ],
   },
@@ -150,9 +149,9 @@ export const accounts: AccountData[] = [
     contractStatus: "unsigned",
     items: [
       { title: "Brand Refresh", status: "in-production", category: "active", notes: "In creative, coming out next week maybe" },
-      { title: "Impact Report — Design", status: "in-production", category: "active", owner: "Paige", target: "4/8 Paige presents, 4/10 approval needed", notes: "Paige presenting designs 4/8. Bonterra approval by 4/10." },
-      { title: "Impact Report — Dev", status: "in-production", category: "active", owner: "Leslie", target: "4/10-4/22 dev window, HARD DEADLINE 4/23", notes: "Client 3 weeks late on content. Compressed timeline." },
-      { title: "Impact Report — Publish", status: "not-started", category: "active", target: "5/11", notes: "Tight given the compression" },
+      { title: "Impact Report — Design", status: "in-production", category: "active", owner: "Paige", notes: "Target: 4/8 Paige presents, 4/10 approval needed | Paige presenting designs 4/8. Bonterra approval by 4/10." },
+      { title: "Impact Report — Dev", status: "in-production", category: "active", owner: "Leslie", notes: "Target: 4/10-4/22 dev window, HARD DEADLINE 4/23 | Client 3 weeks late on content. Compressed timeline." },
+      { title: "Impact Report — Publish", status: "not-started", category: "active", notes: "Target: 5/11 | Tight given the compression" },
     ],
   },
   {
@@ -164,18 +163,18 @@ export const accounts: AccountData[] = [
     items: [
       { title: "Home Page Design", status: "completed", category: "completed", notes: "Done 2/25" },
       { title: "Site Copy", status: "in-production", category: "active", waitingOn: "Chris (copywriter)", notes: "Due 3/26, late. Chris blocker." },
-      { title: "Site Copy Review", status: "not-started", category: "active", waitingOn: "HDL", target: "4/8", notes: "HDL to review" },
-      { title: "Full Site Design", status: "not-started", category: "active", target: "4/15", notes: "Civilization delivers" },
-      { title: "Full Site Design Approval", status: "not-started", category: "awaiting-client", waitingOn: "HDL", target: "4/22", notes: "Copy revisions to move to dev" },
-      { title: "Photo Shoot Prep", status: "not-started", category: "active", target: "4/15", notes: "Production book + shot list" },
-      { title: "Start Development", status: "not-started", category: "active", target: "5/1", notes: "After design approval" },
+      { title: "Site Copy Review", status: "not-started", category: "active", waitingOn: "HDL", notes: "Target: 4/8 | HDL to review" },
+      { title: "Full Site Design", status: "not-started", category: "active", notes: "Target: 4/15 | Civilization delivers" },
+      { title: "Full Site Design Approval", status: "not-started", category: "awaiting-client", waitingOn: "HDL", notes: "Target: 4/22 | Copy revisions to move to dev" },
+      { title: "Photo Shoot Prep", status: "not-started", category: "active", notes: "Target: 4/15 | Production book + shot list" },
+      { title: "Start Development", status: "not-started", category: "active", notes: "Target: 5/1 | After design approval" },
       { title: "Schema/SEO/AIO", status: "not-started", category: "active" },
       { title: "Ad Words", status: "not-started", category: "active", notes: "Jamie Lincoln (HDL side)" },
       { title: "Smokeball Integration", status: "not-started", category: "active", notes: "Lead capture, form fields" },
       { title: "Domain/URL + Webflow", status: "not-started", category: "active" },
       { title: "Site Staging", status: "not-started", category: "active", notes: "Publish pages as complete" },
-      { title: "Production Shoot", status: "not-started", category: "active", target: "May", notes: "Client can't do shoot until May" },
-      { title: "Site Live", status: "not-started", category: "active", target: "6/30" },
+      { title: "Production Shoot", status: "not-started", category: "active", notes: "Target: May | Client can't do shoot until May" },
+      { title: "Site Live", status: "not-started", category: "active", notes: "Target: 6/30" },
     ],
   },
   {
@@ -186,15 +185,15 @@ export const accounts: AccountData[] = [
     team: "Jason (lead), Tim (requirements)",
     items: [
       { title: "Discovery Session (3 days onsite)", status: "completed", category: "completed", owner: "Jason/Tim", notes: "Mount Pleasant, TN. Mid-March." },
-      { title: "Requirements Doc (SRD)", status: "in-production", category: "active", owner: "Tim/Jason", target: "Tue 4/7", notes: "Tim merging two versions into final for client" },
-      { title: "Travel Invoice ($2,723 actuals)", status: "not-started", category: "active", owner: "Allie", target: "Mon 4/6", notes: "Jason approved, Allie to send" },
-      { title: "TAP Reviews SRD + Greenlights", status: "not-started", category: "awaiting-client", waitingOn: "Kim Sproul", target: "After 4/7", notes: "Expect approval, scope unchanged" },
-      { title: "Database Design & Architecture", status: "not-started", category: "active", target: "Late March–Mid-April", notes: "2-3 weeks post-discovery" },
-      { title: "Development (8 modules)", status: "not-started", category: "active", target: "Mid-April–Mid-August", notes: "Iterative, module by module" },
-      { title: "Data Migration", status: "not-started", category: "active", target: "Mid-Aug–Late Aug", notes: "Access 97 to PostgreSQL" },
-      { title: "Testing & QA", status: "not-started", category: "active", target: "September", notes: "Civ QA + TAP UAT" },
-      { title: "Deployment & Go-Live", status: "not-started", category: "active", target: "Mid-October", notes: "Cloud or on-prem TBD" },
-      { title: "Training & Handoff", status: "not-started", category: "active", target: "Late October", notes: "All three orgs" },
+      { title: "Requirements Doc (SRD)", status: "in-production", category: "active", owner: "Tim/Jason", notes: "Target: Tue 4/7 | Tim merging two versions into final for client" },
+      { title: "Travel Invoice ($2,723 actuals)", status: "not-started", category: "active", owner: "Allie", notes: "Target: Mon 4/6 | Jason approved, Allie to send" },
+      { title: "TAP Reviews SRD + Greenlights", status: "not-started", category: "awaiting-client", waitingOn: "Kim Sproul", notes: "Target: After 4/7 | Expect approval, scope unchanged" },
+      { title: "Database Design & Architecture", status: "not-started", category: "active", notes: "Target: Late March–Mid-April | 2-3 weeks post-discovery" },
+      { title: "Development (8 modules)", status: "not-started", category: "active", notes: "Target: Mid-April–Mid-August | Iterative, module by module" },
+      { title: "Data Migration", status: "not-started", category: "active", notes: "Target: Mid-Aug–Late Aug | Access 97 to PostgreSQL" },
+      { title: "Testing & QA", status: "not-started", category: "active", notes: "Target: September | Civ QA + TAP UAT" },
+      { title: "Deployment & Go-Live", status: "not-started", category: "active", notes: "Target: Mid-October | Cloud or on-prem TBD" },
+      { title: "Training & Handoff", status: "not-started", category: "active", notes: "Target: Late October | All three orgs" },
     ],
   },
   {
@@ -205,7 +204,7 @@ export const accounts: AccountData[] = [
     team: "Allison (lead)",
     items: [
       { title: "Social Content — Wind Down", status: "in-production", category: "active", owner: "Allison", notes: "Daily posts + ManyChat flows weekdays, pre-scheduled weekends. Account ends EOM April." },
-      { title: "Disconnect Google Sheet from ManyChat", status: "not-started", category: "active", owner: "Jason", target: "Wed 4/29", notes: "Clean cutoff task" },
+      { title: "Disconnect Google Sheet from ManyChat", status: "not-started", category: "active", owner: "Jason", notes: "Target: Wed 4/29 | Clean cutoff task" },
     ],
   },
   {
