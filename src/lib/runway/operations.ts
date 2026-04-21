@@ -59,6 +59,8 @@ export {
   mergeJsonArray,
   setBatchId,
   getBatchId,
+  parseResources,
+  normalizeResourcesString,
 } from "./operations-utils";
 
 export type {
@@ -69,6 +71,7 @@ export type {
   PipelineItemField,
   ClientField,
   TeamMemberField,
+  ResourceEntry,
 } from "./operations-utils";
 
 // ── Read operations ─────────────────────────────────────
