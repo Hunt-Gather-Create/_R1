@@ -21,7 +21,7 @@ import {
   validateAndResolveField,
   getPreviousValue,
 } from "./operations-utils";
-import type { OperationResult } from "./operations-utils";
+import type { MutationResponse } from "./mutation-response";
 
 // ── Create Team Member ──────────────────────────────────
 
@@ -40,7 +40,7 @@ export interface CreateTeamMemberParams {
 
 export async function createTeamMember(
   params: CreateTeamMemberParams
-): Promise<OperationResult> {
+): Promise<MutationResponse<{ memberName: string }>> {
   const {
     name,
     firstName,
@@ -74,7 +74,7 @@ export async function createTeamMember(
     message: "Team member already created (duplicate request).",
     data: { memberName: name },
   });
-  if (dup) return dup;
+  if (dup) return dup as MutationResponse<{ memberName: string }>;
 
   const db = getRunwayDb();
   const memberId = generateId();
@@ -119,7 +119,14 @@ export interface UpdateTeamMemberParams {
 
 export async function updateTeamMember(
   params: UpdateTeamMemberParams
-): Promise<OperationResult> {
+): Promise<
+  MutationResponse<{
+    memberName: string;
+    field: string;
+    previousValue: string;
+    newValue: string;
+  }>
+> {
   const { memberName, field, newValue, updatedBy } = params;
   const db = getRunwayDb();
 
@@ -146,7 +153,13 @@ export async function updateTeamMember(
     message: "Update already applied (duplicate request).",
     data: { memberName: member.name, field, previousValue, newValue },
   });
-  if (dup) return dup;
+  if (dup)
+    return dup as MutationResponse<{
+      memberName: string;
+      field: string;
+      previousValue: string;
+      newValue: string;
+    }>;
 
   // isActive is stored as integer in the DB
   const dbValue = typedField === "isActive" ? Number(newValue) : newValue;

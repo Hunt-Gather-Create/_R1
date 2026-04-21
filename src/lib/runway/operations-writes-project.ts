@@ -22,7 +22,6 @@ import {
   getPreviousValue,
   normalizeResourcesString,
 } from "./operations-utils";
-import type { OperationResult } from "./operations-utils";
 import type {
   CascadedItemInfo,
   MutationResponse,
@@ -40,7 +39,7 @@ export interface DeleteProjectParams {
 // FK deletion pattern — see docs/runway-fk-deletion-pattern.md
 export async function deleteProject(
   params: DeleteProjectParams
-): Promise<OperationResult> {
+): Promise<MutationResponse<{ clientName: string; projectName: string }>> {
   const { clientSlug, projectName, updatedBy } = params;
   const db = getRunwayDb();
 
@@ -61,8 +60,9 @@ export async function deleteProject(
   const dup = await checkDuplicate(idemKey, {
     ok: true,
     message: "Project already deleted (duplicate request).",
+    data: { clientName: client.name, projectName: project.name },
   });
-  if (dup) return dup;
+  if (dup) return dup as MutationResponse<{ clientName: string; projectName: string }>;
 
   await insertAuditRecord({
     idempotencyKey: idemKey,

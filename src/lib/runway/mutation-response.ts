@@ -86,7 +86,12 @@ export type ReverseCascadeInfo = {
 export interface UpdateProjectStatusData extends Record<string, unknown> {
   clientName: string;
   projectName: string;
-  previousStatus: string;
+  /**
+   * Prior project status. Schema nullable — a brand-new project may not have
+   * had a status before the first change, so we surface `null` rather than
+   * silently coerce to the empty string.
+   */
+  previousStatus: string | null;
   newStatus: string;
   /** Cascaded L2 titles (back-compat: `string[]`). */
   cascadedItems: string[];

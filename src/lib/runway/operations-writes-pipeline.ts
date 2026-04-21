@@ -20,7 +20,7 @@ import {
   validateAndResolveField,
   getPreviousValue,
 } from "./operations-utils";
-import type { OperationResult } from "./operations-utils";
+import type { MutationResponse } from "./mutation-response";
 
 // ── Create Pipeline Item ────────────────────────────────
 
@@ -37,7 +37,7 @@ export interface CreatePipelineItemParams {
 
 export async function createPipelineItem(
   params: CreatePipelineItemParams
-): Promise<OperationResult> {
+): Promise<MutationResponse<{ clientName?: string; name: string }>> {
   const {
     clientSlug,
     name,
@@ -72,7 +72,7 @@ export async function createPipelineItem(
     message: "Pipeline item already created (duplicate request).",
     data: { clientName, name },
   });
-  if (dup) return dup;
+  if (dup) return dup as MutationResponse<{ clientName?: string; name: string }>;
 
   const itemId = generateId();
   await db.insert(pipelineItems).values({
@@ -115,7 +115,15 @@ export interface UpdatePipelineItemParams {
 
 export async function updatePipelineItem(
   params: UpdatePipelineItemParams
-): Promise<OperationResult> {
+): Promise<
+  MutationResponse<{
+    clientName: string;
+    pipelineName: string;
+    field: string;
+    previousValue: string;
+    newValue: string;
+  }>
+> {
   const { clientSlug, pipelineName, field, newValue, updatedBy } = params;
   const db = getRunwayDb();
 
@@ -146,7 +154,14 @@ export async function updatePipelineItem(
     message: "Update already applied (duplicate request).",
     data: { clientName: client.name, pipelineName: item.name, field, previousValue, newValue },
   });
-  if (dup) return dup;
+  if (dup)
+    return dup as MutationResponse<{
+      clientName: string;
+      pipelineName: string;
+      field: string;
+      previousValue: string;
+      newValue: string;
+    }>;
 
   await db
     .update(pipelineItems)
@@ -181,7 +196,7 @@ export interface DeletePipelineItemParams {
 
 export async function deletePipelineItem(
   params: DeletePipelineItemParams
-): Promise<OperationResult> {
+): Promise<MutationResponse<{ clientName: string; pipelineName: string }>> {
   const { clientSlug, pipelineName, updatedBy } = params;
   const db = getRunwayDb();
 
@@ -202,8 +217,9 @@ export async function deletePipelineItem(
   const dup = await checkDuplicate(idemKey, {
     ok: true,
     message: "Pipeline item already deleted (duplicate request).",
+    data: { clientName: client.name, pipelineName: item.name },
   });
-  if (dup) return dup;
+  if (dup) return dup as MutationResponse<{ clientName: string; pipelineName: string }>;
 
   await db.delete(pipelineItems).where(eq(pipelineItems.id, item.id));
 

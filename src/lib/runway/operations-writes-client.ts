@@ -22,7 +22,7 @@ import {
   getPreviousValue,
   normalizeResourcesString,
 } from "./operations-utils";
-import type { OperationResult } from "./operations-utils";
+import type { MutationResponse } from "./mutation-response";
 
 // ── Create Client ───────────────────────────────────────
 
@@ -40,7 +40,7 @@ export interface CreateClientParams {
 
 export async function createClient(
   params: CreateClientParams
-): Promise<OperationResult> {
+): Promise<MutationResponse<{ clientName: string; slug: string }>> {
   const {
     name,
     slug,
@@ -74,7 +74,7 @@ export async function createClient(
     message: "Client already created (duplicate request).",
     data: { clientName: name, slug },
   });
-  if (dup) return dup;
+  if (dup) return dup as MutationResponse<{ clientName: string; slug: string }>;
 
   const clientId = generateId();
   // v4 (Chunk 5 debt §14.1): normalize `team` on write — mirrors
@@ -122,7 +122,14 @@ export interface UpdateClientFieldParams {
 
 export async function updateClientField(
   params: UpdateClientFieldParams
-): Promise<OperationResult> {
+): Promise<
+  MutationResponse<{
+    clientName: string;
+    field: string;
+    previousValue: string;
+    newValue: string;
+  }>
+> {
   const { clientSlug, field, newValue, updatedBy } = params;
   const db = getRunwayDb();
 
@@ -154,7 +161,13 @@ export async function updateClientField(
     message: "Update already applied (duplicate request).",
     data: { clientName: client.name, field, previousValue, newValue: effectiveNewValue },
   });
-  if (dup) return dup;
+  if (dup)
+    return dup as MutationResponse<{
+      clientName: string;
+      field: string;
+      previousValue: string;
+      newValue: string;
+    }>;
 
   await db
     .update(clients)

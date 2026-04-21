@@ -23,7 +23,6 @@ import {
   getPreviousValue,
   normalizeResourcesString,
 } from "./operations-utils";
-import type { OperationResult } from "./operations-utils";
 import type {
   MutationResponse,
   ReverseCascadeInfo,
@@ -146,7 +145,7 @@ export interface CreateWeekItemParams {
 
 export async function createWeekItem(
   params: CreateWeekItemParams
-): Promise<OperationResult> {
+): Promise<MutationResponse<{ clientName?: string; title: string }>> {
   const {
     clientSlug,
     projectName,
@@ -212,7 +211,7 @@ export async function createWeekItem(
     message: "Week item already created (duplicate request).",
     data: { clientName, title },
   });
-  if (dup) return dup;
+  if (dup) return dup as MutationResponse<{ clientName?: string; title: string }>;
 
   const itemId = generateId();
   // v4 (Chunk 5): normalize resources string on write so storage is
@@ -431,7 +430,7 @@ export interface DeleteWeekItemParams {
 
 export async function deleteWeekItem(
   params: DeleteWeekItemParams
-): Promise<OperationResult> {
+): Promise<MutationResponse<{ clientName?: string }>> {
   const { weekOf, weekItemTitle, id, updatedBy } = params;
   const db = getRunwayDb();
 
@@ -464,7 +463,7 @@ export async function deleteWeekItem(
     ok: true,
     message: "Week item already deleted (duplicate request).",
   });
-  if (dup) return dup;
+  if (dup) return dup as MutationResponse<{ clientName?: string }>;
 
   const clientName = await getClientNameById(item.clientId);
   const parentProjectId = item.projectId;
@@ -503,7 +502,14 @@ export interface LinkWeekItemToProjectParams {
 
 export async function linkWeekItemToProject(
   params: LinkWeekItemToProjectParams
-): Promise<OperationResult> {
+): Promise<
+  MutationResponse<{
+    weekItemTitle: string;
+    previousProjectId: string | null;
+    newProjectId: string;
+    clientName?: string;
+  }>
+> {
   const { weekItemId, projectId, updatedBy } = params;
   const db = getRunwayDb();
 
@@ -547,7 +553,13 @@ export async function linkWeekItemToProject(
     message: "Link already applied (duplicate request).",
     data: { weekItemTitle: item.title, previousProjectId, newProjectId: projectId, clientName },
   });
-  if (dup) return dup;
+  if (dup)
+    return dup as MutationResponse<{
+      weekItemTitle: string;
+      previousProjectId: string | null;
+      newProjectId: string;
+      clientName?: string;
+    }>;
 
   // v4 (Chunk 5): reparent + recompute both parents atomically. A crash
   // between the three writes could leave one or both parents with stale
