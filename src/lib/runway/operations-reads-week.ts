@@ -16,6 +16,58 @@ export type ProjectRow = typeof projects.$inferSelect;
 export type ClientRow = typeof clients.$inferSelect;
 
 /**
+ * Query week items whose start_date (fallback to legacy `date`) falls within
+ * the inclusive `[fromDate, toDate]` range. All dates are ISO `YYYY-MM-DD`.
+ *
+ * Optional filters (all case-insensitive substring except `category` which is
+ * an exact match on the enum value, e.g. `delivery`, `review`, `deadline`):
+ *   - clientSlug — narrow to one account
+ *   - owner      — owner column substring
+ *   - category   — exact category match
+ *
+ * v4 convention (2026-04-21). Used by cross-week date-range drill-downs that
+ * don't fit the weekOf + owner + resource + person shape of getWeekItemsData.
+ */
+export async function getWeekItemsInRange(
+  fromDate: string,
+  toDate: string,
+  clientSlug?: string,
+  owner?: string,
+  category?: string
+): Promise<WeekItemRow[]> {
+  const db = getRunwayDb();
+
+  let rows = await db
+    .select()
+    .from(weekItems)
+    .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
+
+  // start_date falls back to legacy `date` — both are ISO YYYY-MM-DD so
+  // string comparison is lexicographic-correct.
+  rows = rows.filter((r) => {
+    const anchor = r.startDate ?? r.date;
+    if (!anchor) return false;
+    return anchor >= fromDate && anchor <= toDate;
+  });
+
+  if (clientSlug) {
+    const client = await getClientBySlug(clientSlug);
+    if (!client) return [];
+    rows = rows.filter((r) => r.clientId === client.id);
+  }
+
+  if (owner) {
+    rows = rows.filter((r) => matchesSubstring(r.owner, owner));
+  }
+
+  if (category) {
+    rows = rows.filter((r) => r.category === category);
+  }
+
+  return rows;
+}
+
+/**
  * Return week items with `projectId IS NULL` (unlinked "orphan" L2s).
  *
  * Optionally filter by `clientSlug` so callers can inspect a single account's

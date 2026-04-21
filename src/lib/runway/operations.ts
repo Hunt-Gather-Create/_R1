@@ -94,6 +94,7 @@ export {
   getLinkedDeadlineItems,
   getOrphanWeekItems,
   getWeekItemsData,
+  getWeekItemsInRange,
   getWeekItemsByProject,
   getPersonWorkload,
   getPipelineData,
