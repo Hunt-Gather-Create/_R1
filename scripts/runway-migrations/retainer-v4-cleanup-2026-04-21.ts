@@ -63,7 +63,9 @@ import { projects, weekItems } from "@/lib/db/runway-schema";
 import {
   createWeekItem,
   findWeekItemByFuzzyTitle,
+  generateIdempotencyKey,
   getClientOrFail,
+  insertAuditRecord,
   setBatchId,
   updateProjectField,
   updateWeekItemField,
@@ -342,7 +344,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
     l2Rows,
     // Capture current LPPC Interactive Map L1 id + Website Revamp L1 id for
     // the create operations (used by revert to locate the parent L1s).
-    lppcClientId: clientIds.get("lppc")!,
+    lppcClientId: clientIds.get("lppc")!.id,
   });
   writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2), "utf8");
   ctx.log(`Wrote pre-apply snapshot: ${snapshotPath}`);
@@ -386,7 +388,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
   // Phase 4c: L1 field updates (A.2-A.5, B.1-B.4, C.1)
   ctx.log("--- Phase 4c: L1 field updates ---");
   for (const plan of L1_FIELD_PLANS) {
-    await applyL1FieldWrite(ctx, plan);
+    await applyL1FieldWrite(ctx, plan, l1Rows, clientIds);
     counts.l1FieldWrites++;
   }
 
@@ -432,12 +434,12 @@ export async function up(ctx: MigrationContext): Promise<void> {
 async function resolveClientIds(
   ctx: MigrationContext,
   slugs: string[]
-): Promise<Map<string, string>> {
-  const m = new Map<string, string>();
+): Promise<Map<string, { id: string; name: string }>> {
+  const m = new Map<string, { id: string; name: string }>();
   for (const slug of slugs) {
     const lookup = await getClientOrFail(slug);
     if (!lookup.ok) throw new Error(`Pre-fetch failed: client '${slug}' not found.`);
-    m.set(slug, lookup.client.id);
+    m.set(slug, { id: lookup.client.id, name: lookup.client.name });
   }
   ctx.log(`Resolved ${m.size} client ids.`);
   return m;
@@ -449,11 +451,11 @@ type WeekItemRow = typeof weekItems.$inferSelect;
 /** Keyed "<slug>|<projectName>" -> row. */
 async function fetchTargetL1Rows(
   ctx: MigrationContext,
-  clientIds: Map<string, string>
+  clientIds: Map<string, { id: string; name: string }>
 ): Promise<Map<string, ProjectRow>> {
   const m = new Map<string, ProjectRow>();
   for (const [slug, cid] of clientIds.entries()) {
-    const rows = await ctx.db.select().from(projects).where(eq(projects.clientId, cid));
+    const rows = await ctx.db.select().from(projects).where(eq(projects.clientId, cid.id));
     for (const row of rows) m.set(`${slug}|${row.name.trim()}`, row);
   }
   ctx.log(`Fetched ${m.size} L1 rows across ${clientIds.size} clients.`);
@@ -463,11 +465,11 @@ async function fetchTargetL1Rows(
 /** Keyed "<slug>|<title>" -> row. L2 titles are unique within a client's board in practice. */
 async function fetchTargetL2Rows(
   ctx: MigrationContext,
-  clientIds: Map<string, string>
+  clientIds: Map<string, { id: string; name: string }>
 ): Promise<Map<string, WeekItemRow>> {
   const m = new Map<string, WeekItemRow>();
   for (const [slug, cid] of clientIds.entries()) {
-    const rows = await ctx.db.select().from(weekItems).where(eq(weekItems.clientId, cid));
+    const rows = await ctx.db.select().from(weekItems).where(eq(weekItems.clientId, cid.id));
     for (const row of rows) {
       const key = `${slug}|${row.title.trim()}`;
       // Duplicate title collision within a client is unexpected - log but don't throw;
@@ -711,11 +713,62 @@ function appendCreatedId(path: string, entry: { specId: string; id: string; titl
 
 async function applyL1FieldWrite(
   ctx: MigrationContext,
-  plan: L1FieldPlan
+  plan: L1FieldPlan,
+  l1Rows: Map<string, ProjectRow>,
+  clientMap: Map<string, { id: string; name: string }>
 ): Promise<void> {
   const preMarker = plan.pre === "__A5_END_DATE_SENTINEL__" ? "(null or 2026-04-23)" : (plan.pre ?? "(null)");
   const newMarker = plan.newValue ?? "(null)";
   ctx.log(`  [${plan.specId}] L1 ${plan.clientSlug}/${plan.projectName}.${plan.field}: "${preMarker}" -> "${newMarker}"`);
+
+  // endDate/startDate are v4-derived columns excluded from PROJECT_FIELDS, so the
+  // helper's validator rejects them. Route these writes through raw-drizzle +
+  // insertAuditRecord using the same null-marker conventions as the helper. See
+  // plan for context (commits 1 - 3 shipped; this branch was added in commit 4).
+  if (plan.field === "endDate" || plan.field === "startDate") {
+    const key = `${plan.clientSlug}|${plan.projectName}`;
+    const row = l1Rows.get(key);
+    if (!row) {
+      throw new Error(`${plan.specId} raw-drizzle: L1 row missing for ${key}.`);
+    }
+    const client = clientMap.get(plan.clientSlug);
+    if (!client) {
+      throw new Error(`${plan.specId} raw-drizzle: client '${plan.clientSlug}' not in client map.`);
+    }
+    if (ctx.dryRun) return;
+
+    // Audit `previousValue` reflects pre-migration state captured at Phase 1 pre-fetch,
+    // NOT the live DB value at write time. Phase 4a L2 writes can mutate L1 endDate/startDate
+    // via recomputeProjectDatesWith before this Phase 4c write fires. Intent > mechanical diff.
+    const previousValue = getColumnValue(row, plan.field);
+    const columnKey = plan.field;
+
+    await ctx.db
+      .update(projects)
+      .set({ [columnKey]: plan.newValue, updatedAt: new Date() })
+      .where(eq(projects.id, row.id));
+
+    const idemKey = generateIdempotencyKey(
+      "field-change",
+      row.id,
+      plan.field,
+      plan.newValue ?? "(null)",
+      UPDATED_BY
+    );
+    await insertAuditRecord({
+      idempotencyKey: idemKey,
+      projectId: row.id,
+      clientId: row.clientId,
+      updatedBy: UPDATED_BY,
+      updateType: "field-change",
+      previousValue,
+      newValue: plan.newValue,
+      summary: `${client.name} / ${plan.projectName}: ${plan.field} changed from "${previousValue}" to "${plan.newValue ?? "(null)"}"`,
+      metadata: JSON.stringify({ field: plan.field }),
+    });
+    return;
+  }
+
   if (ctx.dryRun) return;
 
   const result = await updateProjectField({
@@ -884,10 +937,10 @@ async function applyD6NotesAppend(
 
 async function verifyPostApply(
   ctx: MigrationContext,
-  clientIds: Map<string, string>
+  clientIds: Map<string, { id: string; name: string }>
 ): Promise<void> {
   // Re-fetch and spot-check a handful of critical post-state invariants.
-  const convergixId = clientIds.get("convergix")!;
+  const convergixId = clientIds.get("convergix")!.id;
   const convergixRows = await ctx.db
     .select()
     .from(projects)
@@ -905,7 +958,7 @@ async function verifyPostApply(
   const soundlyRows = await ctx.db
     .select()
     .from(projects)
-    .where(eq(projects.clientId, clientIds.get("soundly")!));
+    .where(eq(projects.clientId, clientIds.get("soundly")!.id));
   const pgw = soundlyRows.find((p) => p.name.trim() === "Payment Gateway Page");
   if (!pgw) throw new Error("VERIFICATION FAILED: A.5 - Soundly Payment Gateway L1 not found.");
   if (pgw.engagementType !== "project") {
@@ -919,7 +972,7 @@ async function verifyPostApply(
   }
 
   // D.6 append - re-read notes
-  const lppcId = clientIds.get("lppc")!;
+  const lppcId = clientIds.get("lppc")!.id;
   const lppcProjects = await ctx.db.select().from(projects).where(eq(projects.clientId, lppcId));
   const websiteRevamp = lppcProjects.find((p) => p.name.trim() === "Website Revamp");
   if (!websiteRevamp) throw new Error("VERIFICATION FAILED: D.6 - Website Revamp L1 not found.");
