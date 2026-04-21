@@ -289,13 +289,13 @@ const L2_CREATE_PLANS: L2CreatePlan[] = [
     category: "kickoff",
     owner: "Kathy",
     notes:
-      "Matt organizing policy materials for tagging in CMS — will import into Advocacy collection. Upstream of Advocacy page launch. Per Kathy 4/17. Waiting on: Matt (LPPC).",
+      "Matt organizing policy materials for tagging in CMS - will import into Advocacy collection. Upstream of Advocacy page launch. Per Kathy 4/17. Waiting on: Matt (LPPC).",
   },
 ];
 
 // ---- D.6: LPPC Website Revamp L1 notes APPEND ----------------------
 const D6_APPEND_TEXT =
-  " Pending from LPPC: Bill collecting member photo/video contributions — no timeline yet (per Kathy 4/17 Slack).";
+  " Pending from LPPC: Bill collecting member photo/video contributions - no timeline yet (per Kathy 4/17 Slack).";
 
 // =====================================================================
 // Exports (for pnpm runway:migrate) and standalone main
