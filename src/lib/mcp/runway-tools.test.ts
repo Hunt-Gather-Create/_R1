@@ -171,11 +171,38 @@ describe("registerRunwayTools", () => {
     expect(mockOps.getClientsWithCounts).toHaveBeenCalledWith({ includeProjects: undefined });
   });
 
-  it("update_project_status calls operation and returns message", async () => {
+  it("update_project_status calls operation and returns message when no data", async () => {
     const params = { clientSlug: "convergix", projectName: "CDS", newStatus: "completed", updatedBy: "Kathy", notes: "Delivered" };
     const result = await registeredTools.get("update_project_status")!(params);
     expect(mockOps.updateProjectStatus).toHaveBeenCalledWith(params);
     expect(result).toEqual({ content: [{ type: "text", text: "Updated" }] });
+  });
+
+  it("update_project_status surfaces cascadeDetail + auditId in structured JSON", async () => {
+    mockOps.updateProjectStatus.mockResolvedValueOnce({
+      ok: true,
+      message: "Updated Convergix / CDS: in-production -> completed",
+      data: {
+        clientName: "Convergix",
+        projectName: "CDS",
+        previousStatus: "in-production",
+        newStatus: "completed",
+        cascadedItems: ["CDS Review"],
+        cascadeDetail: [
+          { itemId: "w1", itemTitle: "CDS Review", field: "status", previousValue: "in-progress", newValue: "completed", auditId: "u2" },
+        ],
+        auditId: "u1",
+      },
+    });
+    const result = await registeredTools.get("update_project_status")!({
+      clientSlug: "convergix", projectName: "CDS", newStatus: "completed", updatedBy: "Kathy",
+    });
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.message).toContain("in-production -> completed");
+    expect(parsed.data.cascadeDetail).toHaveLength(1);
+    expect(parsed.data.cascadeDetail[0]).toMatchObject({ itemId: "w1", field: "status", auditId: "u2" });
+    expect(parsed.data.auditId).toBe("u1");
   });
 
   it("update_project_status returns error on failure", async () => {
@@ -335,11 +362,66 @@ describe("registerRunwayTools", () => {
 
   // ── New mutation tool execution tests ──────────────────────
 
-  it("update_project_field calls operation and returns message", async () => {
+  it("update_project_field calls operation and returns message when no data", async () => {
     const params = { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "Lane", updatedBy: "mcp" };
     const result = await registeredTools.get("update_project_field")!(params);
     expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
     expect(result).toEqual({ content: [{ type: "text", text: "Updated" }] });
+  });
+
+  it("update_project_field surfaces cascadeDetail for dueDate changes", async () => {
+    mockOps.updateProjectField.mockResolvedValueOnce({
+      ok: true,
+      message: "Updated dueDate for Convergix / CDS.",
+      data: {
+        clientName: "Convergix", projectName: "CDS", field: "dueDate",
+        previousValue: "2026-04-15", newValue: "2026-04-25",
+        cascadedItems: ["Code handoff"],
+        cascadeDetail: [
+          { itemId: "w1", itemTitle: "Code handoff", field: "date", previousValue: "2026-04-15", newValue: "2026-04-25", auditId: "u3" },
+        ],
+        auditId: "u4",
+      },
+    });
+    const result = await registeredTools.get("update_project_field")!({
+      clientSlug: "convergix", projectName: "CDS", field: "dueDate", newValue: "2026-04-25", updatedBy: "mcp",
+    });
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.data.cascadeDetail).toHaveLength(1);
+    expect(parsed.data.cascadeDetail[0].itemTitle).toBe("Code handoff");
+    expect(parsed.data.auditId).toBe("u4");
+  });
+
+  it("update_week_item surfaces reverseCascadeDetail for deadline date changes", async () => {
+    mockOps.updateWeekItemField.mockResolvedValueOnce({
+      ok: true,
+      message: "Updated date for 'CDS Deadline'.",
+      data: {
+        weekItemTitle: "CDS Deadline",
+        field: "date",
+        previousValue: "2026-04-15",
+        newValue: "2026-04-28",
+        clientName: "Convergix",
+        reverseCascaded: true,
+        reverseCascadeDetail: {
+          projectId: "p1",
+          projectName: "CDS",
+          field: "dueDate",
+          previousDueDate: "2026-04-15",
+          newDueDate: "2026-04-28",
+          auditId: "u5",
+        },
+        auditId: "u6",
+      },
+    });
+    const result = await registeredTools.get("update_week_item")!({
+      weekOf: "2026-04-06", weekItemTitle: "CDS Deadline", field: "date", newValue: "2026-04-28", updatedBy: "mcp",
+    });
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.data.reverseCascadeDetail).toMatchObject({ projectId: "p1", field: "dueDate", auditId: "u5" });
+    expect(parsed.data.auditId).toBe("u6");
   });
 
   it("delete_project calls operation and returns message", async () => {

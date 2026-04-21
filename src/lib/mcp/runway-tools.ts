@@ -55,6 +55,30 @@ function operationResultMessage(result: { ok: boolean; message?: string; error?:
   return textMessage(result.ok ? result.message! : result.error!);
 }
 
+/**
+ * Mutation tool response helper — returns the human-readable message AND, when
+ * a mutation produced structured data (cascadeDetail, reverseCascadeDetail,
+ * auditId, before/after values), a JSON-encoded summary so callers can parse
+ * the cascade outcome without scraping prose.
+ *
+ * Shape on success:
+ *   "<message>\n\n<JSON.stringify({ data })>"
+ * The JSON block is omitted when data is undefined. Error responses keep the
+ * legacy plain-error-text contract. v4 convention (2026-04-21 / PR #86).
+ */
+function mutationResult(result: {
+  ok: boolean;
+  message?: string;
+  error?: string;
+  available?: string[];
+  data?: Record<string, unknown>;
+}) {
+  if (!result.ok) return textMessage(result.error!);
+  if (!result.data) return textMessage(result.message!);
+  const payload = { message: result.message, data: result.data };
+  return textResult(payload);
+}
+
 export function registerRunwayTools(server: McpServer) {
   // ── Read tools ──────────────────────────────────────────
 
@@ -289,45 +313,55 @@ export function registerRunwayTools(server: McpServer) {
 
   // ── Mutation tools — project ────────────────────────────
 
-  server.tool("update_project_status", "Change a project's status and log the update", {
-    clientSlug: z.string().describe("Client slug (e.g. 'convergix')"),
-    projectName: z.string().describe("Project name (fuzzy match)"),
-    newStatus: z.string().describe("New status value"),
-    updatedBy: z.string().default("mcp").describe("Person making the update"),
-    notes: z.string().optional().describe("Additional context"),
-  }, async (params) => {
-    const result = await updateProjectStatus(params);
-    if (result.ok && !getBatchId()) {
-      await postMutationUpdate({
-        result,
-        fallbackClientName: params.clientSlug,
-        projectName: result.data?.projectName as string,
-        updateText: `Status: ${result.data?.previousStatus} → ${result.data?.newStatus}`,
-        updatedBy: params.updatedBy,
-      });
-    }
-    return operationResultMessage(result);
-  });
+  server.tool(
+    "update_project_status",
+    "Change a project's status and log the update. On success returns { message, data } where data includes { clientName, projectName, previousStatus, newStatus, cascadedItems (string[] — legacy), cascadeDetail ([{ itemId, itemTitle, field, previousValue, newValue, auditId }]), auditId }. Status changes to terminal statuses (completed, canceled, on-hold) cascade to linked L2 week items.",
+    {
+      clientSlug: z.string().describe("Client slug (e.g. 'convergix')"),
+      projectName: z.string().describe("Project name (fuzzy match)"),
+      newStatus: z.string().describe("New status value"),
+      updatedBy: z.string().default("mcp").describe("Person making the update"),
+      notes: z.string().optional().describe("Additional context"),
+    },
+    async (params) => {
+      const result = await updateProjectStatus(params);
+      if (result.ok && !getBatchId()) {
+        await postMutationUpdate({
+          result,
+          fallbackClientName: params.clientSlug,
+          projectName: result.data?.projectName as string,
+          updateText: `Status: ${result.data?.previousStatus} → ${result.data?.newStatus}`,
+          updatedBy: params.updatedBy,
+        });
+      }
+      return mutationResult(result);
+    },
+  );
 
-  server.tool("update_project_field", "Update a specific field on a project", {
-    clientSlug: z.string().describe("Client slug"),
-    projectName: z.string().describe("Project name (fuzzy match)"),
-    field: z.enum(["name", "dueDate", "owner", "resources", "waitingOn", "target", "notes"]).describe("Field to update"),
-    newValue: z.string().describe("New value"),
-    updatedBy: z.string().default("mcp").describe("Person making the update"),
-  }, async (params) => {
-    const result = await updateProjectField(params);
-    if (result.ok && !getBatchId()) {
-      await postMutationUpdate({
-        result,
-        fallbackClientName: params.clientSlug,
-        projectName: result.data?.projectName as string,
-        updateText: `${params.field} updated`,
-        updatedBy: params.updatedBy,
-      });
-    }
-    return operationResultMessage(result);
-  });
+  server.tool(
+    "update_project_field",
+    "Update a specific field on a project. On success returns { message, data } where data includes { clientName, projectName, field, previousValue, newValue, cascadedItems, cascadeDetail ([{ itemId, itemTitle, field: 'date', previousValue, newValue, auditId }] — only populated when field='dueDate'), auditId }.",
+    {
+      clientSlug: z.string().describe("Client slug"),
+      projectName: z.string().describe("Project name (fuzzy match)"),
+      field: z.enum(["name", "dueDate", "owner", "resources", "waitingOn", "target", "notes"]).describe("Field to update"),
+      newValue: z.string().describe("New value"),
+      updatedBy: z.string().default("mcp").describe("Person making the update"),
+    },
+    async (params) => {
+      const result = await updateProjectField(params);
+      if (result.ok && !getBatchId()) {
+        await postMutationUpdate({
+          result,
+          fallbackClientName: params.clientSlug,
+          projectName: result.data?.projectName as string,
+          updateText: `${params.field} updated`,
+          updatedBy: params.updatedBy,
+        });
+      }
+      return mutationResult(result);
+    },
+  );
 
   server.tool("delete_project", "Delete a project from a client", {
     clientSlug: z.string().describe("Client slug"),
@@ -395,24 +429,29 @@ export function registerRunwayTools(server: McpServer) {
     return operationResultMessage(result);
   });
 
-  server.tool("update_week_item", "Update a field on an existing week item", {
-    weekOf: z.string().describe("ISO Monday date"),
-    weekItemTitle: z.string().describe("Week item title (fuzzy match)"),
-    field: z.enum(["title", "status", "date", "dayOfWeek", "owner", "resources", "notes", "category"]).describe("Field to update"),
-    newValue: z.string().describe("New value"),
-    updatedBy: z.string().default("mcp").describe("Person making the update"),
-  }, async (params) => {
-    const result = await updateWeekItemField(params);
-    if (!getBatchId()) {
-      await postMutationUpdate({
-        result,
-        fallbackClientName: "Calendar",
-        updateText: `Week item "${params.weekItemTitle}": ${params.field} updated`,
-        updatedBy: params.updatedBy,
-      });
-    }
-    return operationResultMessage(result);
-  });
+  server.tool(
+    "update_week_item",
+    "Update a field on an existing week item. On success returns { message, data } where data includes { weekItemTitle, field, previousValue, newValue, clientName, reverseCascaded (boolean — legacy), reverseCascadeDetail ({ projectId, projectName, field: 'dueDate', previousDueDate, newDueDate, auditId } | null) for deadline-category date changes that back-propagate to the parent project, auditId }.",
+    {
+      weekOf: z.string().describe("ISO Monday date"),
+      weekItemTitle: z.string().describe("Week item title (fuzzy match)"),
+      field: z.enum(["title", "status", "date", "dayOfWeek", "owner", "resources", "notes", "category"]).describe("Field to update"),
+      newValue: z.string().describe("New value"),
+      updatedBy: z.string().default("mcp").describe("Person making the update"),
+    },
+    async (params) => {
+      const result = await updateWeekItemField(params);
+      if (!getBatchId()) {
+        await postMutationUpdate({
+          result,
+          fallbackClientName: "Calendar",
+          updateText: `Week item "${params.weekItemTitle}": ${params.field} updated`,
+          updatedBy: params.updatedBy,
+        });
+      }
+      return mutationResult(result);
+    },
+  );
 
   server.tool("delete_week_item", "Remove a week item from the calendar", {
     weekOf: z.string().optional().describe("ISO Monday date"),
