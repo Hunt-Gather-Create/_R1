@@ -34,9 +34,15 @@ export function createBotTools(userName: string, now: Date = new Date()) {
   const currentMonday = toISODateString(getMonday(now));
   return {
     get_clients: tool({
-      description: "List all clients with project counts",
-      inputSchema: z.object({}),
-      execute: async () => getClientsWithCounts(),
+      description:
+        "List clients. Each entry has { id, name, slug, contractValue, contractStatus, contractTerm, team, projectCount, updatedAt }. Pass includeProjects=true when you need each client's nested projects[] with dueDate, engagementType, contract dates, etc.",
+      inputSchema: z.object({
+        includeProjects: z
+          .boolean()
+          .optional()
+          .describe("When true, include each client's nested projects[] array. Default false."),
+      }),
+      execute: async ({ includeProjects }) => getClientsWithCounts({ includeProjects }),
     }),
 
     get_projects: tool({

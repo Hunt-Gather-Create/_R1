@@ -79,8 +79,16 @@ describe("createBotTools", () => {
 
   it("get_clients calls getClientsWithCounts", async () => {
     const result = await tools.get_clients.execute({}, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockOps.getClientsWithCounts).toHaveBeenCalledOnce();
+    expect(mockOps.getClientsWithCounts).toHaveBeenCalledWith({ includeProjects: undefined });
     expect(result).toEqual([{ name: "Convergix" }]);
+  });
+
+  it("get_clients passes includeProjects when provided", async () => {
+    await tools.get_clients.execute(
+      { includeProjects: true },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getClientsWithCounts).toHaveBeenCalledWith({ includeProjects: true });
   });
 
   it("get_projects calls getProjectsFiltered with params", async () => {

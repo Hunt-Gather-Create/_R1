@@ -48,8 +48,17 @@ function operationResultMessage(result: { ok: boolean; message?: string; error?:
 export function registerRunwayTools(server: McpServer) {
   // ── Read tools ──────────────────────────────────────────
 
-  server.tool("get_clients", "List all clients with project counts", {},
-    async () => textResult(await getClientsWithCounts()));
+  server.tool(
+    "get_clients",
+    "List all clients. Returns objects with { id, name, slug, contractValue, contractStatus, contractTerm, team, projectCount, updatedAt }. Pass includeProjects=true to include a nested `projects` array with each client's full v4-enriched project rows (id, name, client, status, category, owner, resources, waitingOn, target, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt).",
+    {
+      includeProjects: z
+        .boolean()
+        .optional()
+        .describe("When true, include each client's nested projects[] array. Default false."),
+    },
+    async ({ includeProjects }) => textResult(await getClientsWithCounts({ includeProjects })),
+  );
 
   server.tool("get_projects", "List projects, optionally filtered by client, status, owner, or waitingOn", {
     clientSlug: z.string().optional().describe("Filter by client slug (e.g. 'convergix')"),
@@ -72,10 +81,40 @@ export function registerRunwayTools(server: McpServer) {
   server.tool("get_pipeline", "List all pipeline/unsigned SOWs", {},
     async () => textResult(await getPipelineData()));
 
-  server.tool("get_updates", "Get recent update history, optionally filtered by client slug", {
-    clientSlug: z.string().optional().describe("Filter by client slug"),
-    limit: z.number().optional().default(20).describe("Max updates to return"),
-  }, async ({ clientSlug, limit }) => textResult(await getUpdatesData({ clientSlug, limit })));
+  server.tool(
+    "get_updates",
+    "Get recent update history. Returns an array of { client, updatedBy, updateType, previousValue, newValue, summary, createdAt }. Filter by clientSlug, a createdAt range via since/until (ISO), batchId (audit tag), updateType (exact), or projectName (substring).",
+    {
+      clientSlug: z.string().optional().describe("Filter by client slug"),
+      limit: z.number().optional().default(20).describe("Max updates to return (default 20)"),
+      since: z
+        .string()
+        .optional()
+        .describe("ISO lower bound on createdAt (inclusive). e.g. '2026-04-01' or full ISO timestamp."),
+      until: z
+        .string()
+        .optional()
+        .describe("ISO upper bound on createdAt (inclusive)."),
+      batchId: z
+        .string()
+        .optional()
+        .describe("Exact match on updates.batch_id. Useful for inspecting a prior batch."),
+      updateType: z
+        .string()
+        .optional()
+        .describe(
+          "Exact match on updates.update_type (e.g. 'status-change', 'field-change', 'cascade-status-change', 'cascade-date-change').",
+        ),
+      projectName: z
+        .string()
+        .optional()
+        .describe("Case-insensitive substring match against the linked project name."),
+    },
+    async ({ clientSlug, limit, since, until, batchId, updateType, projectName }) =>
+      textResult(
+        await getUpdatesData({ clientSlug, limit, since, until, batchId, updateType, projectName }),
+      ),
+  );
 
   server.tool("get_team_members", "List team members, roles, and what they track", {},
     async () => textResult(await getTeamMembersData()));

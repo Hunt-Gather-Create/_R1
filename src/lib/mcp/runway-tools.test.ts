@@ -112,7 +112,45 @@ describe("registerRunwayTools", () => {
 
   it("get_updates passes options", async () => {
     await registeredTools.get("get_updates")!({ clientSlug: "lppc", limit: 5 });
-    expect(mockOps.getUpdatesData).toHaveBeenCalledWith({ clientSlug: "lppc", limit: 5 });
+    expect(mockOps.getUpdatesData).toHaveBeenCalledWith({
+      clientSlug: "lppc",
+      limit: 5,
+      since: undefined,
+      until: undefined,
+      batchId: undefined,
+      updateType: undefined,
+      projectName: undefined,
+    });
+  });
+
+  it("get_updates passes v4 filters (since/until/batchId/updateType/projectName)", async () => {
+    await registeredTools.get("get_updates")!({
+      clientSlug: "convergix",
+      since: "2026-04-01",
+      until: "2026-04-30",
+      batchId: "cleanup-2026-04-18",
+      updateType: "status-change",
+      projectName: "CDS",
+    });
+    expect(mockOps.getUpdatesData).toHaveBeenCalledWith({
+      clientSlug: "convergix",
+      limit: undefined,
+      since: "2026-04-01",
+      until: "2026-04-30",
+      batchId: "cleanup-2026-04-18",
+      updateType: "status-change",
+      projectName: "CDS",
+    });
+  });
+
+  it("get_clients passes includeProjects option", async () => {
+    await registeredTools.get("get_clients")!({ includeProjects: true });
+    expect(mockOps.getClientsWithCounts).toHaveBeenCalledWith({ includeProjects: true });
+  });
+
+  it("get_clients defaults includeProjects to undefined when omitted", async () => {
+    await registeredTools.get("get_clients")!({});
+    expect(mockOps.getClientsWithCounts).toHaveBeenCalledWith({ includeProjects: undefined });
   });
 
   it("update_project_status calls operation and returns message", async () => {
