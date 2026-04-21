@@ -54,7 +54,7 @@ Confirmed:
 - gh is authenticated as jasonburks23
 
 ## Step 8 — Monitor Llama review
-Llama typically triggers within 5-10 min of PR open. If RFC'd, address findings per project pattern (TP specs fixes, fires CC sub-agent per finding).
+Llama typically triggers within 5-10 min of PR open. Use `docs/tmp/pr86-llama-iteration-playbook.md` for the fire pattern on findings. Autonomous fix for P1/P2; batch P3s or defer.
 
 ## Step 9 — Update memory + brain docs
 Mark PR #86 as open in memory pointer. Operator reviews TP decisions doc + known-debt doc at their convenience.
