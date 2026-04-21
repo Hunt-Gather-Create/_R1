@@ -117,14 +117,40 @@ describe("createBotTools", () => {
 
   it("get_projects calls getProjectsFiltered with params", async () => {
     const result = await tools.get_projects.execute({ clientSlug: "convergix", owner: "Kathy" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: "convergix", owner: "Kathy", waitingOn: undefined });
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: "convergix", owner: "Kathy", waitingOn: undefined, engagementType: undefined });
     expect(result).toHaveLength(1);
     expect((result as Record<string, unknown>[])[0].name).toBe("CDS");
   });
 
   it("get_projects passes waitingOn filter", async () => {
     await tools.get_projects.execute({ waitingOn: "Daniel" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: undefined, owner: undefined, waitingOn: "Daniel" });
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: undefined, owner: undefined, waitingOn: "Daniel", engagementType: undefined });
+  });
+
+  it("get_projects passes engagementType filter (PR #88 Chunk B)", async () => {
+    await tools.get_projects.execute(
+      { engagementType: "retainer" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({
+      clientSlug: undefined,
+      owner: undefined,
+      waitingOn: undefined,
+      engagementType: "retainer",
+    });
+  });
+
+  it("get_projects forwards engagementType='__null__' sentinel", async () => {
+    await tools.get_projects.execute(
+      { engagementType: "__null__" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({
+      clientSlug: undefined,
+      owner: undefined,
+      waitingOn: undefined,
+      engagementType: "__null__",
+    });
   });
 
   it("update_project_status posts to updates channel on success", async () => {
@@ -261,12 +287,36 @@ describe("createBotTools", () => {
       { weekOf: "2026-04-06", owner: "Kathy", resource: "Roz", person: "Lane" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", "Kathy", "Roz", "Lane");
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", "Kathy", "Roz", "Lane", undefined, undefined);
   });
 
   it("get_week_items passes undefined when no params given", async () => {
     await tools.get_week_items.execute({}, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined, undefined, undefined);
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined, undefined, undefined, undefined, undefined);
+  });
+
+  it("get_week_items passes status filter (PR #88 Chunk B)", async () => {
+    await tools.get_week_items.execute(
+      { weekOf: "2026-04-06", status: "blocked" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", undefined, undefined, undefined, "blocked", undefined);
+  });
+
+  it("get_week_items passes clientSlug filter (PR #88 Chunk B)", async () => {
+    await tools.get_week_items.execute(
+      { clientSlug: "convergix" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined, undefined, undefined, undefined, "convergix");
+  });
+
+  it("get_week_items forwards status='scheduled' sentinel", async () => {
+    await tools.get_week_items.execute(
+      { status: "scheduled" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined, undefined, undefined, "scheduled", undefined);
   });
 
   it("get_person_workload calls getPersonWorkload", async () => {

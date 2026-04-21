@@ -57,14 +57,20 @@ export function createBotTools(userName: string, now: Date = new Date()) {
 
     get_projects: tool({
       description:
-        "List L1 projects, optionally filtered. Each item has { id, name, client, status, category, owner, resources, waitingOn, target, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }. Filter by clientSlug, owner substring, or waitingOn substring.",
+        "List L1 projects, optionally filtered. Each item has { id, name, client, status, category, owner, resources, waitingOn, target, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }. Filter by clientSlug, owner substring, waitingOn substring, or engagementType (exact — pass '__null__' to match projects with NULL engagement_type).",
       inputSchema: z.object({
         clientSlug: z.string().optional().describe("Client slug (e.g. 'convergix')"),
         owner: z.string().optional().describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
         waitingOn: z.string().optional().describe("Filter by waitingOn name (case-insensitive substring, e.g. 'Daniel')"),
+        engagementType: z
+          .string()
+          .optional()
+          .describe(
+            "Exact engagement_type match (e.g. 'retainer', 'project', 'break-fix'). Pass '__null__' to narrow to projects with NULL engagement_type.",
+          ),
       }),
-      execute: async ({ clientSlug, owner, waitingOn }) => {
-        return getProjectsFiltered({ clientSlug, owner, waitingOn });
+      execute: async ({ clientSlug, owner, waitingOn, engagementType }) => {
+        return getProjectsFiltered({ clientSlug, owner, waitingOn, engagementType });
       },
     }),
 
@@ -75,7 +81,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
     }),
 
     get_week_items: tool({
-      description: `Get calendar items for a given week, optionally filtered by person (owner OR resource), owner, or resource. Prefer the 'person' filter when the user asks what X has this week — it matches items where X is either accountable or doing the work. Use 'owner' only when they specifically ask who's accountable and 'resource' only when they specifically ask who's doing the work. The weekOf parameter defaults to the current week (${currentMonday}) — do not ask the user for a date.`,
+      description: `Get calendar items for a given week, optionally filtered by person (owner OR resource), owner, resource, status, or clientSlug. Prefer the 'person' filter when the user asks what X has this week — it matches items where X is either accountable or doing the work. Use 'owner' only when they specifically ask who's accountable and 'resource' only when they specifically ask who's doing the work. The weekOf parameter defaults to the current week (${currentMonday}) — do not ask the user for a date. All filters AND together.`,
       inputSchema: z.object({
         weekOf: z
           .string()
@@ -93,9 +99,19 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           .string()
           .optional()
           .describe("Filter by resource name only (person doing the work, case-insensitive substring, e.g. 'Roz')"),
+        status: z
+          .string()
+          .optional()
+          .describe(
+            "Exact status match (e.g. 'in-progress', 'blocked', 'completed', 'canceled'). v4 convention: NULL status means 'scheduled' until PR 88 Chunk D adds the explicit enum — pass status='scheduled' to match NULL-status rows.",
+          ),
+        clientSlug: z
+          .string()
+          .optional()
+          .describe("Narrow to items whose client resolves from this slug (e.g. 'convergix')."),
       }),
-      execute: async ({ weekOf, owner, resource, person }) => {
-        return getWeekItemsData(weekOf, owner, resource, person);
+      execute: async ({ weekOf, owner, resource, person, status, clientSlug }) => {
+        return getWeekItemsData(weekOf, owner, resource, person, status, clientSlug);
       },
     }),
 

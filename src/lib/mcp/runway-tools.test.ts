@@ -92,12 +92,49 @@ describe("registerRunwayTools", () => {
 
   it("get_projects passes all filters", async () => {
     await registeredTools.get("get_projects")!({ clientSlug: "convergix", status: "blocked", owner: "Kathy", waitingOn: "Daniel" });
-    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: "convergix", status: "blocked", owner: "Kathy", waitingOn: "Daniel" });
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: "convergix", status: "blocked", owner: "Kathy", waitingOn: "Daniel", engagementType: undefined });
+  });
+
+  it("get_projects passes engagementType filter (PR #88 Chunk B)", async () => {
+    await registeredTools.get("get_projects")!({ engagementType: "retainer" });
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({
+      clientSlug: undefined,
+      status: undefined,
+      owner: undefined,
+      waitingOn: undefined,
+      engagementType: "retainer",
+    });
+  });
+
+  it("get_projects passes engagementType='__null__' sentinel through", async () => {
+    await registeredTools.get("get_projects")!({ engagementType: "__null__" });
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({
+      clientSlug: undefined,
+      status: undefined,
+      owner: undefined,
+      waitingOn: undefined,
+      engagementType: "__null__",
+    });
   });
 
   it("get_week_items passes weekOf, owner, resource, and person", async () => {
     await registeredTools.get("get_week_items")!({ weekOf: "2026-04-06", owner: "Kathy", resource: "Roz", person: "Lane" });
-    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", "Kathy", "Roz", "Lane");
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", "Kathy", "Roz", "Lane", undefined, undefined);
+  });
+
+  it("get_week_items passes status filter (PR #88 Chunk B)", async () => {
+    await registeredTools.get("get_week_items")!({ weekOf: "2026-04-06", status: "blocked" });
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", undefined, undefined, undefined, "blocked", undefined);
+  });
+
+  it("get_week_items passes clientSlug filter (PR #88 Chunk B)", async () => {
+    await registeredTools.get("get_week_items")!({ clientSlug: "convergix" });
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined, undefined, undefined, undefined, "convergix");
+  });
+
+  it("get_week_items passes status='scheduled' sentinel through", async () => {
+    await registeredTools.get("get_week_items")!({ status: "scheduled" });
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined, undefined, undefined, "scheduled", undefined);
   });
 
   it("get_week_items_by_project calls getWeekItemsByProject", async () => {

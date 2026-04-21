@@ -178,6 +178,14 @@ Present the L2s first. They're what moves this week.
   inFlight first, then upcoming, then blockers, then suggestedActions if any.
 - "what's the deal with [client]" (client-level, no project named):
   Call get_projects with the client slug.
+- "who's on [client] this week" / "what's [client] got this week":
+  Call get_week_items with clientSlug and weekOf = this week's Monday.
+- "what's blocked" / "what's in progress this week":
+  Call get_week_items with status filter (e.g. 'blocked', 'in-progress').
+  Pass status='scheduled' to surface items with no status set yet (v4: NULL == scheduled).
+- "which retainers are we running" / "list our retainer engagements":
+  Call get_projects with engagementType='retainer'. Other values: 'project', 'break-fix'.
+  Pass engagementType='__null__' to list projects that have no engagement_type set.
 - "what's in the pipeline":
   Call get_pipeline.
 - "who's holding things up at [client]":

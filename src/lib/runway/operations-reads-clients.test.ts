@@ -230,6 +230,86 @@ describe("getProjectsFiltered", () => {
     // updatedAt should be a Date (drizzle timestamp mode).
     expect(cds.updatedAt).toBeInstanceOf(Date);
   });
+
+  // ── engagementType filter (PR #88 Chunk B) ────────────────
+
+  it("filters by engagementType (exact match on 'retainer')", async () => {
+    // Seed data leaves engagement_type NULL — tag two projects as retainer.
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET engagement_type = 'retainer' WHERE id IN ('pj-cds', 'pj-impact')`,
+      args: [],
+    });
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET engagement_type = 'project' WHERE id = 'pj-map'`,
+      args: [],
+    });
+
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered({ engagementType: "retainer" });
+
+    const ids = result.map((p) => p.id);
+    expect(ids).toEqual(expect.arrayContaining(["pj-cds", "pj-impact"]));
+    expect(ids).not.toContain("pj-map");
+    expect(result.every((p) => p.engagementType === "retainer")).toBe(true);
+  });
+
+  it("filters by engagementType='project' (excludes retainer + NULL)", async () => {
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET engagement_type = 'project' WHERE id = 'pj-map'`,
+      args: [],
+    });
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET engagement_type = 'retainer' WHERE id = 'pj-cds'`,
+      args: [],
+    });
+
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered({ engagementType: "project" });
+
+    expect(result.map((p) => p.id)).toEqual(["pj-map"]);
+  });
+
+  it("matches NULL engagement_type rows when engagementType='__null__' sentinel is passed", async () => {
+    // Tag pj-cds as retainer so only seven-minus-one rows are still NULL.
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET engagement_type = 'retainer' WHERE id = 'pj-cds'`,
+      args: [],
+    });
+
+    const { getProjectsFiltered, ENGAGEMENT_TYPE_NULL_SENTINEL } = await import(
+      "./operations-reads-clients"
+    );
+    expect(ENGAGEMENT_TYPE_NULL_SENTINEL).toBe("__null__");
+
+    const result = await getProjectsFiltered({ engagementType: ENGAGEMENT_TYPE_NULL_SENTINEL });
+
+    // Every row returned must have NULL engagement_type, and pj-cds (retainer) must not appear.
+    expect(result.length).toBeGreaterThan(0);
+    expect(result.every((p) => p.engagementType === null)).toBe(true);
+    expect(result.map((p) => p.id)).not.toContain("pj-cds");
+  });
+
+  it("returns empty array when no project matches the engagementType", async () => {
+    // No row has engagement_type = 'break-fix'.
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered({ engagementType: "break-fix" });
+    expect(result).toEqual([]);
+  });
+
+  it("combines engagementType with clientSlug filter (AND semantics)", async () => {
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET engagement_type = 'retainer' WHERE id IN ('pj-cds', 'pj-impact')`,
+      args: [],
+    });
+
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered({
+      clientSlug: "convergix",
+      engagementType: "retainer",
+    });
+
+    expect(result.map((p) => p.id)).toEqual(["pj-cds"]);
+  });
 });
 
 describe("getClientDetail", () => {

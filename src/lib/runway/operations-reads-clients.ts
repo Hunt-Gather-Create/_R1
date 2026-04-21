@@ -74,11 +74,25 @@ export async function getClientsWithCounts(opts?: GetClientsWithCountsOptions) {
   });
 }
 
+/**
+ * Sentinel string used to match projects with NULL `engagement_type`. Passing
+ * `engagementType: "__null__"` to `getProjectsFiltered` narrows to the
+ * un-categorized engagements. All other string values are treated as exact
+ * matches on the column. v4 convention (2026-04-21 / PR #88 Chunk B).
+ */
+export const ENGAGEMENT_TYPE_NULL_SENTINEL = "__null__";
+
 export async function getProjectsFiltered(opts?: {
   clientSlug?: string;
   status?: string;
   owner?: string;
   waitingOn?: string;
+  /**
+   * Exact match on projects.engagement_type. Pass the sentinel
+   * `ENGAGEMENT_TYPE_NULL_SENTINEL` ("__null__") to match rows where
+   * engagement_type IS NULL.
+   */
+  engagementType?: string;
 }) {
   const db = getRunwayDb();
   const allClients = await getAllClients();
@@ -107,6 +121,12 @@ export async function getProjectsFiltered(opts?: {
 
   if (opts?.waitingOn) {
     projectList = projectList.filter((p) => matchesSubstring(p.waitingOn, opts.waitingOn!));
+  }
+
+  if (opts?.engagementType) {
+    projectList = opts.engagementType === ENGAGEMENT_TYPE_NULL_SENTINEL
+      ? projectList.filter((p) => p.engagementType === null)
+      : projectList.filter((p) => p.engagementType === opts.engagementType);
   }
 
   return projectList.map((p) => ({

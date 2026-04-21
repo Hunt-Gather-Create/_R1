@@ -96,28 +96,44 @@ export function registerRunwayTools(server: McpServer) {
 
   server.tool(
     "get_projects",
-    "List L1 projects, optionally filtered. Returns { id, name, client, status, category, owner, resources, waitingOn, target, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }. Filter by clientSlug, exact status, owner substring, or waitingOn substring.",
+    "List L1 projects, optionally filtered. Returns { id, name, client, status, category, owner, resources, waitingOn, target, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }. Filter by clientSlug, exact status, owner substring, waitingOn substring, or engagementType (exact match — pass '__null__' to match projects with NULL engagement_type).",
     {
       clientSlug: z.string().optional().describe("Filter by client slug (e.g. 'convergix')"),
       status: z.string().optional().describe("Exact status match (e.g. 'in-production', 'blocked', 'awaiting-client')"),
       owner: z.string().optional().describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
       waitingOn: z.string().optional().describe("Filter by waitingOn name (case-insensitive substring, e.g. 'Daniel')"),
+      engagementType: z
+        .string()
+        .optional()
+        .describe(
+          "Exact match on engagement_type (e.g. 'retainer', 'project', 'break-fix'). Pass the sentinel '__null__' to narrow to projects with NULL engagement_type.",
+        ),
     },
-    async ({ clientSlug, status, owner, waitingOn }) =>
-      textResult(await getProjectsFiltered({ clientSlug, status, owner, waitingOn })),
+    async ({ clientSlug, status, owner, waitingOn, engagementType }) =>
+      textResult(await getProjectsFiltered({ clientSlug, status, owner, waitingOn, engagementType })),
   );
 
   server.tool(
     "get_week_items",
-    "Get L2 week items for a specific week. Returns { id, projectId, clientId, date, dayOfWeek, title, account, category, status, owner, resources, notes, startDate, endDate, blockedBy, updatedAt }. Filter by person (owner OR resource — preferred for plate queries), owner only, or resource only. When weekOf is omitted, returns all weeks.",
+    "Get L2 week items for a specific week. Returns { id, projectId, clientId, date, dayOfWeek, title, account, category, status, owner, resources, notes, startDate, endDate, blockedBy, updatedAt }. Filter by person (owner OR resource — preferred for plate queries), owner only, resource only, status, or clientSlug. When weekOf is omitted, returns all weeks. All filters AND together.",
     {
       weekOf: z.string().optional().describe("ISO date of the Monday (e.g. '2026-04-06'). Omit to return all weeks."),
       owner: z.string().optional().describe("Filter by owner name only (case-insensitive substring, e.g. 'Kathy')"),
       resource: z.string().optional().describe("Filter by resource name only (case-insensitive substring, e.g. 'Roz')"),
       person: z.string().optional().describe("Filter where the person is owner OR resource (use this for plate queries, e.g. 'Kathy')"),
+      status: z
+        .string()
+        .optional()
+        .describe(
+          "Exact status match (e.g. 'in-progress', 'blocked', 'completed', 'canceled'). v4 convention: NULL status means 'scheduled' until PR 88 Chunk D adds the explicit enum — pass status='scheduled' to match NULL-status rows.",
+        ),
+      clientSlug: z
+        .string()
+        .optional()
+        .describe("Narrow to week items whose client resolves from this slug (e.g. 'convergix')."),
     },
-    async ({ weekOf, owner, resource, person }) =>
-      textResult(await getWeekItemsData(weekOf, owner, resource, person)),
+    async ({ weekOf, owner, resource, person, status, clientSlug }) =>
+      textResult(await getWeekItemsData(weekOf, owner, resource, person, status, clientSlug)),
   );
 
   server.tool("get_week_items_by_project", "List all non-completed week items (L2s) under a given project id. Use for drill-down 'what's left on Convergix / CDS?' queries.", {

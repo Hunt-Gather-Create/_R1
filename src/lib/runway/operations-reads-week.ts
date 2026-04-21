@@ -132,7 +132,7 @@ export async function getWeekItemsByProject(
 /**
  * Get week items, optionally filtered.
  *
- * Filtering semantics:
+ * Filtering semantics (all filters AND together):
  * - `owner` (string): substring-match on the owner column.
  * - `resource` (string): substring-match on the resources column.
  * - `person` (string): substring-match on owner OR resources. Use when the caller
@@ -141,12 +141,20 @@ export async function getWeekItemsByProject(
  *   "what's on Kathy's plate" should surface items she's doing the work on even
  *   when she isn't the accountable owner. When `person` is given alongside
  *   `owner` and/or `resource`, all filters apply (AND), matching SQL intuition.
+ * - `status` (string): exact status match (e.g. `"in-progress"`, `"blocked"`,
+ *   `"completed"`). v4 convention (2026-04-21): NULL status on a week item is
+ *   treated as the implicit "scheduled" state until PR 88 Chunk D adds an
+ *   explicit enum. Pass `status="scheduled"` to match NULL-status rows.
+ * - `clientSlug` (string): narrow to week items whose client resolves from the
+ *   given slug. Unknown slugs short-circuit to an empty list.
  */
 export async function getWeekItemsData(
   weekOf?: string,
   owner?: string,
   resource?: string,
-  person?: string
+  person?: string,
+  status?: string,
+  clientSlug?: string
 ) {
   const db = getRunwayDb();
   const clientNameById = await getClientNameMap();
@@ -162,6 +170,12 @@ export async function getWeekItemsData(
         .from(weekItems)
         .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
 
+  if (clientSlug) {
+    const client = await getClientBySlug(clientSlug);
+    if (!client) return [];
+    items = items.filter((item) => item.clientId === client.id);
+  }
+
   if (owner) {
     items = items.filter((item) => matchesSubstring(item.owner, owner));
   }
@@ -175,6 +189,14 @@ export async function getWeekItemsData(
       (item) =>
         matchesSubstring(item.owner, person) || matchesSubstring(item.resources, person)
     );
+  }
+
+  if (status) {
+    // v4 convention: NULL status == "scheduled" sentinel. Exact match for all
+    // other values (in-progress, blocked, completed, canceled).
+    items = status === "scheduled"
+      ? items.filter((item) => item.status === null)
+      : items.filter((item) => item.status === status);
   }
 
   return items.map((item) => ({
