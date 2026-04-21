@@ -5,11 +5,21 @@ import { z } from "zod";
 import { postMutationUpdate } from "./updates-channel";
 import {
   getClientsWithCounts,
+  getClientDetail,
   getProjectsFiltered,
   getPipelineData,
   getWeekItemsData,
+  getWeekItemsInRange,
+  getOrphanWeekItems,
   getPersonWorkload,
   getProjectStatus,
+  findUpdates,
+  getUpdateChain,
+  getFlags,
+  getDataHealth,
+  getCurrentBatch,
+  getBatchContents,
+  getCascadeLog,
   updateProjectStatus,
   addProject,
   addUpdate,
@@ -592,6 +602,114 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         });
         return { result: result.message };
       },
+    }),
+
+    // ── Tier 2 reads — deep views + audit trail (PR #86 v4) ──
+
+    get_client_detail: tool({
+      description:
+        "Deep view of a single client. Returns { id, name, slug, nicknames, contractValue, contractTerm, contractStatus, team, clientContacts, createdAt, updatedAt, projects[] (full v4 rows with dueDate, startDate, endDate, engagementType, contractStart, contractEnd), pipelineItems[], recentUpdates[] }. Use for 'what's the deal with [client]' where you want contract + pipeline + recent activity all at once.",
+      inputSchema: z.object({
+        slug: z.string().describe("Client slug (e.g. 'convergix')"),
+        recentUpdatesLimit: z.number().optional().describe("Cap on recentUpdates[]. Default 20."),
+      }),
+      execute: async ({ slug, recentUpdatesLimit }) => {
+        const result = await getClientDetail(slug, { recentUpdatesLimit });
+        if (!result) return { error: `Client '${slug}' not found.` };
+        return result;
+      },
+    }),
+
+    get_orphan_week_items: tool({
+      description:
+        "List week items whose projectId is null — L2s that drifted off their parent L1. Returns raw WeekItemRow[]. Optional clientSlug narrows to one account.",
+      inputSchema: z.object({
+        clientSlug: z.string().optional().describe("Narrow to one client slug (optional)."),
+      }),
+      execute: async ({ clientSlug }) => getOrphanWeekItems(clientSlug),
+    }),
+
+    get_week_items_range: tool({
+      description:
+        "List week items whose start_date (fallback to legacy date) falls within [fromDate, toDate] inclusive. Returns raw WeekItemRow[]. Use for cross-week date drill-downs that don't fit the weekOf + person shape of get_week_items. Filters: clientSlug, owner substring, category (delivery, review, kickoff, deadline, approval, launch).",
+      inputSchema: z.object({
+        fromDate: z.string().describe("Inclusive lower bound — ISO YYYY-MM-DD."),
+        toDate: z.string().describe("Inclusive upper bound — ISO YYYY-MM-DD."),
+        clientSlug: z.string().optional().describe("Narrow to one client slug."),
+        owner: z.string().optional().describe("Owner substring (case-insensitive)."),
+        category: z.string().optional().describe("Exact category (delivery, review, kickoff, deadline, approval, launch)."),
+      }),
+      execute: async ({ fromDate, toDate, clientSlug, owner, category }) =>
+        getWeekItemsInRange(fromDate, toDate, clientSlug, owner, category),
+    }),
+
+    find_updates: tool({
+      description:
+        "Audit-trail search over the updates table. Returns AuditUpdate[] with { id, clientName, projectName, updatedBy, updateType, summary, previousValue, newValue, batchId, triggeredByUpdateId, createdAt }. All filters optional. Use this (not get_recent_updates) when you need the update `id` or `triggeredByUpdateId` to follow a cascade or reconcile a batch.",
+      inputSchema: z.object({
+        since: z.string().optional().describe("Inclusive lower bound on createdAt (ISO)."),
+        until: z.string().optional().describe("Inclusive upper bound on createdAt (ISO)."),
+        clientSlug: z.string().optional().describe("Narrow to one client slug."),
+        updatedBy: z.string().optional().describe("Substring match on updates.updated_by."),
+        updateType: z.string().optional().describe("Exact updateType (e.g. 'status-change', 'cascade-status-change')."),
+        batchId: z.string().optional().describe("Exact match on updates.batch_id."),
+        projectName: z.string().optional().describe("Substring match against linked project name."),
+        limit: z.number().optional().describe("Cap on rows. Default 100."),
+      }),
+      execute: async (params) => findUpdates(params),
+    }),
+
+    get_update_chain: tool({
+      description:
+        "Walk the cascade audit linkage for a given update id. Returns { root, chain: AuditUpdate[] } — root is the ancestor with no triggeredByUpdateId, chain is every row from root to leaf ordered by createdAt ascending. Use to answer 'why did X change?' by following the trigger chain.",
+      inputSchema: z.object({
+        updateId: z.string().describe("updates.id to follow. Usually from find_updates or a mutation response's data.auditId."),
+      }),
+      execute: async ({ updateId }) => getUpdateChain(updateId),
+    }),
+
+    // ── Tier 3 reads — observability & flags (PR #86 v4) ──
+
+    get_flags: tool({
+      description:
+        "Aggregate surface for every soft flag the board raises: past-end L2s, stale L1s, waitingOn bottlenecks, today/tomorrow deadlines, resource conflicts, retainer renewals, expired contracts. Returns { flags: RunwayFlag[], retainerRenewalDue: RetainerRenewalPill[], contractExpired: ContractExpiredPill[] }. Narrow via clientSlug or personName.",
+      inputSchema: z.object({
+        clientSlug: z.string().optional().describe("Narrow to one client slug."),
+        personName: z.string().optional().describe("Narrow to flags where owner/waitingOn matches (substring)."),
+      }),
+      execute: async ({ clientSlug, personName }) => getFlags({ clientSlug, personName }),
+    }),
+
+    get_data_health: tool({
+      description:
+        "Health snapshot of the Runway DB. Returns { totals, orphans: { weekItemsWithoutProject, projectsWithoutClient, updatesWithDanglingTriggeredBy }, stale: { staleProjects, pastEndL2s }, batch: { activeBatchId, distinctBatchIdsLast7Days }, lastUpdateAt }. Use before/after cleanup batches or when asked 'is everything linked correctly?'",
+      inputSchema: z.object({}),
+      execute: async () => getDataHealth(),
+    }),
+
+    get_current_batch: tool({
+      description:
+        "Return the currently-active batch for THIS process. Returns { active: false } when not batching, otherwise { active: true, batchId, itemCount, startedAt, startedBy, mostRecentAt }. Batch state is per-process, not persisted.",
+      inputSchema: z.object({}),
+      execute: async () => getCurrentBatch(),
+    }),
+
+    get_batch_contents: tool({
+      description:
+        "Retrieve every audit row tagged with the given batchId, grouped by (client, project) and sorted within each group by createdAt asc. Returns { batchId, totalUpdates, groups: [{ clientName, projectName, updates }] }. Use to review what a batch did before publishing or reconcile after.",
+      inputSchema: z.object({
+        batchId: z.string().describe("Batch id to inspect."),
+      }),
+      execute: async ({ batchId }) => getBatchContents(batchId),
+    }),
+
+    get_cascade_log: tool({
+      description:
+        "Recent cascade-generated audit rows within a time window, grouped by parent update id. Returns { windowMinutes, since, totalCascadeRows, groups: [{ parentUpdateId, parent, children }] }. Default window is 60 minutes. Use to see which cascades fired recently or trace cascade fan-out.",
+      inputSchema: z.object({
+        windowMinutes: z.number().optional().describe("Look-back window in minutes. Default 60."),
+      }),
+      execute: async ({ windowMinutes }) => getCascadeLog(windowMinutes),
     }),
   };
 }
