@@ -116,6 +116,9 @@ describe("updateProjectField", () => {
         previousValue: "2026-04-15",
         newValue: "2026-04-25",
         cascadedItems: [],
+        // PR #86: structured per-item trace (empty — no linked deadline items in this test).
+        cascadeDetail: [],
+        auditId: expect.any(String),
       });
     }
     expect(mockUpdateSet).toHaveBeenCalledWith(
@@ -184,6 +187,8 @@ describe("updateProjectField", () => {
         previousValue: "active",
         newValue: "awaiting-client",
         cascadedItems: [],
+        cascadeDetail: [],
+        auditId: expect.any(String),
       });
     }
     expect(mockUpdateSet).toHaveBeenCalledWith(
@@ -434,6 +439,78 @@ describe("updateProjectField", () => {
 
     expect(mockInsertValues.mock.calls).toHaveLength(1);
     expect(mockInsertValues.mock.calls[0][0].updateType).toBe("field-change");
+  });
+
+  // PR #86: MCP/bot consumers parse cascade outcomes from `data.cascadeDetail`
+  // rather than the prose `message` string.
+  describe("structured response (cascadeDetail + auditId)", () => {
+    it("returns cascadeDetail with each linked deadline item's audit id", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+      mockGetLinkedDeadlineItems.mockResolvedValue([
+        { id: "wi-1", title: "Code handoff", category: "deadline", date: "2026-04-15" },
+        { id: "wi-2", title: "Go live", category: "deadline", date: null },
+      ]);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "dueDate",
+        newValue: "2026-04-28",
+        updatedBy: "kathy",
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.cascadeDetail).toEqual([
+        {
+          itemId: "wi-1",
+          itemTitle: "Code handoff",
+          field: "date",
+          previousValue: "2026-04-15",
+          newValue: "2026-04-28",
+          auditId: expect.any(String),
+        },
+        {
+          itemId: "wi-2",
+          itemTitle: "Go live",
+          field: "date",
+          previousValue: null,
+          newValue: "2026-04-28",
+          auditId: expect.any(String),
+        },
+      ]);
+
+      // Back-compat: `cascadedItems` is still the title array.
+      expect(result.data?.cascadedItems).toEqual(["Code handoff", "Go live"]);
+
+      // cascadeDetail.auditId values match the child audit inserts.
+      const calls = mockInsertValues.mock.calls.map((c) => c[0]);
+      expect(result.data?.auditId).toBe(calls[0].id);
+      expect(result.data?.cascadeDetail[0].auditId).toBe(calls[1].id);
+      expect(result.data?.cascadeDetail[1].auditId).toBe(calls[2].id);
+    });
+
+    it("returns empty cascadeDetail for non-dueDate field changes", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "owner",
+        newValue: "Lane",
+        updatedBy: "kathy",
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.cascadeDetail).toEqual([]);
+      expect(result.data?.auditId).toBeTruthy();
+      expect(mockGetLinkedDeadlineItems).not.toHaveBeenCalled();
+    });
   });
 });
 

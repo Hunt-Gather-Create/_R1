@@ -23,6 +23,11 @@ import {
   normalizeResourcesString,
 } from "./operations-utils";
 import type { OperationResult } from "./operations-utils";
+import type {
+  CascadedItemInfo,
+  MutationResponse,
+  UpdateProjectFieldData,
+} from "./mutation-response";
 
 // ── Delete Project ──────────────────────────────────────
 
@@ -106,7 +111,7 @@ export interface UpdateProjectFieldParams {
 
 export async function updateProjectField(
   params: UpdateProjectFieldParams
-): Promise<OperationResult> {
+): Promise<MutationResponse<UpdateProjectFieldData>> {
   const { clientSlug, projectName, field, newValue, updatedBy } = params;
   const db = getRunwayDb();
 
@@ -139,17 +144,27 @@ export async function updateProjectField(
   const dup = await checkDuplicate(idemKey, {
     ok: true,
     message: "Update already applied (duplicate request).",
-    data: { clientName: client.name, projectName: project.name, field, previousValue, newValue: effectiveNewValue },
+    data: {
+      clientName: client.name,
+      projectName: project.name,
+      field,
+      previousValue,
+      newValue: effectiveNewValue,
+      cascadedItems: [],
+      cascadeDetail: [],
+    },
   });
-  if (dup) return dup;
+  if (dup) return dup as MutationResponse<UpdateProjectFieldData>;
 
   // Pre-generate parent audit id so cascade rows can link via triggeredByUpdateId.
   const parentAuditId = generateId();
 
   // Wrap project update + cascade in a single transaction for atomicity.
-  // Track the cascaded week-item ids for audit row emission after commit.
+  // Track cascaded week-item ids + prior dates for audit rows and for the
+  // structured `cascadeDetail` (PR #86).
   const cascadedItems: string[] = [];
   const cascadedIds: string[] = [];
+  const cascadedPrevDates: Array<string | null> = [];
 
   await db.transaction(async (tx) => {
     await tx
@@ -167,6 +182,12 @@ export async function updateProjectField(
           .where(eq(weekItems.id, item.id));
         cascadedItems.push(item.title);
         cascadedIds.push(item.id);
+        // v4 / PR #86: capture prior `date` so cascadeDetail can surface
+        // previousValue → newValue for each L2. `date` may be absent on
+        // legacy rows; null is the correct "was unset" value.
+        const prev =
+          (item as { date?: string | null }).date ?? null;
+        cascadedPrevDates.push(prev);
       }
     }
   });
@@ -195,16 +216,20 @@ export async function updateProjectField(
   });
 
   // v4 §8: emit child audit rows for each cascaded week item, linked to parent.
+  // Capture each child's audit id for the structured `cascadeDetail`
+  // response field (PR #86).
+  const cascadeDetail: CascadedItemInfo[] = [];
   for (let i = 0; i < cascadedIds.length; i++) {
     const itemId = cascadedIds[i];
     const itemTitle = cascadedItems[i];
+    const prevDate = cascadedPrevDates[i];
     const childIdemKey = generateIdempotencyKey(
       "cascade-duedate",
       parentAuditId,
       itemId,
       effectiveNewValue
     );
-    await insertAuditRecord({
+    const childAuditId = await insertAuditRecord({
       idempotencyKey: childIdemKey,
       projectId: project.id,
       clientId: client.id,
@@ -215,6 +240,14 @@ export async function updateProjectField(
       summary: `Cascaded from ${project.name} dueDate change: ${itemTitle} → ${effectiveNewValue}`,
       metadata: JSON.stringify({ weekItemId: itemId, field: "date" }),
       triggeredByUpdateId: parentAuditId,
+    });
+    cascadeDetail.push({
+      itemId,
+      itemTitle,
+      field: "date",
+      previousValue: prevDate,
+      newValue: effectiveNewValue,
+      auditId: childAuditId,
     });
   }
 
@@ -228,6 +261,8 @@ export async function updateProjectField(
       previousValue,
       newValue: effectiveNewValue,
       cascadedItems,
+      cascadeDetail,
+      auditId: parentAuditId,
     },
   };
 }
