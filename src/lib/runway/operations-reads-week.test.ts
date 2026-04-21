@@ -3,6 +3,7 @@ import {
   getLinkedDeadlineItems,
   getPersonWorkload,
   getWeekItemsByProject,
+  getWeekItemsData,
   chicagoISODate,
 } from "./operations-reads-week";
 import { projects, weekItems, clients } from "@/lib/db/runway-schema";
@@ -563,5 +564,67 @@ describe("getPersonWorkload — v4 contract", () => {
 
     const result = await getPersonWorkload("Kathy", { now: NOW });
     expect(result.weekItems.thisWeek.map((i) => i.id)).toEqual(["w-a", "w-c", "w-b"]);
+  });
+});
+
+describe("getWeekItemsData — v4 enriched response shape", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // DB mock for the two select().from(weekItems) chains used by getWeekItemsData:
+  //   - no weekOf:     select().from(weekItems).orderBy()
+  //   - with weekOf:   select().from(weekItems).where().orderBy()
+  function mockWeekItemsDb(rows: ReturnType<typeof createWeekItem>[]) {
+    const mockOrderBy = vi.fn().mockResolvedValue(rows);
+    const mockWhere = vi.fn().mockReturnValue({ orderBy: mockOrderBy });
+    const mockFrom = vi.fn().mockReturnValue({
+      where: mockWhere,
+      orderBy: mockOrderBy,
+    });
+    vi.mocked(getRunwayDb).mockReturnValue({
+      select: vi.fn().mockReturnValue({ from: mockFrom }),
+    } as never);
+  }
+
+  it("exposes v4 enriched fields: id, projectId, clientId, status, startDate, endDate, blockedBy, updatedAt", async () => {
+    const updatedAt = new Date("2026-04-15T12:00:00Z");
+    const item = createWeekItem({
+      id: "wi-enrich",
+      projectId: "p-1",
+      clientId: "c-1",
+      status: "in-progress",
+      startDate: "2026-04-22",
+      endDate: "2026-04-23",
+      blockedBy: JSON.stringify(["wi-other"]),
+      updatedAt,
+    });
+    mockWeekItemsDb([item]);
+
+    const result = await getWeekItemsData();
+    expect(result).toHaveLength(1);
+    const row = result[0];
+    expect(row.id).toBe("wi-enrich");
+    expect(row.projectId).toBe("p-1");
+    expect(row.clientId).toBe("c-1");
+    expect(row.status).toBe("in-progress");
+    expect(row.startDate).toBe("2026-04-22");
+    expect(row.endDate).toBe("2026-04-23");
+    expect(row.blockedBy).toBe(JSON.stringify(["wi-other"]));
+    expect(row.updatedAt).toEqual(updatedAt);
+  });
+
+  it("preserves legacy fields: date, dayOfWeek, title, account, category, owner, resources, notes", async () => {
+    const item = createWeekItem({ id: "wi-legacy", title: "Keep this", notes: "n/a" });
+    mockWeekItemsDb([item]);
+
+    const result = await getWeekItemsData();
+    expect(result[0]).toMatchObject({
+      title: "Keep this",
+      date: "2026-04-07",
+      dayOfWeek: "monday",
+      category: "deadline",
+      notes: "n/a",
+    });
   });
 });

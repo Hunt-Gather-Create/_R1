@@ -100,14 +100,24 @@ export async function getWeekItemsData(
   }
 
   return items.map((item) => ({
+    id: item.id,
+    projectId: item.projectId,
+    clientId: item.clientId,
     date: item.date,
     dayOfWeek: item.dayOfWeek,
     title: item.title,
     account: item.clientId ? clientNameById.get(item.clientId) ?? null : null,
     category: item.category,
+    status: item.status,
     owner: item.owner,
     resources: item.resources,
     notes: item.notes,
+    // v4 convention (2026-04-21): enriched timing + dependency + audit fields.
+    // All nullable; existing consumers ignore unknown keys.
+    startDate: item.startDate,
+    endDate: item.endDate,
+    blockedBy: item.blockedBy,
+    updatedAt: item.updatedAt,
   }));
 }
 
