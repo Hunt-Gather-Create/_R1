@@ -55,6 +55,15 @@ export default async function RunwayPage() {
       target: p.target ?? undefined,
       notes: p.notes ?? undefined,
       staleDays: p.staleDays ?? undefined,
+      // v4 timing + retainer metadata (chunk 3 #4, #5)
+      startDate: p.startDate ?? null,
+      endDate: p.endDate ?? null,
+      engagementType: (p.engagementType ?? null) as
+        | "project"
+        | "retainer"
+        | "break-fix"
+        | null,
+      contractEnd: p.contractEnd ?? null,
     })),
   }));
 

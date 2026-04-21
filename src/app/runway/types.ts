@@ -37,9 +37,15 @@ export interface TriageItem {
   target?: string;
   notes?: string;
   staleDays?: number;
+  // v4: timing + retainer metadata for soft surfaces
+  startDate?: string | null;
+  endDate?: string | null;
+  engagementType?: "project" | "retainer" | "break-fix" | null;
+  contractEnd?: string | null;
 }
 
 export interface DayItemEntry {
+  id?: string;
   title: string;
   account: string;
   owner?: string;
@@ -48,6 +54,20 @@ export interface DayItemEntry {
   notes?: string;
   // v4: L2 status enables status-aware filters in flag detectors.
   // null/undefined = not-started; "in-progress" | "blocked" | "completed".
+  status?: string | null;
+  // v4: start/end dates + dependency chain. End null = single-day item.
+  startDate?: string | null;
+  endDate?: string | null;
+  // Milliseconds since epoch — used for past-end "last touched N days ago" math.
+  updatedAtMs?: number | null;
+  // v4: explicit dependency on upstream L2 ids (runway-v4-convention.md §"blocked_by").
+  // Resolved blockers carry title/status for inline rendering when visible.
+  blockedBy?: BlockedByRef[] | null;
+}
+
+export interface BlockedByRef {
+  id: string;
+  title: string;
   status?: string | null;
 }
 
