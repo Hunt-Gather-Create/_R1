@@ -43,7 +43,9 @@ function createWeekItem(overrides: Record<string, unknown> = {}) {
     endDate: null,
     blockedBy: null,
     title: "Test Item",
-    status: null,
+    // v4 (PR 88 Chunk D): new L2s default to the explicit 'scheduled' status.
+    // Tests that need legacy NULL semantics should pass `status: null` explicitly.
+    status: "scheduled",
     category: "deadline",
     owner: null,
     resources: null,
@@ -683,6 +685,20 @@ describe("getWeekItemsData — status filter (v4 PR #88 Chunk B)", () => {
 
     const result = await getWeekItemsData(undefined, undefined, undefined, undefined, "scheduled");
     expect(result.map((r) => r.id)).toEqual(["wi-scheduled-a", "wi-scheduled-b"]);
+  });
+
+  it("matches both NULL and explicit 'scheduled' when filtering status='scheduled' (PR 88 Chunk D)", async () => {
+    // After the backfill migration runs, most rows will be explicit 'scheduled'.
+    // Before it runs, rows are still NULL. The filter must cover both during
+    // the rollout window.
+    mockWeekItemsDb([
+      createWeekItem({ id: "wi-null", status: null }),
+      createWeekItem({ id: "wi-explicit", status: "scheduled" }),
+      createWeekItem({ id: "wi-active", status: "in-progress" }),
+    ]);
+
+    const result = await getWeekItemsData(undefined, undefined, undefined, undefined, "scheduled");
+    expect(result.map((r) => r.id)).toEqual(["wi-null", "wi-explicit"]);
   });
 
   it("does not match NULL-status items when status is a non-sentinel value", async () => {

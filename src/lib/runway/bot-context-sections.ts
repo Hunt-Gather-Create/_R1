@@ -181,8 +181,10 @@ Present the L2s first. They're what moves this week.
 - "who's on [client] this week" / "what's [client] got this week":
   Call get_week_items with clientSlug and weekOf = this week's Monday.
 - "what's blocked" / "what's in progress this week":
-  Call get_week_items with status filter (e.g. 'blocked', 'in-progress').
-  Pass status='scheduled' to surface items with no status set yet (v4: NULL == scheduled).
+  Call get_week_items with status filter. Valid values: 'in-progress', 'blocked',
+  'at-risk', 'completed', 'canceled', 'scheduled'. 'scheduled' is the default for
+  new L2s and also matches legacy NULL-status rows during the Chunk D backfill
+  rollout (status IS NULL OR status = 'scheduled').
 - "which retainers are we running" / "list our retainer engagements":
   Call get_projects with engagementType='retainer'. Other values: 'project', 'break-fix'.
   Pass engagementType='__null__' to list projects that have no engagement_type set.

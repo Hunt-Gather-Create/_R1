@@ -64,6 +64,13 @@ export const weekItems = sqliteTable("week_items", {
   endDate: text("end_date"), // ISO date; null for single-day items
   blockedBy: text("blocked_by"), // JSON array of week_item ids (e.g. `["abc","def"]`)
   title: text("title").notNull(),
+  // L2 status values (v4 convention, PR #88 Chunk D):
+  //   completed | in-progress | blocked | at-risk | scheduled | canceled | null (legacy)
+  // `scheduled` is the explicit default for new L2s. NULL remains readable
+  // during the rollout and is treated equivalently to 'scheduled' by the
+  // bucket + filter paths. The backfill script
+  // scripts/runway-migrations/2026-04-21-backfill-scheduled-status.ts flips
+  // existing NULLs to the explicit value.
   status: text("status"),
   category: text("category"), // delivery, review, kickoff, deadline, approval, launch
   owner: text("owner"),

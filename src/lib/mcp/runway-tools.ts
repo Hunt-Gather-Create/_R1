@@ -126,7 +126,7 @@ export function registerRunwayTools(server: McpServer) {
         .string()
         .optional()
         .describe(
-          "Exact status match (e.g. 'in-progress', 'blocked', 'completed', 'canceled'). v4 convention: NULL status means 'scheduled' until PR 88 Chunk D adds the explicit enum — pass status='scheduled' to match NULL-status rows.",
+          "Exact status match. Valid values: 'in-progress', 'blocked', 'at-risk', 'completed', 'canceled', 'scheduled'. 'scheduled' is the default for new L2s (PR 88 Chunk D) and also matches legacy NULL-status rows during the rollout backfill (status IS NULL OR status = 'scheduled').",
         ),
       clientSlug: z
         .string()

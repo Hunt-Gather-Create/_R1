@@ -142,9 +142,11 @@ export async function getWeekItemsByProject(
  *   when she isn't the accountable owner. When `person` is given alongside
  *   `owner` and/or `resource`, all filters apply (AND), matching SQL intuition.
  * - `status` (string): exact status match (e.g. `"in-progress"`, `"blocked"`,
- *   `"completed"`). v4 convention (2026-04-21): NULL status on a week item is
- *   treated as the implicit "scheduled" state until PR 88 Chunk D adds an
- *   explicit enum. Pass `status="scheduled"` to match NULL-status rows.
+ *   `"completed"`). v4 convention (2026-04-21, PR 88 Chunk D): `"scheduled"`
+ *   is a first-class L2 status. For backward compatibility during rollout,
+ *   `status="scheduled"` matches rows where `status IS NULL OR status =
+ *   'scheduled'`. The backfill migration flips existing NULLs to the
+ *   explicit value so the NULL branch becomes dead once applied.
  * - `clientSlug` (string): narrow to week items whose client resolves from the
  *   given slug. Unknown slugs short-circuit to an empty list.
  */
@@ -192,10 +194,14 @@ export async function getWeekItemsData(
   }
 
   if (status) {
-    // v4 convention: NULL status == "scheduled" sentinel. Exact match for all
-    // other values (in-progress, blocked, completed, canceled).
+    // v4 convention (PR 88 Chunk D): `scheduled` is a first-class status value
+    // alongside in-progress / blocked / completed / canceled / at-risk. For
+    // backward compat during rollout the `scheduled` branch also matches rows
+    // with status=NULL so callers don't need to know whether the backfill has
+    // run yet. The backfill migration flips NULL -> 'scheduled' so the NULL
+    // side becomes dead post-apply.
     items = status === "scheduled"
-      ? items.filter((item) => item.status === null)
+      ? items.filter((item) => item.status === null || item.status === "scheduled")
       : items.filter((item) => item.status === status);
   }
 
