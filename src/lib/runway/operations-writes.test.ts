@@ -227,6 +227,10 @@ describe("updateProjectStatus", () => {
         previousStatus: "in-production",
         newStatus: "completed",
         cascadedItems: [],
+        // PR #86: structured cascade trace (empty — no cascade statuses here).
+        cascadeDetail: [],
+        // PR #86: parent audit id — stable in this mock (`generateId` is a counter).
+        auditId: expect.any(String),
       });
     }
   });
@@ -500,5 +504,80 @@ describe("updateProjectStatus", () => {
     // Only the parent audit row — no cascade children.
     expect(mockInsertValues.mock.calls).toHaveLength(1);
     expect(mockInsertValues.mock.calls[0][0].updateType).toBe("status-change");
+  });
+
+  // PR #86: MCP/bot consumers parse cascade outcomes from `data` rather than
+  // scraping `message`. `cascadeDetail` carries per-item audit ids so callers
+  // can resolve back to the `updates` row without a follow-up query.
+  describe("structured response (cascadeDetail + auditId)", () => {
+    it("includes cascadeDetail with audit ids for every cascaded item", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+      mockGetLinkedWeekItems.mockResolvedValue([
+        { id: "wi1", title: "CDS Review", status: null },
+        { id: "wi2", title: "CDS Delivery", status: "in-progress" },
+      ]);
+
+      const { updateProjectStatus } = await import("./operations-writes");
+      const result = await updateProjectStatus({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        newStatus: "completed",
+        updatedBy: "kathy",
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.cascadeDetail).toEqual([
+        {
+          itemId: "wi1",
+          itemTitle: "CDS Review",
+          field: "status",
+          previousValue: null,
+          newValue: "completed",
+          auditId: expect.any(String),
+        },
+        {
+          itemId: "wi2",
+          itemTitle: "CDS Delivery",
+          field: "status",
+          previousValue: "in-progress",
+          newValue: "completed",
+          auditId: expect.any(String),
+        },
+      ]);
+
+      // Back-compat: `cascadedItems` is still the array of titles.
+      expect(result.data?.cascadedItems).toEqual(["CDS Review", "CDS Delivery"]);
+
+      // auditId matches the parent `status-change` row id.
+      const parentInsert = mockInsertValues.mock.calls[0][0];
+      expect(result.data?.auditId).toBe(parentInsert.id);
+
+      // Each cascadeDetail.auditId matches the corresponding child insert.
+      const childInserts = mockInsertValues.mock.calls.slice(1).map((c) => c[0]);
+      expect(result.data?.cascadeDetail[0].auditId).toBe(childInserts[0].id);
+      expect(result.data?.cascadeDetail[1].auditId).toBe(childInserts[1].id);
+    });
+
+    it("emits empty cascadeDetail but populated auditId for non-cascade status", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectStatus } = await import("./operations-writes");
+      const result = await updateProjectStatus({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        newStatus: "in-production",
+        updatedBy: "kathy",
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.cascadeDetail).toEqual([]);
+      expect(result.data?.auditId).toBeTruthy();
+      // getLinkedWeekItems should not even run for non-cascade statuses.
+      expect(mockGetLinkedWeekItems).not.toHaveBeenCalled();
+    });
   });
 });
