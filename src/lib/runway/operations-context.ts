@@ -6,9 +6,9 @@
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
-import { clients as clientsTable, updates, teamMembers } from "@/lib/db/runway-schema";
+import { clients as clientsTable, projects, updates, teamMembers } from "@/lib/db/runway-schema";
 import { eq, desc } from "drizzle-orm";
-import { getClientBySlug, getClientNameMap } from "./operations";
+import { getClientBySlug, getClientNameMap, matchesSubstring } from "./operations";
 
 function safeJsonParse<T>(json: string | null, defaultValue: T): T {
   if (!json) return defaultValue;
@@ -23,19 +23,34 @@ function parseJsonArray(json: string | null): string[] {
   return safeJsonParse<string[]>(json, []);
 }
 
-export async function getUpdatesData(opts?: {
+export interface GetUpdatesDataOptions {
   clientSlug?: string;
   limit?: number;
-}) {
+  /** Lower bound on createdAt (inclusive). ISO string. v4 (2026-04-21). */
+  since?: string;
+  /** Upper bound on createdAt (inclusive). ISO string. v4 (2026-04-21). */
+  until?: string;
+  /** Filter to updates tagged with this batchId. v4 (2026-04-21). */
+  batchId?: string;
+  /** Exact match on update_type column. v4 (2026-04-21). */
+  updateType?: string;
+  /** Case-insensitive substring match against the linked project name. v4 (2026-04-21). */
+  projectName?: string;
+}
+
+export async function getUpdatesData(opts?: GetUpdatesDataOptions) {
   const db = getRunwayDb();
   const limit = opts?.limit ?? 20;
   const clientNameById = await getClientNameMap();
 
+  // Fetch unbounded-ordered updates and filter in JS. v4 filters are additive
+  // and mostly low-cardinality; a full table scan is acceptable at current
+  // volume and keeps the WHERE clause composition simple. Apply limit after
+  // all filters so callers get up to `limit` post-filter rows.
   let updateList = await db
     .select()
     .from(updates)
-    .orderBy(desc(updates.createdAt))
-    .limit(limit);
+    .orderBy(desc(updates.createdAt));
 
   if (opts?.clientSlug) {
     const client = await getClientBySlug(opts.clientSlug);
@@ -43,6 +58,41 @@ export async function getUpdatesData(opts?: {
       updateList = updateList.filter((u) => u.clientId === client.id);
     }
   }
+
+  if (opts?.since) {
+    const sinceDate = new Date(opts.since);
+    updateList = updateList.filter(
+      (u) => u.createdAt != null && u.createdAt >= sinceDate
+    );
+  }
+
+  if (opts?.until) {
+    const untilDate = new Date(opts.until);
+    updateList = updateList.filter(
+      (u) => u.createdAt != null && u.createdAt <= untilDate
+    );
+  }
+
+  if (opts?.batchId) {
+    updateList = updateList.filter((u) => u.batchId === opts.batchId);
+  }
+
+  if (opts?.updateType) {
+    updateList = updateList.filter((u) => u.updateType === opts.updateType);
+  }
+
+  if (opts?.projectName) {
+    // Resolve project name map lazily — only fetched when the filter is active.
+    const allProjects = await db.select().from(projects);
+    const projectNameById = new Map(allProjects.map((p) => [p.id, p.name]));
+    updateList = updateList.filter((u) => {
+      if (!u.projectId) return false;
+      return matchesSubstring(projectNameById.get(u.projectId), opts.projectName!);
+    });
+  }
+
+  // Truncate post-filter.
+  updateList = updateList.slice(0, limit);
 
   return updateList.map((u) => ({
     client: u.clientId ? clientNameById.get(u.clientId) ?? null : null,

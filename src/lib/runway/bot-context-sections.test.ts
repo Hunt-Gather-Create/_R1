@@ -8,6 +8,7 @@ import {
   buildTeamRoster,
   buildClientMap,
   buildQueryRecipes,
+  buildV4ConventionSummary,
 } from "./bot-context-sections";
 
 const sampleTeamRoster: TeamRosterEntry[] = [
@@ -221,5 +222,85 @@ describe("buildQueryRecipes", () => {
     expect(result).toContain("Status cascade behavior");
     expect(result).toContain("completed, blocked, on-hold");
     expect(result).toContain("linked week items");
+  });
+
+  it("teaches smart plate framing (v4): L2s first, L1 rollup, drill-down offer", () => {
+    const result = buildQueryRecipes();
+    expect(result).toContain("Smart plate framing");
+    expect(result).toContain("Present the L2s first");
+    expect(result).toContain("You own");
+    expect(result).toContain("active engagements");
+    expect(result).toContain("drill-down");
+  });
+
+  it("teaches category-derived tone (v4): launch/deadline urgent, approval awaiting-signal, others neutral", () => {
+    const result = buildQueryRecipes();
+    expect(result).toContain("Category tone");
+    expect(result).toContain("launch");
+    expect(result).toContain("deadline");
+    expect(result).toContain("urgent");
+    expect(result).toContain("approval");
+    expect(result).toContain("awaiting-signal");
+    expect(result).toContain("neutral");
+  });
+
+  it("mentions get_project_status for drill-down queries", () => {
+    const result = buildQueryRecipes();
+    expect(result).toContain("get_project_status");
+  });
+
+  it("mentions the unified 'person' filter on get_week_items", () => {
+    const result = buildQueryRecipes();
+    expect(result).toMatch(/get_week_items with person/);
+  });
+
+  it("teaches the bot to surface v4 soft flags (contractExpired, retainerRenewalDue) before the plate", () => {
+    const result = buildQueryRecipes();
+    expect(result).toContain("Soft flags");
+    expect(result).toContain("flags.contractExpired");
+    expect(result).toContain("flags.retainerRenewalDue");
+    // Flag surfacing guidance must land BEFORE the plate framing guidance
+    const flagsIdx = result.indexOf("Soft flags");
+    const plateIdx = result.indexOf("Smart plate framing");
+    expect(flagsIdx).toBeGreaterThan(0);
+    expect(plateIdx).toBeGreaterThan(flagsIdx);
+    // Must instruct the bot to stay silent when both flag sets are empty
+    expect(result).toMatch(/empty.*don't mention|don't mention.*empty/i);
+  });
+});
+
+describe("buildV4ConventionSummary", () => {
+  it("describes L1 owner + resources roster semantics", () => {
+    const result = buildV4ConventionSummary();
+    expect(result).toContain("L1");
+    expect(result).toContain("owner");
+    expect(result).toContain("resources");
+  });
+
+  it("describes L2 owner-inheritance from L1", () => {
+    const result = buildV4ConventionSummary();
+    expect(result).toContain("L2");
+    expect(result).toContain("inherits the owner");
+  });
+
+  it("documents the resources format with commas, arrows, and role abbreviations", () => {
+    const result = buildV4ConventionSummary();
+    expect(result).toContain("Comma");
+    expect(result).toContain("Arrow");
+    expect(result).toContain("ROLE");
+    expect(result).toContain("AM");
+    expect(result).toContain("CD");
+    expect(result).toContain("Dev");
+    expect(result).toContain("CW");
+    expect(result).toContain("PM");
+    expect(result).toContain("CM");
+    expect(result).toContain("Strat");
+  });
+
+  it("documents the stub filter (awaiting-client hides L2s from active views)", () => {
+    const result = buildV4ConventionSummary();
+    expect(result).toContain("Stub behavior");
+    expect(result).toContain("awaiting-client");
+    expect(result).toContain("drill-down");
   });
 });

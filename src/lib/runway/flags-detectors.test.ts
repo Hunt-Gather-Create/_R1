@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Account, DayItem, DayItemEntry, TriageItem } from "@/app/runway/types";
-import { flagId, detectResourceConflicts, detectStaleItems, detectDeadlines, detectBottlenecks } from "./flags-detectors";
+import {
+  flagId,
+  detectResourceConflicts,
+  detectStaleItems,
+  detectDeadlines,
+  detectBottlenecks,
+  detectPastEndL2s,
+  isPastEndInProgress,
+} from "./flags-detectors";
 
 function createDayItemEntry(overrides: Partial<DayItemEntry> = {}): DayItemEntry {
   return {
@@ -130,6 +138,20 @@ describe("detectResourceConflicts", () => {
     expect(flags).toHaveLength(0);
   });
 
+  it("skips completed L2 items when counting capacity", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-07", [
+        createDayItemEntry({ owner: "Kathy", account: "Convergix", status: "completed" }),
+        createDayItemEntry({ owner: "Kathy", account: "Convergix" }),
+        createDayItemEntry({ owner: "Kathy", account: "LPPC" }),
+      ]),
+    ];
+
+    // With the completed item filtered, Kathy has only 2 — below the 3+ threshold.
+    const flags = detectResourceConflicts(thisWeek, []);
+    expect(flags).toHaveLength(0);
+  });
+
   it("skips items with no owner", () => {
     const thisWeek: DayItem[] = [
       createDayItem("2026-04-07", [
@@ -202,6 +224,28 @@ describe("detectStaleItems", () => {
     const flags = detectStaleItems(accounts);
     expect(flags[0].title).toContain("waiting on Daniel");
     expect(flags[0].relatedPerson).toBe("Daniel");
+  });
+
+  it("excludes completed projects even when staleDays >= 14", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [createTriageItem({ staleDays: 30, status: "completed" })],
+      }),
+    ];
+
+    const flags = detectStaleItems(accounts);
+    expect(flags).toHaveLength(0);
+  });
+
+  it("excludes on-hold projects even when staleDays >= 14", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [createTriageItem({ staleDays: 30, status: "on-hold" })],
+      }),
+    ];
+
+    const flags = detectStaleItems(accounts);
+    expect(flags).toHaveLength(0);
   });
 
   it("includes account name in detail", () => {
@@ -347,6 +391,350 @@ describe("detectBottlenecks", () => {
 
   it("returns empty for empty accounts", () => {
     const flags = detectBottlenecks([]);
+    expect(flags).toHaveLength(0);
+  });
+
+  it("excludes completed, blocked, on-hold, and awaiting-client items", () => {
+    const accounts: Account[] = [
+      createAccount({
+        name: "Convergix",
+        items: [
+          // All waiting on Daniel but in non-active states — should not count.
+          createTriageItem({ id: "a", status: "completed", waitingOn: "Daniel" }),
+          createTriageItem({ id: "b", status: "blocked", waitingOn: "Daniel" }),
+          createTriageItem({ id: "c", status: "on-hold", waitingOn: "Daniel" }),
+          createTriageItem({ id: "d", status: "awaiting-client", waitingOn: "Daniel" }),
+        ],
+      }),
+    ];
+
+    const flags = detectBottlenecks(accounts);
+    expect(flags).toHaveLength(0);
+  });
+
+  it("counts only active items toward the bottleneck threshold", () => {
+    const accounts: Account[] = [
+      createAccount({
+        name: "Convergix",
+        items: [
+          createTriageItem({ id: "a", status: "in-production", waitingOn: "Daniel" }),
+          createTriageItem({ id: "b", status: "in-production", waitingOn: "Daniel" }),
+          // Inactive — should not count.
+          createTriageItem({ id: "c", status: "completed", waitingOn: "Daniel" }),
+        ],
+      }),
+      createAccount({
+        name: "LPPC",
+        slug: "lppc",
+        items: [createTriageItem({ id: "d", status: "in-production", waitingOn: "Daniel" })],
+      }),
+    ];
+
+    const flags = detectBottlenecks(accounts);
+    expect(flags).toHaveLength(1);
+    expect(flags[0].title).toContain("3 items");
+  });
+});
+
+describe("isPastEndInProgress", () => {
+  const TODAY = "2026-04-20";
+
+  it("flags items with endDate strictly before today and status in-progress", () => {
+    const item = {
+      title: "t",
+      account: "Convergix",
+      type: "delivery",
+      status: "in-progress",
+      endDate: "2026-04-19",
+    } as DayItemEntry;
+    expect(isPastEndInProgress(item, TODAY)).toBe(true);
+  });
+
+  it("does not flag when endDate equals today", () => {
+    const item = {
+      title: "t",
+      account: "Convergix",
+      type: "delivery",
+      status: "in-progress",
+      endDate: "2026-04-20",
+    } as DayItemEntry;
+    expect(isPastEndInProgress(item, TODAY)).toBe(false);
+  });
+
+  it("does not flag when status is not in-progress", () => {
+    const item = {
+      title: "t",
+      account: "Convergix",
+      type: "delivery",
+      status: "completed",
+      endDate: "2026-04-19",
+    } as DayItemEntry;
+    expect(isPastEndInProgress(item, TODAY)).toBe(false);
+  });
+
+  it("falls back to startDate when endDate is null (single-day item)", () => {
+    const item = {
+      title: "t",
+      account: "Convergix",
+      type: "delivery",
+      status: "in-progress",
+      startDate: "2026-04-19",
+      endDate: null,
+    } as DayItemEntry;
+    expect(isPastEndInProgress(item, TODAY)).toBe(true);
+  });
+
+  it("does not flag when single-day start_date === today", () => {
+    const item = {
+      title: "t",
+      account: "Convergix",
+      type: "delivery",
+      status: "in-progress",
+      startDate: TODAY,
+      endDate: null,
+    } as DayItemEntry;
+    expect(isPastEndInProgress(item, TODAY)).toBe(false);
+  });
+
+  it("does not flag when both start and end are null", () => {
+    const item = {
+      title: "t",
+      account: "Convergix",
+      type: "delivery",
+      status: "in-progress",
+    } as DayItemEntry;
+    expect(isPastEndInProgress(item, TODAY)).toBe(false);
+  });
+});
+
+describe("detectPastEndL2s", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-20T12:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("triggers exactly at end_date < today AND status === 'in-progress'", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-15", [
+        createDayItemEntry({
+          id: "wk-1",
+          title: "Dev Handoff",
+          account: "Convergix",
+          status: "in-progress",
+          startDate: "2026-04-10",
+          endDate: "2026-04-15",
+          type: "delivery",
+        }),
+      ]),
+    ];
+
+    const flags = detectPastEndL2s(thisWeek, []);
+    expect(flags).toHaveLength(1);
+    expect(flags[0].type).toBe("past-end-l2");
+    expect(flags[0].title).toBe("Convergix: Dev Handoff");
+    expect(flags[0].detail).toContain("in-progress past end_date");
+    expect(flags[0].detail).toContain("2026-04-15");
+    expect(flags[0].detail).toContain("5 days ago");
+    expect(flags[0].relatedClient).toBe("Convergix");
+  });
+
+  it("skips items whose status is 'completed'", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-15", [
+        createDayItemEntry({
+          id: "wk-1",
+          title: "Done milestone",
+          account: "Convergix",
+          status: "completed",
+          startDate: "2026-04-10",
+          endDate: "2026-04-15",
+          type: "delivery",
+        }),
+      ]),
+    ];
+
+    const flags = detectPastEndL2s(thisWeek, []);
+    expect(flags).toHaveLength(0);
+  });
+
+  it("skips items whose end_date equals today (not < today)", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-20", [
+        createDayItemEntry({
+          id: "wk-1",
+          title: "Ends today",
+          account: "Convergix",
+          status: "in-progress",
+          startDate: "2026-04-10",
+          endDate: "2026-04-20",
+          type: "delivery",
+        }),
+      ]),
+    ];
+
+    const flags = detectPastEndL2s(thisWeek, []);
+    expect(flags).toHaveLength(0);
+  });
+
+  it("skips single-day items whose start_date equals today", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-20", [
+        createDayItemEntry({
+          id: "wk-1",
+          title: "Single-day today",
+          account: "Convergix",
+          status: "in-progress",
+          startDate: "2026-04-20",
+          endDate: null,
+          type: "delivery",
+        }),
+      ]),
+    ];
+
+    const flags = detectPastEndL2s(thisWeek, []);
+    expect(flags).toHaveLength(0);
+  });
+
+  it("treats single-day past items (endDate null) as past-end when start < today", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-18", [
+        createDayItemEntry({
+          id: "wk-1",
+          title: "Legacy single-day",
+          account: "Convergix",
+          status: "in-progress",
+          startDate: "2026-04-18",
+          endDate: null,
+          type: "delivery",
+        }),
+      ]),
+    ];
+
+    const flags = detectPastEndL2s(thisWeek, []);
+    expect(flags).toHaveLength(1);
+  });
+
+  it("marks 14+ days past end as 'critical', else 'warning'", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-05", [
+        createDayItemEntry({
+          id: "old",
+          title: "Old",
+          account: "Convergix",
+          status: "in-progress",
+          startDate: "2026-04-01",
+          endDate: "2026-04-05", // 15 days before today
+          type: "delivery",
+        }),
+        createDayItemEntry({
+          id: "recent",
+          title: "Recent",
+          account: "Convergix",
+          status: "in-progress",
+          startDate: "2026-04-15",
+          endDate: "2026-04-18", // 2 days before today
+          type: "delivery",
+        }),
+      ]),
+    ];
+
+    const flags = detectPastEndL2s(thisWeek, []);
+    expect(flags).toHaveLength(2);
+    const old = flags.find((f) => f.title.includes("Old"))!;
+    const recent = flags.find((f) => f.title.includes("Recent"))!;
+    expect(old.severity).toBe("critical");
+    expect(recent.severity).toBe("warning");
+  });
+
+  it("dedupes same item appearing in both thisWeek and upcoming by id", () => {
+    const entry = createDayItemEntry({
+      id: "wk-dupe",
+      title: "Dup",
+      account: "Convergix",
+      status: "in-progress",
+      startDate: "2026-04-10",
+      endDate: "2026-04-15",
+      type: "delivery",
+    });
+    const thisWeek: DayItem[] = [createDayItem("2026-04-15", [entry])];
+    const upcoming: DayItem[] = [createDayItem("2026-04-15", [entry])];
+
+    const flags = detectPastEndL2s(thisWeek, upcoming);
+    expect(flags).toHaveLength(1);
+  });
+
+  it("exposes owner as relatedPerson when available", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-18", [
+        createDayItemEntry({
+          id: "wk-1",
+          title: "With owner",
+          account: "Convergix",
+          owner: "Kathy",
+          status: "in-progress",
+          startDate: "2026-04-15",
+          endDate: "2026-04-18",
+          type: "delivery",
+        }),
+      ]),
+    ];
+
+    const flags = detectPastEndL2s(thisWeek, []);
+    expect(flags[0].relatedPerson).toBe("Kathy");
+  });
+
+  it("scans both thisWeek and upcoming inputs", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-15", [
+        createDayItemEntry({
+          id: "t1",
+          title: "ThisWeekItem",
+          account: "Convergix",
+          status: "in-progress",
+          startDate: "2026-04-10",
+          endDate: "2026-04-15",
+          type: "delivery",
+        }),
+      ]),
+    ];
+    const upcoming: DayItem[] = [
+      createDayItem("2026-04-18", [
+        createDayItemEntry({
+          id: "u1",
+          title: "UpcomingItem",
+          account: "LPPC",
+          status: "in-progress",
+          startDate: "2026-04-15",
+          endDate: "2026-04-18",
+          type: "delivery",
+        }),
+      ]),
+    ];
+
+    const flags = detectPastEndL2s(thisWeek, upcoming);
+    expect(flags).toHaveLength(2);
+  });
+
+  it("returns empty when no items are past-end", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-25", [
+        createDayItemEntry({
+          id: "future",
+          title: "Future",
+          account: "Convergix",
+          status: "in-progress",
+          startDate: "2026-04-20",
+          endDate: "2026-04-25",
+          type: "delivery",
+        }),
+      ]),
+    ];
+
+    const flags = detectPastEndL2s(thisWeek, []);
     expect(flags).toHaveLength(0);
   });
 });

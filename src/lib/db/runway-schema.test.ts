@@ -81,4 +81,25 @@ describe("runway-schema", () => {
     expect(cols).toContain("slackUserId");
     expect(cols).toContain("isActive");
   });
+
+  it("projects table has v4 timing + engagement columns", () => {
+    const cols = Object.keys(projects);
+    expect(cols).toContain("startDate");
+    expect(cols).toContain("endDate");
+    expect(cols).toContain("contractStart");
+    expect(cols).toContain("contractEnd");
+    expect(cols).toContain("engagementType");
+  });
+
+  it("weekItems table has v4 start/end + blocked_by columns", () => {
+    const cols = Object.keys(weekItems);
+    expect(cols).toContain("startDate");
+    expect(cols).toContain("endDate");
+    expect(cols).toContain("blockedBy");
+  });
+
+  it("updates table has v4 triggered_by_update_id column", () => {
+    const cols = Object.keys(updates);
+    expect(cols).toContain("triggeredByUpdateId");
+  });
 });

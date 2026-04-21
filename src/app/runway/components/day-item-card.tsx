@@ -3,6 +3,7 @@
 import type { DayItemEntry, DayItemType } from "../types";
 import { getOwnerResourcesDisplay } from "./display-utils";
 import { TYPE_INDICATORS, MetadataLabel } from "./status-badge";
+import { pastEndRedNote, pastEndNoteText } from "@/lib/runway/plate-summary";
 
 const HOLD_PATTERN = /\b(hold[s]?\s+until|on\s+hold|blocked|not\s+starting\s+until)\b/i;
 const RISK_PATTERN = /\(Risk:\s*([^)]+)\)/;
@@ -55,6 +56,12 @@ const SIZE_CLASSES = {
   },
 } as const;
 
+/** Today's ISO date + ms. Memoized at module-load to avoid Date() in every render. */
+function nowHelpers(): { iso: string; ms: number } {
+  const d = new Date();
+  return { iso: d.toISOString().slice(0, 10), ms: d.getTime() };
+}
+
 export function DayItemCard({ item, size = "sm" }: DayItemCardProps) {
   const s = SIZE_CLASSES[size];
   const displayType = getEffectiveType(item);
@@ -62,8 +69,16 @@ export function DayItemCard({ item, size = "sm" }: DayItemCardProps) {
 
   const parsed = item.notes ? parseNotes(item.notes) : null;
 
+  // v4 (chunk 3 #3): past-end inline note when an in-progress L2's end_date
+  // slipped into the past. Keeps the card silent otherwise.
+  const { iso: nowISO, ms: nowMs } = nowHelpers();
+  const pastEnd = pastEndRedNote(item, nowISO, nowMs);
+
+  // v4 (chunk 3 #7): render blocked_by cue when upstream L2s are not yet done.
+  const blockers = item.blockedBy ?? [];
+
   return (
-    <div className={s.card}>
+    <div className={s.card} data-testid="day-item-card">
       <div className={`flex items-start justify-between ${s.gap}`}>
         <div className="min-w-0 flex-1">
           <p className={ACCOUNT_CLASS}>{item.account}</p>
@@ -86,6 +101,32 @@ export function DayItemCard({ item, size = "sm" }: DayItemCardProps) {
               {parsed.risk ? (
                 <span className="ml-1 text-amber-400/80">(Risk: {parsed.risk})</span>
               ) : null}
+            </div>
+          ) : null}
+          {pastEnd ? (
+            <p
+              data-testid="past-end-note"
+              className="mt-1 text-xs font-medium text-red-300/90"
+            >
+              {pastEndNoteText(pastEnd.daysSinceTouched)}
+            </p>
+          ) : null}
+          {blockers.length > 0 ? (
+            <div
+              data-testid="blocked-by-cue"
+              className="mt-1 flex flex-wrap gap-1 pl-3 border-l-2 border-muted-foreground/30"
+            >
+              {blockers.map((b) => (
+                <span
+                  key={b.id}
+                  title={b.status ? `blocked by: ${b.title} (${b.status})` : `blocked by: ${b.title}`}
+                  className="text-xs text-muted-foreground/80"
+                >
+                  <span aria-hidden className="mr-1">&rarr;</span>
+                  blocked by: {b.title}
+                  {b.status ? <span className="ml-1 text-muted-foreground/60">({b.status})</span> : null}
+                </span>
+              ))}
             </div>
           ) : null}
           {showOwnerSeparately ? (

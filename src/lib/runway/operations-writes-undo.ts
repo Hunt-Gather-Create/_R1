@@ -13,14 +13,20 @@ import {
   checkIdempotency,
   insertAuditRecord,
 } from "./operations-utils";
-import type { OperationResult } from "./operations-utils";
+import type { MutationResponse } from "./mutation-response";
 
 const UNDOABLE_TYPES = ["status-change", "field-change"];
 const MAX_UNDO_SCAN = 50;
 
 export async function undoLastChange(params: {
   updatedBy: string;
-}): Promise<OperationResult> {
+}): Promise<
+  MutationResponse<{
+    undoneUpdateId: string;
+    revertedFrom: string | null;
+    revertedTo: string | null;
+  }>
+> {
   const { updatedBy } = params;
   const db = getRunwayDb();
 

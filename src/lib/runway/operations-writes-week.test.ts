@@ -2,13 +2,28 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createMockDb } from "./operations-writes-test-helpers";
 
 // ── Mock state ──────────────────────────────────────────
-const { db: mockDb, mockInsertValues, mockUpdateSet, mockDeleteFn } = createMockDb();
+const { db: mockDb, mockTx, mockInsertValues, mockUpdateSet } = createMockDb();
 
-// Track select calls for deleteWeekItem by ID
+// Track select calls for deleteWeekItem by ID.
+// `.where(...)` returns an array (for chainless callers); `.orderBy(...)` and
+// `.limit(...)` also terminate — the v4 recompute path uses `.where(...)`
+// without a terminator, so the array result doubles as the awaitable value.
 const mockSelectGet = vi.fn();
 const mockSelectWhere = vi.fn(() => mockSelectGet.mock.results[0]?.value ?? []);
-const mockSelectFrom = vi.fn(() => ({ where: mockSelectWhere }));
-(mockDb as Record<string, unknown>).select = vi.fn(() => ({ from: mockSelectFrom }));
+const mockSelectFrom = vi.fn(() => ({
+  where: mockSelectWhere,
+  orderBy: vi.fn(() => mockSelectGet.mock.results[0]?.value ?? []),
+  limit: vi.fn(() => mockSelectGet.mock.results[0]?.value ?? []),
+}));
+const mockSelectImpl = vi.fn(() => ({ from: mockSelectFrom }));
+(mockDb as Record<string, unknown>).select = mockSelectImpl;
+// Route the transaction object's select through the same chain so
+// `recomputeProjectDatesWith(tx, ...)` sees the test's select stubs.
+(mockTx as Record<string, unknown>).select = mockSelectImpl;
+
+// `deleteWeekItem` now runs its delete inside the transaction callback, so
+// assert against `mockTx.delete` in place of `mockDb.delete`.
+const mockDeleteFn = mockTx.delete as ReturnType<typeof vi.fn>;
 
 vi.mock("@/lib/db/runway", () => ({
   getRunwayDb: () => mockDb,
@@ -31,10 +46,14 @@ const mockGetWeekItemsForWeek = vi.fn();
 const mockCheckIdempotency = vi.fn();
 
 vi.mock("./operations-utils", () => ({
-  WEEK_ITEM_FIELDS: ["title", "status", "date", "dayOfWeek", "owner", "resources", "notes", "category"],
+  WEEK_ITEM_FIELDS: [
+    "title", "status", "date", "dayOfWeek", "weekOf", "owner", "resources", "notes", "category",
+    "startDate", "endDate", "blockedBy",
+  ],
   WEEK_ITEM_FIELD_TO_COLUMN: {
-    title: "title", status: "status", date: "date", dayOfWeek: "dayOfWeek",
+    title: "title", status: "status", date: "date", dayOfWeek: "dayOfWeek", weekOf: "weekOf",
     owner: "owner", resources: "resources", notes: "notes", category: "category",
+    startDate: "startDate", endDate: "endDate", blockedBy: "blockedBy",
   },
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
   generateId: () => "mock-id-12345678901234",
@@ -73,7 +92,9 @@ vi.mock("./operations-utils", () => ({
     return null;
   },
   insertAuditRecord: async (params: Record<string, unknown>) => {
-    mockInsertValues(params);
+    const id = (params.id as string | undefined) ?? "mock-audit-id";
+    mockInsertValues({ ...params, id });
+    return id;
   },
   getPreviousValue: (entity: Record<string, unknown>, columnKey: string) => String(entity[columnKey] ?? ""),
   validateAndResolveField: (field: string, allowed: readonly string[], fieldToColumn: Record<string, string>) => {
@@ -82,6 +103,10 @@ vi.mock("./operations-utils", () => ({
     }
     return { ok: true, typedField: field, columnKey: fieldToColumn[field] };
   },
+  // v4 (Chunk 5): identity passthrough — preserves existing assertions that
+  // assume raw `newValue` flows straight to the db. Real normalization is
+  // asserted in operations-utils.test.ts.
+  normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
 }));
 
 const client = { id: "c1", name: "Convergix", slug: "convergix" };
@@ -225,6 +250,93 @@ describe("createWeekItem", () => {
       expect(result.error).toContain("weekOf");
     }
   });
+
+  // v4: L2 owner inheritance from parent L1 (runway-v4-convention.md §"Owner inheritance rule")
+  it("inherits owner from parent L1 when owner not provided", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue({
+      id: "p1",
+      name: "CDS Messaging",
+      owner: "Kathy",
+    });
+
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      weekOf: "2026-04-06",
+      title: "CDS Review",
+      // owner NOT provided — should inherit
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.owner).toBe("Kathy");
+  });
+
+  it("explicit owner overrides L1 inheritance", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue({
+      id: "p1",
+      name: "CDS Messaging",
+      owner: "Kathy",
+    });
+
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      weekOf: "2026-04-06",
+      title: "CDS Review",
+      owner: "Lane", // explicit override
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.owner).toBe("Lane");
+  });
+
+  it("leaves owner null when no project match and no explicit owner", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(null);
+
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      clientSlug: "convergix",
+      projectName: "Unknown Project",
+      weekOf: "2026-04-06",
+      title: "Standalone Item",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.owner).toBeNull();
+  });
+
+  it("leaves owner null when parent L1 has no owner", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue({
+      id: "p1",
+      name: "CDS Messaging",
+      owner: null,
+    });
+
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      weekOf: "2026-04-06",
+      title: "Standalone Item",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.owner).toBeNull();
+  });
 });
 
 describe("updateWeekItemField", () => {
@@ -261,7 +373,10 @@ describe("updateWeekItemField", () => {
         previousValue: "",
         newValue: "completed",
         reverseCascaded: false,
+        // PR #86: structured reverse cascade info — null when no cascade fired.
+        reverseCascadeDetail: null,
         clientName: "Convergix",
+        auditId: expect.any(String),
       });
     }
     expect(mockUpdateSet).toHaveBeenCalledWith(
@@ -381,8 +496,8 @@ describe("updateWeekItemField", () => {
     });
 
     expect(result.ok).toBe(true);
-    // week item update + project dueDate update = 2 calls
-    expect(mockUpdateSet).toHaveBeenCalledTimes(2);
+    // week item update + project dueDate update + v4 recomputeProjectDates update = 3 calls
+    expect(mockUpdateSet).toHaveBeenCalledTimes(3);
     expect(mockUpdateSet).toHaveBeenCalledWith(
       expect.objectContaining({ dueDate: "2026-04-28" })
     );
@@ -405,8 +520,8 @@ describe("updateWeekItemField", () => {
       updatedBy: "kathy",
     });
 
-    // Only the week item update itself
-    expect(mockUpdateSet).toHaveBeenCalledTimes(1);
+    // week item update + v4 recomputeProjectDates update = 2 (no reverse cascade to dueDate)
+    expect(mockUpdateSet).toHaveBeenCalledTimes(2);
     expect(mockUpdateSet).not.toHaveBeenCalledWith(
       expect.objectContaining({ dueDate: "2026-04-28" })
     );
@@ -429,7 +544,7 @@ describe("updateWeekItemField", () => {
       updatedBy: "kathy",
     });
 
-    // Only the week item update itself
+    // Only the week item update (no projectId = no cascade, no recompute)
     expect(mockUpdateSet).toHaveBeenCalledTimes(1);
   });
 
@@ -450,11 +565,113 @@ describe("updateWeekItemField", () => {
       updatedBy: "kathy",
     });
 
-    // Only the week item update itself
+    // Only the week item update itself — status is not a date field, no recompute
     expect(mockUpdateSet).toHaveBeenCalledTimes(1);
     expect(mockUpdateSet).not.toHaveBeenCalledWith(
       expect.objectContaining({ dueDate: expect.anything() })
     );
+  });
+
+  // PR #86: MCP/bot consumers parse the reverse cascade outcome from
+  // `data.reverseCascadeDetail`. Today the bot tool reads `reverseCascaded`
+  // (a bool) — the new detail gives consumers the parent project id + name
+  // + prior dueDate + audit id so they can render a full breadcrumb.
+  describe("structured response (reverseCascadeDetail + auditId)", () => {
+    it("returns reverseCascadeDetail snapshot when a deadline date cascades", async () => {
+      const deadlineItem = {
+        ...weekItem,
+        category: "deadline",
+        projectId: "p1",
+        date: "2026-04-23",
+      };
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(deadlineItem);
+      // Parent snapshot — first select call (pre-transaction) reads the project row.
+      // Subsequent selects (recomputeProjectDates) also hit this mock; returning
+      // the same row is harmless because recompute only consumes startDate/endDate.
+      // Seed mockSelectGet's results[] so mockSelectWhere can find a payload.
+      mockSelectGet.mockReturnValue([
+        { id: "p1", name: "CDS Messaging", dueDate: "2026-04-15" },
+      ]);
+      // Prime `mock.results[0]` — the `where`/`orderBy`/`limit` stubs read
+      // `mockSelectGet.mock.results[0]?.value`, which only populates after
+      // an actual invocation. Calling it here mirrors how other tests in the
+      // file (not shown) shape select payloads.
+      mockSelectGet();
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "date",
+        newValue: "2026-04-28",
+        updatedBy: "kathy",
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.reverseCascaded).toBe(true);
+      expect(result.data?.reverseCascadeDetail).toEqual({
+        projectId: "p1",
+        projectName: "CDS Messaging",
+        field: "dueDate",
+        previousDueDate: "2026-04-15",
+        newDueDate: "2026-04-28",
+        auditId: expect.any(String),
+      });
+      expect(result.data?.auditId).toBe(
+        result.data?.reverseCascadeDetail?.auditId
+      );
+    });
+
+    it("reverseCascadeDetail is null when the cascade does not fire", async () => {
+      const reviewItem = {
+        ...weekItem,
+        category: "review",
+        projectId: "p1",
+      };
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(reviewItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "date",
+        newValue: "2026-04-28",
+        updatedBy: "kathy",
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.reverseCascaded).toBe(false);
+      expect(result.data?.reverseCascadeDetail).toBeNull();
+    });
+
+    it("reverseCascadeDetail preserves null previousDueDate when parent was unset", async () => {
+      const deadlineItem = {
+        ...weekItem,
+        category: "deadline",
+        projectId: "p1",
+      };
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(deadlineItem);
+      mockSelectGet.mockReturnValue([
+        { id: "p1", name: "CDS Messaging", dueDate: null },
+      ]);
+      mockSelectGet(); // prime mock.results[0]
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "date",
+        newValue: "2026-04-28",
+        updatedBy: "kathy",
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data?.reverseCascadeDetail?.previousDueDate).toBeNull();
+      expect(result.data?.reverseCascadeDetail?.newDueDate).toBe("2026-04-28");
+    });
   });
 });
 
@@ -535,5 +752,171 @@ describe("deleteWeekItem", () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.message).toContain("duplicate");
     expect(mockDeleteFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateWeekItemField — weekOf whitelist", () => {
+  const weekItem = {
+    id: "wi1",
+    title: "Dev Handoff",
+    status: null,
+    date: "2026-04-28",
+    dayOfWeek: "tuesday",
+    weekOf: "2026-04-20",
+    owner: "Jill",
+    resources: "Dev: Leslie",
+    notes: null,
+    category: "deadline",
+    clientId: "c1",
+    projectId: null,
+  };
+
+  it("writes weekOf through updateWeekItemField", async () => {
+    mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+    const { updateWeekItemField } = await import("./operations-writes-week");
+    const result = await updateWeekItemField({
+      weekOf: "2026-04-20",
+      weekItemTitle: "Dev Handoff",
+      field: "weekOf",
+      newValue: "2026-04-27",
+      updatedBy: "migration",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mockUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ weekOf: "2026-04-27" })
+    );
+  });
+});
+
+describe("linkWeekItemToProject", () => {
+  const weekItem = {
+    id: "wi1",
+    title: "Design Presentation",
+    clientId: "c1",
+    projectId: null,
+  };
+  const project = {
+    id: "p1",
+    name: "Impact Report",
+    clientId: "c1",
+  };
+
+  it("links orphan week item to project and writes audit", async () => {
+    mockSelectWhere
+      .mockReturnValueOnce([weekItem])
+      .mockReturnValueOnce([project]);
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "wi1",
+      projectId: "p1",
+      updatedBy: "migration",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.weekItemTitle).toBe("Design Presentation");
+      expect(result.data?.previousProjectId).toBeNull();
+      expect(result.data?.newProjectId).toBe("p1");
+      expect(result.data?.clientName).toBe("Convergix");
+    }
+    expect(mockUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "p1" })
+    );
+    const auditCall = mockInsertValues.mock.calls[0][0];
+    expect(auditCall.updateType).toBe("week-reparent");
+    expect(auditCall.previousValue).toBe("(none)");
+    expect(auditCall.newValue).toBe("p1");
+    expect(auditCall.summary).toContain("re-parented");
+    expect(auditCall.summary).toContain("Impact Report");
+  });
+
+  it("is idempotent on replay", async () => {
+    mockSelectWhere
+      .mockReturnValueOnce([weekItem])
+      .mockReturnValueOnce([project]);
+    mockCheckIdempotency.mockResolvedValue(true);
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "wi1",
+      projectId: "p1",
+      updatedBy: "migration",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.message).toContain("duplicate");
+    expect(mockUpdateSet).not.toHaveBeenCalled();
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+
+  it("returns error when week item id not found", async () => {
+    mockSelectWhere.mockReturnValueOnce([]);
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "missing",
+      projectId: "p1",
+      updatedBy: "migration",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("not found");
+    expect(mockUpdateSet).not.toHaveBeenCalled();
+  });
+
+  it("returns error when project id not found", async () => {
+    mockSelectWhere
+      .mockReturnValueOnce([weekItem])
+      .mockReturnValueOnce([]);
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "wi1",
+      projectId: "missing",
+      updatedBy: "migration",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("not found");
+    expect(mockUpdateSet).not.toHaveBeenCalled();
+  });
+
+  it("rejects cross-client linking", async () => {
+    mockSelectWhere
+      .mockReturnValueOnce([{ ...weekItem, clientId: "c1" }])
+      .mockReturnValueOnce([{ ...project, clientId: "c2" }]);
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "wi1",
+      projectId: "p1",
+      updatedBy: "migration",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("client mismatch");
+    expect(mockUpdateSet).not.toHaveBeenCalled();
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+
+  it("records previous projectId when re-parenting a linked item", async () => {
+    mockSelectWhere
+      .mockReturnValueOnce([{ ...weekItem, projectId: "p-old" }])
+      .mockReturnValueOnce([project]);
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "wi1",
+      projectId: "p1",
+      updatedBy: "migration",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data?.previousProjectId).toBe("p-old");
+    const auditCall = mockInsertValues.mock.calls[0][0];
+    expect(auditCall.previousValue).toBe("p-old");
   });
 });

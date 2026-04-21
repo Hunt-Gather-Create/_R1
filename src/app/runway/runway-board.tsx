@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { DayItem, Account, PipelineItem } from "./types";
+import type { UnifiedAccount } from "./unified-view";
 import type { RunwayFlag } from "@/lib/runway/flags";
 import { parseISODate } from "./date-utils";
 import { mergeWeekendDays, groupByWeek } from "./runway-board-utils";
@@ -12,6 +13,9 @@ import { AccountSection } from "./components/account-section";
 import { PipelineRow } from "./components/pipeline-row";
 import { FlagsPanel } from "./components/flags-panel";
 import { NeedsUpdateSection } from "./components/needs-update-section";
+import { InFlightSection } from "./components/in-flight-section";
+import { PlateSummary } from "./components/plate-summary";
+import { toggleInFlightAction } from "./actions";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
 
@@ -20,10 +24,17 @@ type View = "triage" | "accounts" | "pipeline";
 interface RunwayBoardProps {
   thisWeek: DayItem[];
   upcoming: DayItem[];
-  accounts: Account[];
+  /**
+   * Accepts either the base `Account[]` (legacy) or `UnifiedAccount[]`
+   * with inline L2 milestones (chunk 3 #1). AccountSection renders both
+   * shapes without branching.
+   */
+  accounts: Account[] | UnifiedAccount[];
   pipeline: PipelineItem[];
   flags?: RunwayFlag[];
   staleItems?: DayItem[];
+  /** Initial persisted toggle value. Defaults to true (chunk 3 #6). */
+  initialInFlightEnabled?: boolean;
 }
 
 const TABS = [
@@ -83,10 +94,28 @@ export function RunwayBoard({
   pipeline,
   flags = [],
   staleItems = [],
+  initialInFlightEnabled = true,
 }: RunwayBoardProps) {
   const router = useRouter();
   const [view, setView] = useState<View>("triage");
+  const [inFlightEnabled, setInFlightEnabled] = useState(initialInFlightEnabled);
+  const [isPending, startTransition] = useTransition();
   const { pipelineTotal, todayColumn, restOfWeek, upcomingWeeks } = useBoardData(thisWeek, upcoming, pipeline);
+
+  // Combined week-items source for In Flight — today's day, rest of this
+  // week, plus upcoming. Flatten once so InFlightSection can filter cheaply.
+  const allWeekItems = useMemo<DayItem[]>(
+    () => [...thisWeek, ...upcoming],
+    [thisWeek, upcoming]
+  );
+
+  const handleToggleInFlight = (next: boolean) => {
+    // Optimistic: flip local state immediately, persist in background.
+    setInFlightEnabled(next);
+    startTransition(async () => {
+      await toggleInFlightAction(next);
+    });
+  };
 
   useEffect(() => {
     const id = setInterval(() => router.refresh(), REFRESH_INTERVAL_MS);
@@ -123,7 +152,30 @@ export function RunwayBoard({
           <div className="min-w-0 flex-1">
             {view === "triage" ? (
               <div className="space-y-6 sm:space-y-10">
+                <PlateSummary accounts={accounts} />
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-muted-foreground">
+                    {inFlightEnabled
+                      ? "Showing in-flight L2s above Today."
+                      : "In Flight hidden."}
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      data-testid="in-flight-toggle"
+                      checked={inFlightEnabled}
+                      disabled={isPending}
+                      onChange={(e) => handleToggleInFlight(e.target.checked)}
+                      className="h-4 w-4 rounded border-border bg-card/50"
+                    />
+                    In Flight
+                  </label>
+                </div>
                 <NeedsUpdateSection staleItems={staleItems} />
+                <InFlightSection
+                  weekItems={allWeekItems}
+                  enabled={inFlightEnabled}
+                />
                 <TodaySection todayColumn={todayColumn} />
 
                 {restOfWeek.length > 0 ? (

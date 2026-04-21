@@ -4,13 +4,39 @@ const { mockPostMutationUpdate, mockOps } = vi.hoisted(() => {
   const mockPostMutationUpdate = vi.fn().mockResolvedValue(undefined);
   const mockOps = {
     getClientsWithCounts: vi.fn().mockResolvedValue([{ name: "Convergix" }]),
+    getClientDetail: vi.fn().mockResolvedValue({
+      id: "c1", name: "Convergix", slug: "convergix", projects: [], pipelineItems: [], recentUpdates: [],
+    }),
     getProjectsFiltered: vi.fn().mockResolvedValue([
       { name: "CDS", status: "in-production", client: "Convergix", owner: "Kathy", waitingOn: null, notes: null },
     ]),
     getProjectsForClient: vi.fn().mockResolvedValue([]),
     getPipelineData: vi.fn().mockResolvedValue([]),
     getWeekItemsData: vi.fn().mockResolvedValue([]),
+    getWeekItemsInRange: vi.fn().mockResolvedValue([{ id: "w1", title: "Launch" }]),
+    getOrphanWeekItems: vi.fn().mockResolvedValue([{ id: "w2", title: "Orphan", projectId: null }]),
     getPersonWorkload: vi.fn().mockResolvedValue({ person: "Kathy", projects: [], weekItems: [], totalProjects: 0, totalWeekItems: 0 }),
+    findUpdates: vi.fn().mockResolvedValue([{ id: "u1", summary: "Changed" }]),
+    getUpdateChain: vi.fn().mockResolvedValue({ root: { id: "u1" }, chain: [{ id: "u1" }] }),
+    getFlags: vi.fn().mockResolvedValue({ flags: [], retainerRenewalDue: [], contractExpired: [] }),
+    getDataHealth: vi.fn().mockResolvedValue({
+      totals: { projects: 10, weekItems: 20, clients: 5, updates: 50, pipelineItems: 3 },
+      orphans: { weekItemsWithoutProject: 0, projectsWithoutClient: 0, updatesWithDanglingTriggeredBy: 0 },
+      stale: { staleProjects: 0, pastEndL2s: 0 },
+      batch: { activeBatchId: null, distinctBatchIdsLast7Days: 0 },
+      lastUpdateAt: null,
+    }),
+    getCurrentBatch: vi.fn().mockResolvedValue({ active: false }),
+    getBatchContents: vi.fn().mockResolvedValue({ batchId: "b1", totalUpdates: 0, groups: [] }),
+    getCascadeLog: vi.fn().mockResolvedValue({ windowMinutes: 60, since: new Date(), totalCascadeRows: 0, groups: [] }),
+    getProjectStatus: vi.fn().mockResolvedValue({
+      ok: true,
+      status: {
+        name: "CDS Messaging", client: "Convergix", owner: "Kathy", status: "in-production",
+        engagement_type: "project", contractRange: {}, current: {}, inFlight: [], upcoming: [],
+        team: "CD: Lane", recentUpdates: [], suggestedActions: [],
+      },
+    }),
     getClientBySlug: vi.fn(),
     updateProjectStatus: vi.fn(),
     addProject: vi.fn(),
@@ -55,23 +81,38 @@ describe("createBotTools", () => {
     tools = createBotTools("Kathy Horn");
   });
 
-  it("creates all 22 tools", () => {
+  it("creates all 33 tools (23 legacy + 10 new in PR #86 v4)", () => {
     const names = Object.keys(tools);
     expect(names).toEqual([
       "get_clients", "get_projects", "get_pipeline", "get_week_items",
-      "update_project_status", "add_update", "get_person_workload", "get_client_contacts",
+      "update_project_status", "add_update", "get_person_workload",
+      "get_project_status", "get_client_contacts",
       "create_project", "update_project_field", "create_week_item",
       "undo_last_change", "get_recent_updates", "update_week_item",
       "delete_project", "delete_week_item",
       "create_pipeline_item", "update_pipeline_item", "delete_pipeline_item",
       "update_client_field", "create_team_member", "update_team_member",
+      // Tier 2 (v4)
+      "get_client_detail", "get_orphan_week_items", "get_week_items_range",
+      "find_updates", "get_update_chain",
+      // Tier 3 (v4)
+      "get_flags", "get_data_health", "get_current_batch",
+      "get_batch_contents", "get_cascade_log",
     ]);
   });
 
   it("get_clients calls getClientsWithCounts", async () => {
     const result = await tools.get_clients.execute({}, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockOps.getClientsWithCounts).toHaveBeenCalledOnce();
+    expect(mockOps.getClientsWithCounts).toHaveBeenCalledWith({ includeProjects: undefined });
     expect(result).toEqual([{ name: "Convergix" }]);
+  });
+
+  it("get_clients passes includeProjects when provided", async () => {
+    await tools.get_clients.execute(
+      { includeProjects: true },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getClientsWithCounts).toHaveBeenCalledWith({ includeProjects: true });
   });
 
   it("get_projects calls getProjectsFiltered with params", async () => {
@@ -215,14 +256,17 @@ describe("createBotTools", () => {
     expect(result).toEqual([]);
   });
 
-  it("get_week_items passes weekOf, owner, and resource parameters", async () => {
-    await tools.get_week_items.execute({ weekOf: "2026-04-06", owner: "Kathy", resource: "Roz" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", "Kathy", "Roz");
+  it("get_week_items passes weekOf, owner, resource, and person parameters", async () => {
+    await tools.get_week_items.execute(
+      { weekOf: "2026-04-06", owner: "Kathy", resource: "Roz", person: "Lane" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", "Kathy", "Roz", "Lane");
   });
 
   it("get_week_items passes undefined when no params given", async () => {
     await tools.get_week_items.execute({}, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined, undefined);
+    expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined, undefined, undefined);
   });
 
   it("get_person_workload calls getPersonWorkload", async () => {
@@ -841,5 +885,166 @@ describe("createBotTools", () => {
     );
     expect(result).toEqual({ error: "Not found", available: ["Kathy", "Lane"] });
     expect(mockPostMutationUpdate).not.toHaveBeenCalled();
+  });
+
+  // ── Tier 2 read tool mirrors (PR #86 v4) ──────────────────
+
+  it("get_client_detail calls getClientDetail and returns deep view", async () => {
+    const result = await tools.get_client_detail.execute(
+      { slug: "convergix" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getClientDetail).toHaveBeenCalledWith("convergix", { recentUpdatesLimit: undefined });
+    expect(result).toEqual(expect.objectContaining({ slug: "convergix" }));
+  });
+
+  it("get_client_detail passes recentUpdatesLimit", async () => {
+    await tools.get_client_detail.execute(
+      { slug: "convergix", recentUpdatesLimit: 5 },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getClientDetail).toHaveBeenCalledWith("convergix", { recentUpdatesLimit: 5 });
+  });
+
+  it("get_client_detail returns error when client not found", async () => {
+    mockOps.getClientDetail.mockResolvedValueOnce(null);
+    const result = await tools.get_client_detail.execute(
+      { slug: "nope" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(result).toEqual({ error: "Client 'nope' not found." });
+  });
+
+  it("get_orphan_week_items calls getOrphanWeekItems", async () => {
+    const result = await tools.get_orphan_week_items.execute(
+      {}, { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getOrphanWeekItems).toHaveBeenCalledWith(undefined);
+    expect(result).toEqual([{ id: "w2", title: "Orphan", projectId: null }]);
+  });
+
+  it("get_orphan_week_items passes clientSlug", async () => {
+    await tools.get_orphan_week_items.execute(
+      { clientSlug: "convergix" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getOrphanWeekItems).toHaveBeenCalledWith("convergix");
+  });
+
+  it("get_week_items_range passes all params", async () => {
+    await tools.get_week_items_range.execute(
+      { fromDate: "2026-04-01", toDate: "2026-04-30", clientSlug: "convergix", owner: "Kathy", category: "deadline" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getWeekItemsInRange).toHaveBeenCalledWith(
+      "2026-04-01", "2026-04-30", "convergix", "Kathy", "deadline",
+    );
+  });
+
+  it("find_updates passes all filters", async () => {
+    const params = {
+      since: "2026-04-01", until: "2026-04-30", clientSlug: "convergix",
+      updatedBy: "Kathy", updateType: "status-change", batchId: "b1",
+      projectName: "CDS", limit: 50,
+    };
+    const result = await tools.find_updates.execute(
+      params, { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.findUpdates).toHaveBeenCalledWith(params);
+    expect(result).toEqual([{ id: "u1", summary: "Changed" }]);
+  });
+
+  it("get_update_chain passes updateId", async () => {
+    const result = await tools.get_update_chain.execute(
+      { updateId: "u1" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getUpdateChain).toHaveBeenCalledWith("u1");
+    expect(result).toEqual({ root: { id: "u1" }, chain: [{ id: "u1" }] });
+  });
+
+  // ── Tier 3 observability mirrors (PR #86 v4) ──────────────
+
+  it("get_flags calls getFlags", async () => {
+    const result = await tools.get_flags.execute(
+      {}, { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getFlags).toHaveBeenCalledWith({ clientSlug: undefined, personName: undefined });
+    expect(result).toEqual(expect.objectContaining({ flags: [], contractExpired: [] }));
+  });
+
+  it("get_flags passes clientSlug and personName", async () => {
+    await tools.get_flags.execute(
+      { clientSlug: "convergix", personName: "Kathy" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getFlags).toHaveBeenCalledWith({ clientSlug: "convergix", personName: "Kathy" });
+  });
+
+  it("get_data_health returns snapshot", async () => {
+    const result = await tools.get_data_health.execute(
+      {}, { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getDataHealth).toHaveBeenCalledOnce();
+    expect(result).toEqual(expect.objectContaining({ totals: expect.any(Object) }));
+  });
+
+  it("get_current_batch returns active=false when idle", async () => {
+    const result = await tools.get_current_batch.execute(
+      {}, { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getCurrentBatch).toHaveBeenCalledOnce();
+    expect(result).toEqual({ active: false });
+  });
+
+  it("get_batch_contents passes batchId", async () => {
+    await tools.get_batch_contents.execute(
+      { batchId: "cleanup-2026-04-18" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getBatchContents).toHaveBeenCalledWith("cleanup-2026-04-18");
+  });
+
+  it("get_cascade_log passes windowMinutes", async () => {
+    await tools.get_cascade_log.execute(
+      { windowMinutes: 30 },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getCascadeLog).toHaveBeenCalledWith(30);
+  });
+
+  it("get_cascade_log works without windowMinutes", async () => {
+    await tools.get_cascade_log.execute(
+      {}, { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getCascadeLog).toHaveBeenCalledWith(undefined);
+  });
+
+  // ── Description drift assertions ──────────────────────────
+
+  it("get_person_workload description describes v4 buckets + flags (not 'grouped by client')", () => {
+    const desc = (tools.get_person_workload as { description: string }).description;
+    expect(desc).toContain("ownedProjects");
+    expect(desc).toContain("weekItems");
+    expect(desc).toContain("overdue");
+    expect(desc).toContain("thisWeek");
+    expect(desc).toContain("flags");
+    expect(desc).toContain("contractExpired");
+    expect(desc).toContain("retainerRenewalDue");
+    expect(desc).not.toMatch(/grouped by client/i);
+  });
+
+  it("get_projects description documents v4 enrichment keys", () => {
+    const desc = (tools.get_projects as { description: string }).description;
+    expect(desc).toContain("dueDate");
+    expect(desc).toContain("engagementType");
+    expect(desc).toContain("contractStart");
+    expect(desc).toContain("contractEnd");
+  });
+
+  it("get_clients description documents includeProjects option", () => {
+    const desc = (tools.get_clients as { description: string }).description;
+    expect(desc).toContain("includeProjects");
+    expect(desc).toContain("projectCount");
   });
 });

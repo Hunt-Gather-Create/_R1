@@ -142,6 +142,78 @@ describe("DayItemCard", () => {
     const typeSpan = screen.getByText("blocked");
     expect(typeSpan.className).toContain("text-red-400");
   });
+
+  // v4 chunk 3 #3: past-end red note on in-progress L2s that slipped
+  it("renders past-end inline note for in-progress item past its end_date", () => {
+    // Compute relative dates so the test is not bound to a wall-clock year.
+    const past = new Date();
+    past.setUTCDate(past.getUTCDate() - 5);
+    const pastISO = past.toISOString().slice(0, 10);
+
+    render(
+      <DayItemCard
+        item={createEntry({
+          status: "in-progress",
+          endDate: pastISO,
+          startDate: pastISO,
+          updatedAtMs: past.getTime(),
+        })}
+      />
+    );
+    const note = screen.getByTestId("past-end-note");
+    expect(note).toHaveTextContent(/status unchanged past end_date/);
+    expect(note).toHaveTextContent(/days ago/);
+  });
+
+  it("does not render past-end note for completed items", () => {
+    const past = new Date();
+    past.setUTCDate(past.getUTCDate() - 5);
+    const pastISO = past.toISOString().slice(0, 10);
+
+    render(
+      <DayItemCard
+        item={createEntry({
+          status: "completed",
+          endDate: pastISO,
+        })}
+      />
+    );
+    expect(screen.queryByTestId("past-end-note")).not.toBeInTheDocument();
+  });
+
+  // v4 chunk 3 #7: blocked_by visual cue
+  it("renders blocked_by cue with blocker title and status", () => {
+    render(
+      <DayItemCard
+        item={createEntry({
+          blockedBy: [
+            { id: "wi-1", title: "Copy Ready", status: "in-progress" },
+          ],
+        })}
+      />
+    );
+    const cue = screen.getByTestId("blocked-by-cue");
+    expect(cue).toHaveTextContent("blocked by: Copy Ready");
+    expect(cue).toHaveTextContent("(in-progress)");
+  });
+
+  it("does not render blocked_by cue when list is empty", () => {
+    render(<DayItemCard item={createEntry({ blockedBy: [] })} />);
+    expect(screen.queryByTestId("blocked-by-cue")).not.toBeInTheDocument();
+  });
+
+  it("renders blocked_by cue without status parens when status is missing", () => {
+    render(
+      <DayItemCard
+        item={createEntry({
+          blockedBy: [{ id: "wi-1", title: "Upstream Task" }],
+        })}
+      />
+    );
+    const cue = screen.getByTestId("blocked-by-cue");
+    expect(cue).toHaveTextContent("blocked by: Upstream Task");
+    expect(cue).not.toHaveTextContent("(");
+  });
 });
 
 describe("getEffectiveType", () => {

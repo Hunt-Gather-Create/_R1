@@ -5,10 +5,21 @@ import { z } from "zod";
 import { postMutationUpdate } from "./updates-channel";
 import {
   getClientsWithCounts,
+  getClientDetail,
   getProjectsFiltered,
   getPipelineData,
   getWeekItemsData,
+  getWeekItemsInRange,
+  getOrphanWeekItems,
   getPersonWorkload,
+  getProjectStatus,
+  findUpdates,
+  getUpdateChain,
+  getFlags,
+  getDataHealth,
+  getCurrentBatch,
+  getBatchContents,
+  getCascadeLog,
   updateProjectStatus,
   addProject,
   addUpdate,
@@ -33,13 +44,20 @@ export function createBotTools(userName: string, now: Date = new Date()) {
   const currentMonday = toISODateString(getMonday(now));
   return {
     get_clients: tool({
-      description: "List all clients with project counts",
-      inputSchema: z.object({}),
-      execute: async () => getClientsWithCounts(),
+      description:
+        "List clients. Each entry has { id, name, slug, contractValue, contractStatus, contractTerm, team, projectCount, updatedAt }. Pass includeProjects=true when you need each client's nested projects[] with dueDate, engagementType, contract dates, etc.",
+      inputSchema: z.object({
+        includeProjects: z
+          .boolean()
+          .optional()
+          .describe("When true, include each client's nested projects[] array. Default false."),
+      }),
+      execute: async ({ includeProjects }) => getClientsWithCounts({ includeProjects }),
     }),
 
     get_projects: tool({
-      description: "List projects, optionally filtered by client, owner, or waitingOn",
+      description:
+        "List L1 projects, optionally filtered. Each item has { id, name, client, status, category, owner, resources, waitingOn, target, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }. Filter by clientSlug, owner substring, or waitingOn substring.",
       inputSchema: z.object({
         clientSlug: z.string().optional().describe("Client slug (e.g. 'convergix')"),
         owner: z.string().optional().describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
@@ -57,23 +75,27 @@ export function createBotTools(userName: string, now: Date = new Date()) {
     }),
 
     get_week_items: tool({
-      description: `Get calendar items for a given week, optionally filtered by owner or resource. Owner = who is accountable. Resource = who is doing the work. The weekOf parameter defaults to the current week (${currentMonday}) — do not ask the user for a date.`,
+      description: `Get calendar items for a given week, optionally filtered by person (owner OR resource), owner, or resource. Prefer the 'person' filter when the user asks what X has this week — it matches items where X is either accountable or doing the work. Use 'owner' only when they specifically ask who's accountable and 'resource' only when they specifically ask who's doing the work. The weekOf parameter defaults to the current week (${currentMonday}) — do not ask the user for a date.`,
       inputSchema: z.object({
         weekOf: z
           .string()
           .default(currentMonday)
           .describe(`ISO date of the Monday for the week to query. Defaults to ${currentMonday} (this week). Use this for "next week" or "last week" queries — never ask the user for a raw date.`),
+        person: z
+          .string()
+          .optional()
+          .describe("Filter to items where the person is owner OR resource (case-insensitive substring, e.g. 'Kathy'). Use this for plate queries."),
         owner: z
           .string()
           .optional()
-          .describe("Filter by owner name (person accountable, case-insensitive substring, e.g. 'Kathy')"),
+          .describe("Filter by owner name only (person accountable, case-insensitive substring, e.g. 'Kathy')"),
         resource: z
           .string()
           .optional()
-          .describe("Filter by resource name (person doing the work, case-insensitive substring, e.g. 'Roz')"),
+          .describe("Filter by resource name only (person doing the work, case-insensitive substring, e.g. 'Roz')"),
       }),
-      execute: async ({ weekOf, owner, resource }) => {
-        return getWeekItemsData(weekOf, owner, resource);
+      execute: async ({ weekOf, owner, resource, person }) => {
+        return getWeekItemsData(weekOf, owner, resource, person);
       },
     }),
 
@@ -163,11 +185,25 @@ export function createBotTools(userName: string, now: Date = new Date()) {
 
     get_person_workload: tool({
       description:
-        "Get all week items and projects where a person is owner OR resource, grouped by client. Powers 'what's on X's plate?' questions.",
+        "Get a person's workload bucketed per the v4 convention. Returns { person, ownedProjects: { inProgress, awaitingClient, blocked, onHold, completed } (L1s they own only), weekItems: { overdue, thisWeek, nextWeek, later } (L2s they own OR resource on, stub-filtered to hide L2s under awaiting-client L1s), flags: { contractExpired (ClientRow[]), retainerRenewalDue (ProjectRow[]) }, totalProjects, totalActiveWeekItems }. Date buckets are Chicago-anchored. Powers 'what's on X's plate?' — present the date buckets first, roll up owned L1 count at end, surface flags at the top.",
       inputSchema: z.object({
         personName: z.string().describe("Person's name (e.g. 'Kathy', 'Roz')"),
       }),
       execute: async ({ personName }) => getPersonWorkload(personName),
+    }),
+
+    get_project_status: tool({
+      description:
+        "Drill down on a single engagement. Returns a structured summary of one L1 project: owner, status, engagement type, contract range, who is blocking, in-flight and upcoming L2s, team roster, recent updates, and suggested next actions. Use when the user asks 'what's the deal with [client] / [project]' or 'how's [project] going' and you already know which project they mean. For 'what's on my plate' use get_person_workload instead.",
+      inputSchema: z.object({
+        clientSlug: z.string().describe("Client slug (e.g. 'convergix')"),
+        projectName: z.string().describe("Project name (fuzzy match, e.g. 'CDS Messaging')"),
+      }),
+      execute: async ({ clientSlug, projectName }) => {
+        const result = await getProjectStatus({ clientSlug, projectName });
+        if (!result.ok) return { error: result.error, available: result.available };
+        return result.status;
+      },
     }),
 
     get_client_contacts: tool({
@@ -567,6 +603,114 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         });
         return { result: result.message };
       },
+    }),
+
+    // ── Tier 2 reads — deep views + audit trail (PR #86 v4) ──
+
+    get_client_detail: tool({
+      description:
+        "Deep view of a single client. Returns { id, name, slug, nicknames, contractValue, contractTerm, contractStatus, team, clientContacts, createdAt, updatedAt, projects[] (full v4 rows with dueDate, startDate, endDate, engagementType, contractStart, contractEnd), pipelineItems[], recentUpdates[] }. Use for 'what's the deal with [client]' where you want contract + pipeline + recent activity all at once.",
+      inputSchema: z.object({
+        slug: z.string().describe("Client slug (e.g. 'convergix')"),
+        recentUpdatesLimit: z.number().optional().describe("Cap on recentUpdates[]. Default 20."),
+      }),
+      execute: async ({ slug, recentUpdatesLimit }) => {
+        const result = await getClientDetail(slug, { recentUpdatesLimit });
+        if (!result) return { error: `Client '${slug}' not found.` };
+        return result;
+      },
+    }),
+
+    get_orphan_week_items: tool({
+      description:
+        "List week items whose projectId is null — L2s that drifted off their parent L1. Returns raw WeekItemRow[]. Optional clientSlug narrows to one account.",
+      inputSchema: z.object({
+        clientSlug: z.string().optional().describe("Narrow to one client slug (optional)."),
+      }),
+      execute: async ({ clientSlug }) => getOrphanWeekItems(clientSlug),
+    }),
+
+    get_week_items_range: tool({
+      description:
+        "List week items whose start_date (fallback to legacy date) falls within [fromDate, toDate] inclusive. Returns raw WeekItemRow[]. Use for cross-week date drill-downs that don't fit the weekOf + person shape of get_week_items. Filters: clientSlug, owner substring, category (delivery, review, kickoff, deadline, approval, launch).",
+      inputSchema: z.object({
+        fromDate: z.string().describe("Inclusive lower bound — ISO YYYY-MM-DD."),
+        toDate: z.string().describe("Inclusive upper bound — ISO YYYY-MM-DD."),
+        clientSlug: z.string().optional().describe("Narrow to one client slug."),
+        owner: z.string().optional().describe("Owner substring (case-insensitive)."),
+        category: z.string().optional().describe("Exact category (delivery, review, kickoff, deadline, approval, launch)."),
+      }),
+      execute: async ({ fromDate, toDate, clientSlug, owner, category }) =>
+        getWeekItemsInRange(fromDate, toDate, clientSlug, owner, category),
+    }),
+
+    find_updates: tool({
+      description:
+        "Audit-trail search over the updates table. Returns AuditUpdate[] with { id, clientName, projectName, updatedBy, updateType, summary, previousValue, newValue, batchId, triggeredByUpdateId, createdAt }. All filters optional. Use this (not get_recent_updates) when you need the update `id` or `triggeredByUpdateId` to follow a cascade or reconcile a batch.",
+      inputSchema: z.object({
+        since: z.string().optional().describe("Inclusive lower bound on createdAt (ISO)."),
+        until: z.string().optional().describe("Inclusive upper bound on createdAt (ISO)."),
+        clientSlug: z.string().optional().describe("Narrow to one client slug."),
+        updatedBy: z.string().optional().describe("Substring match on updates.updated_by."),
+        updateType: z.string().optional().describe("Exact updateType (e.g. 'status-change', 'cascade-status-change')."),
+        batchId: z.string().optional().describe("Exact match on updates.batch_id."),
+        projectName: z.string().optional().describe("Substring match against linked project name."),
+        limit: z.number().optional().describe("Cap on rows. Default 100."),
+      }),
+      execute: async (params) => findUpdates(params),
+    }),
+
+    get_update_chain: tool({
+      description:
+        "Walk the cascade audit linkage for a given update id. Returns { root, chain: AuditUpdate[] } — root is the ancestor with no triggeredByUpdateId, chain is every row from root to leaf ordered by createdAt ascending. Use to answer 'why did X change?' by following the trigger chain.",
+      inputSchema: z.object({
+        updateId: z.string().describe("updates.id to follow. Usually from find_updates or a mutation response's data.auditId."),
+      }),
+      execute: async ({ updateId }) => getUpdateChain(updateId),
+    }),
+
+    // ── Tier 3 reads — observability & flags (PR #86 v4) ──
+
+    get_flags: tool({
+      description:
+        "Aggregate surface for every soft flag the board raises: past-end L2s, stale L1s, waitingOn bottlenecks, today/tomorrow deadlines, resource conflicts, retainer renewals, expired contracts. Returns { flags: RunwayFlag[], retainerRenewalDue: RetainerRenewalPill[], contractExpired: ContractExpiredPill[] }. Narrow via clientSlug or personName.",
+      inputSchema: z.object({
+        clientSlug: z.string().optional().describe("Narrow to one client slug."),
+        personName: z.string().optional().describe("Narrow to flags where owner/waitingOn matches (substring)."),
+      }),
+      execute: async ({ clientSlug, personName }) => getFlags({ clientSlug, personName }),
+    }),
+
+    get_data_health: tool({
+      description:
+        "Health snapshot of the Runway DB. Returns { totals, orphans: { weekItemsWithoutProject, projectsWithoutClient, updatesWithDanglingTriggeredBy }, stale: { staleProjects, pastEndL2s }, batch: { activeBatchId, distinctBatchIdsLast7Days }, lastUpdateAt }. Use before/after cleanup batches or when asked 'is everything linked correctly?'",
+      inputSchema: z.object({}),
+      execute: async () => getDataHealth(),
+    }),
+
+    get_current_batch: tool({
+      description:
+        "Return the currently-active batch for THIS process. Returns { active: false } when not batching, otherwise { active: true, batchId, itemCount, startedAt, startedBy, mostRecentAt }. Batch state is per-process, not persisted.",
+      inputSchema: z.object({}),
+      execute: async () => getCurrentBatch(),
+    }),
+
+    get_batch_contents: tool({
+      description:
+        "Retrieve every audit row tagged with the given batchId, grouped by (client, project) and sorted within each group by createdAt asc. Returns { batchId, totalUpdates, groups: [{ clientName, projectName, updates }] }. Use to review what a batch did before publishing or reconcile after.",
+      inputSchema: z.object({
+        batchId: z.string().describe("Batch id to inspect."),
+      }),
+      execute: async ({ batchId }) => getBatchContents(batchId),
+    }),
+
+    get_cascade_log: tool({
+      description:
+        "Recent cascade-generated audit rows within a time window, grouped by parent update id. Returns { windowMinutes, since, totalCascadeRows, groups: [{ parentUpdateId, parent, children }] }. Default window is 60 minutes. Use to see which cascades fired recently or trace cascade fan-out.",
+      inputSchema: z.object({
+        windowMinutes: z.number().optional().describe("Look-back window in minutes. Default 60."),
+      }),
+      execute: async ({ windowMinutes }) => getCascadeLog(windowMinutes),
     }),
   };
 }

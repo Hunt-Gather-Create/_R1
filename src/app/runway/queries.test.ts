@@ -110,6 +110,68 @@ describe("getWeekItems", () => {
     const result = await getWeekItems();
     expect(result).toEqual([]);
   });
+
+  // v4: resolves blockedBy id array into {id, title, status} refs (chunk 3 #7).
+  it("resolves blockedBy id array to in-scope blocker refs", async () => {
+    mockResults.push([
+      {
+        id: "wi-blocker",
+        date: "2026-04-06",
+        dayOfWeek: "monday",
+        title: "Copy Ready",
+        clientId: "c1",
+        category: "delivery",
+        owner: "Kathy",
+        status: "in-progress",
+        notes: null,
+        blockedBy: null,
+      },
+      {
+        id: "wi-downstream",
+        date: "2026-04-08",
+        dayOfWeek: "wednesday",
+        title: "Design Layout",
+        clientId: "c1",
+        category: "delivery",
+        owner: "Lane",
+        status: null,
+        notes: null,
+        blockedBy: '["wi-blocker","wi-missing"]',
+      },
+    ]);
+
+    const { getWeekItems } = await import("./queries");
+    const result = await getWeekItems();
+
+    const downstream = result
+      .flatMap((d) => d.items)
+      .find((i) => i.title === "Design Layout");
+
+    expect(downstream?.blockedBy).toEqual([
+      { id: "wi-blocker", title: "Copy Ready", status: "in-progress" },
+    ]);
+  });
+
+  it("drops blockedBy field when raw is null or empty", async () => {
+    mockResults.push([
+      {
+        id: "wi-1",
+        date: "2026-04-06",
+        dayOfWeek: "monday",
+        title: "Standalone",
+        clientId: "c1",
+        category: "delivery",
+        owner: "Kathy",
+        status: null,
+        notes: null,
+        blockedBy: null,
+      },
+    ]);
+
+    const { getWeekItems } = await import("./queries");
+    const result = await getWeekItems();
+    expect(result[0].items[0].blockedBy).toBeUndefined();
+  });
 });
 
 describe("getPipeline", () => {
@@ -249,6 +311,22 @@ describe("getStaleWeekItems", () => {
     ]);
     // Update after the item's date — project has been updated
     mockResults.push([createUpdate({ projectId: "p1", createdAt: new Date("2026-04-10T10:00:00") })]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    expect(result).toHaveLength(0);
+
+    vi.useRealTimers();
+  });
+
+  it("excludes completed items even when past-due with no update", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    // Past-due item with status='completed' — should be excluded regardless of updates
+    mockResults.push([createWeekItem({ date: "2026-04-06", status: "completed" })]);
+    mockResults.push([]);
 
     const { getStaleWeekItems } = await import("./queries");
     const result = await getStaleWeekItems();

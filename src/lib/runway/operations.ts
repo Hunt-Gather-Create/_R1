@@ -59,6 +59,8 @@ export {
   mergeJsonArray,
   setBatchId,
   getBatchId,
+  parseResources,
+  normalizeResourcesString,
 } from "./operations-utils";
 
 export type {
@@ -69,15 +71,32 @@ export type {
   PipelineItemField,
   ClientField,
   TeamMemberField,
+  ResourceEntry,
 } from "./operations-utils";
+
+// ── Structured mutation response shape (v4 / PR #86) ────
+export type {
+  MutationResponse,
+  MutationSuccess,
+  MutationFailure,
+  CascadedItemInfo,
+  ReverseCascadeInfo,
+  UpdateProjectStatusData,
+  UpdateProjectFieldData,
+  UpdateWeekItemFieldData,
+} from "./mutation-response";
 
 // ── Read operations ─────────────────────────────────────
 export {
   getClientsWithCounts,
+  getClientDetail,
   getProjectsFiltered,
   getLinkedWeekItems,
   getLinkedDeadlineItems,
+  getOrphanWeekItems,
   getWeekItemsData,
+  getWeekItemsInRange,
+  getWeekItemsByProject,
   getPersonWorkload,
   getPipelineData,
   getStaleItemsForAccounts,
@@ -86,16 +105,75 @@ export {
 export type {
   WeekItemRow,
   StaleAccountItem,
+  GetClientsWithCountsOptions,
+  GetClientDetailOptions,
+  ClientDetail,
+  ClientDetailProject,
+  ClientDetailPipelineItem,
+  ClientDetailUpdate,
 } from "./operations-reads";
 
 export {
   getRecentUpdates,
+  findUpdates,
+  getUpdateChain,
 } from "./operations-reads-updates";
 
 export type {
   RecentUpdate,
   GetRecentUpdatesParams,
+  AuditUpdate,
+  FindUpdatesParams,
+  UpdateChain,
 } from "./operations-reads-updates";
+
+export {
+  getProjectStatus,
+} from "./operations-reads-project-status";
+
+// ── Flags aggregate surface ─────────────────────────────
+export {
+  getFlags,
+} from "./operations-reads-flags";
+
+export type {
+  GetFlagsOptions,
+  GetFlagsResult,
+} from "./operations-reads-flags";
+
+// ── Health / observability operations ──────────────────
+export {
+  getDataHealth,
+  getCurrentBatch,
+  getBatchContents,
+  getCascadeLog,
+} from "./operations-reads-health";
+
+export type {
+  DataHealth,
+  DataHealthTotals,
+  DataHealthOrphans,
+  DataHealthStale,
+  DataHealthBatch,
+  CurrentBatch,
+  BatchContents,
+  BatchContentsGroup,
+  BatchUpdateEntry,
+  CascadeLog,
+  CascadeLogGroup,
+  CascadeParent,
+  CascadeChildEntry,
+} from "./operations-reads-health";
+
+export type {
+  ProjectStatus,
+  ProjectStatusEnum,
+  ProjectStatusWeekItem,
+  ProjectStatusUpdate,
+  EngagementType,
+  GetProjectStatusParams,
+  GetProjectStatusResult,
+} from "./operations-reads-project-status";
 
 // ── Context operations ──────────────────────────────────
 export {
@@ -108,6 +186,7 @@ export {
 
 export type {
   TeamMemberRecord,
+  GetUpdatesDataOptions,
 } from "./operations-context";
 
 // ── Write operations ────────────────────────────────────
@@ -133,12 +212,14 @@ export {
   createWeekItem,
   updateWeekItemField,
   deleteWeekItem,
+  linkWeekItemToProject,
 } from "./operations-writes-week";
 
 export type {
   CreateWeekItemParams,
   UpdateWeekItemFieldParams,
   DeleteWeekItemParams,
+  LinkWeekItemToProjectParams,
 } from "./operations-writes-week";
 
 export {

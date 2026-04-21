@@ -14,10 +14,11 @@ import {
   findProjectByFuzzyName,
   resolveProjectOrFail,
   normalizeForMatch,
+  normalizeResourcesString,
   checkDuplicate,
   insertAuditRecord,
 } from "./operations";
-import type { OperationResult } from "./operations-utils";
+import type { MutationResponse } from "./mutation-response";
 
 export interface AddProjectParams {
   clientSlug: string;
@@ -42,7 +43,7 @@ export interface AddUpdateParams {
 
 export async function addProject(
   params: AddProjectParams
-): Promise<OperationResult> {
+): Promise<MutationResponse<{ clientName: string; projectName: string }>> {
   const {
     clientSlug,
     name,
@@ -79,11 +80,15 @@ export async function addProject(
   );
 
   const dup = await checkDuplicate(idemKey, {
-    ok: true, message: "Project already added (duplicate request).",
+    ok: true,
+    message: "Project already added (duplicate request).",
+    data: { clientName: client.name, projectName: name },
   });
-  if (dup) return dup;
+  if (dup) return dup as MutationResponse<{ clientName: string; projectName: string }>;
 
   const projectId = generateId();
+  // v4 (Chunk 5): normalize resources on write so storage stays canonical.
+  const normalizedResources = resources ? normalizeResourcesString(resources) : null;
   await db.insert(projects).values({
     id: projectId,
     clientId: client.id,
@@ -91,7 +96,7 @@ export async function addProject(
     status,
     category,
     owner: owner ?? null,
-    resources: resources ?? null,
+    resources: normalizedResources,
     dueDate: dueDate ?? null,
     target: target ?? null,
     waitingOn: waitingOn ?? null,
@@ -118,7 +123,7 @@ export async function addProject(
 
 export async function addUpdate(
   params: AddUpdateParams
-): Promise<OperationResult> {
+): Promise<MutationResponse<{ clientName: string; projectName?: string }>> {
   const { clientSlug, projectName, summary, updatedBy } = params;
 
   const lookup = await getClientOrFail(clientSlug);
@@ -152,7 +157,7 @@ export async function addUpdate(
     message: "Update already logged (duplicate request).",
     data: { clientName: client.name, projectName: projectMatch },
   });
-  if (dup) return dup;
+  if (dup) return dup as MutationResponse<{ clientName: string; projectName?: string }>;
 
   await insertAuditRecord({
     idempotencyKey: idemKey,

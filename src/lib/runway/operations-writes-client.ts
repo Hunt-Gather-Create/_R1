@@ -20,8 +20,9 @@ import {
   insertAuditRecord,
   validateAndResolveField,
   getPreviousValue,
+  normalizeResourcesString,
 } from "./operations-utils";
-import type { OperationResult } from "./operations-utils";
+import type { MutationResponse } from "./mutation-response";
 
 // ── Create Client ───────────────────────────────────────
 
@@ -39,7 +40,7 @@ export interface CreateClientParams {
 
 export async function createClient(
   params: CreateClientParams
-): Promise<OperationResult> {
+): Promise<MutationResponse<{ clientName: string; slug: string }>> {
   const {
     name,
     slug,
@@ -73,15 +74,18 @@ export async function createClient(
     message: "Client already created (duplicate request).",
     data: { clientName: name, slug },
   });
-  if (dup) return dup;
+  if (dup) return dup as MutationResponse<{ clientName: string; slug: string }>;
 
   const clientId = generateId();
+  // v4 (Chunk 5 debt §14.1): normalize `team` on write — mirrors
+  // updateClientField so create/update paths store canonical roster format.
+  const normalizedTeam = team ? normalizeResourcesString(team) : null;
   await db.insert(clients).values({
     id: clientId,
     name,
     slug,
     nicknames: nicknames ?? null,
-    team: team ?? null,
+    team: normalizedTeam,
     contractValue: contractValue ?? null,
     contractTerm: contractTerm ?? null,
     contractStatus: contractStatus ?? null,
@@ -118,13 +122,20 @@ export interface UpdateClientFieldParams {
 
 export async function updateClientField(
   params: UpdateClientFieldParams
-): Promise<OperationResult> {
+): Promise<
+  MutationResponse<{
+    clientName: string;
+    field: string;
+    previousValue: string;
+    newValue: string;
+  }>
+> {
   const { clientSlug, field, newValue, updatedBy } = params;
   const db = getRunwayDb();
 
   const fieldResult = validateAndResolveField(field, CLIENT_FIELDS, CLIENT_FIELD_TO_COLUMN);
   if (!fieldResult.ok) return fieldResult;
-  const { columnKey } = fieldResult;
+  const { typedField, columnKey } = fieldResult;
 
   const lookup = await getClientOrFail(clientSlug);
   if (!lookup.ok) return lookup;
@@ -132,24 +143,35 @@ export async function updateClientField(
 
   const previousValue = getPreviousValue(client, columnKey);
 
+  // v4 (Chunk 5): normalize `team` on write — it uses the same role-prefix
+  // roster format as L1/L2 resources.
+  const effectiveNewValue =
+    typedField === "team" ? normalizeResourcesString(newValue) : newValue;
+
   const idemKey = generateIdempotencyKey(
     "client-field-change",
     client.id,
     field,
-    newValue,
+    effectiveNewValue,
     updatedBy
   );
 
   const dup = await checkDuplicate(idemKey, {
     ok: true,
     message: "Update already applied (duplicate request).",
-    data: { clientName: client.name, field, previousValue, newValue },
+    data: { clientName: client.name, field, previousValue, newValue: effectiveNewValue },
   });
-  if (dup) return dup;
+  if (dup)
+    return dup as MutationResponse<{
+      clientName: string;
+      field: string;
+      previousValue: string;
+      newValue: string;
+    }>;
 
   await db
     .update(clients)
-    .set({ [columnKey]: newValue, updatedAt: new Date() })
+    .set({ [columnKey]: effectiveNewValue, updatedAt: new Date() })
     .where(eq(clients.id, client.id));
 
   // Invalidate cache since client data changed
@@ -161,14 +183,14 @@ export async function updateClientField(
     updatedBy,
     updateType: "client-field-change",
     previousValue,
-    newValue,
-    summary: `${client.name}: ${field} changed from "${previousValue}" to "${newValue}"`,
+    newValue: effectiveNewValue,
+    summary: `${client.name}: ${field} changed from "${previousValue}" to "${effectiveNewValue}"`,
     metadata: JSON.stringify({ field }),
   });
 
   return {
     ok: true,
     message: `Updated ${field} for ${client.name}.`,
-    data: { clientName: client.name, field, previousValue, newValue },
+    data: { clientName: client.name, field, previousValue, newValue: effectiveNewValue },
   };
 }

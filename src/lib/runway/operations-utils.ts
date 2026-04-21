@@ -321,7 +321,11 @@ export async function checkIdempotency(idemKey: string): Promise<boolean> {
 
 /** Editable fields on a project (excludes status — that uses updateProjectStatus). */
 export const PROJECT_FIELDS = [
-  "name", "dueDate", "owner", "resources", "waitingOn", "target", "notes",
+  "name", "dueDate", "owner", "resources", "waitingOn", "target", "notes", "category",
+  // v4 convention (2026-04-21): retainer + contract metadata writable via
+  // updateProjectField. `startDate` / `endDate` remain derived from children
+  // and are recomputed by `recomputeProjectDates`, not set directly here.
+  "engagementType", "contractStart", "contractEnd",
 ] as const;
 
 export type ProjectField = (typeof PROJECT_FIELDS)[number];
@@ -334,11 +338,24 @@ export const PROJECT_FIELD_TO_COLUMN: Record<ProjectField, keyof typeof projects
   waitingOn: "waitingOn",
   target: "target",
   notes: "notes",
+  category: "category",
+  engagementType: "engagementType",
+  contractStart: "contractStart",
+  contractEnd: "contractEnd",
 };
 
-/** Editable fields on a week item. */
+/**
+ * Editable fields on a week item.
+ *
+ * `weekOf` is here as a plain whitelist entry for now — callers updating it
+ * are responsible for keeping it consistent with `date` (Monday of the same
+ * week). Longer-term answer is a dedicated `updateWeekItemWeekBucket` helper
+ * that derives weekOf from date and validates the invariant.
+ */
 export const WEEK_ITEM_FIELDS = [
-  "title", "status", "date", "dayOfWeek", "owner", "resources", "notes", "category",
+  "title", "status", "date", "dayOfWeek", "weekOf", "owner", "resources", "notes", "category",
+  // v4 convention (2026-04-21): explicit start/end dates + dependency list.
+  "startDate", "endDate", "blockedBy",
 ] as const;
 
 export type WeekItemField = (typeof WEEK_ITEM_FIELDS)[number];
@@ -348,19 +365,24 @@ export const WEEK_ITEM_FIELD_TO_COLUMN: Record<WeekItemField, keyof typeof weekI
   status: "status",
   date: "date",
   dayOfWeek: "dayOfWeek",
+  weekOf: "weekOf",
   owner: "owner",
   resources: "resources",
   notes: "notes",
   category: "category",
+  startDate: "startDate",
+  endDate: "endDate",
+  blockedBy: "blockedBy",
 };
 
 /**
- * Fields that undo can revert — union of project fields + status + category.
+ * Fields that undo can revert — union of project fields + status.
  * Derived from PROJECT_FIELDS so additions to the project schema automatically
- * become undoable without maintaining a separate list.
+ * become undoable without maintaining a separate list. (`category` is now part
+ * of PROJECT_FIELDS so it's included via the spread.)
  */
 export const UNDO_FIELDS = [
-  ...PROJECT_FIELDS, "status", "category",
+  ...PROJECT_FIELDS, "status",
 ] as const;
 
 // ── Field Validation ─────────────────────────────────────
@@ -415,6 +437,9 @@ export function setBatchId(id: string | null): void { _currentBatchId = id; }
 export function getBatchId(): string | null { return _currentBatchId; }
 
 export interface AuditRecordParams {
+  /** Optional: pre-generated id. Useful when the caller needs to link child records
+   *  via `triggeredByUpdateId` before insertion completes. Defaults to a fresh id. */
+  id?: string;
   idempotencyKey: string;
   projectId?: string | null;
   clientId?: string | null;
@@ -425,13 +450,16 @@ export interface AuditRecordParams {
   summary: string;
   metadata?: string;
   batchId?: string | null;
+  /** v4: id of the parent update that triggered this cascade-generated record. */
+  triggeredByUpdateId?: string | null;
 }
 
-/** Insert an audit record into the updates table. */
-export async function insertAuditRecord(params: AuditRecordParams): Promise<void> {
+/** Insert an audit record into the updates table. Returns the inserted row's id. */
+export async function insertAuditRecord(params: AuditRecordParams): Promise<string> {
   const db = getRunwayDb();
+  const id = params.id ?? generateId();
   await db.insert(updates).values({
-    id: generateId(),
+    id,
     idempotencyKey: params.idempotencyKey,
     projectId: params.projectId ?? null,
     clientId: params.clientId ?? null,
@@ -442,7 +470,9 @@ export async function insertAuditRecord(params: AuditRecordParams): Promise<void
     summary: params.summary,
     metadata: params.metadata,
     batchId: params.batchId ?? _currentBatchId ?? null,
+    triggeredByUpdateId: params.triggeredByUpdateId ?? null,
   });
+  return id;
 }
 
 /**
@@ -706,4 +736,102 @@ export function mergeJsonArray(
   const existing: string[] = current ? JSON.parse(current) : [];
   const merged = [...new Set([...existing, ...toAdd])];
   return JSON.stringify(merged);
+}
+
+// ── v4 Resources Parser ─────────────────────────────────
+
+/**
+ * A single parsed entry from a resources string.
+ *
+ * @see docs/tmp/runway-v4-convention.md §"Resources field format"
+ */
+export type ResourceEntry = {
+  /** Role abbreviation: AM, CD, Dev, CW, PM, CM, Strat. Empty string when no prefix was given. */
+  role: string;
+  /** Person name (trimmed). For client-led work this may be the client name. */
+  person: string;
+  /**
+   * 0 for first position in an arrow chain, 1 for second, etc.
+   * Comma-joined entries at the same arrow position share the same number.
+   */
+  handoffPosition: number;
+  /** True when this entry is comma-joined at its handoff position (peer collaboration). */
+  isConcurrent: boolean;
+};
+
+/** Matches unicode/alternative arrow forms accepted by the parser. Canonical arrow is `->`. */
+const ARROW_NORMALIZE_RE = /\s*(?:->|→|=>|>>)\s*/g;
+
+/**
+ * Normalize a resources string to canonical form:
+ * - Converts `→`, `=>`, `>>` to `->`
+ * - Trims and collapses whitespace around `->` and `,`
+ * - Preserves order; does not dedupe or validate entries
+ *
+ * Used on write (Chunk 5) to persist resources in a consistent format.
+ * Wired into: `createWeekItem`, `updateWeekItemField` (field === "resources"),
+ * `addProject`, `updateProjectField` (field === "resources"),
+ * `createClient` (team field), `updateClientField` (field === "team").
+ * Read paths consume storage as-is.
+ */
+export function normalizeResourcesString(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return raw
+    .replace(ARROW_NORMALIZE_RE, " -> ")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .join(", ");
+}
+
+/**
+ * Parse a resources string into typed entries.
+ *
+ * Format rules (v4):
+ * - `,` separates concurrent collaborators at the same handoff position
+ * - `->` (or `→` / `=>` / `>>`) separates sequential handoff positions
+ * - Each entry is `Role: Person` or bare `Person` (no role prefix)
+ *
+ * Examples:
+ *   "CD: Lane"                           → [{role:"CD", person:"Lane", handoffPosition:0, isConcurrent:false}]
+ *   "CD: Lane, Dev: Leslie"              → both at position 0, isConcurrent=true
+ *   "CD: Lane -> Dev: Leslie"            → Lane at 0, Leslie at 1, both isConcurrent=false
+ *   "CD: Lane -> Dev: Leslie, CW: Kathy" → Lane at 0 (solo), Leslie+Kathy at 1 (concurrent)
+ *
+ * Returns an empty array for null/undefined/empty input or when every segment
+ * is malformed (empty). Individual malformed entries are skipped silently.
+ */
+export function parseResources(raw: string | null | undefined): ResourceEntry[] {
+  if (!raw) return [];
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+
+  // Normalize all arrow forms to a single canonical token for splitting.
+  const withCanonicalArrows = trimmed.replace(ARROW_NORMALIZE_RE, "->");
+  const stages = withCanonicalArrows.split("->");
+
+  const entries: ResourceEntry[] = [];
+  for (let stageIdx = 0; stageIdx < stages.length; stageIdx++) {
+    const stage = stages[stageIdx];
+    const peers = stage.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+    const isConcurrent = peers.length > 1;
+    for (const peer of peers) {
+      const colonIdx = peer.indexOf(":");
+      let role = "";
+      let person = peer;
+      if (colonIdx > -1) {
+        role = peer.slice(0, colonIdx).trim();
+        person = peer.slice(colonIdx + 1).trim();
+      }
+      if (!person) continue; // skip malformed `Role:` with no person
+      entries.push({
+        role,
+        person,
+        handoffPosition: stageIdx,
+        isConcurrent,
+      });
+    }
+  }
+
+  return entries;
 }

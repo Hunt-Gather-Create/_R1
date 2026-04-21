@@ -52,6 +52,12 @@ vi.mock("./operations-utils", () => ({
     }
     return { ok: true, typedField: field, columnKey: fieldToColumn[field] };
   },
+  // v4 (Chunk 5): identity passthrough by default keeps existing assertions
+  // stable. Tests that need to prove normalize is actually invoked (e.g.
+  // createClient team normalization in §14.1) transform non-canonical arrow
+  // forms to the canonical `->` token so the write can be asserted.
+  normalizeResourcesString: (raw: string | null | undefined) =>
+    (raw ?? "").replace(/\s*(?:→|=>|>>)\s*/g, " -> "),
 }));
 
 const client = { id: "c1", name: "Convergix", slug: "convergix", team: "PM: Ronan", contractStatus: null };
@@ -107,6 +113,55 @@ describe("createClient", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.message).toContain("duplicate");
+  });
+
+  // v4 (Chunk 5 debt §14.1): createClient was the one write path storing
+  // `team` raw. Proves normalizeResourcesString is invoked on create.
+  it("normalizes team field on write (unicode arrow → canonical ->)", async () => {
+    mockGetClientBySlugResult.mockResolvedValue(null);
+
+    const { createClient } = await import("./operations-writes-client");
+    const result = await createClient({
+      name: "Arrow Client",
+      slug: "arrow-client",
+      team: "PM: Jason → CD: Lane",
+      updatedBy: "jason",
+    });
+
+    expect(result.ok).toBe(true);
+    // First insert is the client row; assert team stored in canonical form.
+    const clientInsert = mockInsertValues.mock.calls[0][0];
+    expect(clientInsert.team).toBe("PM: Jason -> CD: Lane");
+  });
+
+  it("normalizes team field on write (drift arrow => canonical ->)", async () => {
+    mockGetClientBySlugResult.mockResolvedValue(null);
+
+    const { createClient } = await import("./operations-writes-client");
+    const result = await createClient({
+      name: "Drift Client",
+      slug: "drift-client",
+      team: "PM: Jason =>CD: Lane",
+      updatedBy: "jason",
+    });
+
+    expect(result.ok).toBe(true);
+    const clientInsert = mockInsertValues.mock.calls[0][0];
+    expect(clientInsert.team).toBe("PM: Jason -> CD: Lane");
+  });
+
+  it("stores null team when not provided (no normalize call)", async () => {
+    mockGetClientBySlugResult.mockResolvedValue(null);
+
+    const { createClient } = await import("./operations-writes-client");
+    await createClient({
+      name: "No Team Client",
+      slug: "no-team-client",
+      updatedBy: "jason",
+    });
+
+    const clientInsert = mockInsertValues.mock.calls[0][0];
+    expect(clientInsert.team).toBeNull();
   });
 });
 

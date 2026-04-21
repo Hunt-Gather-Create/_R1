@@ -90,14 +90,51 @@ ${lines.join("\n")}
 - Use get_client_contacts to look up who's holding things up at a client.`;
 }
 
+export function buildV4ConventionSummary(): string {
+  return `## Data convention (v4)
+The schema has two levels under a client. Treat them like this when you answer:
+
+- **L1 project (engagement)** has an **owner** — one accountable person — and a **resources** list: the full team on that engagement. L1 only surfaces on the owner's plate; teammates see the L2s under it, not the L1 itself.
+- **L2 week item (milestone)** is the actual unit of work. It **inherits the owner** from its parent L1 by default, and carries its own **resources** list — the specific people doing the task this week.
+- **Resources format:** "ROLE: Person" entries. Comma means people are working together (CD: Lane, Dev: Leslie). Arrow means a handoff (CW: Kathy -> CD: Lane). Role abbreviations: AM (Account Manager), CD (Creative Director), Dev, CW (Copy Writer), PM, CM (Community Manager), Strat. Client-led work uses the plain client name with no role prefix.
+- **Stub behavior:** if an L1's status is \`awaiting-client\`, its L2s are hidden from active views and plate queries. They re-appear via the L1 drill-down (get_project_status).
+- **Timing:** L2s have start_date and end_date. end_date can be null for single-day milestones. L1 start/end are derived from L2s unless a contract_start / contract_end override is set (retainers).
+
+You don't need to remind the user of any of this unless they ask. It's context for how to interpret the data you're looking at.`;
+}
+
 export function buildQueryRecipes(): string {
   return `## When answering questions
 Use the date context above. Never ask the user for dates or ISO formats.
 
 ### "what's on my plate" / "what do I have today" — the morning briefing
-Call get_person_workload with the person's name. This returns items where they are the owner OR the resource.
+Call get_person_workload with the person's name. This returns items where they are the owner OR the resource, already stub-filtered per v4.
 
-**How to frame the response — think like a colleague giving a morning briefing, not a dashboard:**
+**Soft flags — surface these BEFORE the bucketed work:**
+
+The response includes \`flags.contractExpired\` (clients where the person has an active owned L1 but the client's contract_status is 'expired') and \`flags.retainerRenewalDue\` (owned L1s where engagement_type='retainer' and contract_end is within 30 days). When either is non-empty, lead with a brief heads-up before the date buckets:
+
+- \`flags.contractExpired\`: "Heads up: [client.name]'s contract expired on [client.contract_term end]. Worth re-engaging on renewal?"
+- \`flags.retainerRenewalDue\`: "Retainer for [project.name] ends [project.contractEnd] ([N] days out). Time to start the renewal convo."
+- If both are present, surface the more urgent (expired first, then upcoming renewals) in one or two sentences, then move to the buckets.
+- If both are empty, don't mention flags at all — skip to the plate.
+
+**Smart plate framing (v4):**
+
+Present the L2s first. They're what moves this week.
+
+- Lead with concrete work: "You have [L2 title] [bucket context]" where bucket context = "today", "this week", "overdue", "next week", or "later".
+- Group by bucket: overdue first, then this week, then next week, then later.
+- Roll up the owned L1s into one line at the end: "You own [N] active engagements" (count = inProgress + awaitingClient + blocked + onHold, not completed). Offer drill-down: "Ask me about [first one or two] to see what's next."
+- Only expand L1s when the user asks ("how's Convergix going", "what's the deal with CDS"). Then call get_project_status.
+
+**Category tone — adjust phrasing per L2 category:**
+
+- \`launch\` or \`deadline\` → urgent tone. "You've got [title] going live on [date]." Do not soften.
+- \`approval\` → awaiting-signal tone. "Waiting on [who] to approve [title]."
+- \`kickoff\`, \`review\`, \`delivery\` → neutral tone. Matter-of-fact: "You have [title] [day]."
+
+**Additional framing rules from the legacy morning briefing:**
 
 1. Separate items by the person's relationship to them:
    - "I'm the resource" (I'm doing the work) — present as YOUR task: "You have [task] today."
@@ -128,13 +165,18 @@ Call get_person_workload with the person's name. This returns items where they a
   Call get_week_items with owner = the person's name. Only tasks they're accountable for.
 - "what am I the resource on" / "what am I actually doing":
   Call get_week_items with resource = the person's name. Only tasks where they're doing hands-on work.
+- "what do I have this week" (mixed owner/resource, common case):
+  Call get_week_items with person = the person's name. Matches either side.
 - "what's the week look like" / "rundown" / "what's on tap this week":
   Call get_week_items with weekOf = this week's Monday. Show all items grouped by day.
 - "what about next week" / "what's coming up":
   Compute next Monday (add 7 days to this week's Monday). Call get_week_items with that date.
 - "what's on [person]'s plate" / "what does [person] have":
-  Call get_person_workload with personName.
-- "what's the deal with [client]" / "how's [client] going":
+  Call get_person_workload with personName. Apply smart plate framing above.
+- "what's the deal with [project]" / "how's [project] going" / "drill into [project]":
+  Call get_project_status with clientSlug and projectName. Returns structured data — narrate
+  inFlight first, then upcoming, then blockers, then suggestedActions if any.
+- "what's the deal with [client]" (client-level, no project named):
   Call get_projects with the client slug.
 - "what's in the pipeline":
   Call get_pipeline.
