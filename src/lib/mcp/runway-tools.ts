@@ -97,7 +97,7 @@ export function registerRunwayTools(server: McpServer) {
 
   server.tool(
     "get_projects",
-    "List L1 projects, optionally filtered. Returns { id, name, client, status, category, owner, resources, waitingOn, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }. Filter by clientSlug, exact status, owner substring, waitingOn substring, or engagementType (exact match — pass '__null__' to match projects with NULL engagement_type).",
+    "List L1 projects, optionally filtered. Returns { id, name, client, status, category, owner, resources, waitingOn, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, parentProjectId, updatedAt }. Filter by clientSlug, exact status, owner substring, waitingOn substring, engagementType (exact — pass '__null__' to match projects with NULL engagement_type), or parentProjectId (exact — pass '__null__' to match top-level projects, or a wrapper's id to list its children).",
     {
       clientSlug: z.string().optional().describe("Filter by client slug (e.g. 'convergix')"),
       status: z.string().optional().describe("Exact status match (e.g. 'in-production', 'blocked', 'awaiting-client')"),
@@ -109,9 +109,17 @@ export function registerRunwayTools(server: McpServer) {
         .describe(
           "Exact match on engagement_type (e.g. 'retainer', 'project', 'break-fix'). Pass the sentinel '__null__' to narrow to projects with NULL engagement_type.",
         ),
+      parentProjectId: z
+        .string()
+        .optional()
+        .describe(
+          "Exact match on parent_project_id (retainer wrapper linkage, PR #88 Chunk F). Pass a wrapper's id to list its deliverable L1s. Pass '__null__' to narrow to top-level L1s that are not nested under a wrapper.",
+        ),
     },
-    async ({ clientSlug, status, owner, waitingOn, engagementType }) =>
-      textResult(await getProjectsFiltered({ clientSlug, status, owner, waitingOn, engagementType })),
+    async ({ clientSlug, status, owner, waitingOn, engagementType, parentProjectId }) =>
+      textResult(
+        await getProjectsFiltered({ clientSlug, status, owner, waitingOn, engagementType, parentProjectId }),
+      ),
   );
 
   server.tool(
@@ -392,12 +400,22 @@ export function registerRunwayTools(server: McpServer) {
 
   server.tool(
     "update_project_field",
-    "Update a specific field on a project. On success returns { message, data } where data includes { clientName, projectName, field, previousValue, newValue, cascadedItems, cascadeDetail ([{ itemId, itemTitle, field: 'date', previousValue, newValue, auditId }] — only populated when field='dueDate'), auditId }.",
+    "Update a specific field on a project. On success returns { message, data } where data includes { clientName, projectName, field, previousValue, newValue, cascadedItems, cascadeDetail ([{ itemId, itemTitle, field: 'date', previousValue, newValue, auditId }] — only populated when field='dueDate'), auditId }. Setting `parentProjectId` attaches a deliverable L1 to a retainer wrapper; pass an empty string to clear it (PR #88 Chunk F).",
     {
       clientSlug: z.string().describe("Client slug"),
       projectName: z.string().describe("Project name (fuzzy match)"),
-      field: z.enum(["name", "dueDate", "owner", "resources", "waitingOn", "notes"]).describe("Field to update"),
-      newValue: z.string().describe("New value"),
+      field: z
+        .enum([
+          "name",
+          "dueDate",
+          "owner",
+          "resources",
+          "waitingOn",
+          "notes",
+          "parentProjectId",
+        ])
+        .describe("Field to update"),
+      newValue: z.string().describe("New value (pass empty string to clear parentProjectId)"),
       updatedBy: z.string().default("mcp").describe("Person making the update"),
     },
     async (params) => {

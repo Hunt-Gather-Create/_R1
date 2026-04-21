@@ -97,7 +97,7 @@ describe("registerRunwayTools", () => {
 
   it("get_projects passes all filters", async () => {
     await registeredTools.get("get_projects")!({ clientSlug: "convergix", status: "blocked", owner: "Kathy", waitingOn: "Daniel" });
-    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: "convergix", status: "blocked", owner: "Kathy", waitingOn: "Daniel", engagementType: undefined });
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: "convergix", status: "blocked", owner: "Kathy", waitingOn: "Daniel", engagementType: undefined, parentProjectId: undefined });
   });
 
   it("get_projects passes engagementType filter (PR #88 Chunk B)", async () => {
@@ -108,6 +108,7 @@ describe("registerRunwayTools", () => {
       owner: undefined,
       waitingOn: undefined,
       engagementType: "retainer",
+      parentProjectId: undefined,
     });
   });
 
@@ -119,6 +120,31 @@ describe("registerRunwayTools", () => {
       owner: undefined,
       waitingOn: undefined,
       engagementType: "__null__",
+      parentProjectId: undefined,
+    });
+  });
+
+  it("get_projects passes parentProjectId filter (PR #88 Chunk F)", async () => {
+    await registeredTools.get("get_projects")!({ parentProjectId: "pj-wrap" });
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({
+      clientSlug: undefined,
+      status: undefined,
+      owner: undefined,
+      waitingOn: undefined,
+      engagementType: undefined,
+      parentProjectId: "pj-wrap",
+    });
+  });
+
+  it("get_projects passes parentProjectId='__null__' sentinel through", async () => {
+    await registeredTools.get("get_projects")!({ parentProjectId: "__null__" });
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({
+      clientSlug: undefined,
+      status: undefined,
+      owner: undefined,
+      waitingOn: undefined,
+      engagementType: undefined,
+      parentProjectId: "__null__",
     });
   });
 
@@ -431,6 +457,12 @@ describe("registerRunwayTools", () => {
     const result = await registeredTools.get("update_project_field")!(params);
     expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
     expect(result).toEqual({ content: [{ type: "text", text: "Updated" }] });
+  });
+
+  it("update_project_field forwards parentProjectId field (PR #88 Chunk F)", async () => {
+    const params = { clientSlug: "convergix", projectName: "CDS", field: "parentProjectId", newValue: "pj-wrap", updatedBy: "mcp" };
+    await registeredTools.get("update_project_field")!(params);
+    expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
   });
 
   it("update_project_field surfaces cascadeDetail for dueDate changes", async () => {

@@ -101,6 +101,8 @@ describe("getClientsWithCounts", () => {
     // Enrichment wired through from getProjectsFiltered shape.
     expect(cds).toHaveProperty("engagementType");
     expect(cds).toHaveProperty("dueDate");
+    // v4 PR #88 Chunk F: retainer wrapper parent linkage.
+    expect(cds).toHaveProperty("parentProjectId");
   });
 
   it("returns empty projects array when includeProjects=true for zero-project client", async () => {
@@ -309,6 +311,67 @@ describe("getProjectsFiltered", () => {
 
     expect(result.map((p) => p.id)).toEqual(["pj-cds"]);
   });
+
+  // ── parentProjectId filter (PR #88 Chunk F) ─────────────
+
+  it("exposes parentProjectId on the enriched response shape", async () => {
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered({ clientSlug: "convergix" });
+    for (const p of result) {
+      expect(p).toHaveProperty("parentProjectId");
+    }
+  });
+
+  it("returns parentProjectId=null for top-level projects (default seed)", async () => {
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered();
+    // No seed row sets parent_project_id, so every row is a top-level L1.
+    expect(result.every((p) => p.parentProjectId === null)).toBe(true);
+  });
+
+  it("filters by parentProjectId to a specific wrapper's children", async () => {
+    // Make pj-cds a wrapper for pj-social-cgx + pj-brand.
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET parent_project_id = 'pj-cds' WHERE id IN ('pj-social-cgx', 'pj-brand')`,
+      args: [],
+    });
+
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered({ parentProjectId: "pj-cds" });
+
+    const ids = result.map((p) => p.id).sort();
+    expect(ids).toEqual(["pj-brand", "pj-social-cgx"]);
+    expect(result.every((p) => p.parentProjectId === "pj-cds")).toBe(true);
+  });
+
+  it("returns only top-level L1s when parentProjectId='__null__' sentinel is passed", async () => {
+    // Nest two projects under pj-cds.
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET parent_project_id = 'pj-cds' WHERE id IN ('pj-social-cgx', 'pj-brand')`,
+      args: [],
+    });
+
+    const { getProjectsFiltered, PARENT_PROJECT_ID_NULL_SENTINEL } = await import(
+      "./operations-reads-clients"
+    );
+    expect(PARENT_PROJECT_ID_NULL_SENTINEL).toBe("__null__");
+
+    const result = await getProjectsFiltered({
+      parentProjectId: PARENT_PROJECT_ID_NULL_SENTINEL,
+    });
+
+    const ids = result.map((p) => p.id);
+    expect(ids).not.toContain("pj-social-cgx");
+    expect(ids).not.toContain("pj-brand");
+    expect(ids).toContain("pj-cds"); // wrapper itself is top-level
+    expect(result.every((p) => p.parentProjectId === null)).toBe(true);
+  });
+
+  it("returns empty array when no project matches a given parentProjectId", async () => {
+    const { getProjectsFiltered } = await import("./operations-reads-clients");
+    const result = await getProjectsFiltered({ parentProjectId: "pj-nonexistent" });
+    expect(result).toEqual([]);
+  });
 });
 
 describe("getClientDetail", () => {
@@ -340,6 +403,9 @@ describe("getClientDetail", () => {
     const cds = result!.projects.find((p) => p.id === "pj-cds");
     expect(cds).toBeDefined();
     expect(cds!.dueDate).toBe("2026-04-25");
+    // v4 PR #88 Chunk F: parentProjectId surfaces on the deep-view shape.
+    expect(cds).toHaveProperty("parentProjectId");
+    expect(cds!.parentProjectId).toBeNull();
 
     // Pipeline: seed has one Convergix pipeline item (pl-cgx-sow).
     expect(result!.pipelineItems.map((p) => p.id)).toEqual(["pl-cgx-sow"]);

@@ -58,7 +58,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
 
     get_projects: tool({
       description:
-        "List L1 projects, optionally filtered. Each item has { id, name, client, status, category, owner, resources, waitingOn, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }. Filter by clientSlug, owner substring, waitingOn substring, or engagementType (exact — pass '__null__' to match projects with NULL engagement_type).",
+        "List L1 projects, optionally filtered. Each item has { id, name, client, status, category, owner, resources, waitingOn, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, parentProjectId, updatedAt }. Filter by clientSlug, owner substring, waitingOn substring, engagementType (exact — pass '__null__' to match projects with NULL engagement_type), or parentProjectId (exact — pass '__null__' for top-level projects, or a wrapper's id to list its children).",
       inputSchema: z.object({
         clientSlug: z.string().optional().describe("Client slug (e.g. 'convergix')"),
         owner: z.string().optional().describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
@@ -69,9 +69,15 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           .describe(
             "Exact engagement_type match (e.g. 'retainer', 'project', 'break-fix'). Pass '__null__' to narrow to projects with NULL engagement_type.",
           ),
+        parentProjectId: z
+          .string()
+          .optional()
+          .describe(
+            "Exact parent_project_id match (retainer wrapper linkage, PR #88 Chunk F). Pass a wrapper's id to list its deliverable L1s. Pass '__null__' to narrow to top-level L1s.",
+          ),
       }),
-      execute: async ({ clientSlug, owner, waitingOn, engagementType }) => {
-        return getProjectsFiltered({ clientSlug, owner, waitingOn, engagementType });
+      execute: async ({ clientSlug, owner, waitingOn, engagementType, parentProjectId }) => {
+        return getProjectsFiltered({ clientSlug, owner, waitingOn, engagementType, parentProjectId });
       },
     }),
 
@@ -287,12 +293,22 @@ export function createBotTools(userName: string, now: Date = new Date()) {
 
     update_project_field: tool({
       description:
-        "Update a specific field on a project. This ACTUALLY changes the database field. Use for deadlines, owner, resources, name changes. Do NOT use add_update for field changes.",
+        "Update a specific field on a project. This ACTUALLY changes the database field. Use for deadlines, owner, resources, name changes. Do NOT use add_update for field changes. Set `parentProjectId` to attach a deliverable L1 to a retainer wrapper (PR #88 Chunk F); pass an empty string to clear it.",
       inputSchema: z.object({
         clientSlug: z.string().describe("Client slug"),
         projectName: z.string().describe("Project name (fuzzy match)"),
-        field: z.enum(["name", "dueDate", "owner", "resources", "waitingOn", "notes"]).describe("Field to update"),
-        newValue: z.string().describe("New value for the field"),
+        field: z
+          .enum([
+            "name",
+            "dueDate",
+            "owner",
+            "resources",
+            "waitingOn",
+            "notes",
+            "parentProjectId",
+          ])
+          .describe("Field to update"),
+        newValue: z.string().describe("New value for the field (pass empty string to clear parentProjectId)"),
       }),
       execute: async ({ clientSlug, projectName, field, newValue }) => {
         const result = await updateProjectField({

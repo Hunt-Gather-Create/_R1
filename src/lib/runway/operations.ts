@@ -87,7 +87,10 @@ export type {
 } from "./mutation-response";
 
 // ── Read operations ─────────────────────────────────────
-export { ENGAGEMENT_TYPE_NULL_SENTINEL } from "./operations-reads-clients";
+export {
+  ENGAGEMENT_TYPE_NULL_SENTINEL,
+  PARENT_PROJECT_ID_NULL_SENTINEL,
+} from "./operations-reads-clients";
 export {
   getClientsWithCounts,
   getClientDetail,

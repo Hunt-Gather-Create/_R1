@@ -194,6 +194,14 @@ describe("field constants", () => {
     }
   });
 
+  it("PROJECT_FIELDS includes parentProjectId (PR #88 Chunk F)", async () => {
+    const { PROJECT_FIELDS, PROJECT_FIELD_TO_COLUMN } = await import("./operations-utils");
+    // Retainer wrapper linkage is writable via updateProjectField so operators
+    // can attach or clear a deliverable L1 under a wrapper without a dedicated mutation.
+    expect(PROJECT_FIELDS).toContain("parentProjectId");
+    expect(PROJECT_FIELD_TO_COLUMN.parentProjectId).toBe("parentProjectId");
+  });
+
   it("WEEK_ITEM_FIELDS includes v4 startDate/endDate/blockedBy", async () => {
     const { WEEK_ITEM_FIELDS, WEEK_ITEM_FIELD_TO_COLUMN } = await import("./operations-utils");
     for (const field of ["startDate", "endDate", "blockedBy"] as const) {

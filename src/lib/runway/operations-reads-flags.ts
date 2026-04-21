@@ -113,6 +113,8 @@ export async function getFlags(
         | "break-fix"
         | null,
       contractEnd: p.contractEnd ?? null,
+      // v4 convention (2026-04-21 / PR #88 Chunk F): retainer wrapper parent.
+      parentProjectId: p.parentProjectId ?? null,
     }));
     return {
       name: c.name,

@@ -67,6 +67,8 @@ export async function getClientsWithCounts(opts?: GetClientsWithCountsOptions) {
       engagementType: p.engagementType,
       contractStart: p.contractStart,
       contractEnd: p.contractEnd,
+      // v4 convention (2026-04-21 / PR #88 Chunk F): retainer wrapper parent.
+      parentProjectId: p.parentProjectId,
       updatedAt: p.updatedAt,
     }));
     return { ...base, projects: clientProjects };
@@ -81,6 +83,16 @@ export async function getClientsWithCounts(opts?: GetClientsWithCountsOptions) {
  */
 export const ENGAGEMENT_TYPE_NULL_SENTINEL = "__null__";
 
+/**
+ * Sentinel string used to match projects with NULL `parent_project_id` --
+ * i.e. top-level L1s that are not nested under a retainer wrapper. Passing
+ * `parentProjectId: "__null__"` to `getProjectsFiltered` narrows to those
+ * top-level projects. All other string values are treated as exact matches
+ * on the column (e.g. filter to one wrapper's children). v4 convention
+ * (2026-04-21 / PR #88 Chunk F).
+ */
+export const PARENT_PROJECT_ID_NULL_SENTINEL = "__null__";
+
 export async function getProjectsFiltered(opts?: {
   clientSlug?: string;
   status?: string;
@@ -92,6 +104,12 @@ export async function getProjectsFiltered(opts?: {
    * engagement_type IS NULL.
    */
   engagementType?: string;
+  /**
+   * Exact match on projects.parent_project_id. Pass the sentinel
+   * `PARENT_PROJECT_ID_NULL_SENTINEL` ("__null__") to match only
+   * top-level L1s. Pass a specific id to list that wrapper's children.
+   */
+  parentProjectId?: string;
 }) {
   const db = getRunwayDb();
   const allClients = await getAllClients();
@@ -128,6 +146,12 @@ export async function getProjectsFiltered(opts?: {
       : projectList.filter((p) => p.engagementType === opts.engagementType);
   }
 
+  if (opts?.parentProjectId) {
+    projectList = opts.parentProjectId === PARENT_PROJECT_ID_NULL_SENTINEL
+      ? projectList.filter((p) => p.parentProjectId === null)
+      : projectList.filter((p) => p.parentProjectId === opts.parentProjectId);
+  }
+
   return projectList.map((p) => ({
     id: p.id,
     name: p.name,
@@ -147,6 +171,8 @@ export async function getProjectsFiltered(opts?: {
     engagementType: p.engagementType,
     contractStart: p.contractStart,
     contractEnd: p.contractEnd,
+    // v4 convention (2026-04-21 / PR #88 Chunk F): retainer wrapper parent.
+    parentProjectId: p.parentProjectId,
     updatedAt: p.updatedAt,
   }));
 }
@@ -176,6 +202,8 @@ export interface ClientDetailProject {
   engagementType: string | null;
   contractStart: string | null;
   contractEnd: string | null;
+  /** v4 (PR #88 Chunk F): retainer wrapper parent id, null for top-level L1s. */
+  parentProjectId: string | null;
   updatedAt: Date;
 }
 
@@ -289,6 +317,7 @@ export async function getClientDetail(
       engagementType: p.engagementType,
       contractStart: p.contractStart,
       contractEnd: p.contractEnd,
+      parentProjectId: p.parentProjectId,
       updatedAt: p.updatedAt,
     })),
     pipelineItems: clientPipeline.map((pi) => ({

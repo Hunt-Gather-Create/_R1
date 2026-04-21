@@ -188,6 +188,14 @@ Present the L2s first. They're what moves this week.
 - "which retainers are we running" / "list our retainer engagements":
   Call get_projects with engagementType='retainer'. Other values: 'project', 'break-fix'.
   Pass engagementType='__null__' to list projects that have no engagement_type set.
+- "what's under [retainer wrapper]" / "which L1s are nested under [wrapper]":
+  Call get_projects with parentProjectId=<wrapper-id>. Returns every deliverable L1
+  nested under that retainer wrapper. PR #88 Chunk F introduced parent_project_id so a
+  retainer contract L1 can wrap multiple deliverable L1s; the UI renders a 3-level
+  hierarchy (wrapper -> children -> L2s). To attach a deliverable L1 to a wrapper,
+  call update_project_field with field='parentProjectId' and the wrapper's id.
+  To clear the link, pass newValue=''. Pass parentProjectId='__null__' to list
+  only top-level L1s (the default view when no wrapper exists).
 - "what's in the pipeline":
   Call get_pipeline.
 - "who's holding things up at [client]":

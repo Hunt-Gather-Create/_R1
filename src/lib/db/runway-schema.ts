@@ -41,6 +41,12 @@ export const projects = sqliteTable("projects", {
   contractStart: text("contract_start"), // ISO date; manual override for retainers
   contractEnd: text("contract_end"), // ISO date; manual override for retainers
   engagementType: text("engagement_type"), // project, retainer, break-fix
+  // v4 convention (2026-04-21 / PR #88 Chunk F): optional self-reference for
+  // retainer wrappers. When set, this project is a deliverable L1 nested
+  // under a retainer wrapper L1. Null for top-level projects. No DB-level
+  // FK constraint (self-references complicate drizzle-kit migrations on
+  // SQLite) -- runtime enforcement lives in the application layer.
+  parentProjectId: text("parent_project_id"),
   notes: text("notes"),
   staleDays: integer("stale_days"),
   sortOrder: integer("sort_order").notNull().default(0),

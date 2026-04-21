@@ -44,6 +44,7 @@ CREATE TABLE projects (
   contract_start TEXT,
   contract_end TEXT,
   engagement_type TEXT,
+  parent_project_id TEXT,
   notes TEXT,
   stale_days INTEGER,
   sort_order INTEGER NOT NULL DEFAULT 0,

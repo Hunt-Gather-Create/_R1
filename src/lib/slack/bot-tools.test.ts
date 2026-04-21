@@ -124,14 +124,14 @@ describe("createBotTools", () => {
 
   it("get_projects calls getProjectsFiltered with params", async () => {
     const result = await tools.get_projects.execute({ clientSlug: "convergix", owner: "Kathy" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: "convergix", owner: "Kathy", waitingOn: undefined, engagementType: undefined });
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: "convergix", owner: "Kathy", waitingOn: undefined, engagementType: undefined, parentProjectId: undefined });
     expect(result).toHaveLength(1);
     expect((result as Record<string, unknown>[])[0].name).toBe("CDS");
   });
 
   it("get_projects passes waitingOn filter", async () => {
     await tools.get_projects.execute({ waitingOn: "Daniel" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
-    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: undefined, owner: undefined, waitingOn: "Daniel", engagementType: undefined });
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: undefined, owner: undefined, waitingOn: "Daniel", engagementType: undefined, parentProjectId: undefined });
   });
 
   it("get_projects passes engagementType filter (PR #88 Chunk B)", async () => {
@@ -144,6 +144,7 @@ describe("createBotTools", () => {
       owner: undefined,
       waitingOn: undefined,
       engagementType: "retainer",
+      parentProjectId: undefined,
     });
   });
 
@@ -157,6 +158,35 @@ describe("createBotTools", () => {
       owner: undefined,
       waitingOn: undefined,
       engagementType: "__null__",
+      parentProjectId: undefined,
+    });
+  });
+
+  it("get_projects passes parentProjectId filter (PR #88 Chunk F)", async () => {
+    await tools.get_projects.execute(
+      { parentProjectId: "pj-wrap" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({
+      clientSlug: undefined,
+      owner: undefined,
+      waitingOn: undefined,
+      engagementType: undefined,
+      parentProjectId: "pj-wrap",
+    });
+  });
+
+  it("get_projects forwards parentProjectId='__null__' sentinel", async () => {
+    await tools.get_projects.execute(
+      { parentProjectId: "__null__" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({
+      clientSlug: undefined,
+      owner: undefined,
+      waitingOn: undefined,
+      engagementType: undefined,
+      parentProjectId: "__null__",
     });
   });
 
@@ -477,6 +507,27 @@ describe("createBotTools", () => {
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect((result as Record<string, string[]>).available).toEqual(["CDS", "Website"]);
+  });
+
+  it("update_project_field forwards parentProjectId field (PR #88 Chunk F)", async () => {
+    mockOps.updateProjectField.mockResolvedValue({
+      ok: true,
+      message: "Updated parentProjectId for Convergix / CDS.",
+      data: {
+        clientName: "Convergix",
+        projectName: "CDS",
+        field: "parentProjectId",
+        previousValue: "",
+        newValue: "pj-wrap",
+      },
+    });
+    await tools.update_project_field.execute(
+      { clientSlug: "convergix", projectName: "CDS", field: "parentProjectId", newValue: "pj-wrap" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockOps.updateProjectField).toHaveBeenCalledWith(
+      expect.objectContaining({ field: "parentProjectId", newValue: "pj-wrap" })
+    );
   });
 
   it("create_week_item calls createWeekItem", async () => {

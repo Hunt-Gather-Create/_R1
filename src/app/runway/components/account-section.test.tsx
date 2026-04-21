@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { AccountSection } from "./account-section";
-import type { Account } from "../types";
+import type { Account, TriageItem } from "../types";
 
 function createAccount(overrides: Partial<Account> = {}): Account {
   return {
@@ -332,5 +332,104 @@ describe("AccountSection", () => {
       />
     );
     expect(screen.queryByTestId("project-milestones")).not.toBeInTheDocument();
+  });
+
+  // ── Retainer wrapper 3-level hierarchy (PR #88 Chunk F) ──
+
+  function makeChild(id: string, title: string): TriageItem {
+    return { id, title, status: "in-production", category: "active" };
+  }
+
+  it("falls back to 2-level render when parentProjectId is null (no children attached)", () => {
+    // Zero visual change from the pre-Chunk-F behavior for top-level L1s.
+    render(
+      <AccountSection
+        account={createAccount({
+          items: [
+            { id: "p1", title: "Standalone Project", status: "in-production", category: "active" },
+          ],
+        })}
+      />
+    );
+    expect(screen.getByText("Standalone Project")).toBeInTheDocument();
+    expect(screen.queryByTestId("project-wrapper-card")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("project-wrapper-toggle")).not.toBeInTheDocument();
+  });
+
+  it("renders 3-level hierarchy when a wrapper has children", () => {
+    render(
+      <AccountSection
+        account={createAccount({
+          items: [
+            {
+              id: "wrap",
+              title: "Convergix Retainer 2026",
+              status: "in-production",
+              category: "active",
+              children: [
+                makeChild("c1", "CDS Messaging"),
+                makeChild("c2", "CDS Landing Page"),
+              ],
+            } as TriageItem,
+          ],
+        })}
+      />
+    );
+    expect(screen.getByText("Convergix Retainer 2026")).toBeInTheDocument();
+    const card = screen.getByTestId("project-wrapper-card");
+    expect(card).toBeInTheDocument();
+    const childrenList = screen.getByTestId("project-wrapper-children");
+    expect(childrenList).toHaveTextContent("CDS Messaging");
+    expect(childrenList).toHaveTextContent("CDS Landing Page");
+  });
+
+  it("auto-expands wrappers with fewer than 5 children (toggle reads 'Collapse')", () => {
+    render(
+      <AccountSection
+        account={createAccount({
+          items: [
+            {
+              id: "wrap",
+              title: "Small Retainer",
+              status: "in-production",
+              category: "active",
+              children: [makeChild("c1", "Child 1"), makeChild("c2", "Child 2")],
+            } as TriageItem,
+          ],
+        })}
+      />
+    );
+    expect(screen.getByTestId("project-wrapper-children")).toBeInTheDocument();
+    expect(screen.getByTestId("project-wrapper-toggle")).toHaveTextContent("Collapse");
+  });
+
+  it("auto-collapses wrappers with 5+ children by default (PR #88 Chunk F)", () => {
+    const children = Array.from({ length: 6 }, (_, i) =>
+      makeChild(`c${i}`, `Child ${i}`),
+    );
+    render(
+      <AccountSection
+        account={createAccount({
+          items: [
+            {
+              id: "wrap",
+              title: "Big Retainer",
+              status: "in-production",
+              category: "active",
+              children,
+            } as TriageItem,
+          ],
+        })}
+      />
+    );
+    // Collapsed: children list not rendered, toggle invites expansion.
+    expect(screen.queryByTestId("project-wrapper-children")).not.toBeInTheDocument();
+    const toggle = screen.getByTestId("project-wrapper-toggle");
+    expect(toggle).toHaveTextContent("Expand (6)");
+
+    // Clicking expands.
+    fireEvent.click(toggle);
+    expect(screen.getByTestId("project-wrapper-children")).toBeInTheDocument();
+    expect(toggle).toHaveTextContent("Collapse");
   });
 });

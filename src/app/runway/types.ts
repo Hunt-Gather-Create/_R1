@@ -41,6 +41,12 @@ export interface TriageItem {
   endDate?: string | null;
   engagementType?: "project" | "retainer" | "break-fix" | null;
   contractEnd?: string | null;
+  // v4 (PR #88 Chunk F): retainer wrapper linkage. When set, this project
+  // is a deliverable L1 nested under a retainer wrapper with this id.
+  // Null/undefined = top-level L1 (current default 2-level behavior).
+  // The enriched shape (UnifiedTriageItem) carries resolved `children[]`
+  // on wrappers -- see unified-view.ts.
+  parentProjectId?: string | null;
 }
 
 export interface DayItemEntry {
