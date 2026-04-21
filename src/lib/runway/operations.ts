@@ -109,11 +109,16 @@ export type {
 
 export {
   getRecentUpdates,
+  findUpdates,
+  getUpdateChain,
 } from "./operations-reads-updates";
 
 export type {
   RecentUpdate,
   GetRecentUpdatesParams,
+  AuditUpdate,
+  FindUpdatesParams,
+  UpdateChain,
 } from "./operations-reads-updates";
 
 export {
