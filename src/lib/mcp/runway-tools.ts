@@ -94,19 +94,31 @@ export function registerRunwayTools(server: McpServer) {
     async ({ includeProjects }) => textResult(await getClientsWithCounts({ includeProjects })),
   );
 
-  server.tool("get_projects", "List projects, optionally filtered by client, status, owner, or waitingOn", {
-    clientSlug: z.string().optional().describe("Filter by client slug (e.g. 'convergix')"),
-    status: z.string().optional().describe("Filter by status (e.g. 'in-production', 'blocked')"),
-    owner: z.string().optional().describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
-    waitingOn: z.string().optional().describe("Filter by waitingOn name (case-insensitive substring, e.g. 'Daniel')"),
-  }, async ({ clientSlug, status, owner, waitingOn }) => textResult(await getProjectsFiltered({ clientSlug, status, owner, waitingOn })));
+  server.tool(
+    "get_projects",
+    "List L1 projects, optionally filtered. Returns { id, name, client, status, category, owner, resources, waitingOn, target, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }. Filter by clientSlug, exact status, owner substring, or waitingOn substring.",
+    {
+      clientSlug: z.string().optional().describe("Filter by client slug (e.g. 'convergix')"),
+      status: z.string().optional().describe("Exact status match (e.g. 'in-production', 'blocked', 'awaiting-client')"),
+      owner: z.string().optional().describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
+      waitingOn: z.string().optional().describe("Filter by waitingOn name (case-insensitive substring, e.g. 'Daniel')"),
+    },
+    async ({ clientSlug, status, owner, waitingOn }) =>
+      textResult(await getProjectsFiltered({ clientSlug, status, owner, waitingOn })),
+  );
 
-  server.tool("get_week_items", "Get calendar items for a specific week, optionally filtered by person (owner OR resource), owner, or resource", {
-    weekOf: z.string().optional().describe("ISO date of the Monday (e.g. '2026-04-06')"),
-    owner: z.string().optional().describe("Filter by owner name only (case-insensitive substring, e.g. 'Kathy')"),
-    resource: z.string().optional().describe("Filter by resource name only (case-insensitive substring, e.g. 'Roz')"),
-    person: z.string().optional().describe("Filter where the person is owner OR resource (use this for plate queries, e.g. 'Kathy')"),
-  }, async ({ weekOf, owner, resource, person }) => textResult(await getWeekItemsData(weekOf, owner, resource, person)));
+  server.tool(
+    "get_week_items",
+    "Get L2 week items for a specific week. Returns { id, projectId, clientId, date, dayOfWeek, title, account, category, status, owner, resources, notes, startDate, endDate, blockedBy, updatedAt }. Filter by person (owner OR resource — preferred for plate queries), owner only, or resource only. When weekOf is omitted, returns all weeks.",
+    {
+      weekOf: z.string().optional().describe("ISO date of the Monday (e.g. '2026-04-06'). Omit to return all weeks."),
+      owner: z.string().optional().describe("Filter by owner name only (case-insensitive substring, e.g. 'Kathy')"),
+      resource: z.string().optional().describe("Filter by resource name only (case-insensitive substring, e.g. 'Roz')"),
+      person: z.string().optional().describe("Filter where the person is owner OR resource (use this for plate queries, e.g. 'Kathy')"),
+    },
+    async ({ weekOf, owner, resource, person }) =>
+      textResult(await getWeekItemsData(weekOf, owner, resource, person)),
+  );
 
   server.tool("get_week_items_by_project", "List all non-completed week items (L2s) under a given project id. Use for drill-down 'what's left on Convergix / CDS?' queries.", {
     projectId: z.string().describe("Project id (L1 id)"),
@@ -153,9 +165,12 @@ export function registerRunwayTools(server: McpServer) {
   server.tool("get_team_members", "List team members, roles, and what they track", {},
     async () => textResult(await getTeamMembersData()));
 
-  server.tool("get_person_workload", "Get all week items and projects assigned to a person, grouped by client", {
-    personName: z.string().describe("Person's name (e.g. 'Kathy', 'Roz')"),
-  }, async ({ personName }) => textResult(await getPersonWorkload(personName)));
+  server.tool(
+    "get_person_workload",
+    "Get a person's workload bucketed per the v4 convention. Returns { person, ownedProjects: { inProgress, awaitingClient, blocked, onHold, completed } (L1s they own only — not items they resource on), weekItems: { overdue, thisWeek, nextWeek, later } (L2s they own OR resource on, with stub-filter hiding L2s whose parent L1 is awaiting-client), flags: { contractExpired (ClientRow[]), retainerRenewalDue (ProjectRow[]) }, totalProjects, totalActiveWeekItems }. Date buckets are Chicago-anchored. Use for 'what's on X's plate' questions — present the L2 buckets first, roll up L1 count at end, surface flags prominently.",
+    { personName: z.string().describe("Person's name (e.g. 'Kathy', 'Roz')") },
+    async ({ personName }) => textResult(await getPersonWorkload(personName)),
+  );
 
   server.tool("get_project_status", "Drill down on a single engagement. Returns structured data: owner, status, engagement type, contract range, blockers, in-flight and upcoming L2s, team, recent updates, suggested actions.", {
     clientSlug: z.string().describe("Client slug (e.g. 'convergix')"),

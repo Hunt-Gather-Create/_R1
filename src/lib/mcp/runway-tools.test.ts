@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockOps, registeredTools } = vi.hoisted(() => {
+const { mockOps, registeredTools, registeredDescriptions } = vi.hoisted(() => {
   const mockOps = {
     getClientsWithCounts: vi.fn().mockResolvedValue([{ name: "Convergix", projectCount: 3 }]),
     getClientDetail: vi.fn().mockResolvedValue({
@@ -57,7 +57,8 @@ const { mockOps, registeredTools } = vi.hoisted(() => {
   };
   type ToolHandler = (params: Record<string, unknown>) => Promise<unknown>;
   const registeredTools = new Map<string, ToolHandler>();
-  return { mockOps, registeredTools };
+  const registeredDescriptions = new Map<string, string>();
+  return { mockOps, registeredTools, registeredDescriptions };
 });
 
 vi.mock("@/lib/runway/operations", () => mockOps);
@@ -66,8 +67,9 @@ vi.mock("@/lib/slack/updates-channel", () => ({
 }));
 vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
   McpServer: class {
-    tool(name: string, _desc: string, _schema: unknown, handler: (params: Record<string, unknown>) => Promise<unknown>) {
+    tool(name: string, desc: string, _schema: unknown, handler: (params: Record<string, unknown>) => Promise<unknown>) {
       registeredTools.set(name, handler);
+      registeredDescriptions.set(name, desc);
     }
   },
 }));
@@ -674,5 +676,61 @@ describe("registerRunwayTools", () => {
       memberName: "nope", field: "title", newValue: "X", updatedBy: "mcp",
     });
     expect(result).toEqual({ content: [{ type: "text", text: "Member not found" }] });
+  });
+
+  // ── Description drift assertions ───────────────────────────
+  // These guard against descriptions that claim one return shape but the
+  // function actually returns another. Failures here mean the tool
+  // description is lying to the LLM.
+
+  it("get_person_workload description describes v4 buckets + flags (not 'grouped by client')", () => {
+    const desc = registeredDescriptions.get("get_person_workload")!;
+    // v4 shape keys must appear
+    expect(desc).toContain("ownedProjects");
+    expect(desc).toContain("weekItems");
+    expect(desc).toContain("overdue");
+    expect(desc).toContain("thisWeek");
+    expect(desc).toContain("flags");
+    expect(desc).toContain("contractExpired");
+    expect(desc).toContain("retainerRenewalDue");
+    // Old lie must not appear
+    expect(desc).not.toMatch(/grouped by client/i);
+  });
+
+  it("get_projects description describes v4 enrichment keys", () => {
+    const desc = registeredDescriptions.get("get_projects")!;
+    expect(desc).toContain("dueDate");
+    expect(desc).toContain("engagementType");
+    expect(desc).toContain("contractStart");
+    expect(desc).toContain("contractEnd");
+  });
+
+  it("get_week_items description describes v4 shape keys", () => {
+    const desc = registeredDescriptions.get("get_week_items")!;
+    expect(desc).toContain("id");
+    expect(desc).toContain("startDate");
+    expect(desc).toContain("endDate");
+    expect(desc).toContain("blockedBy");
+    expect(desc).toContain("projectId");
+  });
+
+  it("get_updates description describes v4 filter params", () => {
+    const desc = registeredDescriptions.get("get_updates")!;
+    expect(desc).toContain("since");
+    expect(desc).toContain("until");
+    expect(desc).toContain("batchId");
+    expect(desc).toContain("updateType");
+    expect(desc).toContain("projectName");
+  });
+
+  it("update_project_status description mentions cascadeDetail + auditId", () => {
+    const desc = registeredDescriptions.get("update_project_status")!;
+    expect(desc).toContain("cascadeDetail");
+    expect(desc).toContain("auditId");
+  });
+
+  it("update_week_item description mentions reverseCascadeDetail", () => {
+    const desc = registeredDescriptions.get("update_week_item")!;
+    expect(desc).toContain("reverseCascadeDetail");
   });
 });
