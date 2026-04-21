@@ -73,6 +73,53 @@ describe("getClientsWithCounts", () => {
     expect(empty).toBeDefined();
     expect(empty!.projectCount).toBe(0);
   });
+
+  it("exposes v4 enriched fields: id, updatedAt (default shape, no nested projects)", async () => {
+    const { getClientsWithCounts } = await import("./operations-reads-clients");
+
+    const result = await getClientsWithCounts();
+    const convergix = result.find((c) => c.slug === "convergix");
+    expect(convergix).toBeDefined();
+    expect(convergix!.id).toBe("cl-convergix");
+    expect(convergix!.updatedAt).toBeInstanceOf(Date);
+    // includeProjects default false — `projects` key absent.
+    expect((convergix as { projects?: unknown }).projects).toBeUndefined();
+  });
+
+  it("nests enriched projects when includeProjects=true", async () => {
+    const { getClientsWithCounts } = await import("./operations-reads-clients");
+
+    const result = await getClientsWithCounts({ includeProjects: true });
+    const convergix = result.find((c) => c.slug === "convergix") as {
+      projects?: Array<{ id: string; name: string; engagementType: string | null }>;
+    };
+    expect(convergix.projects).toBeDefined();
+    expect(convergix.projects!.length).toBe(3);
+    const cds = convergix.projects!.find((p) => p.name === "CDS Messaging");
+    expect(cds).toBeDefined();
+    expect(cds!.id).toBe("pj-cds");
+    // Enrichment wired through from getProjectsFiltered shape.
+    expect(cds).toHaveProperty("engagementType");
+    expect(cds).toHaveProperty("dueDate");
+  });
+
+  it("returns empty projects array when includeProjects=true for zero-project client", async () => {
+    const { getClientsWithCounts } = await import("./operations-reads-clients");
+
+    await libsqlClient.execute({
+      sql: `INSERT INTO clients (id, name, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+      args: ["cl-empty2", "Empty2 Co", "empty2-co", Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000)],
+    });
+    invalidateClientCache();
+
+    const result = await getClientsWithCounts({ includeProjects: true });
+    const empty = result.find((c) => c.slug === "empty2-co") as {
+      projects?: unknown[];
+      projectCount: number;
+    };
+    expect(empty.projects).toEqual([]);
+    expect(empty.projectCount).toBe(0);
+  });
 });
 
 describe("getProjectsFiltered", () => {

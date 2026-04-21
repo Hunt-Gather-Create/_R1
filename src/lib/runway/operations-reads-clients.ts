@@ -12,7 +12,16 @@ import {
   matchesSubstring,
 } from "./operations";
 
-export async function getClientsWithCounts() {
+export interface GetClientsWithCountsOptions {
+  /**
+   * When true, include a nested `projects` array per client using the same
+   * enriched shape returned by `getProjectsFiltered`. Default false to keep
+   * the minimal shape for bot listings. v4 convention (2026-04-21).
+   */
+  includeProjects?: boolean;
+}
+
+export async function getClientsWithCounts(opts?: GetClientsWithCountsOptions) {
   const db = getRunwayDb();
   const allClients = await getAllClients();
   const allProjects = await db.select().from(projects);
@@ -22,15 +31,46 @@ export async function getClientsWithCounts() {
     [...projectsByClient.entries()].map(([k, v]) => [k, v.length])
   );
 
-  return allClients.map((c) => ({
-    name: c.name,
-    slug: c.slug,
-    contractValue: c.contractValue,
-    contractStatus: c.contractStatus,
-    contractTerm: c.contractTerm,
-    team: c.team,
-    projectCount: countByClient.get(c.id) ?? 0,
-  }));
+  const clientNameById = new Map(allClients.map((c) => [c.id, c.name]));
+
+  const includeProjects = opts?.includeProjects ?? false;
+
+  return allClients.map((c) => {
+    const base = {
+      id: c.id,
+      name: c.name,
+      slug: c.slug,
+      contractValue: c.contractValue,
+      contractStatus: c.contractStatus,
+      contractTerm: c.contractTerm,
+      team: c.team,
+      projectCount: countByClient.get(c.id) ?? 0,
+      updatedAt: c.updatedAt,
+    };
+    if (!includeProjects) return base;
+
+    const clientProjects = (projectsByClient.get(c.id) ?? []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      client: clientNameById.get(p.clientId) ?? "Unknown",
+      status: p.status,
+      category: p.category,
+      owner: p.owner,
+      resources: p.resources,
+      waitingOn: p.waitingOn,
+      target: p.target,
+      notes: p.notes,
+      staleDays: p.staleDays,
+      dueDate: p.dueDate,
+      startDate: p.startDate,
+      endDate: p.endDate,
+      engagementType: p.engagementType,
+      contractStart: p.contractStart,
+      contractEnd: p.contractEnd,
+      updatedAt: p.updatedAt,
+    }));
+    return { ...base, projects: clientProjects };
+  });
 }
 
 export async function getProjectsFiltered(opts?: {
