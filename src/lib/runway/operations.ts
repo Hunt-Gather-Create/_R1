@@ -122,6 +122,7 @@ export {
   getDataHealth,
   getCurrentBatch,
   getBatchContents,
+  getCascadeLog,
 } from "./operations-reads-health";
 
 export type {
@@ -134,6 +135,10 @@ export type {
   BatchContents,
   BatchContentsGroup,
   BatchUpdateEntry,
+  CascadeLog,
+  CascadeLogGroup,
+  CascadeParent,
+  CascadeChildEntry,
 } from "./operations-reads-health";
 
 export type {

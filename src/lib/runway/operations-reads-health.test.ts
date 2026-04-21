@@ -366,3 +366,177 @@ describe("getBatchContents", () => {
     expect(result.groups[0].updates[0].id).toBe("u-bare");
   });
 });
+
+describe("getCascadeLog", () => {
+  it("defaults the window to 60 minutes", async () => {
+    const { getCascadeLog } = await import("./operations-reads-health");
+    const result = await getCascadeLog();
+    expect(result.windowMinutes).toBe(60);
+    // `since` should be ~60min before now; allow generous slack.
+    const delta = Date.now() - result.since.getTime();
+    expect(delta).toBeGreaterThanOrEqual(60 * 60 * 1000 - 5_000);
+    expect(delta).toBeLessThanOrEqual(60 * 60 * 1000 + 5_000);
+  });
+
+  it("uses the default window when called with undefined", async () => {
+    const { getCascadeLog } = await import("./operations-reads-health");
+    const result = await getCascadeLog(undefined);
+    expect(result.windowMinutes).toBe(60);
+  });
+
+  it("filters to updateTypes starting with cascade-", async () => {
+    const { getCascadeLog } = await import("./operations-reads-health");
+
+    await insertUpdate({
+      id: "u-parent",
+      clientId: "cl-convergix",
+      projectId: "pj-cds",
+      updateType: "status-change",
+      summary: "CDS: active -> completed",
+    });
+    await insertUpdate({
+      id: "u-cascade-status",
+      clientId: "cl-convergix",
+      projectId: "pj-cds",
+      updateType: "cascade-status",
+      summary: "cascaded status",
+      triggeredByUpdateId: "u-parent",
+    });
+    await insertUpdate({
+      id: "u-cascade-duedate",
+      clientId: "cl-convergix",
+      projectId: "pj-cds",
+      updateType: "cascade-duedate",
+      summary: "cascaded due date",
+      triggeredByUpdateId: "u-parent",
+    });
+    await insertUpdate({
+      id: "u-note",
+      clientId: "cl-convergix",
+      projectId: "pj-cds",
+      updateType: "note",
+      summary: "not a cascade",
+    });
+
+    const result = await getCascadeLog(60);
+    expect(result.totalCascadeRows).toBe(2);
+    expect(result.groups).toHaveLength(1);
+    const group = result.groups[0];
+    expect(group.parentUpdateId).toBe("u-parent");
+    expect(group.parent?.id).toBe("u-parent");
+    expect(group.parent?.updateType).toBe("status-change");
+    expect(group.parent?.clientName).toBe("Convergix");
+    expect(group.children).toHaveLength(2);
+    const childTypes = group.children.map((c) => c.updateType).sort();
+    expect(childTypes).toEqual(["cascade-duedate", "cascade-status"]);
+  });
+
+  it("excludes cascade rows outside the window", async () => {
+    const { getCascadeLog } = await import("./operations-reads-health");
+
+    const recentSeconds = Math.floor(Date.now() / 1000);
+    const oldSeconds = recentSeconds - 2 * 60 * 60; // 2 hours ago
+
+    await insertUpdate({
+      id: "u-parent-old",
+      updateType: "status-change",
+      summary: "old parent",
+      createdAtSeconds: oldSeconds,
+    });
+    await insertUpdate({
+      id: "u-cascade-old",
+      updateType: "cascade-status",
+      summary: "old cascade",
+      triggeredByUpdateId: "u-parent-old",
+      createdAtSeconds: oldSeconds,
+    });
+    await insertUpdate({
+      id: "u-parent-new",
+      updateType: "status-change",
+      summary: "new parent",
+      createdAtSeconds: recentSeconds,
+    });
+    await insertUpdate({
+      id: "u-cascade-new",
+      updateType: "cascade-status",
+      summary: "new cascade",
+      triggeredByUpdateId: "u-parent-new",
+      createdAtSeconds: recentSeconds,
+    });
+
+    const result = await getCascadeLog(60);
+    expect(result.totalCascadeRows).toBe(1);
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0].parentUpdateId).toBe("u-parent-new");
+  });
+
+  it("groups cascade children under their shared parent", async () => {
+    const { getCascadeLog } = await import("./operations-reads-health");
+
+    await insertUpdate({ id: "parent-A", updateType: "status-change" });
+    await insertUpdate({ id: "parent-B", updateType: "status-change" });
+    await insertUpdate({
+      id: "child-A1",
+      updateType: "cascade-status",
+      triggeredByUpdateId: "parent-A",
+    });
+    await insertUpdate({
+      id: "child-A2",
+      updateType: "cascade-duedate",
+      triggeredByUpdateId: "parent-A",
+    });
+    await insertUpdate({
+      id: "child-B1",
+      updateType: "cascade-status",
+      triggeredByUpdateId: "parent-B",
+    });
+
+    const result = await getCascadeLog(60);
+    expect(result.totalCascadeRows).toBe(3);
+    expect(result.groups).toHaveLength(2);
+    const groupA = result.groups.find((g) => g.parentUpdateId === "parent-A");
+    const groupB = result.groups.find((g) => g.parentUpdateId === "parent-B");
+    expect(groupA?.children).toHaveLength(2);
+    expect(groupB?.children).toHaveLength(1);
+  });
+
+  it("handles cascade rows with null triggeredByUpdateId", async () => {
+    const { getCascadeLog } = await import("./operations-reads-health");
+
+    await insertUpdate({
+      id: "c-orphan",
+      updateType: "cascade-status",
+      summary: "orphan cascade",
+      triggeredByUpdateId: null,
+    });
+
+    const result = await getCascadeLog(60);
+    expect(result.totalCascadeRows).toBe(1);
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0].parentUpdateId).toBe(null);
+    expect(result.groups[0].parent).toBe(null);
+    expect(result.groups[0].children[0].id).toBe("c-orphan");
+  });
+
+  it("sets parent=null when the triggeredByUpdateId points to a missing row", async () => {
+    const { getCascadeLog } = await import("./operations-reads-health");
+
+    await insertUpdate({
+      id: "c-dangling",
+      updateType: "cascade-status",
+      triggeredByUpdateId: "no-such-parent",
+    });
+
+    const result = await getCascadeLog(60);
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0].parentUpdateId).toBe("no-such-parent");
+    expect(result.groups[0].parent).toBe(null);
+  });
+
+  it("returns empty groups when no cascade rows exist", async () => {
+    const { getCascadeLog } = await import("./operations-reads-health");
+    const result = await getCascadeLog(60);
+    expect(result.totalCascadeRows).toBe(0);
+    expect(result.groups).toEqual([]);
+  });
+});

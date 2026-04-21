@@ -200,6 +200,154 @@ export async function getBatchContents(batchId: string): Promise<BatchContents> 
   };
 }
 
+// ── getCascadeLog ───────────────────────────────────────
+
+export interface CascadeParent {
+  id: string;
+  updateType: string | null;
+  summary: string | null;
+  clientName: string | null;
+  projectName: string | null;
+  createdAt: Date | null;
+}
+
+export interface CascadeChildEntry {
+  id: string;
+  updateType: string | null;
+  summary: string | null;
+  clientName: string | null;
+  projectName: string | null;
+  createdAt: Date | null;
+}
+
+export interface CascadeLogGroup {
+  /** The triggeredByUpdateId of these children. null when cascade rows have no parent set. */
+  parentUpdateId: string | null;
+  /** Resolved parent update, or null when the parent is missing (dangling) or unknown. */
+  parent: CascadeParent | null;
+  children: CascadeChildEntry[];
+}
+
+export interface CascadeLog {
+  windowMinutes: number;
+  since: Date;
+  totalCascadeRows: number;
+  /** Groups ordered by most recent child createdAt, descending. */
+  groups: CascadeLogGroup[];
+}
+
+const DEFAULT_CASCADE_WINDOW_MINUTES = 60;
+
+/**
+ * Return recent cascade-generated audit rows (updateType starting with
+ * `cascade-`) within the given time window, grouped by their parent update
+ * id so the caller sees the full cascade fan-out.
+ *
+ * Default window: 60 minutes. Accepts `null` / `undefined` via the usual
+ * optional-param default.
+ */
+export async function getCascadeLog(
+  windowMinutes?: number
+): Promise<CascadeLog> {
+  const minutes = windowMinutes ?? DEFAULT_CASCADE_WINDOW_MINUTES;
+  const since = new Date(Date.now() - minutes * 60 * 1000);
+
+  const db = getRunwayDb();
+  const [allUpdates, allProjects, allClients] = await Promise.all([
+    db.select().from(updates),
+    db.select().from(projects),
+    db.select().from(clients),
+  ]);
+
+  const projectNameMap = new Map(allProjects.map((p) => [p.id, p.name]));
+  const clientNameMap = new Map(allClients.map((c) => [c.id, c.name]));
+  const updateById = new Map(allUpdates.map((u) => [u.id, u]));
+
+  const cascadeRows = allUpdates.filter(
+    (u) =>
+      u.updateType != null &&
+      u.updateType.startsWith("cascade-") &&
+      u.createdAt != null &&
+      u.createdAt >= since
+  );
+
+  const resolveNames = (clientId: string | null, projectId: string | null) => ({
+    clientName: clientId ? clientNameMap.get(clientId) ?? null : null,
+    projectName: projectId ? projectNameMap.get(projectId) ?? null : null,
+  });
+
+  const groupMap = new Map<string, CascadeLogGroup>();
+  const parentKey = (pid: string | null) => pid ?? "__null__";
+
+  for (const row of cascadeRows) {
+    const pid = row.triggeredByUpdateId ?? null;
+    const key = parentKey(pid);
+    let group = groupMap.get(key);
+    if (!group) {
+      let parent: CascadeParent | null = null;
+      if (pid) {
+        const parentRow = updateById.get(pid);
+        if (parentRow) {
+          const { clientName, projectName } = resolveNames(
+            parentRow.clientId,
+            parentRow.projectId
+          );
+          parent = {
+            id: parentRow.id,
+            updateType: parentRow.updateType,
+            summary: parentRow.summary,
+            clientName,
+            projectName,
+            createdAt: parentRow.createdAt,
+          };
+        }
+      }
+      group = { parentUpdateId: pid, parent, children: [] };
+      groupMap.set(key, group);
+    }
+    const { clientName, projectName } = resolveNames(row.clientId, row.projectId);
+    group.children.push({
+      id: row.id,
+      updateType: row.updateType,
+      summary: row.summary,
+      clientName,
+      projectName,
+      createdAt: row.createdAt,
+    });
+  }
+
+  // Sort children within each group by createdAt ascending.
+  const groups = [...groupMap.values()];
+  for (const g of groups) {
+    g.children.sort((a, b) => {
+      if (!a.createdAt && !b.createdAt) return 0;
+      if (!a.createdAt) return 1;
+      if (!b.createdAt) return -1;
+      return a.createdAt.getTime() - b.createdAt.getTime();
+    });
+  }
+  // Sort groups by most-recent child createdAt descending so the caller
+  // sees the freshest cascades first.
+  groups.sort((a, b) => {
+    const aMax = a.children.reduce<number>(
+      (m, c) => Math.max(m, c.createdAt?.getTime() ?? 0),
+      0
+    );
+    const bMax = b.children.reduce<number>(
+      (m, c) => Math.max(m, c.createdAt?.getTime() ?? 0),
+      0
+    );
+    return bMax - aMax;
+  });
+
+  return {
+    windowMinutes: minutes,
+    since,
+    totalCascadeRows: cascadeRows.length,
+    groups,
+  };
+}
+
 // ── getDataHealth ───────────────────────────────────────
 
 export interface DataHealthTotals {
