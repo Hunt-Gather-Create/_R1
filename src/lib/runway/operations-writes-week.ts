@@ -132,6 +132,9 @@ export async function createWeekItem(
   let clientName: string | undefined;
   let projectId: string | null = null;
 
+  // v4: when we know the parent L1 we may need its owner for inheritance.
+  let resolvedProjectOwner: string | null = null;
+
   if (clientSlug) {
     const lookup = await getClientOrFail(clientSlug);
     if (!lookup.ok) return lookup;
@@ -144,8 +147,15 @@ export async function createWeekItem(
         projectName
       );
       projectId = project?.id ?? null;
+      resolvedProjectOwner = project?.owner ?? null;
     }
   }
+
+  // v4 §L2 owner inheritance rule (runway-v4-convention.md):
+  // when the caller does not specify an owner, auto-populate from parent
+  // L1.owner and store it as an explicit value on the L2. If no parent L1
+  // or no L1 owner is known, leave owner null — matches pre-v4 behavior.
+  const resolvedOwner = owner ?? resolvedProjectOwner ?? null;
 
   const idemKey = generateIdempotencyKey(
     "create-week-item",
@@ -175,7 +185,7 @@ export async function createWeekItem(
     title,
     status: status ?? null,
     category: category ?? null,
-    owner: owner ?? null,
+    owner: resolvedOwner,
     resources: resources ?? null,
     notes: notes ?? null,
     sortOrder: 999,

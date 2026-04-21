@@ -22,11 +22,51 @@ function formatDayLabel(dateStr: string): string {
 
 type WeekItemRow = typeof weekItems.$inferSelect;
 
+/**
+ * Parse blockedBy JSON array from storage. Returns empty array on null/invalid.
+ * Storage shape: `["id1","id2"]`.
+ */
+function parseBlockedByIds(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((v): v is string => typeof v === "string");
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Resolve a week item's blockedBy id list to {id, title, status} refs.
+ * Unresolved ids (blocker not in the provided map) are dropped — the UI
+ * renders only visible blockers. Callers can still check raw ids if needed.
+ */
+function resolveBlockedByRefs(
+  raw: string | null | undefined,
+  weekItemById: Map<string, WeekItemRow>
+): Array<{ id: string; title: string; status?: string | null }> {
+  const ids = parseBlockedByIds(raw);
+  if (ids.length === 0) return [];
+  const refs: Array<{ id: string; title: string; status?: string | null }> = [];
+  for (const id of ids) {
+    const blocker = weekItemById.get(id);
+    if (!blocker) continue;
+    refs.push({ id, title: blocker.title, status: blocker.status });
+  }
+  return refs;
+}
+
 function mapWeekItemToEntry(
   item: WeekItemRow,
-  clientNameById: Map<string, string>
+  clientNameById: Map<string, string>,
+  weekItemById: Map<string, WeekItemRow>
 ): WeekDay["items"][number] {
+  const blockedByRefs = resolveBlockedByRefs(item.blockedBy, weekItemById);
+  const updatedMs = item.updatedAt ? item.updatedAt.getTime() : null;
   return {
+    id: item.id,
+    projectId: item.projectId ?? null,
     title: item.title,
     account: item.clientId ? (clientNameById.get(item.clientId) ?? "") : "",
     ...(item.owner ? { owner: item.owner } : {}),
@@ -35,6 +75,10 @@ function mapWeekItemToEntry(
     ...(item.notes ? { notes: item.notes } : {}),
     // v4: pass L2 status through so flag detectors can filter active items.
     ...(item.status != null ? { status: item.status } : {}),
+    ...(item.startDate != null ? { startDate: item.startDate } : {}),
+    ...(item.endDate != null ? { endDate: item.endDate } : {}),
+    ...(updatedMs != null ? { updatedAtMs: updatedMs } : {}),
+    ...(blockedByRefs.length > 0 ? { blockedBy: blockedByRefs } : {}),
   };
 }
 
@@ -44,10 +88,16 @@ function groupWeekItemsIntoDays(
 ): WeekDay[] {
   const grouped = groupBy(items, (item) => item.date ?? "");
   const sortedDates = [...grouped.keys()].sort();
+  // Build an id→item map so resolveBlockedByRefs can decorate each entry
+  // with blocker title/status without extra queries (O(1) lookups).
+  const weekItemById = new Map<string, WeekItemRow>();
+  for (const item of items) weekItemById.set(item.id, item);
   return sortedDates.map((dateStr) => ({
     date: dateStr,
     label: formatDayLabel(dateStr),
-    items: (grouped.get(dateStr) ?? []).map((item) => mapWeekItemToEntry(item, clientNameById)),
+    items: (grouped.get(dateStr) ?? []).map((item) =>
+      mapWeekItemToEntry(item, clientNameById, weekItemById)
+    ),
   }));
 }
 

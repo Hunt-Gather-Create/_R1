@@ -3,6 +3,8 @@ import type { ItemStatus, ItemCategory } from "./types";
 import { RunwayBoard } from "./runway-board";
 import { getMondayISODate, parseISODate } from "./date-utils";
 import { analyzeFlags } from "@/lib/runway/flags";
+import { getViewPreferences } from "@/lib/runway/view-preferences";
+import { buildUnifiedAccounts } from "./unified-view";
 
 export const metadata = {
   title: "Runway — Civilization Agency",
@@ -11,11 +13,12 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function RunwayPage() {
-  const [clientsWithProjects, allWeekItems, pipelineData, staleItems] = await Promise.all([
+  const [clientsWithProjects, allWeekItems, pipelineData, staleItems, viewPrefs] = await Promise.all([
     getClientsWithProjects(),
     getWeekItems(),
     getPipeline(),
     getStaleWeekItems(),
+    getViewPreferences(),
   ]);
 
   // Split week items into thisWeek and upcoming in a single pass
@@ -55,6 +58,15 @@ export default async function RunwayPage() {
       target: p.target ?? undefined,
       notes: p.notes ?? undefined,
       staleDays: p.staleDays ?? undefined,
+      // v4 timing + retainer metadata (chunk 3 #4, #5)
+      startDate: p.startDate ?? null,
+      endDate: p.endDate ?? null,
+      engagementType: (p.engagementType ?? null) as
+        | "project"
+        | "retainer"
+        | "break-fix"
+        | null,
+      contractEnd: p.contractEnd ?? null,
     })),
   }));
 
@@ -76,14 +88,19 @@ export default async function RunwayPage() {
 
   const flags = analyzeFlags(accounts, thisWeek, upcoming, pipelineProps);
 
+  // Chunk 3 #1 — unified Project View. Group L2s under their parent L1
+  // from the same combined fetch so By-Account renders milestones inline.
+  const unifiedAccounts = buildUnifiedAccounts(accounts, [...thisWeek, ...upcoming]);
+
   return (
     <RunwayBoard
       thisWeek={thisWeek}
       upcoming={upcoming}
-      accounts={accounts}
+      accounts={unifiedAccounts}
       pipeline={pipelineProps}
       flags={flags}
       staleItems={staleItems}
+      initialInFlightEnabled={viewPrefs.inFlightToggle ?? true}
     />
   );
 }

@@ -10,6 +10,14 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: mockRefresh }),
 }));
 
+// Stub the server action so client tests don't try to cross module boundary.
+const mockToggleInFlight = vi.fn<(next: boolean) => Promise<{ inFlightToggle: boolean }>>(
+  async (next: boolean) => ({ inFlightToggle: next })
+);
+vi.mock("./actions", () => ({
+  toggleInFlightAction: (next: boolean) => mockToggleInFlight(next),
+}));
+
 const defaultProps = { thisWeek, upcoming, accounts, pipeline };
 
 describe("RunwayBoard", () => {
@@ -148,6 +156,30 @@ describe("RunwayBoard", () => {
     vi.advanceTimersByTime(60 * 1000);
     expect(mockRefresh).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
+  });
+
+  // Chunk 3 #6: In Flight toggle default ON + persistence hook
+  it("renders In Flight toggle checked by default", () => {
+    render(<RunwayBoard {...defaultProps} />);
+    const toggle = screen.getByTestId("in-flight-toggle") as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+  });
+
+  it("respects initialInFlightEnabled=false when explicitly off", () => {
+    render(
+      <RunwayBoard {...defaultProps} initialInFlightEnabled={false} />
+    );
+    const toggle = screen.getByTestId("in-flight-toggle") as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+  });
+
+  it("flips toggle state and invokes server action on change", () => {
+    mockToggleInFlight.mockClear();
+    render(<RunwayBoard {...defaultProps} />);
+    const toggle = screen.getByTestId("in-flight-toggle") as HTMLInputElement;
+    fireEvent.click(toggle);
+    expect(toggle.checked).toBe(false);
+    expect(mockToggleInFlight).toHaveBeenCalledWith(false);
   });
 });
 

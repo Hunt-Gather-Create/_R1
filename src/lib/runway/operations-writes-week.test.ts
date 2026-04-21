@@ -229,6 +229,93 @@ describe("createWeekItem", () => {
       expect(result.error).toContain("weekOf");
     }
   });
+
+  // v4: L2 owner inheritance from parent L1 (runway-v4-convention.md §"Owner inheritance rule")
+  it("inherits owner from parent L1 when owner not provided", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue({
+      id: "p1",
+      name: "CDS Messaging",
+      owner: "Kathy",
+    });
+
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      weekOf: "2026-04-06",
+      title: "CDS Review",
+      // owner NOT provided — should inherit
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.owner).toBe("Kathy");
+  });
+
+  it("explicit owner overrides L1 inheritance", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue({
+      id: "p1",
+      name: "CDS Messaging",
+      owner: "Kathy",
+    });
+
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      weekOf: "2026-04-06",
+      title: "CDS Review",
+      owner: "Lane", // explicit override
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.owner).toBe("Lane");
+  });
+
+  it("leaves owner null when no project match and no explicit owner", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(null);
+
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      clientSlug: "convergix",
+      projectName: "Unknown Project",
+      weekOf: "2026-04-06",
+      title: "Standalone Item",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.owner).toBeNull();
+  });
+
+  it("leaves owner null when parent L1 has no owner", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue({
+      id: "p1",
+      name: "CDS Messaging",
+      owner: null,
+    });
+
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      weekOf: "2026-04-06",
+      title: "Standalone Item",
+      updatedBy: "kathy",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.owner).toBeNull();
+  });
 });
 
 describe("updateWeekItemField", () => {
