@@ -364,6 +364,44 @@ describe("getPersonWorkload — v4 contract", () => {
     expect(result.weekItems.overdue.map((i) => i.id)).toEqual(["w-single-overdue"]);
   });
 
+  it("excludes completed L2s from forward buckets (thisWeek/nextWeek/later)", async () => {
+    // Future-dated completed items should not inflate plate counts.
+    // Matches chunk4-known-debt #7 — fix target Chunk 5.
+    const rows = [
+      createWeekItem({
+        id: "w-completed-this",
+        owner: "Kathy",
+        startDate: "2026-04-22", // thisWeek range
+        status: "completed",
+      }),
+      createWeekItem({
+        id: "w-completed-next",
+        owner: "Kathy",
+        startDate: "2026-04-28", // nextWeek range
+        status: "completed",
+      }),
+      createWeekItem({
+        id: "w-completed-later",
+        owner: "Kathy",
+        startDate: "2026-05-15", // later range
+        status: "completed",
+      }),
+      createWeekItem({
+        id: "w-active-this",
+        owner: "Kathy",
+        startDate: "2026-04-22",
+        status: "in-progress",
+      }),
+    ];
+    mockWorkloadDb([], rows, []);
+
+    const result = await getPersonWorkload("Kathy", { now: NOW });
+    expect(result.weekItems.thisWeek.map((i) => i.id)).toEqual(["w-active-this"]);
+    expect(result.weekItems.nextWeek).toEqual([]);
+    expect(result.weekItems.later).toEqual([]);
+    expect(result.totalActiveWeekItems).toBe(1);
+  });
+
   it("filters stub L2s whose parent L1 status is awaiting-client", async () => {
     const parentStub = createProject({ id: "p-stub", status: "awaiting-client", owner: "Jill" });
     const parentActive = createProject({ id: "p-active", status: "in-production", owner: "Jill" });

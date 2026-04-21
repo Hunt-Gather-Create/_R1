@@ -220,6 +220,11 @@ function addDaysISO(dateISO: string, days: number): string {
  * - nextWeek: start_date within next Monday–Sunday inclusive
  * - later: start_date beyond next week
  *
+ * Completed L2s are excluded from all forward buckets (thisWeek / nextWeek /
+ * later) to prevent future-dated completed items from inflating plate counts.
+ * They're already excluded from `overdue` above. v4 convention: `completed`
+ * L2s are terminal and should not surface as active work.
+ *
  * Returns null if the item has no usable date (excluded from all buckets).
  */
 function bucketWeekItem(
@@ -239,6 +244,11 @@ function bucketWeekItem(
   if (endDate < todayISO && item.status !== COMPLETED_L2) {
     return "overdue";
   }
+
+  // Forward-bucket gate: completed L2s shouldn't surface as active work
+  // regardless of date. Prevents future-dated completions from inflating
+  // thisWeek/nextWeek/later counts.
+  if (item.status === COMPLETED_L2) return null;
 
   if (startDate >= thisMondayISO && startDate <= thisSundayISO) return "thisWeek";
   if (startDate >= nextMondayISO && startDate <= nextSundayISO) return "nextWeek";
