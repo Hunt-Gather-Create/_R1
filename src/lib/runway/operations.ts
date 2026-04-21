@@ -105,6 +105,19 @@ export {
   getProjectStatus,
 } from "./operations-reads-project-status";
 
+// ── Health / observability operations ──────────────────
+export {
+  getDataHealth,
+} from "./operations-reads-health";
+
+export type {
+  DataHealth,
+  DataHealthTotals,
+  DataHealthOrphans,
+  DataHealthStale,
+  DataHealthBatch,
+} from "./operations-reads-health";
+
 export type {
   ProjectStatus,
   ProjectStatusEnum,
