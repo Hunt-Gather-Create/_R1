@@ -39,8 +39,8 @@ import { runIfDirect } from "../lib/run-script";
 // Constants
 // =====================================================================
 
-const FORWARD_BATCH_ID = "retainer-v4-cleanup-2026-04-21";
-const REVERT_BATCH_ID = "retainer-v4-cleanup-2026-04-21-revert";
+const FORWARD_BATCH_ID = "retainer-v4-cleanup-2026-04-21-retry";
+const REVERT_BATCH_ID = "retainer-v4-cleanup-2026-04-21-retry-revert";
 const UPDATED_BY = "migration-revert";
 const DEFAULT_SNAPSHOT_PATH = "docs/tmp/retainer-v4-cleanup-pre-apply-snapshot.json";
 const DEFAULT_CREATED_IDS_PATH = "docs/tmp/retainer-v4-cleanup-created-ids.json";

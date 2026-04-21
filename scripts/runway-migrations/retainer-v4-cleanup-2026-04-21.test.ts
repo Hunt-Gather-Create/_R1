@@ -98,7 +98,7 @@ describeOrSkip("retainer-v4-cleanup-2026-04-21 - forward DRY_RUN", () => {
     expect(existsSync(snapshotPath)).toBe(true);
     const snap = JSON.parse(readFileSync(snapshotPath, "utf8"));
 
-    expect(snap.batchId).toBe("retainer-v4-cleanup-2026-04-21");
+    expect(snap.batchId).toBe("retainer-v4-cleanup-2026-04-21-retry");
     expect(snap.mode).toBe("dry-run");
     expect(Array.isArray(snap.l1Rows)).toBe(true);
     expect(Array.isArray(snap.l2Rows)).toBe(true);

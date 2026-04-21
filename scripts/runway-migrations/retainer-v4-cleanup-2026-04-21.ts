@@ -78,8 +78,8 @@ import { runIfDirect } from "../lib/run-script";
 // Constants
 // =====================================================================
 
-const BATCH_ID = "retainer-v4-cleanup-2026-04-21";
-const UPDATED_BY = "migration";
+const BATCH_ID = "retainer-v4-cleanup-2026-04-21-retry";
+const UPDATED_BY = "migration-retry";
 const DEFAULT_SNAPSHOT_PATH = "docs/tmp/retainer-v4-cleanup-pre-apply-snapshot.json";
 const DEFAULT_CREATED_IDS_PATH = "docs/tmp/retainer-v4-cleanup-created-ids.json";
 // Raised from 14:00Z to 22:00Z on 2026-04-21 after a partial-apply-then-revert
