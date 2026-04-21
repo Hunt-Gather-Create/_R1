@@ -56,10 +56,12 @@ export function registerRunwayTools(server: McpServer) {
     waitingOn: z.string().optional().describe("Filter by waitingOn name (case-insensitive substring, e.g. 'Daniel')"),
   }, async ({ clientSlug, status, owner, waitingOn }) => textResult(await getProjectsFiltered({ clientSlug, status, owner, waitingOn })));
 
-  server.tool("get_week_items", "Get calendar items for a specific week, optionally filtered by owner", {
+  server.tool("get_week_items", "Get calendar items for a specific week, optionally filtered by person (owner OR resource), owner, or resource", {
     weekOf: z.string().optional().describe("ISO date of the Monday (e.g. '2026-04-06')"),
-    owner: z.string().optional().describe("Filter by owner name (case-insensitive substring, e.g. 'Kathy')"),
-  }, async ({ weekOf, owner }) => textResult(await getWeekItemsData(weekOf, owner)));
+    owner: z.string().optional().describe("Filter by owner name only (case-insensitive substring, e.g. 'Kathy')"),
+    resource: z.string().optional().describe("Filter by resource name only (case-insensitive substring, e.g. 'Roz')"),
+    person: z.string().optional().describe("Filter where the person is owner OR resource (use this for plate queries, e.g. 'Kathy')"),
+  }, async ({ weekOf, owner, resource, person }) => textResult(await getWeekItemsData(weekOf, owner, resource, person)));
 
   server.tool("get_pipeline", "List all pipeline/unsigned SOWs", {},
     async () => textResult(await getPipelineData()));

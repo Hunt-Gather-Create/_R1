@@ -25,7 +25,25 @@ export async function getLinkedDeadlineItems(projectId: string): Promise<WeekIte
     .where(and(eq(weekItems.projectId, projectId), eq(weekItems.category, "deadline")));
 }
 
-export async function getWeekItemsData(weekOf?: string, owner?: string, resource?: string) {
+/**
+ * Get week items, optionally filtered.
+ *
+ * Filtering semantics:
+ * - `owner` (string): substring-match on the owner column.
+ * - `resource` (string): substring-match on the resources column.
+ * - `person` (string): substring-match on owner OR resources. Use when the caller
+ *   wants "everything this person touches" (e.g. bot plate queries). The v4
+ *   convention treats owner and resources as two facets of the same person —
+ *   "what's on Kathy's plate" should surface items she's doing the work on even
+ *   when she isn't the accountable owner. When `person` is given alongside
+ *   `owner` and/or `resource`, all filters apply (AND), matching SQL intuition.
+ */
+export async function getWeekItemsData(
+  weekOf?: string,
+  owner?: string,
+  resource?: string,
+  person?: string
+) {
   const db = getRunwayDb();
   const clientNameById = await getClientNameMap();
 
@@ -46,6 +64,13 @@ export async function getWeekItemsData(weekOf?: string, owner?: string, resource
 
   if (resource) {
     items = items.filter((item) => matchesSubstring(item.resources, resource));
+  }
+
+  if (person) {
+    items = items.filter(
+      (item) =>
+        matchesSubstring(item.owner, person) || matchesSubstring(item.resources, person)
+    );
   }
 
   return items.map((item) => ({
