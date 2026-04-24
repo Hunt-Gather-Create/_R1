@@ -103,10 +103,14 @@ export async function getStaleItemsForAccounts(
       if (!isStaleByUpdates) continue;
 
       // Computed staleness — days since the project row's last write.
-      // Zero when `updatedAt` is null so the sort remains stable.
+      // `projects.updated_at` is NOT NULL at the schema level, so the
+      // fallback branch should be unreachable in practice; it's kept
+      // defensive against driver quirks or in-flight migrations so
+      // consumers like `bot-proactive.ts:34` that filter `staleDays > 0`
+      // don't silently drop rows if the value ever lands as nullish.
       const staleDays = project.updatedAt
         ? Math.max(0, Math.floor((nowMs - project.updatedAt.getTime()) / dayMs))
-        : 0;
+        : 7;
 
       results.push({
         clientName: client.name,

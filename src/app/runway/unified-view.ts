@@ -150,9 +150,13 @@ export function wrapperIds(accounts: Account[]): Set<string> {
  * Strip DayItemEntries whose `projectId` points at a retainer wrapper.
  * Defensive filter — wrappers are umbrella projects that should never
  * surface in Week view; their visible work lives on their child L1s'
- * milestones. Pure function: produces a new `DayItem[]` without
- * mutating its inputs. Days that become empty after the filter are
- * dropped.
+ * milestones. Days that become empty after the filter are dropped.
+ *
+ * Returns new `DayItem` and `DayItem.items` arrays without mutating the
+ * inputs, but `DayItemEntry` objects inside surviving days are reused
+ * from the input (shallow copy). Callers that intend to mutate entries
+ * should clone first; current callers (page.tsx) discard the source
+ * arrays after filtering so aliasing is safe.
  */
 export function filterWrapperDayItems(
   weekItems: DayItem[],
