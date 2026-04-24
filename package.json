@@ -20,6 +20,7 @@
     "runway:pull": "npx tsx scripts/runway-pull.ts",
     "runway:migrate": "npx tsx scripts/runway-migrate.ts",
     "runway:publish-updates": "npx tsx scripts/runway-publish-updates.ts",
+    "runway:check-orphans": "npx tsx scripts/runway-migrations/check-orphan-parent-project-ids.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "dev:inngest": "NPM_CONFIG_CACHE=$(mktemp -d) npx --yes --ignore-scripts=false inngest-cli@latest dev",
