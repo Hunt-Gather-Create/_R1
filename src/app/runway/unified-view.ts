@@ -81,13 +81,11 @@ export function buildUnifiedAccounts(
       const parentItem = enriched.find((i) => i.id === pid);
       // v4 is 2-tier max. If the supposed parent itself has a
       // parentProjectId set in-account, we'd be creating a grandparent
-      // relationship. Log and demote to top-level.
+      // relationship. Silently demote to top-level — the condition is
+      // surfaced to operators via `detectHierarchyDemotions` in
+      // flags-detectors.ts (right-rail WARNING), which is visible on
+      // the board instead of buried in server logs.
       if (parentItem && parentItem.parentProjectId && idsInAccount.has(parentItem.parentProjectId)) {
-        if (typeof console !== "undefined") {
-          console.warn(
-            `[runway] grandparent detected in retainer wrapper tree; rendering ${item.id} as top-level (v4 is 2-tier max)`,
-          );
-        }
         continue;
       }
       const list = childrenByParent.get(pid) ?? [];
@@ -110,4 +108,65 @@ export function buildUnifiedAccounts(
 
     return { ...account, items };
   });
+}
+
+/**
+ * Wrapper detection assumes `engagementType === "retainer"`. If a
+ * non-retainer wrapper pattern is introduced (project-pack umbrella,
+ * etc.), revisit this predicate.
+ *
+ * A retainer L1 is treated as a wrapper when ≥1 other L1 in the same
+ * account has `parentProjectId` pointing at it. Standalone retainers
+ * (Hopdoddy Digital Retainer shape) are NOT wrappers.
+ */
+function collectWrapperIdsInAccount(account: Account): Set<string> {
+  const ids = new Set<string>();
+  const referenced = new Set<string>();
+  for (const item of account.items) {
+    if (item.parentProjectId) referenced.add(item.parentProjectId);
+  }
+  for (const item of account.items) {
+    if (item.engagementType !== "retainer") continue;
+    if (referenced.has(item.id)) ids.add(item.id);
+  }
+  return ids;
+}
+
+/** `true` when the account contains at least one retainer wrapper. */
+export function accountHasWrapper(account: Account): boolean {
+  return collectWrapperIdsInAccount(account).size > 0;
+}
+
+/** Union of wrapper ids across every provided account. */
+export function wrapperIds(accounts: Account[]): Set<string> {
+  const ids = new Set<string>();
+  for (const account of accounts) {
+    for (const id of collectWrapperIdsInAccount(account)) ids.add(id);
+  }
+  return ids;
+}
+
+/**
+ * Strip DayItemEntries whose `projectId` points at a retainer wrapper.
+ * Defensive filter — wrappers are umbrella projects that should never
+ * surface in Week view; their visible work lives on their child L1s'
+ * milestones. Pure function: produces a new `DayItem[]` without
+ * mutating its inputs. Days that become empty after the filter are
+ * dropped.
+ */
+export function filterWrapperDayItems(
+  weekItems: DayItem[],
+  accounts: Account[],
+): DayItem[] {
+  const wrappers = wrapperIds(accounts);
+  if (wrappers.size === 0) return weekItems;
+  const out: DayItem[] = [];
+  for (const day of weekItems) {
+    const filtered = day.items.filter(
+      (entry) => !entry.projectId || !wrappers.has(entry.projectId),
+    );
+    if (filtered.length === 0) continue;
+    out.push({ ...day, items: filtered });
+  }
+  return out;
 }

@@ -15,7 +15,6 @@ import { FlagsPanel } from "./components/flags-panel";
 import { NeedsUpdateSection } from "./components/needs-update-section";
 import { InFlightSection } from "./components/in-flight-section";
 import { InFlightToggle } from "./components/in-flight-toggle";
-import { PlateSummary } from "./components/plate-summary";
 import { toggleInFlightAction } from "./actions";
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
@@ -149,7 +148,6 @@ export function RunwayBoard({
                   onToggle={toggleInFlightAction}
                   onChange={setInFlightEnabled}
                 />
-                <PlateSummary accounts={accounts} />
                 <NeedsUpdateSection staleItems={staleItems} />
                 <InFlightSection
                   weekItems={allWeekItems}

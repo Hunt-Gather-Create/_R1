@@ -4,7 +4,7 @@ import { RunwayBoard } from "./runway-board";
 import { getMondayISODate, parseISODate } from "./date-utils";
 import { analyzeFlags } from "@/lib/runway/flags";
 import { getViewPreferences } from "@/lib/runway/view-preferences";
-import { buildUnifiedAccounts } from "./unified-view";
+import { buildUnifiedAccounts, filterWrapperDayItems } from "./unified-view";
 
 export const metadata = {
   title: "Runway — Civilization Agency",
@@ -88,16 +88,23 @@ export default async function RunwayPage() {
     notes: p.notes ?? undefined,
   }));
 
-  const flags = analyzeFlags(accounts, thisWeek, upcoming, pipelineProps);
+  // Strip any DayItemEntries whose projectId points at a retainer
+  // wrapper. Defensive filter — wrappers are umbrella projects and
+  // their direct milestones (if any) shouldn't surface in Week view.
+  // Applied BEFORE analyzeFlags so detectors don't count wrapper L2s.
+  const thisWeekFiltered = filterWrapperDayItems(thisWeek, accounts);
+  const upcomingFiltered = filterWrapperDayItems(upcoming, accounts);
+
+  const flags = analyzeFlags(accounts, thisWeekFiltered, upcomingFiltered, pipelineProps);
 
   // Chunk 3 #1 — unified Project View. Group L2s under their parent L1
   // from the same combined fetch so By-Account renders milestones inline.
-  const unifiedAccounts = buildUnifiedAccounts(accounts, [...thisWeek, ...upcoming]);
+  const unifiedAccounts = buildUnifiedAccounts(accounts, [...thisWeekFiltered, ...upcomingFiltered]);
 
   return (
     <RunwayBoard
-      thisWeek={thisWeek}
-      upcoming={upcoming}
+      thisWeek={thisWeekFiltered}
+      upcoming={upcomingFiltered}
       accounts={unifiedAccounts}
       pipeline={pipelineProps}
       flags={flags}
