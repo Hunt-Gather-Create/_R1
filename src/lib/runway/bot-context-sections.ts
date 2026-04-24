@@ -196,6 +196,13 @@ Present the L2s first. They're what moves this week.
   call update_project_field with field='parentProjectId' and the wrapper's id.
   To clear the link, pass newValue=''. Pass parentProjectId='__null__' to list
   only top-level L1s (the default view when no wrapper exists).
+- "who's on the [retainer wrapper] team" / "who's doing work under this retainer":
+  Call get_retainer_team with the wrapper's id. Returns a deduplicated roster
+  across all child L1s with per-person role + which projects they show up on.
+  Do NOT use get_retainer_team for non-retainer projects — for those, read the
+  resources field on the project directly. The wrapper's own owner is returned
+  separately (field: \`owner\`). Present it as "Retainer managed by <name>" to
+  distinguish from the working team.
 - "what's in the pipeline":
   Call get_pipeline.
 - "who's holding things up at [client]":

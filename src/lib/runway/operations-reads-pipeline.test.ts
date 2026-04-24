@@ -154,43 +154,39 @@ describe("getStaleItemsForAccounts", () => {
     expect(projectNames).toContain("Social Content");
   });
 
-  it("considers staleDays >= 7 as stale", async () => {
+  it("returned staleDays is computed from updatedAt, not stale_days column", async () => {
     const { getStaleItemsForAccounts } = await import("./operations-reads-pipeline");
 
-    // Set staleDays on a project and also give it a recent update
-    const recentEpoch = Math.floor(Date.now() / 1000);
+    // Backdate updated_at 20 days and set the orphan stale_days column to
+    // a different value to prove the returned staleDays tracks updatedAt.
+    const twentyDaysAgoEpoch = Math.floor(Date.now() / 1000) - 20 * 24 * 60 * 60;
     await libsqlClient.execute({
-      sql: "UPDATE projects SET stale_days = ? WHERE id = ?",
-      args: [10, "pj-cds"],
-    });
-    await libsqlClient.execute({
-      sql: `INSERT INTO updates (id, project_id, client_id, updated_by, update_type, summary, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      args: ["upd-recent2", "pj-cds", "cl-convergix", "Kathy", "note", "test", recentEpoch],
+      sql: "UPDATE projects SET stale_days = ?, updated_at = ? WHERE id = ?",
+      args: [99, twentyDaysAgoEpoch, "pj-cds"],
     });
 
     const result = await getStaleItemsForAccounts(["convergix"]);
     const cds = result.find((i) => i.projectName === "CDS Messaging");
-    // Still stale because staleDays=10 >= 7 even though it has a recent update
     expect(cds).toBeDefined();
-    expect(cds!.staleDays).toBe(10);
+    // Allow a one-day tolerance for the test-clock boundary.
+    expect(cds!.staleDays).toBeGreaterThanOrEqual(19);
+    expect(cds!.staleDays).toBeLessThanOrEqual(21);
   });
 
-  it("sorts results by staleDays descending", async () => {
+  it("sorts results by staleDays descending (derived from updatedAt)", async () => {
     const { getStaleItemsForAccounts } = await import("./operations-reads-pipeline");
 
-    // Set different staleDays values
+    const nowEpoch = Math.floor(Date.now() / 1000);
     await libsqlClient.execute({
-      sql: "UPDATE projects SET stale_days = ? WHERE id = ?",
-      args: [5, "pj-cds"],
+      sql: "UPDATE projects SET updated_at = ? WHERE id = ?",
+      args: [nowEpoch - 5 * 24 * 60 * 60, "pj-cds"],
     });
     await libsqlClient.execute({
-      sql: "UPDATE projects SET stale_days = ? WHERE id = ?",
-      args: [15, "pj-social-cgx"],
+      sql: "UPDATE projects SET updated_at = ? WHERE id = ?",
+      args: [nowEpoch - 15 * 24 * 60 * 60, "pj-social-cgx"],
     });
 
     const result = await getStaleItemsForAccounts(["convergix"]);
-    // Should be sorted by staleDays descending
     for (let i = 1; i < result.length; i++) {
       expect(result[i - 1].staleDays).toBeGreaterThanOrEqual(result[i].staleDays);
     }

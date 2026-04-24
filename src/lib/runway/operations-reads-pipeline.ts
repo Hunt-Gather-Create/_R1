@@ -41,7 +41,10 @@ export interface StaleAccountItem {
 
 /**
  * Find stale projects for a set of client slugs.
- * A project is stale if staleDays >= 7 or it has no updates in the last 7 days.
+ *
+ * A project is stale when it has no `updates` row in the last 7 days.
+ * The returned `staleDays` is computed from `projects.updatedAt` rather
+ * than the unwritten `projects.stale_days` column (orphan since v3).
  * Results are sorted by staleness (most stale first).
  */
 export async function getStaleItemsForAccounts(
@@ -52,6 +55,11 @@ export async function getStaleItemsForAccounts(
 
   const db = getRunwayDb();
   const results: StaleAccountItem[] = [];
+
+  const now = new Date();
+  const nowMs = now.getTime();
+  const sevenDaysAgo = new Date(nowMs - 7 * 24 * 60 * 60 * 1000);
+  const dayMs = 24 * 60 * 60 * 1000;
 
   for (const slug of clientSlugs) {
     const client = await getClientBySlug(slug);
@@ -77,9 +85,6 @@ export async function getStaleItemsForAccounts(
       }
     }
 
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
     for (const project of clientProjects) {
       // Skip completed and on-hold projects
       if (project.status === "completed" || project.status === "on-hold") continue;
@@ -92,18 +97,27 @@ export async function getStaleItemsForAccounts(
         if (!isOwner && !isResource && !isUnassigned) continue;
       }
 
-      const isStaleByStaleDays = project.staleDays != null && project.staleDays >= 7;
       const lastUpdate = latestUpdateByProject.get(project.id);
       const isStaleByUpdates = !lastUpdate || lastUpdate < sevenDaysAgo;
 
-      if (isStaleByStaleDays || isStaleByUpdates) {
-        results.push({
-          clientName: client.name,
-          projectName: project.name,
-          staleDays: project.staleDays ?? 0,
-          lastUpdate: lastUpdate?.toISOString(),
-        });
-      }
+      if (!isStaleByUpdates) continue;
+
+      // Computed staleness — days since the project row's last write.
+      // `projects.updated_at` is NOT NULL at the schema level, so the
+      // fallback branch should be unreachable in practice; it's kept
+      // defensive against driver quirks or in-flight migrations so
+      // consumers like `bot-proactive.ts:34` that filter `staleDays > 0`
+      // don't silently drop rows if the value ever lands as nullish.
+      const staleDays = project.updatedAt
+        ? Math.max(0, Math.floor((nowMs - project.updatedAt.getTime()) / dayMs))
+        : 7;
+
+      results.push({
+        clientName: client.name,
+        projectName: project.name,
+        staleDays,
+        lastUpdate: lastUpdate?.toISOString(),
+      });
     }
   }
 

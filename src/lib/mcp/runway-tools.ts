@@ -42,6 +42,7 @@ import {
   setBatchId,
   getBatchId,
 } from "@/lib/runway/operations";
+import { getRetainerTeam } from "@/lib/runway/operations-reads-retainers";
 import { postMutationUpdate } from "@/lib/slack/updates-channel";
 
 function textResult(data: unknown) {
@@ -120,6 +121,19 @@ export function registerRunwayTools(server: McpServer) {
       textResult(
         await getProjectsFiltered({ clientSlug, status, owner, waitingOn, engagementType, parentProjectId }),
       ),
+  );
+
+  server.tool(
+    "get_retainer_team",
+    "Return the deduplicated team across all deliverable L1s under a retainer wrapper. Input is the wrapper's id (get it from get_projects with engagementType='retainer'). Returns { wrapperId, wrapperName, clientName, childProjectCount, owner, team: [{ name, roles[], childProjectIds[] }] } or { error } if the id isn't a retainer. The wrapper's own `owner` is returned separately so callers can distinguish 'Retainer managed by <name>' from the working team. Use for questions like 'who's on the Convergix Retainer team.' Do NOT use for non-retainer projects — for those, read the project's resources field directly.",
+    {
+      wrapperId: z
+        .string()
+        .describe(
+          "The retainer wrapper's project id (get it from get_projects with engagementType='retainer').",
+        ),
+    },
+    async ({ wrapperId }) => textResult(await getRetainerTeam(wrapperId)),
   );
 
   server.tool(

@@ -17,11 +17,15 @@ function createAccount(overrides: Partial<Account> = {}): Account {
 }
 
 describe("AccountSection", () => {
-  it("renders account name and contract info", () => {
+  it("renders account name and contract term", () => {
     render(<AccountSection account={createAccount()} />);
     expect(screen.getByText("Convergix")).toBeInTheDocument();
-    expect(screen.getByText("$100K")).toBeInTheDocument();
     expect(screen.getByText("Feb – Jul 2026")).toBeInTheDocument();
+  });
+
+  it("does NOT render contract value on By Account view (prices moved to Pipeline)", () => {
+    render(<AccountSection account={createAccount({ contractValue: "$100K" })} />);
+    expect(screen.queryByText("$100K")).not.toBeInTheDocument();
   });
 
   it("renders team info", () => {
@@ -431,5 +435,94 @@ describe("AccountSection", () => {
     fireEvent.click(toggle);
     expect(screen.getByTestId("project-wrapper-children")).toBeInTheDocument();
     expect(toggle).toHaveTextContent("Collapse");
+  });
+
+  describe("Outside retainer marker", () => {
+    function makeItem(overrides: Partial<TriageItem> = {}): TriageItem {
+      return {
+        id: "p",
+        title: "Project",
+        status: "in-production",
+        category: "active",
+        ...overrides,
+      };
+    }
+
+    it("marks standalone L1s when the account has a retainer wrapper", () => {
+      const account = createAccount({
+        items: [
+          makeItem({ id: "wrap", title: "Convergix Retainer", engagementType: "retainer" }),
+          makeItem({ id: "c1", title: "Monthly touchpoint", parentProjectId: "wrap" }),
+          makeItem({ id: "solo", title: "AUTOMATE Booth Design", parentProjectId: null, engagementType: "project" }),
+        ],
+      });
+      render(<AccountSection account={account} />);
+      const markers = screen.getAllByTestId("outside-retainer-marker");
+      expect(markers).toHaveLength(1);
+    });
+
+    it("does NOT mark anything when the account has no retainer wrapper", () => {
+      const account = createAccount({
+        items: [
+          makeItem({ id: "p1", title: "Project A" }),
+          makeItem({ id: "p2", title: "Project B" }),
+        ],
+      });
+      render(<AccountSection account={account} />);
+      expect(screen.queryAllByTestId("outside-retainer-marker")).toHaveLength(0);
+    });
+
+    it("does NOT mark the wrapper itself or its children", () => {
+      const account = createAccount({
+        items: [
+          makeItem({ id: "wrap", title: "Convergix Retainer", engagementType: "retainer" }),
+          makeItem({ id: "c1", title: "Child 1", parentProjectId: "wrap" }),
+          makeItem({ id: "c2", title: "Child 2", parentProjectId: "wrap" }),
+        ],
+      });
+      render(<AccountSection account={account} />);
+      expect(screen.queryAllByTestId("outside-retainer-marker")).toHaveLength(0);
+    });
+  });
+
+  describe("Wrapper render shape (regression guard)", () => {
+    function makeItem(overrides: Partial<TriageItem> = {}): TriageItem {
+      return {
+        id: "p",
+        title: "Project",
+        status: "in-production",
+        category: "active",
+        ...overrides,
+      };
+    }
+
+    it("renders 1 wrapper card + 3 nested children cards", () => {
+      const wrapper = makeItem({
+        id: "wrap",
+        title: "Convergix Retainer",
+        engagementType: "retainer",
+      });
+      const children = [
+        makeItem({ id: "c1", title: "Brand Guide v2", parentProjectId: "wrap" }),
+        makeItem({ id: "c2", title: "Fanuc Article", parentProjectId: "wrap" }),
+        makeItem({ id: "c3", title: "Social Playbook", parentProjectId: "wrap" }),
+      ];
+      const unifiedAccount = {
+        ...createAccount(),
+        items: [{ ...wrapper, children }],
+      };
+      render(<AccountSection account={unifiedAccount} />);
+      // One wrapper card at the top.
+      expect(screen.getAllByTestId("project-wrapper-card")).toHaveLength(1);
+      // Three children rendered inside the wrapper's <ul>.
+      const childrenList = screen.getByTestId("project-wrapper-children");
+      const childItems = childrenList.querySelectorAll("li");
+      expect(childItems).toHaveLength(3);
+      // Wrapper + all child titles visible.
+      expect(screen.getByText("Convergix Retainer")).toBeInTheDocument();
+      expect(screen.getByText("Brand Guide v2")).toBeInTheDocument();
+      expect(screen.getByText("Fanuc Article")).toBeInTheDocument();
+      expect(screen.getByText("Social Playbook")).toBeInTheDocument();
+    });
   });
 });

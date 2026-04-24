@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Account, TriageItem, DayItemEntry } from "../types";
+import { accountHasWrapper } from "../unified-view";
 import { getOwnerResourcesDisplay } from "./display-utils";
 import { StatusBadge, StaleBadge, ContractBadge, MetadataLabel } from "./status-badge";
 
@@ -54,7 +55,13 @@ function formatContractTerm(term?: string): string | undefined {
  * card can reuse the same rendering for both the wrapper header and
  * each nested child card without duplication.
  */
-function ProjectCardBody({ item }: { item: TriageItemWithMilestones }) {
+function ProjectCardBody({
+  item,
+  outsideRetainer = false,
+}: {
+  item: TriageItemWithMilestones;
+  outsideRetainer?: boolean;
+}) {
   const { showOwnerSeparately, displayResources } = getOwnerResourcesDisplay(item);
 
   // Chunk 3 #1 — unified Project View: L2 milestones rendered inline
@@ -67,6 +74,14 @@ function ProjectCardBody({ item }: { item: TriageItemWithMilestones }) {
         <p className="text-sm font-medium text-foreground">{item.title}</p>
         <StatusBadge status={item.status} />
         {item.staleDays ? <StaleBadge days={item.staleDays} /> : null}
+        {outsideRetainer ? (
+          <span
+            data-testid="outside-retainer-marker"
+            className="rounded-full border border-muted-foreground/30 bg-muted/20 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+          >
+            Outside retainer
+          </span>
+        ) : null}
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
         {displayResources ? (
@@ -104,7 +119,13 @@ function ProjectCardBody({ item }: { item: TriageItemWithMilestones }) {
   );
 }
 
-function ProjectCard({ item }: { item: TriageItemWithMilestones }) {
+function ProjectCard({
+  item,
+  outsideRetainer = false,
+}: {
+  item: TriageItemWithMilestones;
+  outsideRetainer?: boolean;
+}) {
   const children = item.children ?? [];
   const hasChildren = children.length > 0;
   // v4 (PR #88 Chunk F): auto-collapse wide wrappers so a retainer with 15+
@@ -117,7 +138,7 @@ function ProjectCard({ item }: { item: TriageItemWithMilestones }) {
   if (!hasChildren) {
     return (
       <div className="border-t border-border/30 py-3 first:border-t-0 first:pt-0">
-        <ProjectCardBody item={item} />
+        <ProjectCardBody item={item} outsideRetainer={outsideRetainer} />
       </div>
     );
   }
@@ -186,6 +207,16 @@ export function AccountSection({ account }: AccountSectionProps) {
     [account.items]
   );
 
+  // True when the account contains a retainer L1 that ≥1 in-account L1
+  // references via parentProjectId. Standalone L1s in that account that
+  // are NOT themselves retainers and are NOT nested under the wrapper
+  // render with an "Outside retainer" marker so it's obvious on the
+  // board that they sit outside the retainer's scope.
+  const hasWrapper = useMemo(
+    () => accountHasWrapper(account),
+    [account],
+  );
+
   const displayTerm = formatContractTerm(account.contractTerm);
 
   return (
@@ -200,11 +231,10 @@ export function AccountSection({ account }: AccountSectionProps) {
           ) : null}
         </div>
         <div className="sm:text-right">
-          {account.contractValue ? (
-            <p className="text-sm font-medium text-foreground">
-              {account.contractValue}
-            </p>
-          ) : null}
+          {/* Dollar amounts moved to Pipeline view only (2026-04 operator
+              ask). By Account is the "what's in play" view; contract value
+              noise distracts from the work list. Contract term + status
+              badge stay — they describe the engagement, not its price. */}
           {displayTerm ? (
             <p className="text-xs text-muted-foreground">
               {displayTerm}
@@ -217,7 +247,15 @@ export function AccountSection({ account }: AccountSectionProps) {
       {activeItems.length > 0 ? (
         <div className="space-y-0">
           {activeItems.map((item) => (
-            <ProjectCard key={item.id} item={item} />
+            <ProjectCard
+              key={item.id}
+              item={item}
+              outsideRetainer={
+                hasWrapper &&
+                !item.parentProjectId &&
+                item.engagementType !== "retainer"
+              }
+            />
           ))}
         </div>
       ) : null}

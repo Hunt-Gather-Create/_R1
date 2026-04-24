@@ -78,4 +78,37 @@ describe("FlagsPanel", () => {
     expect(screen.queryByText(/Warning/)).not.toBeInTheDocument();
     expect(screen.getByText("Info (1)")).toBeInTheDocument();
   });
+
+  it("renders retainer-renewal flags in the warning group", () => {
+    const renewal: RunwayFlag = {
+      id: "renewal-1",
+      type: "retainer-renewal",
+      severity: "warning",
+      title: "Retainer renewal: Convergix / Retainer Wrapper",
+      detail: "expires 2026-05-10 (15 days)",
+      relatedClient: "convergix",
+    };
+    render(<FlagsPanel flags={[renewal]} />);
+    expect(screen.getByText("Warning (1)")).toBeInTheDocument();
+    expect(
+      screen.getByText("Retainer renewal: Convergix / Retainer Wrapper"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("expires 2026-05-10 (15 days)")).toBeInTheDocument();
+  });
+
+  it("renders contract-expired flags in the warning group", () => {
+    const expired: RunwayFlag = {
+      id: "expired-1",
+      type: "contract-expired",
+      severity: "warning",
+      title: "Contract expired: High Desert Law",
+      detail: "2 active L1s still in flight",
+      relatedClient: "high-desert-law",
+    };
+    render(<FlagsPanel flags={[expired]} />);
+    expect(screen.getByText("Warning (1)")).toBeInTheDocument();
+    expect(
+      screen.getByText("Contract expired: High Desert Law"),
+    ).toBeInTheDocument();
+  });
 });

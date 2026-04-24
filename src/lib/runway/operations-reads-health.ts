@@ -435,11 +435,14 @@ export async function getDataHealth(): Promise<DataHealth> {
     return n;
   }, 0);
 
-  // Stale signals.
+  // Stale signals. Computed from `updatedAt` rather than `projects.stale_days`
+  // which has no writer since v3 (always null in practice).
+  const nowMs = Date.now();
   const staleProjectsCount = allProjects.reduce((n, p) => {
-    if (p.staleDays == null || p.staleDays < 14) return n;
     if (p.status && STALE_EXCLUDED_STATUSES.has(p.status)) return n;
-    return n + 1;
+    if (!p.updatedAt) return n;
+    const days = Math.floor((nowMs - p.updatedAt.getTime()) / (24 * 60 * 60 * 1000));
+    return days >= 14 ? n + 1 : n;
   }, 0);
 
   const today = todayISODate();

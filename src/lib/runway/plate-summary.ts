@@ -12,9 +12,15 @@
  */
 
 import type { Account, DayItemEntry, TriageItem } from "@/app/runway/types";
+import {
+  CONTRACT_EXPIRED_ACTIVE_STATUSES,
+  RETAINER_RENEWAL_WINDOW_DAYS,
+} from "./flags-detectors";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-export const RETAINER_RENEWAL_WINDOW_DAYS = 30;
+
+// Re-export so existing callers of plate-summary's constant keep compiling.
+export { RETAINER_RENEWAL_WINDOW_DAYS };
 
 /** ISO `YYYY-MM-DD` for a given Date. UTC-based to avoid local-time drift. */
 export function toISODate(d: Date): string {
@@ -107,17 +113,16 @@ export interface ContractExpiredPill {
 
 /**
  * Detect clients whose contract has expired while an active L1 still exists
- * (status in the active set). Matches `getPersonWorkload` contractExpired
- * semantics but scoped to the full account list for the global board.
+ * (status in `CONTRACT_EXPIRED_ACTIVE_STATUSES`). Shares its Set with
+ * `detectContractExpired` in flags-detectors so the MCP pill surface and
+ * the right-rail RunwayFlag surface stay semantically aligned.
  */
-const ACTIVE_L1_STATUSES = new Set(["in-production", "not-started"]);
-
 export function contractExpiredPills(accounts: Account[]): ContractExpiredPill[] {
   const pills: ContractExpiredPill[] = [];
   for (const account of accounts) {
     if (account.contractStatus !== "expired") continue;
-    const hasActive = account.items.some(
-      (i) => ACTIVE_L1_STATUSES.has(i.status) || i.status === "blocked"
+    const hasActive = account.items.some((i) =>
+      CONTRACT_EXPIRED_ACTIVE_STATUSES.has(i.status),
     );
     if (!hasActive) continue;
     pills.push({ clientName: account.name });

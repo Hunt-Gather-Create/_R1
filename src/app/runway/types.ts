@@ -41,6 +41,10 @@ export interface TriageItem {
   endDate?: string | null;
   engagementType?: "project" | "retainer" | "break-fix" | null;
   contractEnd?: string | null;
+  // ISO timestamp of the project row's last write. Used by detectStaleItems
+  // to compute staleness from actual activity rather than the unwritten
+  // projects.stale_days column.
+  updatedAt?: string | null;
   // v4 (PR #88 Chunk F): retainer wrapper linkage. When set, this project
   // is a deliverable L1 nested under a retainer wrapper with this id.
   // Null/undefined = top-level L1 (current default 2-level behavior).

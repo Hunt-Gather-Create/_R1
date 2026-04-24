@@ -86,10 +86,10 @@ describe("createBotTools", () => {
     tools = createBotTools("Kathy Horn");
   });
 
-  it("creates all 34 tools (23 legacy + 10 tier-2/3 v4 + 1 drift in PR #88 Chunk C)", () => {
+  it("creates all 35 tools (23 legacy + 10 tier-2/3 v4 + 1 drift + 1 retainer team)", () => {
     const names = Object.keys(tools);
     expect(names).toEqual([
-      "get_clients", "get_projects", "get_pipeline", "get_week_items",
+      "get_clients", "get_projects", "get_retainer_team", "get_pipeline", "get_week_items",
       "update_project_status", "add_update", "get_person_workload",
       "get_project_status", "get_client_contacts",
       "create_project", "update_project_field", "create_week_item",

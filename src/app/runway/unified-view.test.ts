@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildUnifiedAccounts } from "./unified-view";
+import { buildUnifiedAccounts, filterWrapperDayItems, wrapperIds } from "./unified-view";
 import type { Account, DayItem, TriageItem } from "./types";
 
 function makeAccount(overrides: Partial<Account> = {}): Account {
@@ -192,5 +192,136 @@ describe("buildUnifiedAccounts", () => {
     const wrap = unified[0].items[0];
     const child = wrap.children?.[0];
     expect(child?.milestones.map((m) => m.title)).toEqual(["Child Milestone"]);
+  });
+});
+
+describe("wrapperIds", () => {
+  it("identifies a retainer L1 that has ≥1 in-account child", () => {
+    const accounts = [
+      makeAccount({
+        items: [
+          makeTriage({ id: "wrap", engagementType: "retainer" }),
+          makeTriage({ id: "c1", parentProjectId: "wrap" }),
+        ],
+      }),
+    ];
+    expect(wrapperIds(accounts).has("wrap")).toBe(true);
+  });
+
+  it("does NOT mark a retainer with zero children (Hopdoddy shape)", () => {
+    const accounts = [
+      makeAccount({
+        items: [
+          makeTriage({ id: "hopdoddy", engagementType: "retainer" }),
+          // Unrelated standalone L1 — does not point at the retainer.
+          makeTriage({ id: "other", parentProjectId: null }),
+        ],
+      }),
+    ];
+    expect(wrapperIds(accounts).size).toBe(0);
+  });
+
+  it("does NOT mark a non-retainer L1 even if it has children", () => {
+    const accounts = [
+      makeAccount({
+        items: [
+          makeTriage({ id: "proj", engagementType: "project" }),
+          makeTriage({ id: "sub", parentProjectId: "proj" }),
+        ],
+      }),
+    ];
+    expect(wrapperIds(accounts).size).toBe(0);
+  });
+});
+
+describe("filterWrapperDayItems", () => {
+  it("returns the input unchanged when no wrappers exist", () => {
+    const accounts = [
+      makeAccount({ items: [makeTriage({ id: "p1", engagementType: "project" })] }),
+    ];
+    const weekItems = [
+      makeDay([{ projectId: "p1", title: "M1", account: "Convergix", type: "delivery" }]),
+    ];
+    const filtered = filterWrapperDayItems(weekItems, accounts);
+    expect(filtered).toEqual(weekItems);
+  });
+
+  it("strips DayItemEntries whose projectId matches a wrapper", () => {
+    const accounts = [
+      makeAccount({
+        items: [
+          makeTriage({ id: "wrap", engagementType: "retainer" }),
+          makeTriage({ id: "c1", parentProjectId: "wrap" }),
+        ],
+      }),
+    ];
+    const weekItems = [
+      makeDay([
+        { projectId: "wrap", title: "Wrapper-direct M", account: "Convergix", type: "delivery" },
+        { projectId: "c1", title: "Child M", account: "Convergix", type: "delivery" },
+      ]),
+    ];
+    const filtered = filterWrapperDayItems(weekItems, accounts);
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].items.map((i) => i.title)).toEqual(["Child M"]);
+  });
+
+  it("leaves Convergix-style data unchanged (wrappers have no direct L2s)", () => {
+    const children = Array.from({ length: 15 }, (_, i) =>
+      makeTriage({ id: `c${i}`, title: `Child ${i}`, parentProjectId: "wrap" }),
+    );
+    const accounts = [
+      makeAccount({
+        items: [
+          makeTriage({ id: "wrap", title: "Convergix Retainer", engagementType: "retainer" }),
+          ...children,
+        ],
+      }),
+    ];
+    const weekItems = [
+      makeDay([
+        { projectId: "c0", title: "M on child 0", account: "Convergix", type: "delivery" },
+        { projectId: "c5", title: "M on child 5", account: "Convergix", type: "delivery" },
+      ]),
+    ];
+    const filtered = filterWrapperDayItems(weekItems, accounts);
+    expect(filtered).toEqual(weekItems);
+  });
+
+  it("drops empty days after filtering", () => {
+    const accounts = [
+      makeAccount({
+        items: [
+          makeTriage({ id: "wrap", engagementType: "retainer" }),
+          makeTriage({ id: "c1", parentProjectId: "wrap" }),
+        ],
+      }),
+    ];
+    const weekItems = [
+      makeDay([{ projectId: "wrap", title: "Only wrapper entry", account: "Convergix", type: "delivery" }]),
+    ];
+    expect(filterWrapperDayItems(weekItems, accounts)).toEqual([]);
+  });
+
+  it("is idempotent — calling twice returns the same result shape", () => {
+    const accounts = [
+      makeAccount({
+        items: [
+          makeTriage({ id: "wrap", engagementType: "retainer" }),
+          makeTriage({ id: "c1", parentProjectId: "wrap" }),
+        ],
+      }),
+    ];
+    const weekItems = [
+      makeDay([
+        { projectId: "wrap", title: "Wrapper M", account: "Convergix", type: "delivery" },
+        { projectId: "c1", title: "Child M", account: "Convergix", type: "delivery" },
+      ]),
+    ];
+    const once = filterWrapperDayItems(weekItems, accounts);
+    const twice = filterWrapperDayItems(once, accounts);
+    expect(twice).toEqual(once);
+    // Original input not mutated.
+    expect(weekItems[0].items).toHaveLength(2);
   });
 });
