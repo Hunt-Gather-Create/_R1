@@ -289,3 +289,140 @@ describe("recomputeProjectDates — v4 derivation rule", () => {
     expect(secondRow.rows[0].updated_at).not.toBe(firstUpdatedAt);
   });
 });
+
+describe("recomputeProjectDates — retainer wrapper guard", () => {
+  async function setEngagementType(id: string, value: string | null): Promise<void> {
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET engagement_type = ? WHERE id = ?`,
+      args: [value, id],
+    });
+  }
+
+  async function setParent(childId: string, parentId: string | null): Promise<void> {
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET parent_project_id = ? WHERE id = ?`,
+      args: [parentId, childId],
+    });
+  }
+
+  async function setProjectDates(
+    id: string,
+    startDate: string | null,
+    endDate: string | null
+  ): Promise<void> {
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET start_date = ?, end_date = ? WHERE id = ?`,
+      args: [startDate, endDate, id],
+    });
+  }
+
+  async function clearChildren(projectId: string): Promise<void> {
+    await libsqlClient.execute({
+      sql: `DELETE FROM week_items WHERE project_id = ?`,
+      args: [projectId],
+    });
+  }
+
+  it("recomputes a retainer L1 that has zero L1 children (not a wrapper)", async () => {
+    // pj-cds is retainer, no L1 children point at it. L2 write should drive recompute.
+    await setEngagementType("pj-cds", "retainer");
+    await setProjectDates("pj-cds", "2026-05-01", "2026-05-31");
+    await clearChildren("pj-cds");
+    await insertWeekItem(libsqlClient, {
+      id: "wi-cds-only",
+      projectId: "pj-cds",
+      clientId: "cl-convergix",
+      startDate: "2026-06-10",
+      endDate: "2026-06-15",
+    });
+
+    const { recomputeProjectDates } = await import("./operations-writes-week");
+    const result = await recomputeProjectDates("pj-cds");
+
+    expect(result).toEqual({ startDate: "2026-06-10", endDate: "2026-06-15" });
+    const row = await getProject(testDb, "pj-cds");
+    expect(row?.startDate).toBe("2026-06-10");
+    expect(row?.endDate).toBe("2026-06-15");
+  });
+
+  it("freezes a retainer wrapper L1 (engagementType=retainer + L1 children) on direct L2 write", async () => {
+    // Promote pj-cds to wrapper: retainer + at least one L1 child.
+    await setEngagementType("pj-cds", "retainer");
+    await setProjectDates("pj-cds", "2026-02-01", "2026-07-31");
+    await setParent("pj-social-cgx", "pj-cds");
+    await clearChildren("pj-cds");
+    // Add a wide-ranging L2 directly on the wrapper that would normally
+    // shift its dates.
+    await insertWeekItem(libsqlClient, {
+      id: "wi-wrapper-direct",
+      projectId: "pj-cds",
+      clientId: "cl-convergix",
+      startDate: "2026-09-01",
+      endDate: "2026-09-30",
+    });
+
+    const { recomputeProjectDates } = await import("./operations-writes-week");
+    const result = await recomputeProjectDates("pj-cds");
+
+    expect(result).toEqual({ startDate: "2026-02-01", endDate: "2026-07-31" });
+    const row = await getProject(testDb, "pj-cds");
+    expect(row?.startDate).toBe("2026-02-01");
+    expect(row?.endDate).toBe("2026-07-31");
+  });
+
+  it("recomputes a child L1 normally even when it sits under a retainer wrapper", async () => {
+    // pj-cds = wrapper (retainer with one child); pj-social-cgx = child L1.
+    // L2 writes on the child must still recompute the child's dates; the
+    // wrapper itself is untouched (no walk-up cascade by design).
+    await setEngagementType("pj-cds", "retainer");
+    await setProjectDates("pj-cds", "2026-02-01", "2026-07-31");
+    await setParent("pj-social-cgx", "pj-cds");
+    await setProjectDates("pj-social-cgx", null, null);
+    await clearChildren("pj-social-cgx");
+    await insertWeekItem(libsqlClient, {
+      id: "wi-child-l2",
+      projectId: "pj-social-cgx",
+      clientId: "cl-convergix",
+      startDate: "2026-04-10",
+      endDate: "2026-04-12",
+    });
+
+    const { recomputeProjectDates } = await import("./operations-writes-week");
+    const childResult = await recomputeProjectDates("pj-social-cgx");
+
+    expect(childResult).toEqual({ startDate: "2026-04-10", endDate: "2026-04-12" });
+    const childRow = await getProject(testDb, "pj-social-cgx");
+    expect(childRow?.startDate).toBe("2026-04-10");
+    expect(childRow?.endDate).toBe("2026-04-12");
+    // Wrapper untouched.
+    const wrapperRow = await getProject(testDb, "pj-cds");
+    expect(wrapperRow?.startDate).toBe("2026-02-01");
+    expect(wrapperRow?.endDate).toBe("2026-07-31");
+  });
+
+  it("recomputes a retainer L1 that has a parent itself (it is a wrapper child, not a wrapper)", async () => {
+    // pj-social-cgx is retainer + has parent_project_id set, but no children
+    // point at IT. So it's a child-of-wrapper, not a wrapper itself.
+    // Recompute must still fire on its own L2 writes.
+    await setEngagementType("pj-cds", "retainer");
+    await setEngagementType("pj-social-cgx", "retainer");
+    await setParent("pj-social-cgx", "pj-cds");
+    await setProjectDates("pj-social-cgx", null, null);
+    await clearChildren("pj-social-cgx");
+    await insertWeekItem(libsqlClient, {
+      id: "wi-grandchild-l2",
+      projectId: "pj-social-cgx",
+      clientId: "cl-convergix",
+      startDate: "2026-04-15",
+      endDate: "2026-04-20",
+    });
+
+    const { recomputeProjectDates } = await import("./operations-writes-week");
+    const result = await recomputeProjectDates("pj-social-cgx");
+
+    expect(result).toEqual({ startDate: "2026-04-15", endDate: "2026-04-20" });
+    const row = await getProject(testDb, "pj-social-cgx");
+    expect(row?.startDate).toBe("2026-04-15");
+    expect(row?.endDate).toBe("2026-04-20");
+  });
+});

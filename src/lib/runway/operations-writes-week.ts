@@ -81,6 +81,32 @@ export async function recomputeProjectDatesWith(
   executor: RecomputeExecutor,
   projectId: string
 ): Promise<{ startDate: string | null; endDate: string | null }> {
+  // Retainer-wrapper guard: a retainer L1 with at least one L1 child pointing
+  // at it acts as a SOW-window wrapper. Its start_date / end_date are pinned
+  // to the contract dates the operator set, NOT recomputed from L2 widths.
+  // Children L1s under it still recompute normally because they're visited
+  // with their own projectId by L2 writes on those children.
+  const projectRows = await executor
+    .select({
+      engagementType: projects.engagementType,
+      startDate: projects.startDate,
+      endDate: projects.endDate,
+    })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  const project = projectRows[0];
+  if (project?.engagementType === "retainer") {
+    const childProjects = await executor
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.parentProjectId, projectId))
+      .limit(1);
+    if (childProjects.length > 0) {
+      return { startDate: project.startDate, endDate: project.endDate };
+    }
+  }
+
   const children = await executor
     .select({
       startDate: weekItems.startDate,
