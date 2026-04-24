@@ -76,6 +76,7 @@ describe("createRunwayMcpServer", () => {
       // Read tools
       "get_clients",
       "get_projects",
+      "get_retainer_team",
       "get_week_items",
       "get_week_items_by_project",
       "get_pipeline",
