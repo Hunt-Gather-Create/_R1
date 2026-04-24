@@ -109,21 +109,25 @@ describe("getDataHealth", () => {
     expect(health.orphans.updatesWithDanglingTriggeredBy).toBe(1);
   });
 
-  it("counts stale projects, excluding completed and on-hold", async () => {
+  it("counts stale projects via updatedAt, excluding completed and on-hold", async () => {
     const { getDataHealth } = await import("./operations-reads-health");
 
-    // Three stale projects: one active (counted), one completed (excluded), one on-hold (excluded).
+    // Backdate updated_at 30 days on three projects: one active (counted),
+    // one completed (excluded), one on-hold (excluded). The orphan
+    // stale_days column is intentionally left unset — staleness must be
+    // derived from updatedAt.
+    const thirtyDaysAgo = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
     await libsqlClient.execute({
-      sql: `UPDATE projects SET stale_days = 30 WHERE id = 'pj-cds'`,
-      args: [],
+      sql: `UPDATE projects SET updated_at = ? WHERE id = 'pj-cds'`,
+      args: [thirtyDaysAgo],
     });
     await libsqlClient.execute({
-      sql: `UPDATE projects SET stale_days = 30, status = 'completed' WHERE id = 'pj-impact'`,
-      args: [],
+      sql: `UPDATE projects SET updated_at = ?, status = 'completed' WHERE id = 'pj-impact'`,
+      args: [thirtyDaysAgo],
     });
     await libsqlClient.execute({
-      sql: `UPDATE projects SET stale_days = 30, status = 'on-hold' WHERE id = 'pj-map'`,
-      args: [],
+      sql: `UPDATE projects SET updated_at = ?, status = 'on-hold' WHERE id = 'pj-map'`,
+      args: [thirtyDaysAgo],
     });
 
     const health = await getDataHealth();

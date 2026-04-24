@@ -101,12 +101,16 @@ describe("analyzeFlags", () => {
 
   // ── Stale Items ──────────────────────────────────────────
   describe("stale items", () => {
-    it("flags items with staleDays >= 14 as warning", () => {
+    function daysAgoISO(days: number): string {
+      return new Date(FAKE_NOW.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+    }
+
+    it("flags items updatedAt >= 14 days ago as warning", () => {
       const accounts: Account[] = [
         {
           name: "Convergix", slug: "convergix", contractStatus: "signed",
           items: [
-            { id: "p1", title: "Corporate Brochure", status: "awaiting-client", category: "active", staleDays: 14, waitingOn: "Daniel" },
+            { id: "p1", title: "Corporate Brochure", status: "awaiting-client", category: "active", updatedAt: daysAgoISO(14), waitingOn: "Daniel" },
           ],
         },
       ];
@@ -118,12 +122,12 @@ describe("analyzeFlags", () => {
       expect(stale!.title).toContain("Daniel");
     });
 
-    it("flags items with staleDays >= 30 as critical", () => {
+    it("flags items updatedAt >= 30 days ago as critical", () => {
       const accounts: Account[] = [
         {
           name: "Convergix", slug: "convergix", contractStatus: "signed",
           items: [
-            { id: "p1", title: "Old Project", status: "blocked", category: "active", staleDays: 45 },
+            { id: "p1", title: "Old Project", status: "blocked", category: "active", updatedAt: daysAgoISO(45) },
           ],
         },
       ];
@@ -132,12 +136,12 @@ describe("analyzeFlags", () => {
       expect(stale!.severity).toBe("critical");
     });
 
-    it("does NOT flag items with staleDays < 14", () => {
+    it("does NOT flag items updatedAt < 14 days ago", () => {
       const accounts: Account[] = [
         {
           name: "Convergix", slug: "convergix", contractStatus: "signed",
           items: [
-            { id: "p1", title: "Fresh Project", status: "in-production", category: "active", staleDays: 7 },
+            { id: "p1", title: "Fresh Project", status: "in-production", category: "active", updatedAt: daysAgoISO(7) },
           ],
         },
       ];
@@ -247,12 +251,14 @@ describe("analyzeFlags", () => {
 
   // ── Sorting ──────────────────────────────────────────────
   it("sorts flags by severity: critical first, then warning, then info", () => {
+    const veryOldISO = new Date(FAKE_NOW.getTime() - 45 * 24 * 60 * 60 * 1000).toISOString();
+    const somewhatOldISO = new Date(FAKE_NOW.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
     const accounts: Account[] = [
       {
         name: "Convergix", slug: "convergix", contractStatus: "signed",
         items: [
-          { id: "p1", title: "Very Old", status: "blocked", category: "active", staleDays: 45 },
-          { id: "p2", title: "Somewhat Old", status: "blocked", category: "active", staleDays: 14 },
+          { id: "p1", title: "Very Old", status: "blocked", category: "active", updatedAt: veryOldISO },
+          { id: "p2", title: "Somewhat Old", status: "blocked", category: "active", updatedAt: somewhatOldISO },
         ],
       },
     ];
@@ -275,11 +281,12 @@ describe("analyzeFlags", () => {
   });
 
   it("generates stable IDs for the same flag data", () => {
+    const oldISO = new Date(FAKE_NOW.getTime() - 20 * 24 * 60 * 60 * 1000).toISOString();
     const accounts: Account[] = [
       {
         name: "Convergix", slug: "convergix", contractStatus: "signed",
         items: [
-          { id: "p1", title: "Old Project", status: "blocked", category: "active", staleDays: 20 },
+          { id: "p1", title: "Old Project", status: "blocked", category: "active", updatedAt: oldISO },
         ],
       },
     ];

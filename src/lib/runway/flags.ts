@@ -15,6 +15,10 @@ import {
   detectDeadlines,
   detectBottlenecks,
   detectPastEndL2s,
+  detectRetainerRenewals,
+  detectContractExpired,
+  detectHierarchyDemotions,
+  detectWrapperCloseOut,
 } from "./flags-detectors";
 
 export type FlagSeverity = "critical" | "warning" | "info";
@@ -23,7 +27,11 @@ export type FlagType =
   | "stale"
   | "deadline"
   | "bottleneck"
-  | "past-end-l2";
+  | "past-end-l2"
+  | "retainer-renewal"
+  | "contract-expired"
+  | "hierarchy-demotion"
+  | "wrapper-close-out";
 
 export interface RunwayFlag {
   id: string;
@@ -52,6 +60,10 @@ export function analyzeFlags(
     ...detectDeadlines(thisWeek),
     ...detectBottlenecks(accounts),
     ...detectPastEndL2s(thisWeek, upcoming),
+    ...detectRetainerRenewals(accounts),
+    ...detectContractExpired(accounts),
+    ...detectHierarchyDemotions(accounts),
+    ...detectWrapperCloseOut(accounts),
   ];
 
   const severityOrder: Record<FlagSeverity, number> = {

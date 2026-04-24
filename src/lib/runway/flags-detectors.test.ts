@@ -8,6 +8,10 @@ import {
   detectBottlenecks,
   detectPastEndL2s,
   isPastEndInProgress,
+  detectRetainerRenewals,
+  detectContractExpired,
+  detectHierarchyDemotions,
+  detectWrapperCloseOut,
 } from "./flags-detectors";
 
 function createDayItemEntry(overrides: Partial<DayItemEntry> = {}): DayItemEntry {
@@ -152,6 +156,20 @@ describe("detectResourceConflicts", () => {
     expect(flags).toHaveLength(0);
   });
 
+  it("skips blocked L2 items (staffing signal excludes blocked)", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-07", [
+        createDayItemEntry({ owner: "Kathy", account: "Convergix", status: "blocked" }),
+        createDayItemEntry({ owner: "Kathy", account: "Convergix" }),
+        createDayItemEntry({ owner: "Kathy", account: "LPPC" }),
+      ]),
+    ];
+
+    // Blocked filtered → Kathy has 2 items across 2 clients, below the 3+ threshold.
+    const flags = detectResourceConflicts(thisWeek, []);
+    expect(flags).toHaveLength(0);
+  });
+
   it("skips items with no owner", () => {
     const thisWeek: DayItem[] = [
       createDayItem("2026-04-07", [
@@ -167,10 +185,25 @@ describe("detectResourceConflicts", () => {
 });
 
 describe("detectStaleItems", () => {
-  it("flags items with staleDays >= 14 as warning", () => {
+  const NOW = new Date("2026-04-20T12:00:00Z");
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function daysAgoISO(days: number): string {
+    return new Date(NOW.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  it("flags items updatedAt >= 14 days ago as warning", () => {
     const accounts: Account[] = [
       createAccount({
-        items: [createTriageItem({ staleDays: 15 })],
+        items: [createTriageItem({ updatedAt: daysAgoISO(15) })],
       }),
     ];
 
@@ -180,10 +213,10 @@ describe("detectStaleItems", () => {
     expect(flags[0].type).toBe("stale");
   });
 
-  it("flags items with staleDays >= 30 as critical", () => {
+  it("flags items updatedAt >= 30 days ago as critical", () => {
     const accounts: Account[] = [
       createAccount({
-        items: [createTriageItem({ staleDays: 35 })],
+        items: [createTriageItem({ updatedAt: daysAgoISO(35) })],
       }),
     ];
 
@@ -192,10 +225,10 @@ describe("detectStaleItems", () => {
     expect(flags[0].severity).toBe("critical");
   });
 
-  it("does not flag items with staleDays < 14", () => {
+  it("does not flag items updatedAt < 14 days ago", () => {
     const accounts: Account[] = [
       createAccount({
-        items: [createTriageItem({ staleDays: 10 })],
+        items: [createTriageItem({ updatedAt: daysAgoISO(10) })],
       }),
     ];
 
@@ -203,10 +236,21 @@ describe("detectStaleItems", () => {
     expect(flags).toHaveLength(0);
   });
 
-  it("does not flag items with null staleDays", () => {
+  it("does not flag items with null updatedAt (unknown, no signal)", () => {
     const accounts: Account[] = [
       createAccount({
-        items: [createTriageItem({ staleDays: undefined })],
+        items: [createTriageItem({ updatedAt: null })],
+      }),
+    ];
+
+    const flags = detectStaleItems(accounts);
+    expect(flags).toHaveLength(0);
+  });
+
+  it("does not flag items with missing updatedAt", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [createTriageItem({ updatedAt: undefined })],
       }),
     ];
 
@@ -217,7 +261,7 @@ describe("detectStaleItems", () => {
   it("includes waitingOn in title when present", () => {
     const accounts: Account[] = [
       createAccount({
-        items: [createTriageItem({ staleDays: 20, waitingOn: "Daniel" })],
+        items: [createTriageItem({ updatedAt: daysAgoISO(20), waitingOn: "Daniel" })],
       }),
     ];
 
@@ -226,10 +270,10 @@ describe("detectStaleItems", () => {
     expect(flags[0].relatedPerson).toBe("Daniel");
   });
 
-  it("excludes completed projects even when staleDays >= 14", () => {
+  it("excludes completed projects even when updatedAt >= 14 days ago", () => {
     const accounts: Account[] = [
       createAccount({
-        items: [createTriageItem({ staleDays: 30, status: "completed" })],
+        items: [createTriageItem({ updatedAt: daysAgoISO(30), status: "completed" })],
       }),
     ];
 
@@ -237,10 +281,10 @@ describe("detectStaleItems", () => {
     expect(flags).toHaveLength(0);
   });
 
-  it("excludes on-hold projects even when staleDays >= 14", () => {
+  it("excludes on-hold projects even when updatedAt >= 14 days ago", () => {
     const accounts: Account[] = [
       createAccount({
-        items: [createTriageItem({ staleDays: 30, status: "on-hold" })],
+        items: [createTriageItem({ updatedAt: daysAgoISO(30), status: "on-hold" })],
       }),
     ];
 
@@ -248,11 +292,11 @@ describe("detectStaleItems", () => {
     expect(flags).toHaveLength(0);
   });
 
-  it("includes account name in detail", () => {
+  it("includes account name and days computed from updatedAt in detail", () => {
     const accounts: Account[] = [
       createAccount({
         name: "Convergix",
-        items: [createTriageItem({ staleDays: 14 })],
+        items: [createTriageItem({ updatedAt: daysAgoISO(14) })],
       }),
     ];
 
@@ -736,5 +780,317 @@ describe("detectPastEndL2s", () => {
 
     const flags = detectPastEndL2s(thisWeek, []);
     expect(flags).toHaveLength(0);
+  });
+});
+
+describe("detectRetainerRenewals", () => {
+  const TODAY = new Date("2026-04-21T12:00:00Z");
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TODAY);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function plusDaysISO(days: number): string {
+    const d = new Date(TODAY.getTime() + days * 24 * 60 * 60 * 1000);
+    return d.toISOString().slice(0, 10);
+  }
+
+  it("fires on retainer with contract_end today (0 days out)", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [
+          createTriageItem({ engagementType: "retainer", contractEnd: plusDaysISO(0) }),
+        ],
+      }),
+    ];
+    const flags = detectRetainerRenewals(accounts);
+    expect(flags).toHaveLength(1);
+    expect(flags[0].type).toBe("retainer-renewal");
+    expect(flags[0].severity).toBe("warning");
+  });
+
+  it("fires on retainer with contract_end +15 days", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [
+          createTriageItem({ engagementType: "retainer", contractEnd: plusDaysISO(15) }),
+        ],
+      }),
+    ];
+    expect(detectRetainerRenewals(accounts)).toHaveLength(1);
+  });
+
+  it("fires on retainer with contract_end +29 days (inclusive boundary)", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [
+          createTriageItem({ engagementType: "retainer", contractEnd: plusDaysISO(29) }),
+        ],
+      }),
+    ];
+    expect(detectRetainerRenewals(accounts)).toHaveLength(1);
+  });
+
+  it("does not fire on retainer with contract_end +31 days (outside window)", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [
+          createTriageItem({ engagementType: "retainer", contractEnd: plusDaysISO(31) }),
+        ],
+      }),
+    ];
+    expect(detectRetainerRenewals(accounts)).toHaveLength(0);
+  });
+
+  it("does not fire on non-retainer engagementType with near contract_end", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [
+          createTriageItem({ engagementType: "project", contractEnd: plusDaysISO(10) }),
+        ],
+      }),
+    ];
+    expect(detectRetainerRenewals(accounts)).toHaveLength(0);
+  });
+
+  it("does not fire on retainer with no contract_end", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [
+          createTriageItem({ engagementType: "retainer", contractEnd: null }),
+        ],
+      }),
+    ];
+    expect(detectRetainerRenewals(accounts)).toHaveLength(0);
+  });
+
+  it("does not fire on retainer whose contract_end is already past", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [
+          createTriageItem({ engagementType: "retainer", contractEnd: plusDaysISO(-5) }),
+        ],
+      }),
+    ];
+    expect(detectRetainerRenewals(accounts)).toHaveLength(0);
+  });
+});
+
+describe("detectContractExpired", () => {
+  it("fires on expired client with ≥1 active L1", () => {
+    const accounts: Account[] = [
+      createAccount({
+        contractStatus: "expired",
+        items: [createTriageItem({ status: "in-production" })],
+      }),
+    ];
+    const flags = detectContractExpired(accounts);
+    expect(flags).toHaveLength(1);
+    expect(flags[0].type).toBe("contract-expired");
+    expect(flags[0].severity).toBe("warning");
+  });
+
+  it("fires on expired client with only blocked L1 (billing signal includes blocked)", () => {
+    const accounts: Account[] = [
+      createAccount({
+        contractStatus: "expired",
+        items: [createTriageItem({ status: "blocked" })],
+      }),
+    ];
+    expect(detectContractExpired(accounts)).toHaveLength(1);
+  });
+
+  it("fires on expired client with awaiting-client L1 (per CONTRACT_EXPIRED_ACTIVE_STATUSES)", () => {
+    const accounts: Account[] = [
+      createAccount({
+        contractStatus: "expired",
+        items: [createTriageItem({ status: "awaiting-client" })],
+      }),
+    ];
+    expect(detectContractExpired(accounts)).toHaveLength(1);
+  });
+
+  it("does not fire on expired client whose L1s are all completed", () => {
+    const accounts: Account[] = [
+      createAccount({
+        contractStatus: "expired",
+        items: [
+          createTriageItem({ id: "a", status: "completed" }),
+          createTriageItem({ id: "b", status: "on-hold" }),
+        ],
+      }),
+    ];
+    expect(detectContractExpired(accounts)).toHaveLength(0);
+  });
+
+  it("does not fire on signed client with active L1", () => {
+    const accounts: Account[] = [
+      createAccount({
+        contractStatus: "signed",
+        items: [createTriageItem({ status: "in-production" })],
+      }),
+    ];
+    expect(detectContractExpired(accounts)).toHaveLength(0);
+  });
+});
+
+describe("detectHierarchyDemotions", () => {
+  it("does not fire on 2-tier wrapper + children (Convergix shape)", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [
+          createTriageItem({ id: "wrapper", engagementType: "retainer" }),
+          createTriageItem({ id: "child-1", parentProjectId: "wrapper" }),
+          createTriageItem({ id: "child-2", parentProjectId: "wrapper" }),
+        ],
+      }),
+    ];
+    expect(detectHierarchyDemotions(accounts)).toHaveLength(0);
+  });
+
+  it("does not fire on standalone L1 with no parent", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [createTriageItem({ id: "solo", parentProjectId: null })],
+      }),
+    ];
+    expect(detectHierarchyDemotions(accounts)).toHaveLength(0);
+  });
+
+  it("fires on 3-tier A → B → C (grandchild C flagged)", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [
+          createTriageItem({ id: "A" }),
+          createTriageItem({ id: "B", parentProjectId: "A" }),
+          createTriageItem({ id: "C", parentProjectId: "B" }),
+        ],
+      }),
+    ];
+    const flags = detectHierarchyDemotions(accounts);
+    expect(flags).toHaveLength(1);
+    expect(flags[0].type).toBe("hierarchy-demotion");
+    expect(flags[0].severity).toBe("warning");
+    expect(flags[0].title).toContain("C");
+  });
+
+  it("does not fire when the grandparent link is unresolved in-account", () => {
+    const accounts: Account[] = [
+      createAccount({
+        items: [
+          // B's parentProjectId "missing" is not in this account -> no 3-tier chain.
+          createTriageItem({ id: "B", parentProjectId: "missing" }),
+          createTriageItem({ id: "C", parentProjectId: "B" }),
+        ],
+      }),
+    ];
+    expect(detectHierarchyDemotions(accounts)).toHaveLength(0);
+  });
+});
+
+describe("detectWrapperCloseOut", () => {
+  const TODAY = new Date("2026-04-23T12:00:00Z");
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TODAY);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function plusDaysISO(days: number): string {
+    const d = new Date(TODAY.getTime() + days * 24 * 60 * 60 * 1000);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function wrapperWithChildrenAccount(wrapperOverrides: Partial<TriageItem>): Account {
+    return createAccount({
+      items: [
+        createTriageItem({
+          id: "wrap",
+          title: "Convergix Retainer",
+          engagementType: "retainer",
+          ...wrapperOverrides,
+        }),
+        createTriageItem({ id: "child-1", parentProjectId: "wrap" }),
+      ],
+    });
+  }
+
+  it("does NOT fire on contractEnd === today (handoff to detectRetainerRenewals on boundary day)", () => {
+    const accounts = [
+      wrapperWithChildrenAccount({ status: "in-production", contractEnd: plusDaysISO(0) }),
+    ];
+    // Predicate is `contractEnd < todayISO`. Boundary behavior: today is
+    // the last day of the contract and is covered by detectRetainerRenewals
+    // (0 days out). Close-out starts the day after — avoids double-flagging
+    // the same wrapper on both detectors on the same day.
+    expect(detectWrapperCloseOut(accounts)).toHaveLength(0);
+  });
+
+  it("fires when wrapper contractEnd is yesterday and status is in-production", () => {
+    const accounts = [
+      wrapperWithChildrenAccount({ status: "in-production", contractEnd: plusDaysISO(-1) }),
+    ];
+    const flags = detectWrapperCloseOut(accounts);
+    expect(flags).toHaveLength(1);
+    expect(flags[0].type).toBe("wrapper-close-out");
+    expect(flags[0].severity).toBe("warning");
+    expect(flags[0].title).toContain("Convergix Retainer");
+  });
+
+  it("does NOT fire when contractEnd is tomorrow", () => {
+    const accounts = [
+      wrapperWithChildrenAccount({ status: "in-production", contractEnd: plusDaysISO(1) }),
+    ];
+    expect(detectWrapperCloseOut(accounts)).toHaveLength(0);
+  });
+
+  it("does NOT fire when wrapper status is completed (already closed out)", () => {
+    const accounts = [
+      wrapperWithChildrenAccount({ status: "completed", contractEnd: plusDaysISO(-30) }),
+    ];
+    expect(detectWrapperCloseOut(accounts)).toHaveLength(0);
+  });
+
+  it("does NOT fire on standalone retainer with 0 children (not acting as wrapper)", () => {
+    const accounts = [
+      createAccount({
+        items: [
+          createTriageItem({
+            id: "solo",
+            title: "Standalone Retainer",
+            engagementType: "retainer",
+            status: "in-production",
+            contractEnd: plusDaysISO(-30),
+          }),
+        ],
+      }),
+    ];
+    expect(detectWrapperCloseOut(accounts)).toHaveLength(0);
+  });
+
+  it("does NOT fire on non-retainer engagementType even with children past contractEnd", () => {
+    const accounts = [
+      createAccount({
+        items: [
+          createTriageItem({
+            id: "proj",
+            engagementType: "project",
+            status: "in-production",
+            contractEnd: plusDaysISO(-30),
+          }),
+          createTriageItem({ id: "sub", parentProjectId: "proj" }),
+        ],
+      }),
+    ];
+    expect(detectWrapperCloseOut(accounts)).toHaveLength(0);
   });
 });

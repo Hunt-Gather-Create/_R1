@@ -15,7 +15,30 @@ export function flagId(type: string, ...parts: string[]): string {
 }
 
 /**
+ * Statuses excluded from the staffing signal. Completed work is done;
+ * blocked work cannot be performed, so neither counts toward capacity.
+ * DIFFERENT from `CONTRACT_EXPIRED_ACTIVE_STATUSES` below — that's the
+ * billing signal, which INCLUDES blocked. Do NOT unify.
+ */
+const RESOURCE_CONFLICT_EXCLUDED_STATUSES: ReadonlySet<string> = new Set([
+  "completed",
+  "blocked",
+]);
+
+/**
  * Resource conflicts: person has 3+ deliverables within 10 days across 2+ clients.
+ *
+ * TODO(operator): window — currently strict 10 days rolling from today.
+ * Answer during PR review: keep 10d rolling, or switch to rolling-week
+ * (Mon-Sun) buckets so the signal aligns with the Week view?
+ *
+ * TODO(operator): secondary resources — currently counts the `owner`
+ * field only. Answer: should entries on the `resources` field (comma-
+ * separated people) also count toward each person's capacity?
+ *
+ * TODO(operator): multi-day dedupe — currently each day-entry counts
+ * toward the total. Answer: count a single item once per person across
+ * the window, even if it appears on multiple days?
  */
 export function detectResourceConflicts(
   thisWeek: DayItem[],
@@ -35,8 +58,9 @@ export function detectResourceConflicts(
 
     for (const item of day.items) {
       if (!item.owner) continue;
-      // v4: skip completed L2s — they no longer count against capacity.
-      if (item.status === "completed") continue;
+      // v4: skip completed and blocked L2s — neither contributes to the
+      // staffing signal (completed = done; blocked = cannot perform).
+      if (item.status && RESOURCE_CONFLICT_EXCLUDED_STATUSES.has(item.status)) continue;
       const owner = item.owner;
 
       if (!ownerAccounts.has(owner)) ownerAccounts.set(owner, new Set());
@@ -64,34 +88,50 @@ export function detectResourceConflicts(
 }
 
 /**
- * Stale items: projects with staleDays >= 14.
- * Critical if >= 30, warning if >= 14.
+ * Stale items: projects whose last write (`updatedAt`) is >= 14 days ago.
+ * Critical at >= 30, warning at >= 14.
  *
- * v4: excludes completed and on-hold projects — those are intentionally
- * paused and should not surface as stale. Uses Set for O(1) lookup.
+ * Computes staleness from `updatedAt` rather than `projects.stale_days` —
+ * that column has no writer since v3 and is always null in practice. Items
+ * with a null `updatedAt` are skipped (unknown staleness, no signal).
+ *
+ * v4: excludes completed and on-hold projects — intentionally paused, not
+ * stale. Uses Set for O(1) lookup.
  */
 const STALE_EXCLUDED_STATUSES = new Set(["completed", "on-hold"]);
+
+/**
+ * Whole-day delta between an ISO timestamp and "now". Returns `null` when
+ * `iso` is missing or unparseable — callers should treat that as "unknown,
+ * do not flag".
+ */
+function daysSinceUpdatedAt(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return null;
+  return Math.max(0, Math.floor((Date.now() - ts) / (24 * 60 * 60 * 1000)));
+}
 
 export function detectStaleItems(accounts: Account[]): RunwayFlag[] {
   const flags: RunwayFlag[] = [];
   for (const account of accounts) {
     for (const item of account.items) {
       if (STALE_EXCLUDED_STATUSES.has(item.status)) continue;
-      if (item.staleDays != null && item.staleDays >= 14) {
-        const severity: FlagSeverity = item.staleDays >= 30 ? "critical" : "warning";
-        const waitingDetail = item.waitingOn
-          ? ` -- waiting on ${item.waitingOn}`
-          : "";
-        flags.push({
-          id: flagId("stale", account.slug, item.id),
-          type: "stale",
-          severity,
-          title: `${item.title}${waitingDetail}`,
-          detail: `${account.name} -- stale ${item.staleDays} days`,
-          relatedClient: account.slug,
-          relatedPerson: item.waitingOn,
-        });
-      }
+      const days = daysSinceUpdatedAt(item.updatedAt);
+      if (days == null || days < 14) continue;
+      const severity: FlagSeverity = days >= 30 ? "critical" : "warning";
+      const waitingDetail = item.waitingOn
+        ? ` -- waiting on ${item.waitingOn}`
+        : "";
+      flags.push({
+        id: flagId("stale", account.slug, item.id),
+        type: "stale",
+        severity,
+        title: `${item.title}${waitingDetail}`,
+        detail: `${account.name} -- stale ${days} days`,
+        relatedClient: account.slug,
+        relatedPerson: item.waitingOn,
+      });
     }
   }
   return flags;
@@ -254,4 +294,160 @@ function daysBetweenISO(aISO: string, bISO: string): number {
   const b = Date.parse(bISO + "T00:00:00Z");
   if (Number.isNaN(a) || Number.isNaN(b)) return 0;
   return Math.max(0, Math.round((b - a) / (24 * 60 * 60 * 1000)));
+}
+
+// ─── Billing-signal semantics (Phase C) ───────────────────
+//
+// "blocked" counts as active for the billing signal — dormant-but-alive
+// work still counts against an expired contract. DIFFERENT from the
+// staffing signal in detectResourceConflicts (Phase E), which EXCLUDES
+// blocked. Do NOT unify — they are different frames.
+//
+// Exported so plate-summary's contractExpiredPills can share the same
+// source of truth for the MCP/bot pill surface.
+export const CONTRACT_EXPIRED_ACTIVE_STATUSES: ReadonlySet<string> = new Set([
+  "in-production",
+  "awaiting-client",
+  "blocked",
+  "not-started",
+]);
+
+export const RETAINER_RENEWAL_WINDOW_DAYS = 30;
+
+/**
+ * Retainer renewals: L1s with `engagementType='retainer'` whose
+ * `contractEnd` lands within the 30-day window from today.
+ *
+ * Emits WARNING. Mirrors `retainerRenewalPills` in plate-summary but
+ * returns the right-rail RunwayFlag shape.
+ */
+export function detectRetainerRenewals(accounts: Account[]): RunwayFlag[] {
+  const todayISO = toISODateString(new Date());
+  const flags: RunwayFlag[] = [];
+  for (const account of accounts) {
+    for (const item of account.items) {
+      if (item.engagementType !== "retainer") continue;
+      if (!item.contractEnd) continue;
+      if (item.contractEnd < todayISO) continue;
+      const daysOut = daysBetweenISO(todayISO, item.contractEnd);
+      if (daysOut > RETAINER_RENEWAL_WINDOW_DAYS) continue;
+      flags.push({
+        id: flagId("retainer-renewal", account.slug, item.id),
+        type: "retainer-renewal",
+        severity: "warning",
+        title: `Retainer renewal: ${account.name} / ${item.title}`,
+        detail: `expires ${item.contractEnd} (${daysOut} ${daysOut === 1 ? "day" : "days"})`,
+        relatedClient: account.slug,
+      });
+    }
+  }
+  return flags;
+}
+
+/**
+ * Wrapper close-out nudge: a retainer wrapper whose `contractEnd`
+ * has passed AND still sits in `in-production`. Signals that the
+ * retainer should be wrapped up — set the wrapper to `completed`,
+ * close out its children, or renew.
+ *
+ * Distinct from `detectRetainerRenewals` (pre-expiry) and
+ * `detectContractExpired` (client-level). This is wrapper-level and
+ * post-expiry. Only fires when the L1 IS functioning as a wrapper
+ * (≥1 in-account child references it via parentProjectId) — a
+ * standalone retainer with no children is handled by the client-level
+ * `detectContractExpired` signal when the client itself is marked
+ * expired.
+ */
+export function detectWrapperCloseOut(accounts: Account[]): RunwayFlag[] {
+  const todayISO = toISODateString(new Date());
+  const flags: RunwayFlag[] = [];
+  for (const account of accounts) {
+    const referenced = new Set<string>();
+    for (const item of account.items) {
+      if (item.parentProjectId) referenced.add(item.parentProjectId);
+    }
+    for (const item of account.items) {
+      if (item.engagementType !== "retainer") continue;
+      if (!referenced.has(item.id)) continue;
+      if (item.status !== "in-production") continue;
+      if (!item.contractEnd) continue;
+      if (item.contractEnd >= todayISO) continue;
+      flags.push({
+        id: flagId("wrapper-close-out", account.slug, item.id),
+        type: "wrapper-close-out",
+        severity: "warning",
+        title: `Close out retainer: ${account.name} / ${item.title}`,
+        detail: `contract ended ${item.contractEnd} — mark completed or renew`,
+        relatedClient: account.slug,
+      });
+    }
+  }
+  return flags;
+}
+
+/**
+ * Hierarchy demotion (Llama #4): L1s that sit three-plus tiers deep in
+ * the retainer wrapper tree. v4 convention is 2-tier max; anything
+ * deeper is a structural bug the board should surface rather than hide
+ * via a server-only `console.warn`.
+ *
+ * Predicate: for each L1 `p` with `parentProjectId` set, look up the
+ * parent in the same account. If that parent ALSO has a
+ * `parentProjectId` that resolves in-account, we have a 3-tier chain —
+ * emit a flag on the grandchild `p`. Same-account resolution mirrors
+ * `buildUnifiedAccounts` so the detector and the renderer agree on what
+ * counts as "in the wrapper tree".
+ */
+export function detectHierarchyDemotions(accounts: Account[]): RunwayFlag[] {
+  const flags: RunwayFlag[] = [];
+  for (const account of accounts) {
+    if (account.items.length === 0) continue;
+    const byId = new Map<string, Account["items"][number]>();
+    for (const item of account.items) byId.set(item.id, item);
+    for (const item of account.items) {
+      const parentId = item.parentProjectId;
+      if (!parentId) continue;
+      const parent = byId.get(parentId);
+      if (!parent) continue;
+      const grandparentId = parent.parentProjectId;
+      if (!grandparentId) continue;
+      if (!byId.has(grandparentId)) continue;
+      flags.push({
+        id: flagId("hierarchy-demotion", account.slug, item.id),
+        type: "hierarchy-demotion",
+        severity: "warning",
+        title: `Hierarchy too deep: ${account.name} / ${item.title}`,
+        detail: "v4 convention is 2-tier max — flatten or remove parent link",
+        relatedClient: account.slug,
+      });
+    }
+  }
+  return flags;
+}
+
+/**
+ * Contract expired: clients with `contractStatus='expired'` that still
+ * have ≥1 L1 in an active-for-billing status. Uses
+ * `CONTRACT_EXPIRED_ACTIVE_STATUSES` — includes `blocked` as dormant-
+ * but-alive work still accrues against an expired contract.
+ */
+export function detectContractExpired(accounts: Account[]): RunwayFlag[] {
+  const flags: RunwayFlag[] = [];
+  for (const account of accounts) {
+    if (account.contractStatus !== "expired") continue;
+    const activeCount = account.items.reduce(
+      (n, i) => (CONTRACT_EXPIRED_ACTIVE_STATUSES.has(i.status) ? n + 1 : n),
+      0,
+    );
+    if (activeCount === 0) continue;
+    flags.push({
+      id: flagId("contract-expired", account.slug),
+      type: "contract-expired",
+      severity: "warning",
+      title: `Contract expired: ${account.name}`,
+      detail: `${activeCount} active L1${activeCount === 1 ? "" : "s"} still in flight`,
+      relatedClient: account.slug,
+    });
+  }
+  return flags;
 }

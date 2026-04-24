@@ -66,6 +66,7 @@ export default async function RunwayPage() {
         | "break-fix"
         | null,
       contractEnd: p.contractEnd ?? null,
+      updatedAt: p.updatedAt?.toISOString() ?? null,
       // v4 (PR #88 Chunk F): retainer wrapper linkage.
       parentProjectId: p.parentProjectId ?? null,
     })),

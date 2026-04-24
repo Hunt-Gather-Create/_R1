@@ -519,14 +519,16 @@ describe("getStaleItemsForAccounts", () => {
     vi.useRealTimers();
   });
 
-  it("returns stale projects (staleDays >= 7)", async () => {
+  it("returns stale projects (updatedAt-based staleness)", async () => {
+    const tenDaysAgo = new Date("2026-04-07T12:00:00");
+    tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
     let callCount = 0;
     mockSelectFrom.mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
         // projects for convergix
         return chainable([
-          { id: "p1", clientId: "c1", name: "CDS Messaging", status: "in-production", staleDays: 10, sortOrder: 0 },
+          { id: "p1", clientId: "c1", name: "CDS Messaging", status: "in-production", sortOrder: 0, updatedAt: tenDaysAgo },
         ]);
       }
       // updates for convergix
@@ -588,14 +590,19 @@ describe("getStaleItemsForAccounts", () => {
     expect(result).toEqual([]);
   });
 
-  it("sorts by staleDays descending", async () => {
+  it("sorts by staleDays descending (derived from updatedAt)", async () => {
+    const now = new Date("2026-04-07T12:00:00");
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     let callCount = 0;
     mockSelectFrom.mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
         return chainable([
-          { id: "p1", clientId: "c1", name: "Less Stale", status: "in-production", staleDays: 7, sortOrder: 0 },
-          { id: "p2", clientId: "c1", name: "Very Stale", status: "blocked", staleDays: 30, sortOrder: 1 },
+          { id: "p1", clientId: "c1", name: "Less Stale", status: "in-production", sortOrder: 0, updatedAt: sevenDaysAgo },
+          { id: "p2", clientId: "c1", name: "Very Stale", status: "blocked", sortOrder: 1, updatedAt: thirtyDaysAgo },
         ]);
       }
       return chainable([]);
