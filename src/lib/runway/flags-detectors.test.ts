@@ -85,11 +85,11 @@ describe("detectResourceConflicts", () => {
   it("flags a person with 3+ deliverables across 2+ clients within 10 days", () => {
     const thisWeek: DayItem[] = [
       createDayItem("2026-04-07", [
-        createDayItemEntry({ owner: "Kathy", account: "Convergix" }),
-        createDayItemEntry({ owner: "Kathy", account: "Convergix" }),
+        createDayItemEntry({ id: "a", owner: "Kathy", account: "Convergix" }),
+        createDayItemEntry({ id: "b", owner: "Kathy", account: "Convergix" }),
       ]),
       createDayItem("2026-04-08", [
-        createDayItemEntry({ owner: "Kathy", account: "LPPC" }),
+        createDayItemEntry({ id: "c", owner: "Kathy", account: "LPPC" }),
       ]),
     ];
 
@@ -170,7 +170,7 @@ describe("detectResourceConflicts", () => {
     expect(flags).toHaveLength(0);
   });
 
-  it("skips items with no owner", () => {
+  it("skips items with no owner AND no resources", () => {
     const thisWeek: DayItem[] = [
       createDayItem("2026-04-07", [
         createDayItemEntry({ owner: undefined, account: "Convergix" }),
@@ -181,6 +181,212 @@ describe("detectResourceConflicts", () => {
 
     const flags = detectResourceConflicts(thisWeek, []);
     expect(flags).toHaveLength(0);
+  });
+
+  // ── Resources-field inclusion + per-item dedupe (2026-04-23 locks) ──
+
+  it("counts resources-field names alongside owner (agency capacity reality)", () => {
+    const thisWeek: DayItem[] = [
+      // Kathy named as CD on items she doesn't own — still hits her capacity.
+      createDayItem("2026-04-07", [
+        createDayItemEntry({
+          id: "a",
+          owner: "Lane",
+          resources: "CD: Kathy, CW: Leslie",
+          account: "Convergix",
+        }),
+        createDayItemEntry({
+          id: "b",
+          owner: "Lane",
+          resources: "CD: Kathy",
+          account: "LPPC",
+        }),
+      ]),
+      createDayItem("2026-04-08", [
+        createDayItemEntry({
+          id: "c",
+          owner: "Kathy",
+          account: "Hopdoddy",
+        }),
+      ]),
+    ];
+
+    const flags = detectResourceConflicts(thisWeek, []);
+    const kathy = flags.find((f) => f.relatedPerson?.toLowerCase() === "kathy");
+    expect(kathy).toBeDefined();
+    expect(kathy!.title).toContain("3 deliverables");
+    expect(kathy!.title).toContain("10 days");
+  });
+
+  it("parses role-prefix AND bare entries (Leslie without role prefix = Resource)", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-07", [
+        createDayItemEntry({
+          id: "a",
+          owner: "Lane",
+          resources: "CD: Kathy, CW: Lane, Leslie",
+          account: "Convergix",
+        }),
+        createDayItemEntry({
+          id: "b",
+          owner: "Leslie",
+          resources: "CD: Kathy",
+          account: "LPPC",
+        }),
+        createDayItemEntry({
+          id: "c",
+          owner: "Leslie",
+          resources: "CD: Kathy",
+          account: "Hopdoddy",
+        }),
+      ]),
+    ];
+
+    const flags = detectResourceConflicts(thisWeek, []);
+    // Leslie (bare entry on item a + owner on b, c) → 3 items across 3 clients
+    const leslie = flags.find((f) => f.relatedPerson?.toLowerCase() === "leslie");
+    expect(leslie).toBeDefined();
+    expect(leslie!.title).toContain("3 deliverables");
+    // Kathy (CD prefix on all 3 items across 3 clients) → 3 items
+    const kathy = flags.find((f) => f.relatedPerson?.toLowerCase() === "kathy");
+    expect(kathy).toBeDefined();
+    expect(kathy!.title).toContain("3 deliverables");
+  });
+
+  it("counts an owner-less item with populated resources (early-exit rework)", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-07", [
+        createDayItemEntry({
+          id: "a",
+          owner: undefined,
+          resources: "CD: Kathy, CW: Lane",
+          account: "Convergix",
+        }),
+        createDayItemEntry({
+          id: "b",
+          owner: undefined,
+          resources: "CD: Kathy",
+          account: "LPPC",
+        }),
+        createDayItemEntry({
+          id: "c",
+          owner: undefined,
+          resources: "CD: Kathy",
+          account: "Hopdoddy",
+        }),
+      ]),
+    ];
+
+    const flags = detectResourceConflicts(thisWeek, []);
+    const kathy = flags.find((f) => f.relatedPerson?.toLowerCase() === "kathy");
+    expect(kathy).toBeDefined();
+    expect(kathy!.title).toContain("3 deliverables");
+  });
+
+  it("dedupes same person as owner + in resources on the same item (counts as 1)", () => {
+    const thisWeek: DayItem[] = [
+      // Kathy listed as owner AND as CD in resources on item 'a' — must count once.
+      createDayItem("2026-04-07", [
+        createDayItemEntry({
+          id: "a",
+          owner: "Kathy",
+          resources: "CD: Kathy, CW: Lane",
+          account: "Convergix",
+        }),
+      ]),
+    ];
+
+    const flags = detectResourceConflicts(thisWeek, []);
+    // Single item → below 3+ threshold; no flag. Test that the per-item
+    // dedupe didn't explode into multiple touches for Kathy on one item.
+    expect(flags).toHaveLength(0);
+  });
+
+  it("dedupes a multi-day item (same itemId across days) — 1 staffing load, not N", () => {
+    // 5-day item for Kathy on Convergix with id='multi' appearing on each day.
+    const multiDay = (date: string) =>
+      createDayItem(date, [
+        createDayItemEntry({
+          id: "multi",
+          owner: "Kathy",
+          account: "Convergix",
+          startDate: "2026-04-07",
+          endDate: "2026-04-11",
+        }),
+      ]);
+    const thisWeek: DayItem[] = [
+      multiDay("2026-04-07"),
+      multiDay("2026-04-08"),
+      multiDay("2026-04-09"),
+      multiDay("2026-04-10"),
+      multiDay("2026-04-11"),
+      // Plus two other distinct items on other clients so the
+      // threshold question is valid — Kathy would fire ONLY if the
+      // 5-day item counted as 5 (wrong) instead of 1 (right).
+      createDayItem("2026-04-08", [
+        createDayItemEntry({ id: "x", owner: "Kathy", account: "LPPC" }),
+      ]),
+      createDayItem("2026-04-09", [
+        createDayItemEntry({ id: "y", owner: "Kathy", account: "Hopdoddy" }),
+      ]),
+    ];
+
+    const flags = detectResourceConflicts(thisWeek, []);
+    const kathy = flags.find((f) => f.relatedPerson === "Kathy");
+    expect(kathy).toBeDefined();
+    // Unique items for Kathy: multi (once) + x + y = 3.
+    expect(kathy!.title).toContain("3 deliverables");
+  });
+
+  it("ignores items with no id AND identical account|title composite (dedupe fallback)", () => {
+    const thisWeek: DayItem[] = [
+      // Same account|title, no id — collapses to a single itemKey.
+      createDayItem("2026-04-07", [
+        createDayItemEntry({ owner: "Kathy", account: "Convergix", title: "Review" }),
+        createDayItemEntry({ owner: "Kathy", account: "Convergix", title: "Review" }),
+      ]),
+      createDayItem("2026-04-08", [
+        createDayItemEntry({ owner: "Kathy", account: "LPPC", title: "Deliverable" }),
+      ]),
+    ];
+
+    const flags = detectResourceConflicts(thisWeek, []);
+    // Kathy's unique items = 2 (the dup collapses). Below threshold → no flag.
+    expect(flags).toHaveLength(0);
+  });
+
+  it("handles whitespace-only / malformed resources entries by dropping them", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-07", [
+        createDayItemEntry({
+          id: "a",
+          owner: "Kathy",
+          resources: " , ; \n  ,  ",
+          account: "Convergix",
+        }),
+        createDayItemEntry({
+          id: "b",
+          owner: "Kathy",
+          resources: "CD: ",
+          account: "LPPC",
+        }),
+        createDayItemEntry({
+          id: "c",
+          owner: "Kathy",
+          resources: undefined,
+          account: "Hopdoddy",
+        }),
+      ]),
+    ];
+
+    const flags = detectResourceConflicts(thisWeek, []);
+    // Only Kathy (via owner) should accumulate — resources garbage dropped.
+    // 3 items across 3 clients → fires.
+    const kathy = flags.find((f) => f.relatedPerson === "Kathy");
+    expect(kathy).toBeDefined();
+    expect(kathy!.title).toContain("3 deliverables");
+    // No spurious additional people.
+    expect(flags).toHaveLength(1);
   });
 });
 
