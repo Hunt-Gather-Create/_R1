@@ -65,6 +65,7 @@ async function main(): Promise<void> {
   process.exit(0);
 }
 
+// Guard so test-time imports don't run main(); copy this pattern when exporting helpers for tests.
 if (require.main === module) {
   main().catch((err) => {
     console.error("orphan-check FAILED:", err);
