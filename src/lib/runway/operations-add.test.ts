@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockInsertValues = vi.fn();
 vi.mock("@/lib/db/runway", () => ({
-  getRunwayDb: () => ({ insert: vi.fn(() => ({ values: mockInsertValues })) }),
+  getRunwayDb: () => ({
+    insert: vi.fn(() => ({ values: mockInsertValues })),
+    transaction: async (cb: (tx: { insert: ReturnType<typeof vi.fn> }) => Promise<void>) =>
+      cb({ insert: vi.fn(() => ({ values: mockInsertValues })) }),
+  }),
 }));
 vi.mock("@/lib/db/runway-schema", () => ({ projects: {}, updates: {} }));
 

@@ -61,6 +61,7 @@ export {
   getBatchId,
   parseResources,
   normalizeResourcesString,
+  validateParentProjectIdAssignment,
 } from "./operations-utils";
 
 export type {
@@ -72,6 +73,9 @@ export type {
   ClientField,
   TeamMemberField,
   ResourceEntry,
+  ValidatorExecutor,
+  ParentProjectIdValidationContext,
+  ParentProjectIdValidationResult,
 } from "./operations-utils";
 
 // ── Structured mutation response shape (v4 / PR #86) ────

@@ -520,15 +520,48 @@ export function registerRunwayTools(server: McpServer) {
     return operationResultMessage(result);
   });
 
-  server.tool("add_project", "Create a new project under a client", {
+  server.tool("add_project", "Create a new project under a client. Optional v4 metadata: resources, waitingOn, engagementType ('retainer' | 'project'), contractStart / contractEnd (ISO; helper enforces start < end), startDate / endDate (ISO), parentProjectId (must be a retainer in the same client; cycle-checked).", {
     clientSlug: z.string().describe("Client slug"),
     name: z.string().describe("Project name"),
     status: z.string().optional().default("not-started"),
     category: z.string().optional().default("active"),
     owner: z.string().optional(),
+    resources: z.string().optional(),
+    waitingOn: z.string().optional(),
     notes: z.string().optional(),
+    engagementType: z.string().optional().describe("'retainer' | 'project'"),
+    contractStart: z.string().optional().describe("ISO YYYY-MM-DD"),
+    contractEnd: z.string().optional().describe("ISO YYYY-MM-DD"),
+    startDate: z.string().optional().describe("ISO YYYY-MM-DD"),
+    endDate: z.string().optional().describe("ISO YYYY-MM-DD"),
+    parentProjectId: z.string().optional().describe("Retainer wrapper id (same client, no cycle)"),
     updatedBy: z.string().default("mcp").describe("Person adding the project"),
   }, async (params) => {
+    // Tool-boundary validation. Cross-field invariant + parent invariants
+    // run in the helper (validateParentProjectIdAssignment + tx-wrapped
+    // contractStart < contractEnd check).
+    if (params.engagementType !== undefined) {
+      if (
+        !PROJECT_ENGAGEMENT_TYPES.includes(
+          params.engagementType as (typeof PROJECT_ENGAGEMENT_TYPES)[number]
+        )
+      ) {
+        return operationResultMessage({
+          ok: false,
+          error: `engagementType must be one of ${PROJECT_ENGAGEMENT_TYPES.join(", ")}; got '${params.engagementType}'.`,
+        });
+      }
+    }
+    for (const field of ["contractStart", "contractEnd", "startDate", "endDate"] as const) {
+      const value = params[field];
+      if (value !== undefined && !isValidIsoDateOrEmpty(value)) {
+        return operationResultMessage({
+          ok: false,
+          error: `${field} must be a valid ISO YYYY-MM-DD date; got '${value}'.`,
+        });
+      }
+    }
+
     const result = await addProject(params);
     if (!getBatchId()) {
       await postMutationUpdate({
@@ -543,7 +576,7 @@ export function registerRunwayTools(server: McpServer) {
 
   // ── Mutation tools — week items ─────────────────────────
 
-  server.tool("create_week_item", "Add a new item to the weekly calendar", {
+  server.tool("create_week_item", "Add a new item to the weekly calendar. Multi-day spans use startDate + endDate; single-day items can use either `date` or `startDate`. blockedBy is a JSON array of week_item ids this item is blocked by.", {
     clientSlug: z.string().optional().describe("Client slug (if related to a client)"),
     projectName: z.string().optional().describe("Project name (fuzzy match)"),
     weekOf: z.string().optional().describe("ISO Monday date (auto-calculated from date if omitted)"),
@@ -555,8 +588,21 @@ export function registerRunwayTools(server: McpServer) {
     owner: z.string().optional(),
     resources: z.string().optional(),
     notes: z.string().optional(),
+    startDate: z.string().optional().describe("ISO YYYY-MM-DD; takes precedence over `date` for v4 spans"),
+    endDate: z.string().optional().describe("ISO YYYY-MM-DD; multi-day end"),
+    blockedBy: z.string().optional().describe("JSON array of week_item ids this item is blocked by"),
     updatedBy: z.string().default("mcp").describe("Person making the update"),
   }, async (params) => {
+    // Tool-boundary date validation.
+    for (const field of ["date", "startDate", "endDate"] as const) {
+      const value = params[field];
+      if (value !== undefined && !isValidIsoDateOrEmpty(value)) {
+        return operationResultMessage({
+          ok: false,
+          error: `${field} must be a valid ISO YYYY-MM-DD date; got '${value}'.`,
+        });
+      }
+    }
     const result = await createWeekItem(params);
     if (result.ok && !getBatchId() && result.data?.clientName) {
       await postMutationUpdate({
@@ -571,15 +617,75 @@ export function registerRunwayTools(server: McpServer) {
 
   server.tool(
     "update_week_item",
-    "Update a field on an existing week item. On success returns { message, data } where data includes { weekItemTitle, field, previousValue, newValue, clientName, reverseCascaded (boolean — legacy), reverseCascadeDetail ({ projectId, projectName, field: 'dueDate', previousDueDate, newDueDate, auditId } | null) for deadline-category date changes that back-propagate to the parent project, auditId }.",
+    "Update a field on an existing week item. On success returns { message, data } where data includes { weekItemTitle, field, previousValue, newValue, clientName, reverseCascaded (boolean — legacy), reverseCascadeDetail ({ projectId, projectName, field: 'dueDate', previousDueDate, newDueDate, auditId } | null) for deadline-category date changes that back-propagate to the parent project, auditId }. Status enum: scheduled | in-progress | blocked | at-risk | completed | canceled (or empty string for null/scheduled). Category enum: delivery | review | kickoff | deadline | approval | launch.",
     {
       weekOf: z.string().describe("ISO Monday date"),
       weekItemTitle: z.string().describe("Week item title (fuzzy match)"),
-      field: z.enum(["title", "status", "date", "dayOfWeek", "owner", "resources", "notes", "category"]).describe("Field to update"),
-      newValue: z.string().describe("New value"),
+      field: z
+        .enum([
+          "title",
+          "status",
+          "date",
+          "dayOfWeek",
+          "owner",
+          "resources",
+          "notes",
+          "category",
+          "startDate",
+          "endDate",
+          "blockedBy",
+        ])
+        .describe("Field to update"),
+      newValue: z.string().describe("New value (empty string clears null-able fields)"),
       updatedBy: z.string().default("mcp").describe("Person making the update"),
     },
     async (params) => {
+      // Tool-boundary value validation for hardened enums + date fields.
+      const STATUS_ENUM = [
+        "scheduled",
+        "in-progress",
+        "blocked",
+        "at-risk",
+        "completed",
+        "canceled",
+      ];
+      const CATEGORY_ENUM = [
+        "delivery",
+        "review",
+        "kickoff",
+        "deadline",
+        "approval",
+        "launch",
+      ];
+      if (params.field === "status") {
+        if (params.newValue !== "" && !STATUS_ENUM.includes(params.newValue)) {
+          return mutationResult({
+            ok: false,
+            error: `status must be one of ${STATUS_ENUM.join(", ")} or '' (clear); got '${params.newValue}'.`,
+          });
+        }
+      }
+      if (params.field === "category") {
+        if (params.newValue !== "" && !CATEGORY_ENUM.includes(params.newValue)) {
+          return mutationResult({
+            ok: false,
+            error: `category must be one of ${CATEGORY_ENUM.join(", ")} or '' (clear); got '${params.newValue}'.`,
+          });
+        }
+      }
+      if (
+        params.field === "date" ||
+        params.field === "startDate" ||
+        params.field === "endDate"
+      ) {
+        if (!isValidIsoDateOrEmpty(params.newValue)) {
+          return mutationResult({
+            ok: false,
+            error: `${params.field} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${params.newValue}'.`,
+          });
+        }
+      }
+
       const result = await updateWeekItemField(params);
       if (!getBatchId()) {
         await postMutationUpdate({

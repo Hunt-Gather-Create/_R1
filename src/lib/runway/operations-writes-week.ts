@@ -93,15 +93,13 @@ export async function recomputeProjectDatesWith(
       endDate: projects.endDate,
     })
     .from(projects)
-    .where(eq(projects.id, projectId))
-    .limit(1);
+    .where(eq(projects.id, projectId));
   const project = projectRows[0];
   if (project?.engagementType === "retainer") {
     const childProjects = await executor
       .select({ id: projects.id })
       .from(projects)
-      .where(eq(projects.parentProjectId, projectId))
-      .limit(1);
+      .where(eq(projects.parentProjectId, projectId));
     if (childProjects.length > 0) {
       return { startDate: project.startDate, endDate: project.endDate };
     }
@@ -166,6 +164,12 @@ export interface CreateWeekItemParams {
   owner?: string;
   resources?: string;
   notes?: string;
+  /** v4 explicit start date (ISO YYYY-MM-DD); falls back to `date` when omitted. */
+  startDate?: string;
+  /** v4 explicit end date (ISO YYYY-MM-DD) for multi-day spans. */
+  endDate?: string;
+  /** JSON-serialized array of week_item ids this item is blocked by, or null. */
+  blockedBy?: string;
   updatedBy: string;
 }
 
@@ -184,6 +188,9 @@ export async function createWeekItem(
     owner,
     resources,
     notes,
+    startDate,
+    endDate,
+    blockedBy,
     updatedBy,
   } = params;
 
@@ -254,8 +261,11 @@ export async function createWeekItem(
       weekOf,
       dayOfWeek: dayOfWeek ?? null,
       date: date ?? null,
-      // v4: mirror legacy `date` into `start_date` on create so derivation sees it.
-      startDate: date ?? null,
+      // v4: explicit startDate / endDate take precedence; otherwise mirror
+      // legacy `date` into `start_date` on create so derivation sees it.
+      startDate: startDate ?? date ?? null,
+      endDate: endDate ?? null,
+      blockedBy: blockedBy ?? null,
       title,
       status: status ?? null,
       category: category ?? null,

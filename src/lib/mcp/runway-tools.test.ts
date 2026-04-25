@@ -289,6 +289,120 @@ describe("registerRunwayTools", () => {
     expect(mockOps.addProject).toHaveBeenCalledWith(params);
   });
 
+  it("add_project rejects invalid engagementType at tool boundary", async () => {
+    const result = await registeredTools.get("add_project")!({
+      clientSlug: "convergix",
+      name: "Bad Engagement",
+      engagementType: "retainer-v2",
+      updatedBy: "Jason",
+    });
+    expect(mockOps.addProject).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/engagementType must be/);
+  });
+
+  it("add_project rejects shape-invalid contractStart at tool boundary", async () => {
+    const result = await registeredTools.get("add_project")!({
+      clientSlug: "convergix",
+      name: "Bad Date",
+      contractStart: "2026-13-45",
+      updatedBy: "Jason",
+    });
+    expect(mockOps.addProject).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/contractStart must be a valid ISO/);
+  });
+
+  it("add_project forwards valid v4 metadata to helper", async () => {
+    const params = {
+      clientSlug: "convergix",
+      name: "1H 2027 Convergix Retainer",
+      engagementType: "retainer",
+      contractStart: "2027-02-01",
+      contractEnd: "2027-07-31",
+      owner: "Kathy",
+      updatedBy: "Jason",
+    };
+    await registeredTools.get("add_project")!(params);
+    expect(mockOps.addProject).toHaveBeenCalledWith(params);
+  });
+
+  it("update_week_item rejects invalid status at tool boundary", async () => {
+    const result = await registeredTools.get("update_week_item")!({
+      weekOf: "2026-04-13",
+      weekItemTitle: "CDS Review",
+      field: "status",
+      newValue: "Done",
+      updatedBy: "test",
+    });
+    expect(mockOps.updateWeekItemField).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/status must be one of/);
+  });
+
+  it("update_week_item rejects invalid category at tool boundary", async () => {
+    const result = await registeredTools.get("update_week_item")!({
+      weekOf: "2026-04-13",
+      weekItemTitle: "CDS Review",
+      field: "category",
+      newValue: "meeting",
+      updatedBy: "test",
+    });
+    expect(mockOps.updateWeekItemField).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/category must be one of/);
+  });
+
+  it("update_week_item rejects shape-invalid startDate at tool boundary", async () => {
+    const result = await registeredTools.get("update_week_item")!({
+      weekOf: "2026-04-13",
+      weekItemTitle: "CDS Review",
+      field: "startDate",
+      newValue: "not-a-date",
+      updatedBy: "test",
+    });
+    expect(mockOps.updateWeekItemField).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/startDate must be a valid ISO/);
+  });
+
+  it("update_week_item accepts valid startDate and forwards to helper", async () => {
+    const params = {
+      weekOf: "2026-04-13",
+      weekItemTitle: "CDS Review",
+      field: "startDate",
+      newValue: "2026-04-14",
+      updatedBy: "test",
+    };
+    await registeredTools.get("update_week_item")!(params);
+    expect(mockOps.updateWeekItemField).toHaveBeenCalledWith(params);
+  });
+
+  it("create_week_item rejects shape-invalid startDate at tool boundary", async () => {
+    const result = await registeredTools.get("create_week_item")!({
+      clientSlug: "convergix",
+      title: "Bad",
+      weekOf: "2026-04-13",
+      startDate: "2026-13-45",
+      updatedBy: "test",
+    });
+    expect(mockOps.createWeekItem).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/startDate must be a valid ISO/);
+  });
+
+  it("create_week_item forwards blockedBy to helper", async () => {
+    const params = {
+      clientSlug: "convergix",
+      title: "Blocked Item",
+      weekOf: "2026-04-13",
+      blockedBy: '["wi-1","wi-2"]',
+      updatedBy: "test",
+    };
+    await registeredTools.get("create_week_item")!(params);
+    expect(mockOps.createWeekItem).toHaveBeenCalledWith(params);
+  });
+
   it("add_update calls operation", async () => {
     const params = { clientSlug: "convergix", summary: "Met with Daniel", updatedBy: "Kathy" };
     await registeredTools.get("add_update")!(params);
@@ -592,7 +706,7 @@ describe("registerRunwayTools", () => {
   });
 
   it("update_week_item calls operation", async () => {
-    const params = { weekOf: "2026-04-06", weekItemTitle: "Review", field: "status", newValue: "done", updatedBy: "mcp" };
+    const params = { weekOf: "2026-04-06", weekItemTitle: "Review", field: "status", newValue: "completed", updatedBy: "mcp" };
     const result = await registeredTools.get("update_week_item")!(params);
     expect(mockOps.updateWeekItemField).toHaveBeenCalledWith(params);
     expect(result).toEqual({ content: [{ type: "text", text: "Updated" }] });
@@ -762,7 +876,7 @@ describe("registerRunwayTools", () => {
   it("update_week_item returns error on failure", async () => {
     mockOps.updateWeekItemField.mockResolvedValueOnce({ ok: false, error: "Week item not found" });
     const result = await registeredTools.get("update_week_item")!({
-      weekOf: "2026-04-06", weekItemTitle: "nope", field: "status", newValue: "done", updatedBy: "mcp",
+      weekOf: "2026-04-06", weekItemTitle: "nope", field: "status", newValue: "completed", updatedBy: "mcp",
     });
     expect(result).toEqual({ content: [{ type: "text", text: "Week item not found" }] });
   });
