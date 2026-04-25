@@ -97,7 +97,7 @@ Centralized in `operations-utils.ts` so field allowlists are defined once and sh
 
 - `PROJECT_FIELDS` — editable project fields: `name`, `dueDate`, `owner`, `resources`, `waitingOn`, `notes`, `category`, `engagementType`, `contractStart`, `contractEnd`, `parentProjectId`
 - `PROJECT_FIELD_TO_COLUMN` — maps each `ProjectField` to its Drizzle column key
-- `WEEK_ITEM_FIELDS` — editable week item fields: `title`, `status`, `date`, `dayOfWeek`, `owner`, `resources`, `notes`, `category`
+- `WEEK_ITEM_FIELDS` — editable week item fields: `title`, `status`, `date`, `dayOfWeek`, `weekOf`, `owner`, `resources`, `notes`, `category`, `startDate`, `endDate`, `blockedBy`
 - `WEEK_ITEM_FIELD_TO_COLUMN` — maps each `WeekItemField` to its Drizzle column key
 - `UNDO_FIELDS` — derived from `[...PROJECT_FIELDS, "status", "category"]` so new project fields automatically become undoable
 
