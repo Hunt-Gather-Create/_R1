@@ -144,7 +144,7 @@ describe("handleDirectMessage", () => {
     await handleDirectMessage("U12345", "D67890", "hello", "ts123");
 
     const { anthropic } = await import("@ai-sdk/anthropic");
-    expect(anthropic).toHaveBeenCalledWith("claude-sonnet-4-6");
+    expect(anthropic).toHaveBeenCalledWith("claude-haiku-4-5-20251001");
   });
 
   it("limits AI to MAX_STEPS tool calls", async () => {
@@ -686,7 +686,7 @@ describe("token usage tracking", () => {
 
     expect(mockRecordTokenUsage).toHaveBeenCalledWith({
       workspaceId: "runway-bot",
-      model: "claude-sonnet-4-6",
+      model: "claude-haiku-4-5-20251001",
       inputTokens: 500,
       outputTokens: 150,
       source: "runway-bot",
