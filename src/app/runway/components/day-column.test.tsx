@@ -167,4 +167,22 @@ describe("DayColumn", () => {
     expect(screen.getByText("Item Two")).toBeInTheDocument();
     expect(screen.getByText("Item Three")).toBeInTheDocument();
   });
+
+  // 4d: identical-title items used to collide on the React key
+  // ($DATE-$title-$index → not unique once title was sliced to 20 chars
+  // and indexes reset across mounts). Distinct ids must yield distinct keys.
+  it("renders both items when titles are identical but ids differ", () => {
+    const { container } = render(
+      <DayColumn
+        day={createDay({
+          items: [
+            { id: "wi-a", title: "CDS Review", account: "Convergix", type: "review" },
+            { id: "wi-b", title: "CDS Review", account: "Convergix", type: "review" },
+          ],
+        })}
+      />
+    );
+    expect(screen.getAllByText("CDS Review")).toHaveLength(2);
+    expect(container.querySelectorAll(".space-y-2 > *")).toHaveLength(2);
+  });
 });

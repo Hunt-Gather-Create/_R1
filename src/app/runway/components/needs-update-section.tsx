@@ -34,7 +34,7 @@ export function NeedsUpdateSection({ staleItems }: NeedsUpdateSectionProps) {
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {day.items.map((item, i) => (
                   <DayItemCard
-                    key={`stale-${day.date}-${item.title.slice(0, 20)}-${i}`}
+                    key={item.id ?? `${item.account}|${item.title}|${i}`}
                     item={item}
                     size="lg"
                   />

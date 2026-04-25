@@ -352,4 +352,56 @@ describe("getStaleWeekItems", () => {
 
     vi.useRealTimers();
   });
+
+  // 4b: confirm the updates query is gated by a 30-day lookback
+  // (full-table scans on the updates table were the prior behavior).
+  it("filters the updates query to the last 30 days via gte", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    mockResults.push([createWeekItem({ date: "2026-04-06" })]);
+    mockResults.push([]);
+
+    const { gte } = await import("drizzle-orm");
+    (gte as unknown as ReturnType<typeof vi.fn>).mockClear();
+
+    const { getStaleWeekItems } = await import("./queries");
+    await getStaleWeekItems();
+
+    // gte fires twice: once for week-item lookback and once for updates.
+    // The updates call passes a Date (not a YYYY-MM-DD string) and lands
+    // ~30 days before "now".
+    const dateCalls = (gte as unknown as ReturnType<typeof vi.fn>).mock.calls
+      .filter((call: unknown[]) => call[1] instanceof Date);
+    expect(dateCalls.length).toBeGreaterThan(0);
+    const cutoff = dateCalls[0][1] as Date;
+    const now = Date.now();
+    const expected = now - 30 * 24 * 60 * 60 * 1000;
+    expect(Math.abs(cutoff.getTime() - expected)).toBeLessThan(2_000);
+
+    vi.useRealTimers();
+  });
+
+  // 4a: nested-loop fix — confirm correctness with multiple updates per
+  // project and updates that predate the item (should not mark as covered).
+  it("excludes items whose only updates predate the item date", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    mockResults.push([createWeekItem({ date: "2026-04-06", projectId: "p1" })]);
+    // Two updates for p1: one before the item date, one... still before.
+    // Neither covers the item, so it stays stale.
+    mockResults.push([
+      createUpdate({ projectId: "p1", createdAt: new Date("2026-04-04T09:00:00") }),
+      createUpdate({ projectId: "p1", createdAt: new Date("2026-04-05T15:00:00") }),
+    ]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].items[0].title).toBe("CDS Review");
+
+    vi.useRealTimers();
+  });
 });
