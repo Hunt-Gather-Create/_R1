@@ -51,6 +51,9 @@ next-env.d.ts
 .worktrees
 .mcp.json
 
+# local scratch dir (per-worktree working files, not for the repo)
+scripts/worktree-scratch/
+
 # brain docs, reference docs, and inspiration sources (local working files)
 docs/brain/
 docs/reference/
