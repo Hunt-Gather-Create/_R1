@@ -95,7 +95,7 @@ All database reads and writes go through `src/lib/runway/operations*.ts`. No con
 
 Centralized in `operations-utils.ts` so field allowlists are defined once and shared across write, undo, and validation code:
 
-- `PROJECT_FIELDS` — editable project fields: `name`, `dueDate`, `owner`, `resources`, `waitingOn`, `notes`
+- `PROJECT_FIELDS` — editable project fields: `name`, `dueDate`, `owner`, `resources`, `waitingOn`, `notes`, `category`, `engagementType`, `contractStart`, `contractEnd`, `parentProjectId`
 - `PROJECT_FIELD_TO_COLUMN` — maps each `ProjectField` to its Drizzle column key
 - `WEEK_ITEM_FIELDS` — editable week item fields: `title`, `status`, `date`, `dayOfWeek`, `owner`, `resources`, `notes`, `category`
 - `WEEK_ITEM_FIELD_TO_COLUMN` — maps each `WeekItemField` to its Drizzle column key
