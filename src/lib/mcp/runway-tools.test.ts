@@ -465,6 +465,63 @@ describe("registerRunwayTools", () => {
     expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
   });
 
+  it("update_project_field rejects invalid engagementType at tool boundary", async () => {
+    const result = await registeredTools.get("update_project_field")!({
+      clientSlug: "convergix",
+      projectName: "CDS",
+      field: "engagementType",
+      newValue: "retainer-v2",
+      updatedBy: "mcp",
+    });
+    expect(mockOps.updateProjectField).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/engagementType must be/);
+  });
+
+  it("update_project_field rejects shape-invalid contractStart at tool boundary", async () => {
+    const result = await registeredTools.get("update_project_field")!({
+      clientSlug: "convergix",
+      projectName: "CDS",
+      field: "contractStart",
+      newValue: "not-a-date",
+      updatedBy: "mcp",
+    });
+    expect(mockOps.updateProjectField).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/contractStart must be a valid ISO/);
+  });
+
+  it("update_project_field rejects date-invalid contractStart (2026-13-45) at tool boundary", async () => {
+    const result = await registeredTools.get("update_project_field")!({
+      clientSlug: "convergix",
+      projectName: "CDS",
+      field: "contractStart",
+      newValue: "2026-13-45",
+      updatedBy: "mcp",
+    });
+    expect(mockOps.updateProjectField).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/contractStart must be a valid ISO/);
+  });
+
+  it("update_project_field accepts valid engagementType and forwards to helper", async () => {
+    const params = { clientSlug: "convergix", projectName: "CDS", field: "engagementType", newValue: "retainer", updatedBy: "mcp" };
+    await registeredTools.get("update_project_field")!(params);
+    expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
+  });
+
+  it("update_project_field accepts valid contractStart and forwards to helper", async () => {
+    const params = { clientSlug: "convergix", projectName: "CDS", field: "contractStart", newValue: "2026-02-01", updatedBy: "mcp" };
+    await registeredTools.get("update_project_field")!(params);
+    expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
+  });
+
+  it("update_project_field accepts empty string to clear engagementType", async () => {
+    const params = { clientSlug: "convergix", projectName: "CDS", field: "engagementType", newValue: "", updatedBy: "mcp" };
+    await registeredTools.get("update_project_field")!(params);
+    expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
+  });
+
   it("update_project_field surfaces cascadeDetail for dueDate changes", async () => {
     mockOps.updateProjectField.mockResolvedValueOnce({
       ok: true,

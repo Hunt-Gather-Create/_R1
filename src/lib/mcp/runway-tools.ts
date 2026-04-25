@@ -81,6 +81,21 @@ function mutationResult(result: {
   return textResult(payload);
 }
 
+/**
+ * Strict ISO-8601 date validator (YYYY-MM-DD): shape regex + real Date parse
+ * + roundtrip equality. Rejects "2026-13-45" and similar shape-valid but
+ * date-invalid strings. Empty string is treated as valid (clear).
+ */
+function isValidIsoDateOrEmpty(value: string): boolean {
+  if (value === "") return true;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.toISOString().slice(0, 10) === value;
+}
+
+const PROJECT_ENGAGEMENT_TYPES = ["retainer", "project"] as const;
+
 export function registerRunwayTools(server: McpServer) {
   // ── Read tools ──────────────────────────────────────────
 
@@ -393,7 +408,17 @@ export function registerRunwayTools(server: McpServer) {
     {
       clientSlug: z.string().describe("Client slug (e.g. 'convergix')"),
       projectName: z.string().describe("Project name (fuzzy match)"),
-      newStatus: z.string().describe("New status value"),
+      newStatus: z
+        .enum([
+          "in-production",
+          "awaiting-client",
+          "not-started",
+          "blocked",
+          "on-hold",
+          "completed",
+          "canceled",
+        ])
+        .describe("New status value"),
       updatedBy: z.string().default("mcp").describe("Person making the update"),
       notes: z.string().optional().describe("Additional context"),
     },
@@ -414,7 +439,7 @@ export function registerRunwayTools(server: McpServer) {
 
   server.tool(
     "update_project_field",
-    "Update a specific field on a project. On success returns { message, data } where data includes { clientName, projectName, field, previousValue, newValue, cascadedItems, cascadeDetail ([{ itemId, itemTitle, field: 'date', previousValue, newValue, auditId }] — only populated when field='dueDate'), auditId }. Setting `parentProjectId` attaches a deliverable L1 to a retainer wrapper; pass an empty string to clear it (PR #88 Chunk F).",
+    "Update a specific field on a project. On success returns { message, data } where data includes { clientName, projectName, field, previousValue, newValue, cascadedItems, cascadeDetail ([{ itemId, itemTitle, field: 'date', previousValue, newValue, auditId }] — only populated when field='dueDate'), auditId }. Setting `parentProjectId` attaches a deliverable L1 to a retainer wrapper; pass an empty string to clear it. `engagementType` accepts 'retainer' | 'project' | '' (clear). `contractStart` / `contractEnd` accept ISO YYYY-MM-DD or '' (clear); helper enforces start < end when both are set.",
     {
       clientSlug: z.string().describe("Client slug"),
       projectName: z.string().describe("Project name (fuzzy match)"),
@@ -427,12 +452,43 @@ export function registerRunwayTools(server: McpServer) {
           "waitingOn",
           "notes",
           "parentProjectId",
+          "engagementType",
+          "contractStart",
+          "contractEnd",
         ])
         .describe("Field to update"),
-      newValue: z.string().describe("New value (pass empty string to clear parentProjectId)"),
+      newValue: z
+        .string()
+        .describe(
+          "New value. Pass empty string to clear parentProjectId / engagementType / contractStart / contractEnd."
+        ),
       updatedBy: z.string().default("mcp").describe("Person making the update"),
     },
     async (params) => {
+      // Tool-boundary value validation for fields with shape constraints.
+      // Cross-field invariants (contract start < end) live in the helper.
+      if (params.field === "engagementType") {
+        if (
+          params.newValue !== "" &&
+          !PROJECT_ENGAGEMENT_TYPES.includes(
+            params.newValue as (typeof PROJECT_ENGAGEMENT_TYPES)[number]
+          )
+        ) {
+          return mutationResult({
+            ok: false,
+            error: `engagementType must be one of ${PROJECT_ENGAGEMENT_TYPES.join(", ")} or '' (clear); got '${params.newValue}'.`,
+          });
+        }
+      }
+      if (params.field === "contractStart" || params.field === "contractEnd") {
+        if (!isValidIsoDateOrEmpty(params.newValue)) {
+          return mutationResult({
+            ok: false,
+            error: `${params.field} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${params.newValue}'.`,
+          });
+        }
+      }
+
       const result = await updateProjectField(params);
       if (result.ok && !getBatchId()) {
         await postMutationUpdate({

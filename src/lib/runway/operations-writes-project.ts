@@ -21,6 +21,7 @@ import {
   validateAndResolveField,
   getPreviousValue,
   normalizeResourcesString,
+  validateParentProjectIdAssignment,
 } from "./operations-utils";
 import type {
   CascadedItemInfo,
@@ -145,11 +146,54 @@ export async function updateProjectField(
 
   // v4 (PR #88 Chunk F): parentProjectId accepts empty string as "clear".
   // Stored as NULL so `getProjectsFiltered({ parentProjectId: '__null__' })`
-  // and the UI's "no wrapper" checks work uniformly.
+  // and the UI's "no wrapper" checks work uniformly. contractStart /
+  // contractEnd / engagementType also accept "" as "clear" → null.
   const persistedValue =
-    typedField === "parentProjectId" && effectiveNewValue === ""
+    (typedField === "parentProjectId" ||
+      typedField === "contractStart" ||
+      typedField === "contractEnd" ||
+      typedField === "engagementType") &&
+    effectiveNewValue === ""
       ? null
       : effectiveNewValue;
+
+  // parentProjectId validators (shared module): both this path and the
+  // set_project_parent MCP tool route through validateParentProjectIdAssignment
+  // so cycle / non-retainer / cross-client parents always reject.
+  if (typedField === "parentProjectId") {
+    const parentValidation = await validateParentProjectIdAssignment(db, {
+      childId: project.id,
+      childClientId: project.clientId,
+      newParentId: persistedValue,
+    });
+    if (!parentValidation.ok) {
+      return { ok: false, error: parentValidation.error };
+    }
+  }
+
+  // Helper-level contract-date invariant. Single-field updates fetch the
+  // OTHER side from `project` (already in scope) and reject if the result
+  // would put end ≤ start. If the OTHER side is null, no comparison is
+  // possible and the write is allowed. Clears (persistedValue === null)
+  // skip the check entirely.
+  if (typedField === "contractStart" && persistedValue !== null) {
+    const otherEnd = project.contractEnd;
+    if (otherEnd !== null && persistedValue >= otherEnd) {
+      return {
+        ok: false,
+        error: `contractStart '${persistedValue}' must be < contractEnd '${otherEnd}'.`,
+      };
+    }
+  }
+  if (typedField === "contractEnd" && persistedValue !== null) {
+    const otherStart = project.contractStart;
+    if (otherStart !== null && persistedValue <= otherStart) {
+      return {
+        ok: false,
+        error: `contractEnd '${persistedValue}' must be > contractStart '${otherStart}'.`,
+      };
+    }
+  }
 
   // Stable idempotency key for null writes — mirrors the "(null)" marker
   // used in audit rows so repeat applies collapse.

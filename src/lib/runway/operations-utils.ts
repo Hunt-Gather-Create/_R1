@@ -838,3 +838,96 @@ export function parseResources(raw: string | null | undefined): ResourceEntry[] 
 
   return entries;
 }
+
+// ── parentProjectId validators ────────────────────────────
+
+/**
+ * Minimal executor shape: just `select`. Compatible with `db` and any `tx`
+ * passed into `db.transaction(...)`.
+ */
+export type ValidatorExecutor = Pick<ReturnType<typeof getRunwayDb>, "select">;
+
+export type ParentProjectIdValidationContext = {
+  /** Project being assigned a parent. */
+  childId: string;
+  /** Child's client_id (no cross-client parenting). */
+  childClientId: string;
+  /** Resolved new parent id, or null to clear the link. */
+  newParentId: string | null;
+};
+
+export type ParentProjectIdValidationResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+/**
+ * Four invariants enforced for any write that sets parent_project_id:
+ *  1. parent must exist (non-null case)
+ *  2. parent.engagement_type === "retainer"
+ *  3. parent.client_id === child.client_id (no cross-client parenting)
+ *  4. no cycle via 10-hop walk (newParentId → parent's parent → ...; reject
+ *     if the chain hits childId)
+ *
+ * Null newParentId (clearing the link) is trivially valid.
+ *
+ * Both the `set_project_parent` MCP tool and the existing
+ * `update_project_field({ field: "parentProjectId" })` write path call this
+ * validator. Validators live here, not in handlers, so every write path
+ * runs the same four checks (no path can bypass).
+ */
+export async function validateParentProjectIdAssignment(
+  executor: ValidatorExecutor,
+  ctx: ParentProjectIdValidationContext,
+): Promise<ParentProjectIdValidationResult> {
+  if (ctx.newParentId === null) return { ok: true };
+
+  const parentRows = await executor
+    .select({
+      id: projects.id,
+      clientId: projects.clientId,
+      engagementType: projects.engagementType,
+      parentProjectId: projects.parentProjectId,
+    })
+    .from(projects)
+    .where(eq(projects.id, ctx.newParentId))
+    .limit(1);
+  const parent = parentRows[0];
+  if (!parent) {
+    return { ok: false, error: `Parent project '${ctx.newParentId}' not found.` };
+  }
+
+  if (parent.engagementType !== "retainer") {
+    return {
+      ok: false,
+      error: `Parent project '${parent.id}' has engagementType='${
+        parent.engagementType ?? "null"
+      }', must be 'retainer'.`,
+    };
+  }
+
+  if (parent.clientId !== ctx.childClientId) {
+    return {
+      ok: false,
+      error: `Parent project belongs to client '${parent.clientId}', child belongs to client '${ctx.childClientId}' — cross-client parenting forbidden.`,
+    };
+  }
+
+  // Cycle check — walk the parent chain up to 10 hops; reject if it ever
+  // hits the child being assigned.
+  let cursorId: string | null = parent.parentProjectId;
+  for (let hop = 0; hop < 10 && cursorId !== null; hop++) {
+    if (cursorId === ctx.childId) {
+      return {
+        ok: false,
+        error: `Cycle detected: assigning parent '${ctx.newParentId}' would create a cycle through '${ctx.childId}'.`,
+      };
+    }
+    const nextRows = await executor
+      .select({ parentProjectId: projects.parentProjectId })
+      .from(projects)
+      .where(eq(projects.id, cursorId))
+      .limit(1);
+    cursorId = nextRows[0]?.parentProjectId ?? null;
+  }
+  return { ok: true };
+}
