@@ -43,6 +43,10 @@ import {
   updateTeamMember,
   setBatchId,
   getBatchId,
+  validateEngagementType,
+  validateIsoDateShape,
+  validateWeekItemStatus,
+  validateWeekItemCategory,
 } from "@/lib/runway/operations";
 import { getRetainerTeam } from "@/lib/runway/operations-reads-retainers";
 import { postMutationUpdate } from "@/lib/slack/updates-channel";
@@ -83,20 +87,15 @@ function mutationResult(result: {
   return textResult(payload);
 }
 
-/**
- * Strict ISO-8601 date validator (YYYY-MM-DD): shape regex + real Date parse
- * + roundtrip equality. Rejects "2026-13-45" and similar shape-valid but
- * date-invalid strings. Empty string is treated as valid (clear).
- */
-function isValidIsoDateOrEmpty(value: string): boolean {
-  if (value === "") return true;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const d = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(d.getTime())) return false;
-  return d.toISOString().slice(0, 10) === value;
-}
-
-const PROJECT_ENGAGEMENT_TYPES = ["retainer", "project"] as const;
+// Tool-boundary value validators are imported from
+// @/lib/runway/operations (which re-exports from operations-utils):
+//   - validateEngagementType — enum + clear sentinel
+//   - validateIsoDateShape   — strict ISO YYYY-MM-DD + clear sentinel
+//   - validateWeekItemStatus / validateWeekItemCategory — week-item enums
+//
+// The same validators run inside each helper, so a `batch_apply` op that
+// bypasses the wrapper still gets full enforcement. One source of truth per
+// concern — see operations-utils.ts §"Shared value validators".
 
 export function registerRunwayTools(server: McpServer) {
   // ── Read tools ──────────────────────────────────────────
@@ -467,28 +466,16 @@ export function registerRunwayTools(server: McpServer) {
       updatedBy: z.string().default("mcp").describe("Person making the update"),
     },
     async (params) => {
-      // Tool-boundary value validation for fields with shape constraints.
-      // Cross-field invariants (contract start < end) live in the helper.
+      // Tool-boundary value validation — defense in depth ahead of dispatch.
+      // Helper revalidates with the same shared validators so batch_apply
+      // (which bypasses this wrapper) is also covered.
       if (params.field === "engagementType") {
-        if (
-          params.newValue !== "" &&
-          !PROJECT_ENGAGEMENT_TYPES.includes(
-            params.newValue as (typeof PROJECT_ENGAGEMENT_TYPES)[number]
-          )
-        ) {
-          return mutationResult({
-            ok: false,
-            error: `engagementType must be one of ${PROJECT_ENGAGEMENT_TYPES.join(", ")} or '' (clear); got '${params.newValue}'.`,
-          });
-        }
+        const v = validateEngagementType(params.newValue);
+        if (!v.ok) return mutationResult({ ok: false, error: v.error });
       }
       if (params.field === "contractStart" || params.field === "contractEnd") {
-        if (!isValidIsoDateOrEmpty(params.newValue)) {
-          return mutationResult({
-            ok: false,
-            error: `${params.field} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${params.newValue}'.`,
-          });
-        }
+        const v = validateIsoDateShape(params.newValue, params.field);
+        if (!v.ok) return mutationResult({ ok: false, error: v.error });
       }
 
       const result = await updateProjectField(params);
@@ -539,28 +526,19 @@ export function registerRunwayTools(server: McpServer) {
     parentProjectId: z.string().optional().describe("Retainer wrapper id (same client, no cycle)"),
     updatedBy: z.string().default("mcp").describe("Person adding the project"),
   }, async (params) => {
-    // Tool-boundary validation. Cross-field invariant + parent invariants
-    // run in the helper (validateParentProjectIdAssignment + tx-wrapped
-    // contractStart < contractEnd check).
+    // Tool-boundary validation — defense in depth. Helper revalidates with
+    // the same shared validators so batch_apply (which bypasses this
+    // wrapper) is also covered. Cross-field invariant + parentProjectId
+    // validators still run inside the helper transaction.
     if (params.engagementType !== undefined) {
-      if (
-        !PROJECT_ENGAGEMENT_TYPES.includes(
-          params.engagementType as (typeof PROJECT_ENGAGEMENT_TYPES)[number]
-        )
-      ) {
-        return operationResultMessage({
-          ok: false,
-          error: `engagementType must be one of ${PROJECT_ENGAGEMENT_TYPES.join(", ")}; got '${params.engagementType}'.`,
-        });
-      }
+      const v = validateEngagementType(params.engagementType);
+      if (!v.ok) return operationResultMessage({ ok: false, error: v.error });
     }
     for (const field of ["contractStart", "contractEnd", "startDate", "endDate"] as const) {
       const value = params[field];
-      if (value !== undefined && !isValidIsoDateOrEmpty(value)) {
-        return operationResultMessage({
-          ok: false,
-          error: `${field} must be a valid ISO YYYY-MM-DD date; got '${value}'.`,
-        });
+      if (value !== undefined) {
+        const v = validateIsoDateShape(value, field);
+        if (!v.ok) return operationResultMessage({ ok: false, error: v.error });
       }
     }
 
@@ -595,14 +573,13 @@ export function registerRunwayTools(server: McpServer) {
     blockedBy: z.string().optional().describe("JSON array of week_item ids this item is blocked by"),
     updatedBy: z.string().default("mcp").describe("Person making the update"),
   }, async (params) => {
-    // Tool-boundary date validation.
+    // Tool-boundary date validation — defense in depth. Helper revalidates
+    // with the same shared validators so batch_apply is also covered.
     for (const field of ["date", "startDate", "endDate"] as const) {
       const value = params[field];
-      if (value !== undefined && !isValidIsoDateOrEmpty(value)) {
-        return operationResultMessage({
-          ok: false,
-          error: `${field} must be a valid ISO YYYY-MM-DD date; got '${value}'.`,
-        });
+      if (value !== undefined) {
+        const v = validateIsoDateShape(value, field);
+        if (!v.ok) return operationResultMessage({ ok: false, error: v.error });
       }
     }
     const result = await createWeekItem(params);
@@ -642,50 +619,24 @@ export function registerRunwayTools(server: McpServer) {
       updatedBy: z.string().default("mcp").describe("Person making the update"),
     },
     async (params) => {
-      // Tool-boundary value validation for hardened enums + date fields.
-      const STATUS_ENUM = [
-        "scheduled",
-        "in-progress",
-        "blocked",
-        "at-risk",
-        "completed",
-        "canceled",
-      ];
-      const CATEGORY_ENUM = [
-        "delivery",
-        "review",
-        "kickoff",
-        "deadline",
-        "approval",
-        "launch",
-      ];
+      // Tool-boundary value validation — defense in depth ahead of dispatch.
+      // Helper revalidates with the same shared validators so batch_apply
+      // (which bypasses this wrapper) is also covered.
       if (params.field === "status") {
-        if (params.newValue !== "" && !STATUS_ENUM.includes(params.newValue)) {
-          return mutationResult({
-            ok: false,
-            error: `status must be one of ${STATUS_ENUM.join(", ")} or '' (clear); got '${params.newValue}'.`,
-          });
-        }
+        const v = validateWeekItemStatus(params.newValue);
+        if (!v.ok) return mutationResult({ ok: false, error: v.error });
       }
       if (params.field === "category") {
-        if (params.newValue !== "" && !CATEGORY_ENUM.includes(params.newValue)) {
-          return mutationResult({
-            ok: false,
-            error: `category must be one of ${CATEGORY_ENUM.join(", ")} or '' (clear); got '${params.newValue}'.`,
-          });
-        }
+        const v = validateWeekItemCategory(params.newValue);
+        if (!v.ok) return mutationResult({ ok: false, error: v.error });
       }
       if (
         params.field === "date" ||
         params.field === "startDate" ||
         params.field === "endDate"
       ) {
-        if (!isValidIsoDateOrEmpty(params.newValue)) {
-          return mutationResult({
-            ok: false,
-            error: `${params.field} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${params.newValue}'.`,
-          });
-        }
+        const v = validateIsoDateShape(params.newValue, params.field);
+        if (!v.ok) return mutationResult({ ok: false, error: v.error });
       }
 
       const result = await updateWeekItemField(params);
@@ -896,11 +847,11 @@ export function registerRunwayTools(server: McpServer) {
         .describe("Required true to override on a retainer wrapper L1"),
     },
     async (params) => {
-      if (params.newValue !== null && !isValidIsoDateOrEmpty(params.newValue)) {
-        return mutationResult({
-          ok: false,
-          error: `${params.field} must be a valid ISO YYYY-MM-DD date or null; got '${params.newValue}'.`,
-        });
+      // Tool-boundary date validation — helper revalidates with the same
+      // shared validator so batch_apply is also covered.
+      if (params.newValue !== null) {
+        const v = validateIsoDateShape(params.newValue, params.field);
+        if (!v.ok) return mutationResult({ ok: false, error: v.error });
       }
       const result = await overrideProjectDate(params);
       if (result.ok && !getBatchId()) {

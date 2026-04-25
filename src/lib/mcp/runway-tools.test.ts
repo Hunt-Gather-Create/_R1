@@ -61,6 +61,57 @@ const { mockOps, registeredTools, registeredDescriptions } = vi.hoisted(() => {
     updateTeamMember: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
     setBatchId: vi.fn(),
     getBatchId: vi.fn().mockReturnValue(null),
+    // Shared validators — re-exported through the operations barrel. The
+    // wrapper imports them from there; the helpers run them on the dispatch
+    // path. Mocked with the real logic so wrapper-side rejections in tests
+    // still produce production-shape error strings.
+    validateEngagementType: (value: string) => {
+      if (value === "") return { ok: true, value: null };
+      if (value === "retainer" || value === "project") return { ok: true, value };
+      return {
+        ok: false,
+        error: `engagementType must be one of retainer, project or '' (clear); got '${value}'.`,
+      };
+    },
+    validateIsoDateShape: (value: string, label: string) => {
+      if (value === "") return { ok: true, value: null };
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return {
+          ok: false,
+          error: `${label} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${value}'.`,
+        };
+      }
+      const d = new Date(`${value}T00:00:00.000Z`);
+      if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value) {
+        return {
+          ok: false,
+          error: `${label} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${value}'.`,
+        };
+      }
+      return { ok: true, value };
+    },
+    validateWeekItemStatus: (value: string) => {
+      const allowed = ["scheduled", "in-progress", "blocked", "at-risk", "completed", "canceled"];
+      if (value === "") return { ok: true, value: null };
+      if (!allowed.includes(value)) {
+        return {
+          ok: false,
+          error: `status must be one of ${allowed.join(", ")} or '' (clear); got '${value}'.`,
+        };
+      }
+      return { ok: true, value };
+    },
+    validateWeekItemCategory: (value: string) => {
+      const allowed = ["delivery", "review", "kickoff", "deadline", "approval", "launch"];
+      if (value === "") return { ok: true, value: null };
+      if (!allowed.includes(value)) {
+        return {
+          ok: false,
+          error: `category must be one of ${allowed.join(", ")} or '' (clear); got '${value}'.`,
+        };
+      }
+      return { ok: true, value };
+    },
   };
   type ToolHandler = (params: Record<string, unknown>) => Promise<unknown>;
   const registeredTools = new Map<string, ToolHandler>();
@@ -1146,5 +1197,126 @@ describe("registerRunwayTools", () => {
   it("batch_apply description excludes recursion (no batch_apply in dispatch table)", () => {
     const desc = registeredDescriptions.get("batch_apply")!;
     expect(desc).toMatch(/Recursive batch_apply is not allowed/);
+  });
+
+  // Helper-level validator coverage for batch_apply ops. batch_apply bypasses
+  // the MCP wrapper boundary; these tests assert that bad-value ops surface
+  // the helper's validator error verbatim. The helpers run the same shared
+  // validators as the wrapper (operations-utils §"Shared value validators"),
+  // so the error string is identical regardless of entry point — but the
+  // bypass means the helper is the only enforcement point here.
+  it("batch_apply update_project_field engagementType=retainer-v2 fails via helper", async () => {
+    mockOps.updateProjectField.mockResolvedValueOnce({
+      ok: false,
+      error: `engagementType must be one of retainer, project or '' (clear); got 'retainer-v2'.`,
+    });
+    const result = await registeredTools.get("batch_apply")!({
+      batchId: "test-batch-bad-engagement",
+      updatedBy: "tester",
+      ops: [
+        {
+          tool: "update_project_field",
+          args: {
+            clientSlug: "convergix",
+            projectName: "CDS",
+            field: "engagementType",
+            newValue: "retainer-v2",
+          },
+        },
+      ],
+    });
+    // Dispatch went directly to the helper, bypassing the wrapper's
+    // pre-dispatch validation — the helper itself surfaced the error.
+    expect(mockOps.updateProjectField).toHaveBeenCalledOnce();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.data.results[0].ok).toBe(false);
+    expect(parsed.data.results[0].error).toMatch(/engagementType must be/);
+    expect(parsed.data.results[0].error).toContain("retainer-v2");
+  });
+
+  it("batch_apply update_project_field contractStart=2026-13-45 fails via helper", async () => {
+    mockOps.updateProjectField.mockResolvedValueOnce({
+      ok: false,
+      error: `contractStart must be a valid ISO YYYY-MM-DD date or '' (clear); got '2026-13-45'.`,
+    });
+    const result = await registeredTools.get("batch_apply")!({
+      batchId: "test-batch-bad-iso",
+      updatedBy: "tester",
+      ops: [
+        {
+          tool: "update_project_field",
+          args: {
+            clientSlug: "convergix",
+            projectName: "CDS",
+            field: "contractStart",
+            newValue: "2026-13-45",
+          },
+        },
+      ],
+    });
+    expect(mockOps.updateProjectField).toHaveBeenCalledOnce();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.data.results[0].error).toMatch(/contractStart must be a valid ISO/);
+    expect(parsed.data.results[0].error).toContain("2026-13-45");
+  });
+
+  it("batch_apply create_week_item status=bogus fails via helper", async () => {
+    mockOps.createWeekItem.mockResolvedValueOnce({
+      ok: false,
+      error: `status must be one of scheduled, in-progress, blocked, at-risk, completed, canceled or '' (clear); got 'bogus'.`,
+    });
+    const result = await registeredTools.get("batch_apply")!({
+      batchId: "test-batch-bad-status",
+      updatedBy: "tester",
+      ops: [
+        {
+          tool: "create_week_item",
+          args: {
+            clientSlug: "convergix",
+            title: "Bad Status",
+            weekOf: "2026-04-13",
+            status: "bogus",
+          },
+        },
+      ],
+    });
+    expect(mockOps.createWeekItem).toHaveBeenCalledOnce();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.data.results[0].error).toMatch(/status must be one of/);
+    expect(parsed.data.results[0].error).toContain("bogus");
+  });
+
+  it("batch_apply create_week_item category=bogus fails via helper", async () => {
+    mockOps.createWeekItem.mockResolvedValueOnce({
+      ok: false,
+      error: `category must be one of delivery, review, kickoff, deadline, approval, launch or '' (clear); got 'bogus'.`,
+    });
+    const result = await registeredTools.get("batch_apply")!({
+      batchId: "test-batch-bad-category",
+      updatedBy: "tester",
+      ops: [
+        {
+          tool: "create_week_item",
+          args: {
+            clientSlug: "convergix",
+            title: "Bad Category",
+            weekOf: "2026-04-13",
+            category: "bogus",
+          },
+        },
+      ],
+    });
+    expect(mockOps.createWeekItem).toHaveBeenCalledOnce();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.data.results[0].error).toMatch(/category must be one of/);
+    expect(parsed.data.results[0].error).toContain("bogus");
   });
 });
