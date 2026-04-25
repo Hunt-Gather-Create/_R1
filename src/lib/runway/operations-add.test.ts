@@ -14,29 +14,42 @@ const mockGetClientBySlug = vi.fn();
 const mockFindProjectByFuzzyName = vi.fn();
 const mockResolveProjectOrFail = vi.fn();
 const mockCheckIdempotency = vi.fn();
-vi.mock("./operations", () => ({
-  generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
-  generateId: () => "mock-id-12345678901234",
-  getClientOrFail: async (slug: string) => {
-    const client = await mockGetClientBySlug(slug);
-    if (!client) return { ok: false, error: `Client '${slug}' not found.` };
-    return { ok: true, client };
-  },
-  findProjectByFuzzyName: (...args: unknown[]) => mockFindProjectByFuzzyName(...args),
-  resolveProjectOrFail: (...args: unknown[]) => mockResolveProjectOrFail(...args),
-  normalizeForMatch: (text: string) =>
-    text.replace(/[\u2014\u2013\-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase(),
-  checkDuplicate: async (idemKey: string, dupResult: unknown) => {
-    if (await mockCheckIdempotency(idemKey)) return dupResult;
-    return null;
-  },
-  insertAuditRecord: async (params: Record<string, unknown>) => {
-    mockInsertValues(params);
-  },
-  // v4 (Chunk 5): identity passthrough — real normalization asserted
-  // in operations-utils.test.ts.
-  normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
-}));
+// Mock the operations barrel while letting the real shared validators
+// (`validateEngagementType`, `validateIsoDateShape`, …) come through via
+// `importOriginal()`. The helper-level rejection paths in addProject must
+// exercise the real validators — inline reimplementations here would mask
+// drift between the production source and the tests below.
+vi.mock("./operations", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./operations")>();
+  return {
+    ...actual,
+    generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
+    generateId: () => "mock-id-12345678901234",
+    getClientOrFail: async (slug: string) => {
+      const client = await mockGetClientBySlug(slug);
+      if (!client) return { ok: false, error: `Client '${slug}' not found.` };
+      return { ok: true, client };
+    },
+    findProjectByFuzzyName: (...args: unknown[]) => mockFindProjectByFuzzyName(...args),
+    resolveProjectOrFail: (...args: unknown[]) => mockResolveProjectOrFail(...args),
+    normalizeForMatch: (text: string) =>
+      text.replace(/[\u2014\u2013\-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase(),
+    checkDuplicate: async (idemKey: string, dupResult: unknown) => {
+      if (await mockCheckIdempotency(idemKey)) return dupResult;
+      return null;
+    },
+    insertAuditRecord: async (params: Record<string, unknown>) => {
+      mockInsertValues(params);
+    },
+    // v4 (Chunk 5): identity passthrough — real normalization asserted
+    // in operations-utils.test.ts.
+    normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
+    // parentProjectId validator is a DB-touching check; addProject's
+    // tx-wrapped path exercises it separately. Stub returns ok:true so the
+    // assignment branch reaches insert when needed.
+    validateParentProjectIdAssignment: async () => ({ ok: true }),
+  };
+});
 
 const client = { id: "c1", name: "Convergix", slug: "convergix" };
 const project = { id: "p1", name: "CDS Messaging", status: "in-production" };
@@ -160,6 +173,44 @@ describe("addProject", () => {
     expect(auditInsert.clientId).toBe("c1");
     expect(auditInsert.summary).toContain("Convergix");
     expect(auditInsert.summary).toContain("Audit Test");
+  });
+
+  // Helper-level value validation — `batch_apply` routes into addProject
+  // directly, so the engagement-type / ISO-date guards in operations-add.ts
+  // are the only enforcement point for those calls. These tests exercise
+  // the real shared validators (forwarded from the operations barrel via
+  // `importOriginal()` above) so silent drift between source and test would
+  // surface here. Mirrors the rejection-path coverage in
+  // operations-writes-project.test.ts.
+  it("rejects invalid engagementType before any DB write", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    const { addProject } = await import("./operations-add");
+    const result = await addProject({
+      clientSlug: "convergix",
+      name: "Bad Engagement",
+      engagementType: "retainer-v2",
+      updatedBy: "batch",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/engagementType must be/);
+      expect(result.error).toContain("retainer-v2");
+    }
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+
+  it("rejects date-invalid contractStart '2026-13-45' before any DB write", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    const { addProject } = await import("./operations-add");
+    const result = await addProject({
+      clientSlug: "convergix",
+      name: "Bad Date",
+      contractStart: "2026-13-45",
+      updatedBy: "batch",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/contractStart must be a valid ISO/);
+    expect(mockInsertValues).not.toHaveBeenCalled();
   });
 });
 
