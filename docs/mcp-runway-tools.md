@@ -129,7 +129,6 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
       "owner": "Kathy",
       "resources": "Roz, Lane",
       "waitingOn": null,
-      "target": "2026-05-15",
       "notes": null,
       "staleDays": 2,
       "dueDate": "2026-05-15",
@@ -194,8 +193,9 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
 | `status` | string | no | Exact status match (e.g. `in-production`, `blocked`, `awaiting-client`). |
 | `owner` | string | no | Case-insensitive substring match on `owner`. |
 | `waitingOn` | string | no | Case-insensitive substring match on `waitingOn`. |
+| `parentProjectId` | string | no | Filter to children of a specific retainer wrapper (pass parent project id). Pass `"__null__"` to match top-level (unparented) projects. |
 
-**Returns:** `ProjectRow[]` — `{ id, name, client, status, category, owner, resources, waitingOn, target, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }`. `client` is resolved to the display name; all date fields are ISO `YYYY-MM-DD`.
+**Returns:** `ProjectRow[]` — `{ id, name, client, status, category, owner, resources, waitingOn, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }`. `client` is resolved to the display name; all date fields are ISO `YYYY-MM-DD`.
 
 **Example response:**
 
@@ -210,7 +210,6 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
     "owner": "Kathy",
     "resources": "Roz, Lane",
     "waitingOn": null,
-    "target": "2026-05-15",
     "notes": null,
     "staleDays": 2,
     "dueDate": "2026-05-15",
@@ -1032,7 +1031,7 @@ Deleted project 'Phase 2 discovery' from Convergix.
 |---|---|---|---|
 | `clientSlug` | string | yes | Client slug. |
 | `projectName` | string | yes | Project name, fuzzy-matched. |
-| `field` | enum | yes | One of `name`, `dueDate`, `owner`, `resources`, `waitingOn`, `target`, `notes`. |
+| `field` | enum | yes | One of `name`, `dueDate`, `owner`, `resources`, `waitingOn`, `notes`, `parentProjectId`. |
 | `newValue` | string | yes | New value. |
 | `updatedBy` | string | no | Default `mcp`. |
 
