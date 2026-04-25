@@ -22,6 +22,8 @@ import {
   getPreviousValue,
   normalizeResourcesString,
   validateParentProjectIdAssignment,
+  validateEngagementType,
+  validateIsoDateShape,
 } from "./operations-utils";
 import type {
   CascadedItemInfo,
@@ -135,6 +137,23 @@ export async function updateProjectField(
   const project = projectLookup.project;
 
   const previousValue = getPreviousValue(project, columnKey);
+
+  // Helper-level value validation. The MCP wrapper validates at the tool
+  // boundary too (defense-in-depth + better error before dispatch), but
+  // batch_apply routes through the helper directly, so this branch is the
+  // only enforcement point for those calls. Reuses the shared validators
+  // hoisted to operations-utils so MCP wrapper + helper stay in lockstep.
+  if (typedField === "engagementType" && newValue !== null) {
+    const v = validateEngagementType(newValue);
+    if (!v.ok) return { ok: false, error: v.error };
+  }
+  if (
+    (typedField === "contractStart" || typedField === "contractEnd") &&
+    newValue !== null
+  ) {
+    const v = validateIsoDateShape(newValue, typedField);
+    if (!v.ok) return { ok: false, error: v.error };
+  }
 
   // v4 (Chunk 5): normalize resources string on write so storage is canonical.
   // Null short-circuits the normalizer so null-to-null writes (and explicit
@@ -374,6 +393,14 @@ export async function overrideProjectDate(
 ): Promise<MutationResponse<OverrideProjectDateData>> {
   const { clientSlug, projectName, field, newValue, updatedBy, bypassGuard } = params;
   const db = getRunwayDb();
+
+  // Helper-level ISO validation — batch_apply routes here directly. The MCP
+  // wrapper validates the same way; both reuse the shared validator so the
+  // error message is identical regardless of entry point.
+  if (newValue !== null) {
+    const v = validateIsoDateShape(newValue, field);
+    if (!v.ok) return { ok: false, error: v.error };
+  }
 
   const lookup = await getClientOrFail(clientSlug);
   if (!lookup.ok) return lookup;

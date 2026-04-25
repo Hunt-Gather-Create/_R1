@@ -62,6 +62,13 @@ export {
   parseResources,
   normalizeResourcesString,
   validateParentProjectIdAssignment,
+  ENGAGEMENT_TYPES,
+  WEEK_ITEM_STATUSES,
+  WEEK_ITEM_CATEGORIES,
+  validateEngagementType,
+  validateIsoDateShape,
+  validateWeekItemStatus,
+  validateWeekItemCategory,
 } from "./operations-utils";
 
 export type {
@@ -76,6 +83,13 @@ export type {
   ValidatorExecutor,
   ParentProjectIdValidationContext,
   ParentProjectIdValidationResult,
+  EngagementType,
+  EngagementTypeValidationResult,
+  IsoDateValidationResult,
+  WeekItemStatus,
+  WeekItemStatusValidationResult,
+  WeekItemCategory,
+  WeekItemCategoryValidationResult,
 } from "./operations-utils";
 
 // ── Structured mutation response shape (v4 / PR #86) ────

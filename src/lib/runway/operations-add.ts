@@ -18,6 +18,8 @@ import {
   checkDuplicate,
   insertAuditRecord,
   validateParentProjectIdAssignment,
+  validateEngagementType,
+  validateIsoDateShape,
 } from "./operations";
 import type { MutationResponse } from "./mutation-response";
 
@@ -75,6 +77,26 @@ export async function addProject(
     updatedBy,
   } = params;
   const db = getRunwayDb();
+
+  // Helper-level value validation. The MCP wrapper validates these too, but
+  // batch_apply routes through the helper directly — so this branch is the
+  // only enforcement point for those calls. Reuses the shared validators
+  // hoisted to operations-utils so MCP wrapper + helper stay in lockstep.
+  if (engagementType !== undefined && engagementType !== null) {
+    const v = validateEngagementType(engagementType);
+    if (!v.ok) return { ok: false, error: v.error };
+  }
+  for (const [label, value] of [
+    ["contractStart", contractStart],
+    ["contractEnd", contractEnd],
+    ["startDate", startDate],
+    ["endDate", endDate],
+  ] as const) {
+    if (value !== undefined && value !== null) {
+      const v = validateIsoDateShape(value, label);
+      if (!v.ok) return { ok: false, error: v.error };
+    }
+  }
 
   const lookup = await getClientOrFail(clientSlug);
   if (!lookup.ok) return lookup;

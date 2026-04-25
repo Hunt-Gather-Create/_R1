@@ -24,15 +24,21 @@ const mockGetProjectsForClient = vi.fn();
 const mockCheckIdempotency = vi.fn();
 
 let _idCounter = 0;
+// PROJECT_FIELDS mock mirrors the real 11-field whitelist from
+// operations-utils.ts:323. Out-of-sync mocks would let the helper-level
+// engagementType / contractStart / contractEnd / parentProjectId rejection
+// tests below pass for the wrong reason.
 vi.mock("./operations-utils", () => ({
   PROJECT_FIELDS: [
     "name", "dueDate", "owner", "resources", "waitingOn", "notes", "category",
     "engagementType", "contractStart", "contractEnd",
+    "parentProjectId",
   ],
   PROJECT_FIELD_TO_COLUMN: {
     name: "name", dueDate: "dueDate", owner: "owner", resources: "resources",
     waitingOn: "waitingOn", notes: "notes", category: "category",
     engagementType: "engagementType", contractStart: "contractStart", contractEnd: "contractEnd",
+    parentProjectId: "parentProjectId",
   },
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
   generateId: () => `mock-id-${++_idCounter}`,
@@ -68,6 +74,41 @@ vi.mock("./operations-utils", () => ({
   // v4 (Chunk 5): identity passthrough — real normalization asserted
   // separately in operations-utils.test.ts.
   normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
+  // Real shared validators — re-exported from the mock so the helper's
+  // rejection paths exercise the same logic as production. Keeping them
+  // honest here is the whole point of the hoist.
+  validateEngagementType: (value: string) => {
+    if (value === "") return { ok: true, value: null };
+    if (value === "retainer" || value === "project") return { ok: true, value };
+    return {
+      ok: false,
+      error: `engagementType must be one of retainer, project or '' (clear); got '${value}'.`,
+    };
+  },
+  validateIsoDateShape: (value: string, label: string) => {
+    if (value === "") return { ok: true, value: null };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return {
+        ok: false,
+        error: `${label} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${value}'.`,
+      };
+    }
+    const d = new Date(`${value}T00:00:00.000Z`);
+    if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value) {
+      return {
+        ok: false,
+        error: `${label} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${value}'.`,
+      };
+    }
+    return { ok: true, value };
+  },
+  // parentProjectId validator is a DB-touching check. The unit tests below
+  // exercise the field whitelist + non-validator paths only; the real
+  // validator is covered by the integration test in
+  // parent-project-id-validators.test.ts. Stub returns ok:true so the
+  // updateProjectField parentProjectId branch reaches the persistence step
+  // when needed.
+  validateParentProjectIdAssignment: async () => ({ ok: true }),
 }));
 
 const mockGetLinkedDeadlineItems = vi.fn();
@@ -513,6 +554,149 @@ describe("updateProjectField", () => {
       expect(result.data?.cascadeDetail).toEqual([]);
       expect(result.data?.auditId).toBeTruthy();
       expect(mockGetLinkedDeadlineItems).not.toHaveBeenCalled();
+    });
+  });
+
+  // Helper-level value validation — batch_apply bypasses the MCP wrapper, so
+  // these checks have to live in the helper. Mirrors the
+  // parent-project-id-validators.test.ts pattern.
+  describe("helper-level value validation", () => {
+    it("rejects invalid engagementType before any DB write", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "engagementType",
+        newValue: "retainer-v2",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/engagementType must be/);
+        expect(result.error).toContain("retainer-v2");
+      }
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+      expect(mockInsertValues).not.toHaveBeenCalled();
+    });
+
+    it("accepts valid engagementType ('retainer') and persists it", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "engagementType",
+        newValue: "retainer",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ engagementType: "retainer" })
+      );
+    });
+
+    it("rejects shape-invalid contractStart before any DB write", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "contractStart",
+        newValue: "not-a-date",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/contractStart must be a valid ISO/);
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("rejects date-invalid contractStart '2026-13-45' before any DB write", async () => {
+      // This is the load-bearing case from the P1 finding — string compare
+      // against contractEnd would silently accept "2026-13-45" lexicographically.
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "contractStart",
+        newValue: "2026-13-45",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/contractStart must be a valid ISO/);
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("rejects shape-invalid contractEnd before any DB write", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "contractEnd",
+        newValue: "garbage",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/contractEnd must be a valid ISO/);
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("accepts valid contractStart and persists it", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue({ ...project, contractEnd: null });
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "contractStart",
+        newValue: "2027-02-01",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ contractStart: "2027-02-01" })
+      );
+    });
+
+    it("accepts empty string to clear engagementType (becomes null)", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue({
+        ...project,
+        engagementType: "retainer",
+      });
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "engagementType",
+        newValue: "",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ engagementType: null })
+      );
     });
   });
 
