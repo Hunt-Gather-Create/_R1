@@ -1111,7 +1111,7 @@ Added week item 'Homepage launch' for Convergix on 2026-05-22.
 |---|---|---|---|
 | `weekOf` | string | yes | ISO Monday date. |
 | `weekItemTitle` | string | yes | Week item title, fuzzy-matched. |
-| `field` | enum | yes | One of `title`, `status`, `date`, `dayOfWeek`, `owner`, `resources`, `notes`, `category`. |
+| `field` | enum | yes | One of `title`, `status`, `date`, `dayOfWeek`, `owner`, `resources`, `notes`, `category`, `startDate`, `endDate`, `blockedBy`. |
 | `newValue` | string | yes | New value. |
 | `updatedBy` | string | no | Default `mcp`. |
 
