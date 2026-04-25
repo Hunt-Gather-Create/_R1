@@ -11,7 +11,6 @@ import {
   seedTestDb,
   cleanupTestDb,
   getProject,
-  getWeekItem,
   type TestDb,
 } from "./test-db";
 

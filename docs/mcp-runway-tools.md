@@ -1031,11 +1031,15 @@ Deleted project 'Phase 2 discovery' from Convergix.
 |---|---|---|---|
 | `clientSlug` | string | yes | Client slug. |
 | `projectName` | string | yes | Project name, fuzzy-matched. |
-| `field` | enum | yes | One of `name`, `dueDate`, `owner`, `resources`, `waitingOn`, `notes`, `parentProjectId`. |
-| `newValue` | string | yes | New value. |
+| `field` | enum | yes | One of `name`, `dueDate`, `owner`, `resources`, `waitingOn`, `notes`, `parentProjectId`, `engagementType`, `contractStart`, `contractEnd`. |
+| `newValue` | string | yes | New value. Pass empty string to clear `parentProjectId` / `engagementType` / `contractStart` / `contractEnd`. |
 | `updatedBy` | string | no | Default `mcp`. |
 
 **Returns:** JSON-wrapped `{ message, data: UpdateProjectFieldData }`. `data` = `{ clientName, projectName, field, previousValue, newValue, cascadedItems, cascadeDetail, auditId? }`. `cascadeDetail` is empty unless `field === 'dueDate'`.
+
+**Tool-boundary validation:** `engagementType` must be `retainer` or `project` (or `''` to clear). `contractStart` / `contractEnd` must be ISO `YYYY-MM-DD` (real parse + roundtrip; rejects e.g. `2026-13-45`).
+
+**Helper-level invariants:** `parentProjectId` runs the shared `validateParentProjectIdAssignment` (parent exists, parent is `engagementType='retainer'`, same `client_id`, no cycle via 10-hop walk). `contractStart` / `contractEnd` enforce `start < end` against the project's current OTHER value when both are non-null; null other side or empty-string clear skips the check.
 
 **Example response:**
 
@@ -1384,6 +1388,66 @@ Reverted last change: Convergix CDS Refresh status → in-production.
 **Returns:** Plain text confirmation — `Batch mode enabled: <batchId>` or `Batch mode disabled`.
 
 **Notes:** See [Appendix C](#c-batch-mode) for the full batch model.
+
+---
+
+## Writes — overrides + batch dispatch
+
+### `override_project_date`
+
+**Description:** Force-write `project.start_date` or `project.end_date` past the `PROJECT_FIELDS` whitelist. Audit row uses `update_type='date-override'` with both old and new values; idempotency key includes `oldValue` so revert + retry doesn't poison the key. On retainer wrappers (`engagementType='retainer'` plus at least one L1 child pointing at the project), `bypassGuard=true` is required or the call rejects.
+
+**Params:**
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `clientSlug` | string | yes | Client slug. |
+| `projectName` | string | yes | Project name (fuzzy match). |
+| `field` | `'startDate' \| 'endDate'` | yes | Which derived date column to override. |
+| `newValue` | string \| null | yes | ISO `YYYY-MM-DD` or null (clears). |
+| `updatedBy` | string | no (default `mcp`) | Person making the override. |
+| `bypassGuard` | boolean | no | Required `true` to override on a retainer wrapper L1. |
+
+**Returns:** `MutationResponse<{ clientName, projectName, field, previousValue, newValue, auditId }>`. Failure cases: project not found, retainer wrapper without bypass, shape-invalid date.
+
+**Notes:** Use this when an L1 needs a non-derived start/end date — typically retainer wrappers (with `bypassGuard`) or one-off rollups where the derived MIN/MAX isn't right. Recompute (`recomputeProjectDatesWith`) does not run; the value persists exactly as written.
+
+---
+
+### `set_project_parent`
+
+**Description:** Attach an L1 project to a retainer wrapper, or clear the link. Resolves the parent by name within the same client and routes through `update_project_field`, which calls `validateParentProjectIdAssignment` (parent exists, parent is `engagementType='retainer'`, same `client_id`, no cycle via 10-hop walk).
+
+**Params:**
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `clientSlug` | string | yes | Client slug (parent and child must share). |
+| `projectName` | string | yes | Child project name (fuzzy match). |
+| `parentProjectName` | string \| null | yes | Wrapper project name in the same client; `null` clears the link. |
+| `updatedBy` | string | no (default `mcp`) | Person making the change. |
+
+**Returns:** `MutationResponse<UpdateProjectFieldData>` — same shape as `update_project_field`.
+
+**Notes:** Defense-in-depth — both the tool resolves + validates, and `update_project_field` revalidates via the shared validator module. A direct `update_project_field({ field: 'parentProjectId' })` call goes through the same checks.
+
+---
+
+### `batch_apply`
+
+**Description:** Apply a sequence of mutation tools under a single `batch_id`. Audit rows are tagged with the `batchId`; Slack updates are suppressed for the batch. Ops execute sequentially to preserve audit ordering. Per-op `MutationResponse`s are captured into `results[]`. `haltOnError` defaults `true` (abort on first failure); pass `false` to run every op regardless of failures. Recursive `batch_apply` is not allowed.
+
+**Params:**
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `batchId` | string | yes | Unique batch identifier (e.g. `wrapper-rebalance-2026-04-25`). |
+| `updatedBy` | string | yes | Default `updatedBy` applied to every op (per-op `args.updatedBy` overrides). |
+| `ops` | `Array<{ tool, args }>` | yes | Sequence of operations. |
+| `haltOnError` | boolean | no (default `true`) | Abort on first failure. |
+
+**Dispatchable tools:** `update_project_field`, `update_project_status`, `add_project`, `delete_project`, `create_week_item`, `update_week_item`, `delete_week_item`, `override_project_date`, `set_project_parent`. Other read tools, `set_batch_mode`, `add_update`, `undo_last_change`, and `batch_apply` itself are excluded.
+
+**Returns:** Always returns the structured payload `{ ok, message, data: { results } }`. Each `results[i]` carries `{ tool, ok, message?, error?, data? }`. `ok` at the top level is `true` only when every op succeeded.
+
+**Notes:** `setBatchId(batchId)` runs at entry; `setBatchId(null)` runs in `finally` (cleared even when a handler throws). Exceptions inside an op handler are caught and recorded as `{ ok: false, error: <message> }` for that op. Tool-boundary format validation (the engagement/ISO checks at MCP entry) does NOT run for batch-dispatched ops; helpers enforce semantic invariants (parentProjectId validators, contract-date invariant, recompute guard).
 
 ---
 

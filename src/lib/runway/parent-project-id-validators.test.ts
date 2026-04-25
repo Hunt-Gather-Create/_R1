@@ -68,33 +68,6 @@ async function setContractDates(
   });
 }
 
-async function insertProject(row: {
-  id: string;
-  clientId: string;
-  name: string;
-  engagementType?: string | null;
-  parentProjectId?: string | null;
-  contractStart?: string | null;
-  contractEnd?: string | null;
-}): Promise<void> {
-  const now = Math.floor(Date.now() / 1000);
-  await libsqlClient.execute({
-    sql: `INSERT INTO projects (id, client_id, name, status, category, engagement_type, parent_project_id, contract_start, contract_end, sort_order, created_at, updated_at)
-          VALUES (?, ?, ?, 'in-production', 'active', ?, ?, ?, ?, 0, ?, ?)`,
-    args: [
-      row.id,
-      row.clientId,
-      row.name,
-      row.engagementType ?? null,
-      row.parentProjectId ?? null,
-      row.contractStart ?? null,
-      row.contractEnd ?? null,
-      now,
-      now,
-    ],
-  });
-}
-
 // ── validateParentProjectIdAssignment ─────────────────────
 
 describe("validateParentProjectIdAssignment", () => {

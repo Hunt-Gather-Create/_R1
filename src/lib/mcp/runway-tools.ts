@@ -28,6 +28,8 @@ import {
   addProject,
   addUpdate,
   updateProjectField,
+  overrideProjectDate,
+  setProjectParent,
   createWeekItem,
   updateWeekItemField,
   undoLastChange,
@@ -873,4 +875,190 @@ export function registerRunwayTools(server: McpServer) {
     setBatchId(batchId);
     return textMessage(batchId ? `Batch mode enabled: ${batchId}` : "Batch mode disabled");
   });
+
+  // ── Date override (raw drizzle past PROJECT_FIELDS whitelist) ──────────
+
+  server.tool(
+    "override_project_date",
+    "Force-write project.start_date or project.end_date past the PROJECT_FIELDS whitelist. Audit row uses update_type='date-override' with both old and new values; idempotency key includes oldValue so revert+retry doesn't poison the key. On retainer wrappers (engagementType='retainer' + EXISTS L1 children), bypassGuard=true is required or the call rejects.",
+    {
+      clientSlug: z.string().describe("Client slug"),
+      projectName: z.string().describe("Project name (fuzzy match)"),
+      field: z.enum(["startDate", "endDate"]).describe("Which derived date column to override"),
+      newValue: z
+        .string()
+        .nullable()
+        .describe("ISO YYYY-MM-DD or null (clears)"),
+      updatedBy: z.string().default("mcp").describe("Person making the override"),
+      bypassGuard: z
+        .boolean()
+        .optional()
+        .describe("Required true to override on a retainer wrapper L1"),
+    },
+    async (params) => {
+      if (params.newValue !== null && !isValidIsoDateOrEmpty(params.newValue)) {
+        return mutationResult({
+          ok: false,
+          error: `${params.field} must be a valid ISO YYYY-MM-DD date or null; got '${params.newValue}'.`,
+        });
+      }
+      const result = await overrideProjectDate(params);
+      if (result.ok && !getBatchId()) {
+        await postMutationUpdate({
+          result,
+          fallbackClientName: params.clientSlug,
+          projectName: result.data?.projectName as string,
+          updateText: `${params.field} override`,
+          updatedBy: params.updatedBy,
+        });
+      }
+      return mutationResult(result);
+    },
+  );
+
+  // ── Set project parent (resolves by name + reuses shared validator) ────
+
+  server.tool(
+    "set_project_parent",
+    "Attach an L1 project to a retainer wrapper, or clear the link. Resolves the parent by name within the same client and routes through update_project_field, which calls validateParentProjectIdAssignment (parent exists, parent is retainer, same client_id, no cycle).",
+    {
+      clientSlug: z.string().describe("Client slug"),
+      projectName: z.string().describe("Child project name (fuzzy match)"),
+      parentProjectName: z
+        .string()
+        .nullable()
+        .describe("Parent (wrapper) project name in the same client, or null to clear"),
+      updatedBy: z.string().default("mcp").describe("Person making the change"),
+    },
+    async (params) => {
+      const result = await setProjectParent(params);
+      if (result.ok && !getBatchId()) {
+        await postMutationUpdate({
+          result,
+          fallbackClientName: params.clientSlug,
+          projectName: result.data?.projectName as string,
+          updateText:
+            params.parentProjectName === null
+              ? "Cleared parentProjectId"
+              : `Set parentProjectId -> ${params.parentProjectName}`,
+          updatedBy: params.updatedBy,
+        });
+      }
+      return mutationResult(result);
+    },
+  );
+
+  // ── Batch apply (dispatch table, sequential) ──────────────────────────
+
+  // Dispatch table: tool name → underlying helper. Calls go through helpers,
+  // so semantic invariants (parentProjectId validators, contract-date
+  // invariant, recompute guard) all run. setBatchId tags audit rows; Slack
+  // updates are suppressed for ops in this batch because helpers do not
+  // post (only the MCP wrapper does, and we bypass it here).
+  type BatchOpHandler = (args: Record<string, unknown>) => Promise<{
+    ok: boolean;
+    message?: string;
+    error?: string;
+    data?: unknown;
+  }>;
+  const BATCH_DISPATCH: Record<string, BatchOpHandler> = {
+    update_project_field: (args) =>
+      updateProjectField(args as unknown as Parameters<typeof updateProjectField>[0]),
+    update_project_status: (args) =>
+      updateProjectStatus(args as unknown as Parameters<typeof updateProjectStatus>[0]),
+    add_project: (args) => addProject(args as unknown as Parameters<typeof addProject>[0]),
+    delete_project: (args) =>
+      deleteProject(args as unknown as Parameters<typeof deleteProject>[0]),
+    create_week_item: (args) =>
+      createWeekItem(args as unknown as Parameters<typeof createWeekItem>[0]),
+    update_week_item: (args) =>
+      updateWeekItemField(args as unknown as Parameters<typeof updateWeekItemField>[0]),
+    delete_week_item: (args) =>
+      deleteWeekItem(args as unknown as Parameters<typeof deleteWeekItem>[0]),
+    override_project_date: (args) =>
+      overrideProjectDate(args as unknown as Parameters<typeof overrideProjectDate>[0]),
+    set_project_parent: (args) =>
+      setProjectParent(args as unknown as Parameters<typeof setProjectParent>[0]),
+  };
+
+  server.tool(
+    "batch_apply",
+    "Apply a sequence of mutation tools under a single batch_id. Audit rows are tagged with the batchId; Slack updates are suppressed for the batch. Ops execute sequentially to preserve audit ordering. Per-op MutationResponses are captured into results[]. haltOnError defaults true (abort on first failure); pass false to run every op regardless of failures. Recursive batch_apply is not allowed.",
+    {
+      batchId: z.string().describe("Unique batch identifier (e.g. 'wrapper-rebalance-2026-04-25')"),
+      updatedBy: z.string().describe("Default updatedBy applied to every op (per-op args.updatedBy overrides)"),
+      ops: z
+        .array(
+          z.object({
+            tool: z.string().describe("Tool name from BATCH_DISPATCH (excludes batch_apply)"),
+            args: z
+              .record(z.string(), z.unknown())
+              .describe("Arguments object for the tool"),
+          }),
+        )
+        .describe("Sequence of operations"),
+      haltOnError: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe("Abort on first failure (default true)"),
+    },
+    async ({ batchId, updatedBy, ops, haltOnError }) => {
+      const results: Array<{
+        tool: string;
+        ok: boolean;
+        message?: string;
+        error?: string;
+        data?: unknown;
+      }> = [];
+      setBatchId(batchId);
+      try {
+        for (const op of ops) {
+          const handler = BATCH_DISPATCH[op.tool];
+          if (!handler) {
+            results.push({
+              tool: op.tool,
+              ok: false,
+              error: `Unknown tool '${op.tool}' in batch dispatch.`,
+            });
+            if (haltOnError) break;
+            continue;
+          }
+          const mergedArgs = { updatedBy, ...op.args };
+          let r;
+          try {
+            r = await handler(mergedArgs);
+          } catch (err) {
+            results.push({
+              tool: op.tool,
+              ok: false,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            if (haltOnError) break;
+            continue;
+          }
+          results.push({
+            tool: op.tool,
+            ok: r.ok,
+            message: r.message,
+            error: r.error,
+            data: r.data,
+          });
+          if (!r.ok && haltOnError) break;
+        }
+      } finally {
+        setBatchId(null);
+      }
+      const allOk = results.length > 0 && results.every((r) => r.ok);
+      const failureCount = results.filter((r) => !r.ok).length;
+      const payload = {
+        ok: allOk,
+        message: allOk
+          ? `Batch '${batchId}' applied ${results.length} ops successfully.`
+          : `Batch '${batchId}' completed with ${failureCount} failure(s) across ${results.length} op(s).`,
+        data: { results },
+      };
+      return textResult(payload);
+    },
+  );
 }

@@ -213,11 +213,16 @@ export type {
 export {
   deleteProject,
   updateProjectField,
+  overrideProjectDate,
+  setProjectParent,
 } from "./operations-writes-project";
 
 export type {
   DeleteProjectParams,
   UpdateProjectFieldParams,
+  OverrideProjectDateParams,
+  OverrideProjectDateData,
+  SetProjectParentParams,
 } from "./operations-writes-project";
 
 export {

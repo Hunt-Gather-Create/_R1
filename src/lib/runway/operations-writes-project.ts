@@ -335,3 +335,179 @@ export async function updateProjectField(
     },
   };
 }
+
+// ── Override Project Date ────────────────────────────────
+
+export interface OverrideProjectDateParams {
+  clientSlug: string;
+  projectName: string;
+  field: "startDate" | "endDate";
+  /** ISO YYYY-MM-DD or null (clears the column). */
+  newValue: string | null;
+  updatedBy: string;
+  /**
+   * Required `true` to override on a retainer wrapper L1 (engagementType =
+   * retainer + EXISTS L1 children). Wrappers freeze at SOW dates by default;
+   * bypass requires explicit operator intent.
+   */
+  bypassGuard?: boolean;
+}
+
+export interface OverrideProjectDateData extends Record<string, unknown> {
+  clientName: string;
+  projectName: string;
+  field: "startDate" | "endDate";
+  previousValue: string | null;
+  newValue: string | null;
+  auditId: string;
+}
+
+/**
+ * Bypasses PROJECT_FIELDS whitelist to write start_date / end_date directly.
+ * Audit row uses update_type = "date-override" and the idempotency key
+ * includes BOTH oldValue and newValue so revert + retry on the same target
+ * value (oldValue=A → newValue=B, then revert B → A, then re-fire A → B)
+ * generates three distinct keys (per feedback_revert_idempotency_poisoning).
+ */
+export async function overrideProjectDate(
+  params: OverrideProjectDateParams,
+): Promise<MutationResponse<OverrideProjectDateData>> {
+  const { clientSlug, projectName, field, newValue, updatedBy, bypassGuard } = params;
+  const db = getRunwayDb();
+
+  const lookup = await getClientOrFail(clientSlug);
+  if (!lookup.ok) return lookup;
+  const { client } = lookup;
+
+  const projectLookup = await resolveProjectOrFail(client.id, client.name, projectName);
+  if (!projectLookup.ok) return projectLookup;
+  const project = projectLookup.project;
+
+  // Wrapper guard: if this project is a retainer with at least one L1 child
+  // pointing at it, refuse without explicit bypassGuard=true.
+  if (project.engagementType === "retainer") {
+    const childRows = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.parentProjectId, project.id));
+    if (childRows.length > 0 && bypassGuard !== true) {
+      return {
+        ok: false,
+        error: `Refusing to override ${field} on retainer wrapper '${project.name}' without bypassGuard=true.`,
+      };
+    }
+  }
+
+  const previousValue =
+    field === "startDate" ? project.startDate ?? null : project.endDate ?? null;
+  const idemNewValue = newValue ?? "(null)";
+  const idemPrevValue = previousValue ?? "(null)";
+
+  const idemKey = generateIdempotencyKey(
+    "date-override",
+    project.id,
+    field,
+    idemPrevValue,
+    idemNewValue,
+    updatedBy,
+  );
+
+  const auditId = generateId();
+  const dup = await checkDuplicate(idemKey, {
+    ok: true,
+    message: "Date override already applied (duplicate request).",
+    data: {
+      clientName: client.name,
+      projectName: project.name,
+      field,
+      previousValue,
+      newValue,
+      auditId,
+    },
+  });
+  if (dup) return dup as MutationResponse<OverrideProjectDateData>;
+
+  const columnKey = field === "startDate" ? "startDate" : "endDate";
+  await db
+    .update(projects)
+    .set({ [columnKey]: newValue, updatedAt: new Date() })
+    .where(eq(projects.id, project.id));
+
+  await insertAuditRecord({
+    id: auditId,
+    idempotencyKey: idemKey,
+    projectId: project.id,
+    clientId: client.id,
+    updatedBy,
+    updateType: "date-override",
+    previousValue,
+    newValue,
+    summary: `${client.name} / ${project.name}: ${field} override "${idemPrevValue}" -> "${idemNewValue}"`,
+    metadata: JSON.stringify({ field }),
+  });
+
+  return {
+    ok: true,
+    message: `Overrode ${field} for ${client.name} / ${project.name}.`,
+    data: {
+      clientName: client.name,
+      projectName: project.name,
+      field,
+      previousValue,
+      newValue,
+      auditId,
+    },
+  };
+}
+
+// ── Set Project Parent ───────────────────────────────────
+
+export interface SetProjectParentParams {
+  clientSlug: string;
+  projectName: string;
+  /** Wrapper project name (same client, must be retainer); null clears. */
+  parentProjectName: string | null;
+  updatedBy: string;
+}
+
+/**
+ * Resolves the parent project by name within the same client and routes
+ * through `updateProjectField({ field: "parentProjectId", newValue: <id|""> })`,
+ * which in turn calls validateParentProjectIdAssignment. Defense in depth:
+ * the tool resolves + validates here, and the helper revalidates via the
+ * shared module so any direct-helper caller is also covered.
+ */
+export async function setProjectParent(
+  params: SetProjectParentParams,
+): Promise<MutationResponse<UpdateProjectFieldData>> {
+  const { clientSlug, projectName, parentProjectName, updatedBy } = params;
+
+  if (parentProjectName === null) {
+    // Clear via empty string (PR 88 Chunk F coercion).
+    return updateProjectField({
+      clientSlug,
+      projectName,
+      field: "parentProjectId",
+      newValue: "",
+      updatedBy,
+    });
+  }
+
+  // Resolve parent by name within the same client.
+  const lookup = await getClientOrFail(clientSlug);
+  if (!lookup.ok) return lookup;
+  const parentLookup = await resolveProjectOrFail(
+    lookup.client.id,
+    lookup.client.name,
+    parentProjectName,
+  );
+  if (!parentLookup.ok) return parentLookup;
+
+  return updateProjectField({
+    clientSlug,
+    projectName,
+    field: "parentProjectId",
+    newValue: parentLookup.project.id,
+    updatedBy,
+  });
+}

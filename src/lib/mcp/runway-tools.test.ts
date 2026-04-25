@@ -44,6 +44,8 @@ const { mockOps, registeredTools, registeredDescriptions } = vi.hoisted(() => {
     getClientContacts: vi.fn().mockResolvedValue({ client: "Convergix", contacts: ["Daniel"] }),
     updateProjectStatus: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
     updateProjectField: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
+    overrideProjectDate: vi.fn().mockResolvedValue({ ok: true, message: "Overrode" }),
+    setProjectParent: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
     deleteProject: vi.fn().mockResolvedValue({ ok: true, message: "Deleted" }),
     addProject: vi.fn().mockResolvedValue({ ok: true, message: "Added" }),
     addUpdate: vi.fn().mockResolvedValue({ ok: true, message: "Logged" }),
@@ -997,5 +999,152 @@ describe("registerRunwayTools", () => {
   it("update_week_item description mentions reverseCascadeDetail", () => {
     const desc = registeredDescriptions.get("update_week_item")!;
     expect(desc).toContain("reverseCascadeDetail");
+  });
+
+  // ── override_project_date / set_project_parent / batch_apply ──────────
+
+  it("override_project_date forwards params to helper", async () => {
+    const params = {
+      clientSlug: "convergix",
+      projectName: "CDS",
+      field: "startDate",
+      newValue: "2026-05-01",
+      updatedBy: "tester",
+    };
+    await registeredTools.get("override_project_date")!(params);
+    expect(mockOps.overrideProjectDate).toHaveBeenCalledWith(params);
+  });
+
+  it("override_project_date rejects shape-invalid newValue at tool boundary", async () => {
+    const result = await registeredTools.get("override_project_date")!({
+      clientSlug: "convergix",
+      projectName: "CDS",
+      field: "endDate",
+      newValue: "2026-13-45",
+      updatedBy: "tester",
+    });
+    expect(mockOps.overrideProjectDate).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/endDate must be a valid ISO/);
+  });
+
+  it("set_project_parent forwards params to helper", async () => {
+    const params = {
+      clientSlug: "convergix",
+      projectName: "CDS",
+      parentProjectName: "Wrapper",
+      updatedBy: "tester",
+    };
+    await registeredTools.get("set_project_parent")!(params);
+    expect(mockOps.setProjectParent).toHaveBeenCalledWith(params);
+  });
+
+  it("batch_apply runs ops sequentially via dispatch table", async () => {
+    mockOps.setBatchId.mockClear();
+    const result = await registeredTools.get("batch_apply")!({
+      batchId: "test-batch-001",
+      updatedBy: "tester",
+      ops: [
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "Lane" } },
+        { tool: "create_week_item", args: { clientSlug: "convergix", title: "Drop 1", weekOf: "2026-04-13" } },
+        { tool: "update_project_status", args: { clientSlug: "convergix", projectName: "CDS", newStatus: "completed" } },
+      ],
+    });
+    // setBatchId called twice: once with batchId, once with null on cleanup
+    expect(mockOps.setBatchId).toHaveBeenCalledWith("test-batch-001");
+    expect(mockOps.setBatchId).toHaveBeenCalledWith(null);
+    expect(mockOps.updateProjectField).toHaveBeenCalled();
+    expect(mockOps.createWeekItem).toHaveBeenCalled();
+    expect(mockOps.updateProjectStatus).toHaveBeenCalled();
+
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.results).toHaveLength(3);
+    expect(parsed.data.results.every((r: { ok: boolean }) => r.ok)).toBe(true);
+  });
+
+  it("batch_apply with haltOnError=true stops after first failed op", async () => {
+    mockOps.updateProjectField
+      .mockResolvedValueOnce({ ok: true, message: "Updated" })
+      .mockResolvedValueOnce({ ok: false, error: "Validator rejected" });
+    const result = await registeredTools.get("batch_apply")!({
+      batchId: "test-batch-halt",
+      updatedBy: "tester",
+      ops: [
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "A" } },
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "B" } },
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "C" } },
+      ],
+      haltOnError: true,
+    });
+    // Only 2 calls — third should not run after halt.
+    expect(mockOps.updateProjectField).toHaveBeenCalledTimes(2);
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.data.results).toHaveLength(2);
+    expect(parsed.data.results[1].ok).toBe(false);
+    expect(parsed.data.results[1].error).toMatch(/Validator rejected/);
+  });
+
+  it("batch_apply with haltOnError=false runs every op and reports mixed results", async () => {
+    mockOps.updateProjectField
+      .mockResolvedValueOnce({ ok: true, message: "Updated" })
+      .mockResolvedValueOnce({ ok: false, error: "Validator rejected" })
+      .mockResolvedValueOnce({ ok: true, message: "Updated" });
+    const result = await registeredTools.get("batch_apply")!({
+      batchId: "test-batch-continue",
+      updatedBy: "tester",
+      ops: [
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "A" } },
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "B" } },
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "C" } },
+      ],
+      haltOnError: false,
+    });
+    expect(mockOps.updateProjectField).toHaveBeenCalledTimes(3);
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.data.results).toHaveLength(3);
+    expect(parsed.data.results[0].ok).toBe(true);
+    expect(parsed.data.results[1].ok).toBe(false);
+    expect(parsed.data.results[2].ok).toBe(true);
+  });
+
+  it("batch_apply unknown tool name records error result without dispatching", async () => {
+    const result = await registeredTools.get("batch_apply")!({
+      batchId: "test-batch-unknown",
+      updatedBy: "tester",
+      ops: [{ tool: "no_such_tool", args: {} }],
+    });
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.data.results[0].error).toMatch(/Unknown tool/);
+  });
+
+  it("batch_apply clears setBatchId in finally even when a handler throws", async () => {
+    mockOps.setBatchId.mockClear();
+    mockOps.updateProjectField.mockRejectedValueOnce(new Error("kaboom"));
+    const result = await registeredTools.get("batch_apply")!({
+      batchId: "test-batch-throw",
+      updatedBy: "tester",
+      ops: [
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "A" } },
+      ],
+    });
+    expect(mockOps.setBatchId).toHaveBeenCalledWith("test-batch-throw");
+    expect(mockOps.setBatchId).toHaveBeenCalledWith(null);
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.data.results[0].ok).toBe(false);
+    expect(parsed.data.results[0].error).toMatch(/kaboom/);
+  });
+
+  it("batch_apply description excludes recursion (no batch_apply in dispatch table)", () => {
+    const desc = registeredDescriptions.get("batch_apply")!;
+    expect(desc).toMatch(/Recursive batch_apply is not allowed/);
   });
 });
