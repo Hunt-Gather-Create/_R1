@@ -196,10 +196,15 @@ export type {
   ProjectStatusEnum,
   ProjectStatusWeekItem,
   ProjectStatusUpdate,
-  EngagementType,
   GetProjectStatusParams,
   GetProjectStatusResult,
 } from "./operations-reads-project-status";
+// Note: `EngagementType` re-export was removed in favor of the
+// validator-side `EngagementType` exported from operations-utils above
+// (line ~86). The read-side type in operations-reads-project-status.ts is
+// structurally different (it represents storage shape and includes
+// "break-fix" + null for legacy rows); the validator-side type is the
+// strict accept-on-write enum. Kept as a local type in the reads module.
 
 // ── Context operations ──────────────────────────────────
 export {
