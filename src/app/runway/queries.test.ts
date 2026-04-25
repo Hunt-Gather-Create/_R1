@@ -405,3 +405,231 @@ describe("getStaleWeekItems", () => {
     vi.useRealTimers();
   });
 });
+
+// ── Real-filter coverage for the 30-day update lookback ──────────────
+//
+// The "filters the updates query to the last 30 days via gte" test above
+// verifies the SQL signature (gte called with a Date ~30d ago) but the
+// chainable mock ignores where clauses entirely — push to mockResults and
+// the rows come back regardless of any filter. So that test would still
+// PASS if someone deleted the gte call from queries.ts.
+//
+// This describe block wires up a smarter mock that actually APPLIES the
+// gte filter against seeded update rows. It uses vi.doMock + resetModules
+// to swap in an alternate getRunwayDb just for these tests, then re-imports
+// queries.ts so the new mock binds.
+//
+// Two paired tests prove the filter outcome both ways:
+//   1. Old update (60d ago) gets filtered out → item is stale.
+//   2. Recent update (5d ago) passes through → item is covered (not stale).
+//
+// If the gte call is removed from queries.ts, test #1 fails: the old update
+// is no longer filtered, marks the project as covered, and the item drops
+// out of the stale list.
+describe("getStaleWeekItems — 30d update lookback (real-filter)", () => {
+  // Updates fed to the smart chainable on a per-test basis.
+  let updateFixtures: Array<ReturnType<typeof createUpdate>> = [];
+  // Week items fed to the smart chainable on a per-test basis.
+  let weekItemFixtures: Array<ReturnType<typeof createWeekItem>> = [];
+
+  beforeEach(() => {
+    updateFixtures = [];
+    weekItemFixtures = [];
+    vi.resetModules();
+  });
+
+  it("filters out updates older than the 30-day cutoff (item stays stale)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    // Past-due item from ~52 days ago, project p1. (The DB-level weekOf
+    // lookback would normally exclude this; the mock chainable skips that
+    // filter so we can isolate the updates-side gte behavior.)
+    weekItemFixtures = [
+      createWeekItem({
+        date: "2026-02-15",
+        weekOf: "2026-02-09",
+        projectId: "p1",
+      }),
+    ];
+    // ONE update for p1, dated 5 days AFTER the item but ~46 days before
+    // "now" — outside the 30d window. With the gte filter the update gets
+    // dropped, leaving p1 with no recent coverage, so the item appears
+    // stale. WITHOUT the filter, this ancient update slips through,
+    // satisfies `latest >= item.date`, marks p1 as covered, and the item
+    // disappears from the stale list.
+    updateFixtures = [
+      createUpdate({
+        projectId: "p1",
+        createdAt: new Date("2026-02-20T14:00:00"),
+      }),
+    ];
+
+    // Re-mock @/lib/db/runway with a chainable that introspects the where
+    // clause and actually applies the gte filter against updateFixtures.
+    // This is intentionally local to this describe block; the file-level
+    // mock is overridden via vi.doMock + vi.resetModules + dynamic import.
+    vi.doMock("@/lib/db/runway", () => ({
+      getRunwayDb: () => ({
+        select: () => ({
+          from: (table: unknown) => createSmartChainable(table),
+        }),
+      }),
+    }));
+
+    function createSmartChainable(table: unknown) {
+      // The schema mock identifies tables by reference. updates table has
+      // shape { createdAt: "createdAt" }; weekItems has shape {
+      // weekOf: "weekOf", date: "date", sortOrder: "sortOrder" }.
+      const isUpdatesTable =
+        table != null &&
+        typeof table === "object" &&
+        "createdAt" in (table as Record<string, unknown>) &&
+        !("weekOf" in (table as Record<string, unknown>));
+
+      let capturedWhere: unknown = null;
+
+      const chainable: Record<string, unknown> = {
+        where: vi.fn((arg: unknown) => {
+          capturedWhere = arg;
+          return chainable;
+        }),
+        orderBy: vi.fn(() => chainable),
+        then: (resolve: (v: unknown) => void) => {
+          if (!isUpdatesTable) {
+            resolve(weekItemFixtures);
+            return;
+          }
+          // Apply the gte filter to updateFixtures using the captured
+          // where clause. The drizzle-orm mock returns gte calls as
+          // { gte: [column, cutoffDate] }. If the caller wrapped in and(),
+          // it becomes { and: [{ gte: [...] }, ...] }. We accept either
+          // shape for robustness.
+          const gteClauses = extractGteClauses(capturedWhere);
+          const filtered = updateFixtures.filter((row) => {
+            for (const clause of gteClauses) {
+              const [, cutoff] = clause;
+              if (cutoff instanceof Date && row.createdAt < cutoff) {
+                return false;
+              }
+            }
+            return true;
+          });
+          resolve(filtered);
+        },
+      };
+      return chainable;
+    }
+
+    function extractGteClauses(
+      where: unknown
+    ): Array<[unknown, unknown]> {
+      if (where == null || typeof where !== "object") return [];
+      const obj = where as Record<string, unknown>;
+      if ("gte" in obj && Array.isArray(obj.gte)) {
+        return [obj.gte as [unknown, unknown]];
+      }
+      if ("and" in obj && Array.isArray(obj.and)) {
+        return (obj.and as unknown[]).flatMap((sub) => extractGteClauses(sub));
+      }
+      return [];
+    }
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    // The 46-day-old update is filtered out by gte, so p1 has no recent
+    // coverage and the past-due item is reported as stale.
+    expect(result).toHaveLength(1);
+    expect(result[0].date).toBe("2026-02-15");
+    expect(result[0].items[0].title).toBe("CDS Review");
+
+    vi.useRealTimers();
+    vi.doUnmock("@/lib/db/runway");
+  });
+
+  it("keeps recent updates inside the 30-day window (item is covered, not stale)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    weekItemFixtures = [createWeekItem({ date: "2026-04-06", projectId: "p1" })];
+    // Recent update (5d ago) — well inside the 30d window — should pass
+    // through the gte filter and mark p1 as covered, dropping the item
+    // from the stale list. This is the paired sanity check confirming the
+    // filter is not over-eager.
+    updateFixtures = [
+      createUpdate({
+        projectId: "p1",
+        createdAt: new Date("2026-04-06T14:00:00"),
+      }),
+    ];
+
+    vi.doMock("@/lib/db/runway", () => ({
+      getRunwayDb: () => ({
+        select: () => ({
+          from: (table: unknown) => createSmartChainable(table),
+        }),
+      }),
+    }));
+
+    function createSmartChainable(table: unknown) {
+      const isUpdatesTable =
+        table != null &&
+        typeof table === "object" &&
+        "createdAt" in (table as Record<string, unknown>) &&
+        !("weekOf" in (table as Record<string, unknown>));
+
+      let capturedWhere: unknown = null;
+
+      const chainable: Record<string, unknown> = {
+        where: vi.fn((arg: unknown) => {
+          capturedWhere = arg;
+          return chainable;
+        }),
+        orderBy: vi.fn(() => chainable),
+        then: (resolve: (v: unknown) => void) => {
+          if (!isUpdatesTable) {
+            resolve(weekItemFixtures);
+            return;
+          }
+          const gteClauses = extractGteClauses(capturedWhere);
+          const filtered = updateFixtures.filter((row) => {
+            for (const clause of gteClauses) {
+              const [, cutoff] = clause;
+              if (cutoff instanceof Date && row.createdAt < cutoff) {
+                return false;
+              }
+            }
+            return true;
+          });
+          resolve(filtered);
+        },
+      };
+      return chainable;
+    }
+
+    function extractGteClauses(
+      where: unknown
+    ): Array<[unknown, unknown]> {
+      if (where == null || typeof where !== "object") return [];
+      const obj = where as Record<string, unknown>;
+      if ("gte" in obj && Array.isArray(obj.gte)) {
+        return [obj.gte as [unknown, unknown]];
+      }
+      if ("and" in obj && Array.isArray(obj.and)) {
+        return (obj.and as unknown[]).flatMap((sub) => extractGteClauses(sub));
+      }
+      return [];
+    }
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    // Recent update slips through the gte filter and marks p1 as covered.
+    // The item is excluded from the stale list.
+    expect(result).toHaveLength(0);
+
+    vi.useRealTimers();
+    vi.doUnmock("@/lib/db/runway");
+  });
+});
