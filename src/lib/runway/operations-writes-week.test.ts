@@ -107,6 +107,48 @@ vi.mock("./operations-utils", () => ({
   // assume raw `newValue` flows straight to the db. Real normalization is
   // asserted in operations-utils.test.ts.
   normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
+  // Real shared validators — re-exported with the same logic as production
+  // so the helper's rejection paths exercise the real checks. Keeping them
+  // honest here is the whole point of the hoist.
+  validateIsoDateShape: (value: string, label: string) => {
+    if (value === "") return { ok: true, value: null };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return {
+        ok: false,
+        error: `${label} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${value}'.`,
+      };
+    }
+    const d = new Date(`${value}T00:00:00.000Z`);
+    if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value) {
+      return {
+        ok: false,
+        error: `${label} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${value}'.`,
+      };
+    }
+    return { ok: true, value };
+  },
+  validateWeekItemStatus: (value: string) => {
+    const allowed = ["scheduled", "in-progress", "blocked", "at-risk", "completed", "canceled"];
+    if (value === "") return { ok: true, value: null };
+    if (!allowed.includes(value)) {
+      return {
+        ok: false,
+        error: `status must be one of ${allowed.join(", ")} or '' (clear); got '${value}'.`,
+      };
+    }
+    return { ok: true, value };
+  },
+  validateWeekItemCategory: (value: string) => {
+    const allowed = ["delivery", "review", "kickoff", "deadline", "approval", "launch"];
+    if (value === "") return { ok: true, value: null };
+    if (!allowed.includes(value)) {
+      return {
+        ok: false,
+        error: `category must be one of ${allowed.join(", ")} or '' (clear); got '${value}'.`,
+      };
+    }
+    return { ok: true, value };
+  },
 }));
 
 const client = { id: "c1", name: "Convergix", slug: "convergix" };
@@ -671,6 +713,150 @@ describe("updateWeekItemField", () => {
       if (!result.ok) return;
       expect(result.data?.reverseCascadeDetail?.previousDueDate).toBeNull();
       expect(result.data?.reverseCascadeDetail?.newDueDate).toBe("2026-04-28");
+    });
+  });
+
+  // Helper-level value validation — batch_apply bypasses the MCP wrapper, so
+  // these checks have to live in the helper. Mirrors the
+  // parent-project-id-validators.test.ts pattern.
+  describe("helper-level value validation", () => {
+    it("rejects invalid status before any DB write", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "status",
+        newValue: "Done",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/status must be one of/);
+        expect(result.error).toContain("Done");
+      }
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+      expect(mockInsertValues).not.toHaveBeenCalled();
+    });
+
+    it("rejects invalid category before any DB write", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "category",
+        newValue: "meeting",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/category must be one of/);
+        expect(result.error).toContain("meeting");
+      }
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("rejects shape-invalid date before any DB write", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "date",
+        newValue: "not-a-date",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/date must be a valid ISO/);
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("rejects date-invalid '2026-13-45' before any DB write", async () => {
+      // Same load-bearing case as the project-side test: lex compare against
+      // adjacent dates would silently accept this without the validator.
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "startDate",
+        newValue: "2026-13-45",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/startDate must be a valid ISO/);
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("accepts valid status and persists it", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "status",
+        newValue: "blocked",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "blocked" })
+      );
+    });
+  });
+
+  describe("createWeekItem helper-level value validation", () => {
+    it("rejects invalid status at create time", async () => {
+      const { createWeekItem } = await import("./operations-writes-week");
+      const result = await createWeekItem({
+        weekOf: "2026-04-06",
+        title: "Bogus Status",
+        status: "Done",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/status must be one of/);
+      expect(mockInsertValues).not.toHaveBeenCalled();
+    });
+
+    it("rejects invalid category at create time", async () => {
+      const { createWeekItem } = await import("./operations-writes-week");
+      const result = await createWeekItem({
+        weekOf: "2026-04-06",
+        title: "Bogus Category",
+        category: "meeting",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/category must be one of/);
+      expect(mockInsertValues).not.toHaveBeenCalled();
+    });
+
+    it("rejects shape-invalid startDate at create time", async () => {
+      const { createWeekItem } = await import("./operations-writes-week");
+      const result = await createWeekItem({
+        weekOf: "2026-04-06",
+        title: "Bogus Date",
+        startDate: "garbage",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/startDate must be a valid ISO/);
+      expect(mockInsertValues).not.toHaveBeenCalled();
     });
   });
 

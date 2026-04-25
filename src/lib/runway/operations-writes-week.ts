@@ -22,6 +22,9 @@ import {
   validateAndResolveField,
   getPreviousValue,
   normalizeResourcesString,
+  validateIsoDateShape,
+  validateWeekItemStatus,
+  validateWeekItemCategory,
 } from "./operations-utils";
 import type {
   MutationResponse,
@@ -194,6 +197,29 @@ export async function createWeekItem(
     updatedBy,
   } = params;
 
+  // Helper-level value validation. batch_apply routes through here directly
+  // (bypassing the MCP wrapper), so these checks are the only enforcement
+  // point for batched ops. Reuses the shared validators hoisted to
+  // operations-utils so MCP wrapper + helper stay in lockstep.
+  if (status !== undefined) {
+    const v = validateWeekItemStatus(status);
+    if (!v.ok) return { ok: false, error: v.error };
+  }
+  if (category !== undefined) {
+    const v = validateWeekItemCategory(category);
+    if (!v.ok) return { ok: false, error: v.error };
+  }
+  for (const [label, value] of [
+    ["date", date],
+    ["startDate", startDate],
+    ["endDate", endDate],
+  ] as const) {
+    if (value !== undefined) {
+      const v = validateIsoDateShape(value, label);
+      if (!v.ok) return { ok: false, error: v.error };
+    }
+  }
+
   // Auto-calculate weekOf from date if not provided
   const weekOf = rawWeekOf ?? (date ? getMonday(date) : undefined);
   if (!weekOf) {
@@ -328,6 +354,27 @@ export async function updateWeekItemField(
   const clientName = await getClientNameById(item.clientId);
 
   const previousValue = getPreviousValue(item, columnKey);
+
+  // Helper-level value validation. batch_apply routes through here directly
+  // (bypassing the MCP wrapper), so these checks are the only enforcement
+  // point for batched ops. Reuses the shared validators hoisted to
+  // operations-utils so MCP wrapper + helper stay in lockstep. `null` skips
+  // (explicit clear write — handled by the persistence layer).
+  if (typedField === "status" && newValue !== null) {
+    const v = validateWeekItemStatus(newValue);
+    if (!v.ok) return { ok: false, error: v.error };
+  }
+  if (typedField === "category" && newValue !== null) {
+    const v = validateWeekItemCategory(newValue);
+    if (!v.ok) return { ok: false, error: v.error };
+  }
+  if (
+    (typedField === "date" || typedField === "startDate" || typedField === "endDate") &&
+    newValue !== null
+  ) {
+    const v = validateIsoDateShape(newValue, typedField);
+    if (!v.ok) return { ok: false, error: v.error };
+  }
 
   // v4 (Chunk 5): normalize resources on write so storage stays canonical.
   // Null short-circuits the normalizer so explicit null clears pass through.
