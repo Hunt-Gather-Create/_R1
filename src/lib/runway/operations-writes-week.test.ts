@@ -45,111 +45,64 @@ const mockFindWeekItemByFuzzyTitle = vi.fn();
 const mockGetWeekItemsForWeek = vi.fn();
 const mockCheckIdempotency = vi.fn();
 
-vi.mock("./operations-utils", () => ({
-  WEEK_ITEM_FIELDS: [
-    "title", "status", "date", "dayOfWeek", "weekOf", "owner", "resources", "notes", "category",
-    "startDate", "endDate", "blockedBy",
-  ],
-  WEEK_ITEM_FIELD_TO_COLUMN: {
-    title: "title", status: "status", date: "date", dayOfWeek: "dayOfWeek", weekOf: "weekOf",
-    owner: "owner", resources: "resources", notes: "notes", category: "category",
-    startDate: "startDate", endDate: "endDate", blockedBy: "blockedBy",
-  },
-  generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
-  generateId: () => "mock-id-12345678901234",
-  getClientNameById: vi.fn().mockImplementation(async (clientId: string | null) => {
-    if (clientId === "c1") return "Convergix";
-    return undefined;
-  }),
-  getClientOrFail: async (slug: string) => {
-    const client = await mockGetClientBySlug(slug);
-    if (!client) return { ok: false, error: `Client '${slug}' not found.` };
-    return { ok: true, client };
-  },
-  findProjectByFuzzyName: (...args: unknown[]) =>
-    mockFindProjectByFuzzyName(...args),
-  resolveWeekItemOrFail: async (weekOf: string, title: string) => {
-    const result = await mockFindWeekItemByFuzzyTitle(weekOf, title);
-    if (!result) {
-      const items = await mockGetWeekItemsForWeek(weekOf);
-      return {
-        ok: false,
-        error: `Week item '${title}' not found for week of ${weekOf}.`,
-        available: items?.map((i: { title: string }) => i.title),
-      };
-    }
-    if (result === "__AMBIGUOUS__") {
-      return {
-        ok: false,
-        error: `Multiple week items match '${title}': CDS Review, CDS Delivery. Which one?`,
-        available: ["CDS Review", "CDS Delivery"],
-      };
-    }
-    return { ok: true, item: result };
-  },
-  checkDuplicate: async (idemKey: string, dupResult: unknown) => {
-    if (await mockCheckIdempotency(idemKey)) return dupResult;
-    return null;
-  },
-  insertAuditRecord: async (params: Record<string, unknown>) => {
-    const id = (params.id as string | undefined) ?? "mock-audit-id";
-    mockInsertValues({ ...params, id });
-    return id;
-  },
-  getPreviousValue: (entity: Record<string, unknown>, columnKey: string) => String(entity[columnKey] ?? ""),
-  validateAndResolveField: (field: string, allowed: readonly string[], fieldToColumn: Record<string, string>) => {
-    if (!allowed.includes(field)) {
-      return { ok: false, error: `Invalid field '${field}'. Allowed fields: ${allowed.join(", ")}` };
-    }
-    return { ok: true, typedField: field, columnKey: fieldToColumn[field] };
-  },
-  // v4 (Chunk 5): identity passthrough — preserves existing assertions that
-  // assume raw `newValue` flows straight to the db. Real normalization is
-  // asserted in operations-utils.test.ts.
-  normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
-  // Real shared validators — re-exported with the same logic as production
-  // so the helper's rejection paths exercise the real checks. Keeping them
-  // honest here is the whole point of the hoist.
-  validateIsoDateShape: (value: string, label: string) => {
-    if (value === "") return { ok: true, value: null };
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      return {
-        ok: false,
-        error: `${label} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${value}'.`,
-      };
-    }
-    const d = new Date(`${value}T00:00:00.000Z`);
-    if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value) {
-      return {
-        ok: false,
-        error: `${label} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${value}'.`,
-      };
-    }
-    return { ok: true, value };
-  },
-  validateWeekItemStatus: (value: string) => {
-    const allowed = ["scheduled", "in-progress", "blocked", "at-risk", "completed", "canceled"];
-    if (value === "") return { ok: true, value: null };
-    if (!allowed.includes(value)) {
-      return {
-        ok: false,
-        error: `status must be one of ${allowed.join(", ")} or '' (clear); got '${value}'.`,
-      };
-    }
-    return { ok: true, value };
-  },
-  validateWeekItemCategory: (value: string) => {
-    const allowed = ["delivery", "review", "kickoff", "deadline", "approval", "launch"];
-    if (value === "") return { ok: true, value: null };
-    if (!allowed.includes(value)) {
-      return {
-        ok: false,
-        error: `category must be one of ${allowed.join(", ")} or '' (clear); got '${value}'.`,
-      };
-    }
-    return { ok: true, value };
-  },
-}));
+// Mock `./operations-utils` while letting the real shared validators
+// (`validateIsoDateShape`, `validateWeekItemStatus`, `validateWeekItemCategory`)
+// and constants (`WEEK_ITEM_FIELDS`, `WEEK_ITEM_STATUSES`, …) come through via
+// `importOriginal`. Inline reimplementations would silently drift from the
+// production source; the helper's rejection paths must exercise the real
+// shared validators or this test is theatre.
+vi.mock("./operations-utils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./operations-utils")>();
+  return {
+    ...actual,
+    generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
+    generateId: () => "mock-id-12345678901234",
+    getClientNameById: vi.fn().mockImplementation(async (clientId: string | null) => {
+      if (clientId === "c1") return "Convergix";
+      return undefined;
+    }),
+    getClientOrFail: async (slug: string) => {
+      const client = await mockGetClientBySlug(slug);
+      if (!client) return { ok: false, error: `Client '${slug}' not found.` };
+      return { ok: true, client };
+    },
+    findProjectByFuzzyName: (...args: unknown[]) =>
+      mockFindProjectByFuzzyName(...args),
+    resolveWeekItemOrFail: async (weekOf: string, title: string) => {
+      const result = await mockFindWeekItemByFuzzyTitle(weekOf, title);
+      if (!result) {
+        const items = await mockGetWeekItemsForWeek(weekOf);
+        return {
+          ok: false,
+          error: `Week item '${title}' not found for week of ${weekOf}.`,
+          available: items?.map((i: { title: string }) => i.title),
+        };
+      }
+      if (result === "__AMBIGUOUS__") {
+        return {
+          ok: false,
+          error: `Multiple week items match '${title}': CDS Review, CDS Delivery. Which one?`,
+          available: ["CDS Review", "CDS Delivery"],
+        };
+      }
+      return { ok: true, item: result };
+    },
+    checkDuplicate: async (idemKey: string, dupResult: unknown) => {
+      if (await mockCheckIdempotency(idemKey)) return dupResult;
+      return null;
+    },
+    insertAuditRecord: async (params: Record<string, unknown>) => {
+      const id = (params.id as string | undefined) ?? "mock-audit-id";
+      mockInsertValues({ ...params, id });
+      return id;
+    },
+    getPreviousValue: (entity: Record<string, unknown>, columnKey: string) => String(entity[columnKey] ?? ""),
+    // v4 (Chunk 5): identity passthrough — preserves existing assertions that
+    // assume raw `newValue` flows straight to the db. Real normalization is
+    // asserted in operations-utils.test.ts.
+    normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
+  };
+});
 
 const client = { id: "c1", name: "Convergix", slug: "convergix" };
 

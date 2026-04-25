@@ -61,57 +61,6 @@ const { mockOps, registeredTools, registeredDescriptions } = vi.hoisted(() => {
     updateTeamMember: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
     setBatchId: vi.fn(),
     getBatchId: vi.fn().mockReturnValue(null),
-    // Shared validators — re-exported through the operations barrel. The
-    // wrapper imports them from there; the helpers run them on the dispatch
-    // path. Mocked with the real logic so wrapper-side rejections in tests
-    // still produce production-shape error strings.
-    validateEngagementType: (value: string) => {
-      if (value === "") return { ok: true, value: null };
-      if (value === "retainer" || value === "project") return { ok: true, value };
-      return {
-        ok: false,
-        error: `engagementType must be one of retainer, project or '' (clear); got '${value}'.`,
-      };
-    },
-    validateIsoDateShape: (value: string, label: string) => {
-      if (value === "") return { ok: true, value: null };
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        return {
-          ok: false,
-          error: `${label} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${value}'.`,
-        };
-      }
-      const d = new Date(`${value}T00:00:00.000Z`);
-      if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value) {
-        return {
-          ok: false,
-          error: `${label} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${value}'.`,
-        };
-      }
-      return { ok: true, value };
-    },
-    validateWeekItemStatus: (value: string) => {
-      const allowed = ["scheduled", "in-progress", "blocked", "at-risk", "completed", "canceled"];
-      if (value === "") return { ok: true, value: null };
-      if (!allowed.includes(value)) {
-        return {
-          ok: false,
-          error: `status must be one of ${allowed.join(", ")} or '' (clear); got '${value}'.`,
-        };
-      }
-      return { ok: true, value };
-    },
-    validateWeekItemCategory: (value: string) => {
-      const allowed = ["delivery", "review", "kickoff", "deadline", "approval", "launch"];
-      if (value === "") return { ok: true, value: null };
-      if (!allowed.includes(value)) {
-        return {
-          ok: false,
-          error: `category must be one of ${allowed.join(", ")} or '' (clear); got '${value}'.`,
-        };
-      }
-      return { ok: true, value };
-    },
   };
   type ToolHandler = (params: Record<string, unknown>) => Promise<unknown>;
   const registeredTools = new Map<string, ToolHandler>();
@@ -119,7 +68,16 @@ const { mockOps, registeredTools, registeredDescriptions } = vi.hoisted(() => {
   return { mockOps, registeredTools, registeredDescriptions };
 });
 
-vi.mock("@/lib/runway/operations", () => mockOps);
+// Mock the operations barrel: real shared validators come through via
+// `importOriginal()`, then `mockOps` (DB-touching helpers) overlay on top.
+// Inline validator reimplementations would silently drift from the production
+// source — wrapper-side rejection assertions in the tests below would pass
+// for the wrong reason if `validateEngagementType` etc. were redefined here
+// instead of forwarded from `operations-utils`.
+vi.mock("@/lib/runway/operations", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/runway/operations")>();
+  return { ...actual, ...mockOps };
+});
 vi.mock("@/lib/slack/updates-channel", () => ({
   postMutationUpdate: vi.fn().mockResolvedValue(undefined),
 }));

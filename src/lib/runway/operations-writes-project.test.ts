@@ -24,92 +24,54 @@ const mockGetProjectsForClient = vi.fn();
 const mockCheckIdempotency = vi.fn();
 
 let _idCounter = 0;
-// PROJECT_FIELDS mock mirrors the real 11-field whitelist from
-// operations-utils.ts:323. Out-of-sync mocks would let the helper-level
-// engagementType / contractStart / contractEnd / parentProjectId rejection
-// tests below pass for the wrong reason.
-vi.mock("./operations-utils", () => ({
-  PROJECT_FIELDS: [
-    "name", "dueDate", "owner", "resources", "waitingOn", "notes", "category",
-    "engagementType", "contractStart", "contractEnd",
-    "parentProjectId",
-  ],
-  PROJECT_FIELD_TO_COLUMN: {
-    name: "name", dueDate: "dueDate", owner: "owner", resources: "resources",
-    waitingOn: "waitingOn", notes: "notes", category: "category",
-    engagementType: "engagementType", contractStart: "contractStart", contractEnd: "contractEnd",
-    parentProjectId: "parentProjectId",
-  },
-  generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
-  generateId: () => `mock-id-${++_idCounter}`,
-  getClientOrFail: async (slug: string) => {
-    const client = await mockGetClientBySlug(slug);
-    if (!client) return { ok: false, error: `Client '${slug}' not found.` };
-    return { ok: true, client };
-  },
-  resolveProjectOrFail: async (_clientId: string, _clientName: string, projectName: string) => {
-    const result = await mockFindProjectByFuzzyName(_clientId, projectName);
-    if (!result) {
-      const available = await mockGetProjectsForClient(_clientId);
-      return { ok: false, error: `Project '${projectName}' not found for ${_clientName}.`, available: available?.map((p: { name: string }) => p.name) };
-    }
-    return { ok: true, project: result };
-  },
-  checkDuplicate: async (idemKey: string, dupResult: unknown) => {
-    if (await mockCheckIdempotency(idemKey)) return dupResult;
-    return null;
-  },
-  insertAuditRecord: async (params: Record<string, unknown>) => {
-    const id = (params.id as string | undefined) ?? `mock-id-${++_idCounter}`;
-    mockInsertValues({ ...params, id });
-    return id;
-  },
-  getPreviousValue: (entity: Record<string, unknown>, columnKey: string) => String(entity[columnKey] ?? ""),
-  validateAndResolveField: (field: string, allowed: readonly string[], fieldToColumn: Record<string, string>) => {
-    if (!allowed.includes(field)) {
-      return { ok: false, error: `Invalid field '${field}'. Allowed fields: ${allowed.join(", ")}` };
-    }
-    return { ok: true, typedField: field, columnKey: fieldToColumn[field] };
-  },
-  // v4 (Chunk 5): identity passthrough — real normalization asserted
-  // separately in operations-utils.test.ts.
-  normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
-  // Real shared validators — re-exported from the mock so the helper's
-  // rejection paths exercise the same logic as production. Keeping them
-  // honest here is the whole point of the hoist.
-  validateEngagementType: (value: string) => {
-    if (value === "") return { ok: true, value: null };
-    if (value === "retainer" || value === "project") return { ok: true, value };
-    return {
-      ok: false,
-      error: `engagementType must be one of retainer, project or '' (clear); got '${value}'.`,
-    };
-  },
-  validateIsoDateShape: (value: string, label: string) => {
-    if (value === "") return { ok: true, value: null };
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      return {
-        ok: false,
-        error: `${label} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${value}'.`,
-      };
-    }
-    const d = new Date(`${value}T00:00:00.000Z`);
-    if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value) {
-      return {
-        ok: false,
-        error: `${label} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${value}'.`,
-      };
-    }
-    return { ok: true, value };
-  },
-  // parentProjectId validator is a DB-touching check. The unit tests below
-  // exercise the field whitelist + non-validator paths only; the real
-  // validator is covered by the integration test in
-  // parent-project-id-validators.test.ts. Stub returns ok:true so the
-  // updateProjectField parentProjectId branch reaches the persistence step
-  // when needed.
-  validateParentProjectIdAssignment: async () => ({ ok: true }),
-}));
+// Mock `./operations-utils` while letting the real shared validators
+// (`validateEngagementType`, `validateIsoDateShape`, etc.) and constants
+// (`PROJECT_FIELDS`, `ENGAGEMENT_TYPES`, …) come through via `importOriginal`.
+// Inline reimplementations would silently drift from the production source —
+// out-of-sync mocks would let the helper-level engagementType / contractStart
+// / contractEnd / parentProjectId rejection tests below pass for the wrong
+// reason. Only the side-effect-y / DB-touching helpers are overridden.
+vi.mock("./operations-utils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./operations-utils")>();
+  return {
+    ...actual,
+    generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
+    generateId: () => `mock-id-${++_idCounter}`,
+    getClientOrFail: async (slug: string) => {
+      const client = await mockGetClientBySlug(slug);
+      if (!client) return { ok: false, error: `Client '${slug}' not found.` };
+      return { ok: true, client };
+    },
+    resolveProjectOrFail: async (_clientId: string, _clientName: string, projectName: string) => {
+      const result = await mockFindProjectByFuzzyName(_clientId, projectName);
+      if (!result) {
+        const available = await mockGetProjectsForClient(_clientId);
+        return { ok: false, error: `Project '${projectName}' not found for ${_clientName}.`, available: available?.map((p: { name: string }) => p.name) };
+      }
+      return { ok: true, project: result };
+    },
+    checkDuplicate: async (idemKey: string, dupResult: unknown) => {
+      if (await mockCheckIdempotency(idemKey)) return dupResult;
+      return null;
+    },
+    insertAuditRecord: async (params: Record<string, unknown>) => {
+      const id = (params.id as string | undefined) ?? `mock-id-${++_idCounter}`;
+      mockInsertValues({ ...params, id });
+      return id;
+    },
+    getPreviousValue: (entity: Record<string, unknown>, columnKey: string) => String(entity[columnKey] ?? ""),
+    // v4 (Chunk 5): identity passthrough — real normalization asserted
+    // separately in operations-utils.test.ts.
+    normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
+    // parentProjectId validator is a DB-touching check. The unit tests below
+    // exercise the field whitelist + non-validator paths only; the real
+    // validator is covered by the integration test in
+    // parent-project-id-validators.test.ts. Stub returns ok:true so the
+    // updateProjectField parentProjectId branch reaches the persistence step
+    // when needed.
+    validateParentProjectIdAssignment: async () => ({ ok: true }),
+  };
+});
 
 const mockGetLinkedDeadlineItems = vi.fn();
 
