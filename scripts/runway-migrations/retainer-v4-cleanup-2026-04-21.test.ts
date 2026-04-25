@@ -81,14 +81,21 @@ function makeCtx(dryRun: boolean): MigrationContext {
   };
 }
 
+// One-shot migration shipped to prod 2026-04-21. This pre-check captures
+// the BEFORE state of an applied migration and is intentionally
+// non-rerunnable. Field-state drift after apply (e.g. dave-asprey
+// contractStart, which was written by THIS migration's own writes on
+// 2026-04-21 — NOT by timestamp-correction, which only touched
+// createdAt/updatedAt fields) is expected. Migration logic itself is
+// unchanged. Skip is permanent.
 describeOrSkip("retainer-v4-cleanup-2026-04-21 - forward DRY_RUN", () => {
-  it("runs against prod Turso without error in DRY_RUN mode", async () => {
+  it.skip("runs against prod Turso without error in DRY_RUN mode", async () => {
     const { up } = await import("./retainer-v4-cleanup-2026-04-21");
     await expect(up(makeCtx(true))).resolves.toBeUndefined();
     cleanup();
   });
 
-  it("writes a dry-run snapshot capturing all L1 + L2 target rows", async () => {
+  it.skip("writes a dry-run snapshot capturing all L1 + L2 target rows", async () => {
     const { up } = await import("./retainer-v4-cleanup-2026-04-21");
     await up(makeCtx(true));
 
@@ -117,7 +124,7 @@ describeOrSkip("retainer-v4-cleanup-2026-04-21 - forward DRY_RUN", () => {
     cleanup();
   });
 
-  it("Section A: Convergix L1s are currently engagement_type='project' (pre-state)", async () => {
+  it.skip("Section A: Convergix L1s are currently engagement_type='project' (pre-state)", async () => {
     const { up } = await import("./retainer-v4-cleanup-2026-04-21");
     await up(makeCtx(true));
 
@@ -130,7 +137,7 @@ describeOrSkip("retainer-v4-cleanup-2026-04-21 - forward DRY_RUN", () => {
     cleanup();
   });
 
-  it("Section B: Convergix Industry Vertical Campaigns has waitingOn=null in snapshot (pre-state)", async () => {
+  it.skip("Section B: Convergix Industry Vertical Campaigns has waitingOn=null in snapshot (pre-state)", async () => {
     const { up } = await import("./retainer-v4-cleanup-2026-04-21");
     await up(makeCtx(true));
 
@@ -144,7 +151,7 @@ describeOrSkip("retainer-v4-cleanup-2026-04-21 - forward DRY_RUN", () => {
     cleanup();
   });
 
-  it("Section C: Soundly AARP Member Login has null start/end dates (pre-state)", async () => {
+  it.skip("Section C: Soundly AARP Member Login has null start/end dates (pre-state)", async () => {
     const { up } = await import("./retainer-v4-cleanup-2026-04-21");
     await up(makeCtx(true));
 
@@ -158,7 +165,7 @@ describeOrSkip("retainer-v4-cleanup-2026-04-21 - forward DRY_RUN", () => {
     cleanup();
   });
 
-  it("Section D: LPPC blanket-blocked L2s currently have status='blocked' (pre-state)", async () => {
+  it.skip("Section D: LPPC blanket-blocked L2s currently have status='blocked' (pre-state)", async () => {
     const { up } = await import("./retainer-v4-cleanup-2026-04-21");
     await up(makeCtx(true));
 
@@ -174,7 +181,7 @@ describeOrSkip("retainer-v4-cleanup-2026-04-21 - forward DRY_RUN", () => {
     cleanup();
   });
 
-  it("Section D: D.3/D.4/D.5 target titles do NOT already exist under LPPC (safe to create)", async () => {
+  it.skip("Section D: D.3/D.4/D.5 target titles do NOT already exist under LPPC (safe to create)", async () => {
     const { up } = await import("./retainer-v4-cleanup-2026-04-21");
     // If any of the creates would collide, the pre-check inside up() throws.
     // Reaching this point means the collision guard passed.
@@ -182,7 +189,7 @@ describeOrSkip("retainer-v4-cleanup-2026-04-21 - forward DRY_RUN", () => {
     cleanup();
   });
 
-  it("DRY_RUN does not mutate prod state: Convergix L1 engagementType unchanged", async () => {
+  it.skip("DRY_RUN does not mutate prod state: Convergix L1 engagementType unchanged", async () => {
     const before = await libsql.execute(
       "SELECT engagement_type FROM projects WHERE client_id = (SELECT id FROM clients WHERE slug = 'convergix') LIMIT 1"
     );
@@ -221,7 +228,7 @@ describeOrSkip("retainer-v4-cleanup-2026-04-21 - forward DRY_RUN", () => {
 });
 
 describeOrSkip("retainer-v4-cleanup-2026-04-21-REVERT - DRY_RUN round-trip", () => {
-  it("reads snapshot without crashing and produces zero ops when DB matches snapshot", async () => {
+  it.skip("reads snapshot without crashing and produces zero ops when DB matches snapshot", async () => {
     // Run forward DRY_RUN first to produce a snapshot reflecting current prod state
     // (which IS pre-apply state, because forward hasn't been applied).
     const { up: forwardUp } = await import("./retainer-v4-cleanup-2026-04-21");
