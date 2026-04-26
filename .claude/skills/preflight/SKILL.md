@@ -25,22 +25,32 @@ After Step 1 completes (regardless of exit code), grep the captured log for patt
 indicate Vercel-specific runtime failures. These errors are swallowed in some Next.js versions —
 `pnpm build` exits 0 while the deploy silently breaks.
 
+Patterns use regex (not literal strings) so quote-style or whitespace variations across Next.js
+versions don't slip past the gate. The `Failed to decrypt session` log is intentionally NOT
+checked here — it's a legitimate runtime diagnostic for corrupt cookies / missing env vars and
+shouldn't gate the build. The cookies sentinel pattern alone catches the deploy-blocking class.
+
 ```bash
 BUILD_LOG=/tmp/preflight-build.log
 
 echo "=== Preflight: runtime-error grep ==="
 
 patterns=(
-  "digest: 'DYNAMIC_SERVER_USAGE'"
-  "Failed to decrypt session"
+  "digest:[[:space:]]*['\"]?DYNAMIC_SERVER_USAGE"
   "Error occurred prerendering"
-  "Error: Page with \`getStaticProps\`"
+  "Error: Page with .*getStaticProps"
 )
+
+# Test-output markers — exclude these so test logs accidentally redirected
+# into the build log (or test source code containing literal sentinel strings)
+# can't self-flag the gate.
+TEST_EXCLUSIONS='✓|✗|describe\(|it\(|toContain|toBe|toEqual'
 
 grep_failed=0
 for pattern in "${patterns[@]}"; do
-  count=$(grep -c "$pattern" "$BUILD_LOG" 2>/dev/null || echo 0)
-  if [ "$count" -gt 0 ]; then
+  matches=$(grep -E "$pattern" "$BUILD_LOG" 2>/dev/null | grep -vE "$TEST_EXCLUSIONS" || true)
+  if [ -n "$matches" ]; then
+    count=$(echo "$matches" | wc -l | tr -d ' ')
     echo "  HARD FAIL [$count match(es)]: $pattern"
     grep_failed=1
   else
