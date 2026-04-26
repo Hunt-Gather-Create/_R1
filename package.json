@@ -71,7 +71,7 @@
     "dayjs": "^1.11.19",
     "drizzle-orm": "^0.45.1",
     "gray-matter": "^4.0.3",
-    "inngest": "^3.50.0",
+    "inngest": "^3.54.0",
     "iron-session": "^8.0.4",
     "jszip": "^3.10.1",
     "lexical": "^0.35.0",

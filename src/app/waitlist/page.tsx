@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/actions/workspace";
 import { Clock } from "lucide-react";
 
+export const dynamic = "force-dynamic";
+
 export default async function WaitlistPage() {
   const user = await requireAuth();
 

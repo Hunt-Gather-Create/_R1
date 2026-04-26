@@ -3,6 +3,8 @@ import { requireActiveUser, getUserWorkspaces } from "@/lib/actions/workspace";
 import { Plus, Folder, LayoutDashboard } from "lucide-react";
 import type { Workspace } from "@/lib/types";
 
+export const dynamic = "force-dynamic";
+
 function formatDate(date: Date): string {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
