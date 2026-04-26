@@ -31,7 +31,18 @@ export default async function WorkspaceLayout({
   // Verify user has access to this workspace
   try {
     await requireWorkspaceAccess(workspace.id);
-  } catch {
+  } catch (error) {
+    // Re-throw Next.js internal sentinel errors (DYNAMIC_SERVER_USAGE,
+    // NEXT_REDIRECT, NEXT_NOT_FOUND, NEXT_HTTP_ERROR_FALLBACK, etc.)
+    // so Next's static-bailout mechanism works correctly.
+    if (
+      error &&
+      typeof error === "object" &&
+      "digest" in error &&
+      (error as { digest?: unknown }).digest
+    ) {
+      throw error;
+    }
     // User doesn't have access - redirect to home
     redirect("/");
   }

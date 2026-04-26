@@ -44,6 +44,17 @@ async function getSessionFromCookie(): Promise<Session | null> {
 
     return session;
   } catch (error) {
+    // Re-throw Next.js internal sentinel errors (DYNAMIC_SERVER_USAGE,
+    // NEXT_REDIRECT, NEXT_NOT_FOUND, NEXT_HTTP_ERROR_FALLBACK, etc.)
+    // so Next's static-bailout mechanism works correctly.
+    if (
+      error &&
+      typeof error === "object" &&
+      "digest" in error &&
+      (error as { digest?: unknown }).digest
+    ) {
+      throw error;
+    }
     console.error("Failed to decrypt session:", error);
     return null;
   }

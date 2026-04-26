@@ -208,6 +208,22 @@ Uses @dnd-kit with custom collision detection in `src/lib/collision-detection.ts
 - `advanced-init-once` - Initialize app once per app load
 - `advanced-use-latest` - useLatest for stable callback refs
 
+## Deployment
+
+### Cross-fork Vercel canary procedure
+
+When a PR is from a fork (e.g., `jasonburks23/_R1` → `Hunt-Gather-Create/_R1:runway`), Vercel does NOT auto-fire a preview deploy for the PR. The merge into `runway` IS the deploy test. To validate before pushing to upstream:
+
+1. Bump local Vercel CLI to latest: `npm i -g vercel@latest`
+2. From the worktree, link a personal-scope canary project (one-time): `vercel link --scope=<your-personal-scope>`
+3. Pull env vars from a known-good runway deploy (one-time): `vercel env pull .env.canary` — or populate via the Vercel dashboard
+4. Deploy canary: `vercel deploy --prebuilt --scope=<your-personal-scope>`
+5. If the canary deploys green, push the PR for upstream review. If red, iterate locally without burning upstream review cycles.
+
+### Build output vs. deploy success
+
+`pnpm build` exit 0 does not guarantee a successful Vercel deploy. Some failures (e.g., `DYNAMIC_SERVER_USAGE`, failed session decryption) are swallowed in certain Next.js versions and only surface at runtime. The preflight skill's grep gate (`/preflight` → Step 2) catches these. Run `/preflight` before every PR push to a runway-targeted branch.
+
 ## Plan Execution Workflow
 
 **Full workflow documented in [`docs/ai-development-workflow.md`](docs/ai-development-workflow.md).** Read it before your first code change in any session. The summary below is not a substitute.
