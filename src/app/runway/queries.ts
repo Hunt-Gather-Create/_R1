@@ -199,23 +199,34 @@ export async function getStaleWeekItems(): Promise<WeekDay[]> {
   );
   if (pastItems.length === 0) return [];
 
-  // Get all updates from this week to check for coverage
+  // Get updates within a 30-day lookback window. The pastItems set already
+  // caps at 21 days (lookbackMonday above) so 30 days buffers comfortably
+  // past the oldest possible past item without scanning the full table.
+  const updateLookbackCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const recentUpdates = await db
     .select()
     .from(updates)
+    .where(gte(updates.createdAt, updateLookbackCutoff))
     .orderBy(asc(updates.createdAt));
 
-  // Build set of projectIds that have updates after their scheduled date
-  const updatedProjectIds = new Set<string>();
+  // Single O(updates) pass to find the latest update per project.
+  // Then a single O(pastItems) pass checks each item's projectId against
+  // the map — net O(n+m) instead of the previous O(updates × pastItems).
+  const latestUpdateByProject = new Map<string, Date>();
   for (const update of recentUpdates) {
     if (!update.projectId || !update.createdAt) continue;
-    for (const item of pastItems) {
-      if (item.projectId === update.projectId) {
-        const itemDate = parseISODate(item.date!);
-        if (update.createdAt >= itemDate) {
-          updatedProjectIds.add(update.projectId);
-        }
-      }
+    const prev = latestUpdateByProject.get(update.projectId);
+    if (!prev || update.createdAt > prev) {
+      latestUpdateByProject.set(update.projectId, update.createdAt);
+    }
+  }
+
+  const updatedProjectIds = new Set<string>();
+  for (const item of pastItems) {
+    if (!item.projectId || !item.date) continue;
+    const latest = latestUpdateByProject.get(item.projectId);
+    if (latest && latest >= parseISODate(item.date)) {
+      updatedProjectIds.add(item.projectId);
     }
   }
 

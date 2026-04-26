@@ -31,7 +31,7 @@ export function DayColumn({
       <div className="max-h-[60vh] space-y-2 overflow-y-auto">
         {day.items.map((item, i) => (
           <DayItemCard
-            key={`${day.date}-${item.title.slice(0, 20)}-${i}`}
+            key={item.id ?? `${item.account}|${item.title}|${i}`}
             item={item}
             size="sm"
           />

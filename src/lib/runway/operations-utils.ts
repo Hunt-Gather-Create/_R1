@@ -838,3 +838,239 @@ export function parseResources(raw: string | null | undefined): ResourceEntry[] 
 
   return entries;
 }
+
+// ── Shared value validators (tool boundary + helper boundary) ────────────
+//
+// These four validators live here, not in the MCP tool wrapper, so every
+// write path runs the same checks. The MCP wrapper validates at the tool
+// boundary (defense-in-depth + clearer "got X" error before dispatch); the
+// helper revalidates so direct-helper callers (including batch_apply, which
+// bypasses the tool boundary) cannot land bad values. One source of truth
+// per concern — engagement type, ISO date shape, week item status enum,
+// week item category enum. Same idiom as
+// `validateParentProjectIdAssignment` below.
+
+/**
+ * Allowed values for `projects.engagement_type`. `""` is a sentinel for
+ * "clear" (becomes null at the persistence layer). Any other value rejects.
+ */
+export const ENGAGEMENT_TYPES = ["retainer", "project"] as const;
+export type EngagementType = (typeof ENGAGEMENT_TYPES)[number];
+
+export type EngagementTypeValidationResult =
+  | { ok: true; value: EngagementType | null }
+  | { ok: false; error: string };
+
+/**
+ * Validate a string against the engagement-type enum.
+ * `""` is accepted and reported as `null` (clear). Valid enum values pass
+ * through. Anything else rejects with a stable error string the MCP wrapper
+ * and the helper both surface verbatim.
+ */
+export function validateEngagementType(
+  value: string,
+): EngagementTypeValidationResult {
+  if (value === "") return { ok: true, value: null };
+  if (
+    !ENGAGEMENT_TYPES.includes(value as EngagementType)
+  ) {
+    return {
+      ok: false,
+      error: `engagementType must be one of ${ENGAGEMENT_TYPES.join(", ")} or '' (clear); got '${value}'.`,
+    };
+  }
+  return { ok: true, value: value as EngagementType };
+}
+
+export type IsoDateValidationResult =
+  | { ok: true; value: string | null }
+  | { ok: false; error: string };
+
+/**
+ * Strict ISO-8601 date shape validator (YYYY-MM-DD): regex + real Date
+ * parse + roundtrip equality. Rejects shape-valid but date-invalid strings
+ * like "2026-13-45". `""` is accepted and reported as `null` (clear).
+ *
+ * `fieldLabel` is interpolated into the error so the MCP wrapper and the
+ * helper produce identical messages — a `batch_apply` op that bypasses the
+ * wrapper still surfaces "contractStart must be a valid ISO ..." from the
+ * helper.
+ */
+export function validateIsoDateShape(
+  value: string,
+  fieldLabel: string,
+): IsoDateValidationResult {
+  if (value === "") return { ok: true, value: null };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return {
+      ok: false,
+      error: `${fieldLabel} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${value}'.`,
+    };
+  }
+  const d = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value) {
+    return {
+      ok: false,
+      error: `${fieldLabel} must be a valid ISO YYYY-MM-DD date or '' (clear); got '${value}'.`,
+    };
+  }
+  return { ok: true, value };
+}
+
+/**
+ * Allowed values for `week_items.status`. `""` clears (becomes null per the
+ * v4 convention where NULL = scheduled).
+ */
+export const WEEK_ITEM_STATUSES = [
+  "scheduled",
+  "in-progress",
+  "blocked",
+  "at-risk",
+  "completed",
+  "canceled",
+] as const;
+export type WeekItemStatus = (typeof WEEK_ITEM_STATUSES)[number];
+
+export type WeekItemStatusValidationResult =
+  | { ok: true; value: WeekItemStatus | null }
+  | { ok: false; error: string };
+
+export function validateWeekItemStatus(
+  value: string,
+): WeekItemStatusValidationResult {
+  if (value === "") return { ok: true, value: null };
+  if (
+    !WEEK_ITEM_STATUSES.includes(value as WeekItemStatus)
+  ) {
+    return {
+      ok: false,
+      error: `status must be one of ${WEEK_ITEM_STATUSES.join(", ")} or '' (clear); got '${value}'.`,
+    };
+  }
+  return { ok: true, value: value as WeekItemStatus };
+}
+
+/**
+ * Allowed values for `week_items.category`. `""` clears (becomes null).
+ */
+export const WEEK_ITEM_CATEGORIES = [
+  "delivery",
+  "review",
+  "kickoff",
+  "deadline",
+  "approval",
+  "launch",
+] as const;
+export type WeekItemCategory = (typeof WEEK_ITEM_CATEGORIES)[number];
+
+export type WeekItemCategoryValidationResult =
+  | { ok: true; value: WeekItemCategory | null }
+  | { ok: false; error: string };
+
+export function validateWeekItemCategory(
+  value: string,
+): WeekItemCategoryValidationResult {
+  if (value === "") return { ok: true, value: null };
+  if (
+    !WEEK_ITEM_CATEGORIES.includes(value as WeekItemCategory)
+  ) {
+    return {
+      ok: false,
+      error: `category must be one of ${WEEK_ITEM_CATEGORIES.join(", ")} or '' (clear); got '${value}'.`,
+    };
+  }
+  return { ok: true, value: value as WeekItemCategory };
+}
+
+// ── parentProjectId validators ────────────────────────────
+
+/**
+ * Minimal executor shape: just `select`. Compatible with `db` and any `tx`
+ * passed into `db.transaction(...)`.
+ */
+export type ValidatorExecutor = Pick<ReturnType<typeof getRunwayDb>, "select">;
+
+export type ParentProjectIdValidationContext = {
+  /** Project being assigned a parent. */
+  childId: string;
+  /** Child's client_id (no cross-client parenting). */
+  childClientId: string;
+  /** Resolved new parent id, or null to clear the link. */
+  newParentId: string | null;
+};
+
+export type ParentProjectIdValidationResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+/**
+ * Four invariants enforced for any write that sets parent_project_id:
+ *  1. parent must exist (non-null case)
+ *  2. parent.engagement_type === "retainer"
+ *  3. parent.client_id === child.client_id (no cross-client parenting)
+ *  4. no cycle via 10-hop walk (newParentId → parent's parent → ...; reject
+ *     if the chain hits childId)
+ *
+ * Null newParentId (clearing the link) is trivially valid.
+ *
+ * Both the `set_project_parent` MCP tool and the existing
+ * `update_project_field({ field: "parentProjectId" })` write path call this
+ * validator. Validators live here, not in handlers, so every write path
+ * runs the same four checks (no path can bypass).
+ */
+export async function validateParentProjectIdAssignment(
+  executor: ValidatorExecutor,
+  ctx: ParentProjectIdValidationContext,
+): Promise<ParentProjectIdValidationResult> {
+  if (ctx.newParentId === null) return { ok: true };
+
+  const parentRows = await executor
+    .select({
+      id: projects.id,
+      clientId: projects.clientId,
+      engagementType: projects.engagementType,
+      parentProjectId: projects.parentProjectId,
+    })
+    .from(projects)
+    .where(eq(projects.id, ctx.newParentId))
+    .limit(1);
+  const parent = parentRows[0];
+  if (!parent) {
+    return { ok: false, error: `Parent project '${ctx.newParentId}' not found.` };
+  }
+
+  if (parent.engagementType !== "retainer") {
+    return {
+      ok: false,
+      error: `Parent project '${parent.id}' has engagementType='${
+        parent.engagementType ?? "null"
+      }', must be 'retainer'.`,
+    };
+  }
+
+  if (parent.clientId !== ctx.childClientId) {
+    return {
+      ok: false,
+      error: `Parent project belongs to client '${parent.clientId}', child belongs to client '${ctx.childClientId}' — cross-client parenting forbidden.`,
+    };
+  }
+
+  // Cycle check — walk the parent chain up to 10 hops; reject if it ever
+  // hits the child being assigned.
+  let cursorId: string | null = parent.parentProjectId;
+  for (let hop = 0; hop < 10 && cursorId !== null; hop++) {
+    if (cursorId === ctx.childId) {
+      return {
+        ok: false,
+        error: `Cycle detected: assigning parent '${ctx.newParentId}' would create a cycle through '${ctx.childId}'.`,
+      };
+    }
+    const nextRows = await executor
+      .select({ parentProjectId: projects.parentProjectId })
+      .from(projects)
+      .where(eq(projects.id, cursorId))
+      .limit(1);
+    cursorId = nextRows[0]?.parentProjectId ?? null;
+  }
+  return { ok: true };
+}

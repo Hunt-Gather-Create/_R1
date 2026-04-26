@@ -44,6 +44,8 @@ const { mockOps, registeredTools, registeredDescriptions } = vi.hoisted(() => {
     getClientContacts: vi.fn().mockResolvedValue({ client: "Convergix", contacts: ["Daniel"] }),
     updateProjectStatus: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
     updateProjectField: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
+    overrideProjectDate: vi.fn().mockResolvedValue({ ok: true, message: "Overrode" }),
+    setProjectParent: vi.fn().mockResolvedValue({ ok: true, message: "Updated" }),
     deleteProject: vi.fn().mockResolvedValue({ ok: true, message: "Deleted" }),
     addProject: vi.fn().mockResolvedValue({ ok: true, message: "Added" }),
     addUpdate: vi.fn().mockResolvedValue({ ok: true, message: "Logged" }),
@@ -66,7 +68,16 @@ const { mockOps, registeredTools, registeredDescriptions } = vi.hoisted(() => {
   return { mockOps, registeredTools, registeredDescriptions };
 });
 
-vi.mock("@/lib/runway/operations", () => mockOps);
+// Mock the operations barrel: real shared validators come through via
+// `importOriginal()`, then `mockOps` (DB-touching helpers) overlay on top.
+// Inline validator reimplementations would silently drift from the production
+// source — wrapper-side rejection assertions in the tests below would pass
+// for the wrong reason if `validateEngagementType` etc. were redefined here
+// instead of forwarded from `operations-utils`.
+vi.mock("@/lib/runway/operations", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/runway/operations")>();
+  return { ...actual, ...mockOps };
+});
 vi.mock("@/lib/slack/updates-channel", () => ({
   postMutationUpdate: vi.fn().mockResolvedValue(undefined),
 }));
@@ -289,6 +300,120 @@ describe("registerRunwayTools", () => {
     expect(mockOps.addProject).toHaveBeenCalledWith(params);
   });
 
+  it("add_project rejects invalid engagementType at tool boundary", async () => {
+    const result = await registeredTools.get("add_project")!({
+      clientSlug: "convergix",
+      name: "Bad Engagement",
+      engagementType: "retainer-v2",
+      updatedBy: "Jason",
+    });
+    expect(mockOps.addProject).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/engagementType must be/);
+  });
+
+  it("add_project rejects shape-invalid contractStart at tool boundary", async () => {
+    const result = await registeredTools.get("add_project")!({
+      clientSlug: "convergix",
+      name: "Bad Date",
+      contractStart: "2026-13-45",
+      updatedBy: "Jason",
+    });
+    expect(mockOps.addProject).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/contractStart must be a valid ISO/);
+  });
+
+  it("add_project forwards valid v4 metadata to helper", async () => {
+    const params = {
+      clientSlug: "convergix",
+      name: "1H 2027 Convergix Retainer",
+      engagementType: "retainer",
+      contractStart: "2027-02-01",
+      contractEnd: "2027-07-31",
+      owner: "Kathy",
+      updatedBy: "Jason",
+    };
+    await registeredTools.get("add_project")!(params);
+    expect(mockOps.addProject).toHaveBeenCalledWith(params);
+  });
+
+  it("update_week_item rejects invalid status at tool boundary", async () => {
+    const result = await registeredTools.get("update_week_item")!({
+      weekOf: "2026-04-13",
+      weekItemTitle: "CDS Review",
+      field: "status",
+      newValue: "Done",
+      updatedBy: "test",
+    });
+    expect(mockOps.updateWeekItemField).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/status must be one of/);
+  });
+
+  it("update_week_item rejects invalid category at tool boundary", async () => {
+    const result = await registeredTools.get("update_week_item")!({
+      weekOf: "2026-04-13",
+      weekItemTitle: "CDS Review",
+      field: "category",
+      newValue: "meeting",
+      updatedBy: "test",
+    });
+    expect(mockOps.updateWeekItemField).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/category must be one of/);
+  });
+
+  it("update_week_item rejects shape-invalid startDate at tool boundary", async () => {
+    const result = await registeredTools.get("update_week_item")!({
+      weekOf: "2026-04-13",
+      weekItemTitle: "CDS Review",
+      field: "startDate",
+      newValue: "not-a-date",
+      updatedBy: "test",
+    });
+    expect(mockOps.updateWeekItemField).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/startDate must be a valid ISO/);
+  });
+
+  it("update_week_item accepts valid startDate and forwards to helper", async () => {
+    const params = {
+      weekOf: "2026-04-13",
+      weekItemTitle: "CDS Review",
+      field: "startDate",
+      newValue: "2026-04-14",
+      updatedBy: "test",
+    };
+    await registeredTools.get("update_week_item")!(params);
+    expect(mockOps.updateWeekItemField).toHaveBeenCalledWith(params);
+  });
+
+  it("create_week_item rejects shape-invalid startDate at tool boundary", async () => {
+    const result = await registeredTools.get("create_week_item")!({
+      clientSlug: "convergix",
+      title: "Bad",
+      weekOf: "2026-04-13",
+      startDate: "2026-13-45",
+      updatedBy: "test",
+    });
+    expect(mockOps.createWeekItem).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/startDate must be a valid ISO/);
+  });
+
+  it("create_week_item forwards blockedBy to helper", async () => {
+    const params = {
+      clientSlug: "convergix",
+      title: "Blocked Item",
+      weekOf: "2026-04-13",
+      blockedBy: '["wi-1","wi-2"]',
+      updatedBy: "test",
+    };
+    await registeredTools.get("create_week_item")!(params);
+    expect(mockOps.createWeekItem).toHaveBeenCalledWith(params);
+  });
+
   it("add_update calls operation", async () => {
     const params = { clientSlug: "convergix", summary: "Met with Daniel", updatedBy: "Kathy" };
     await registeredTools.get("add_update")!(params);
@@ -465,6 +590,63 @@ describe("registerRunwayTools", () => {
     expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
   });
 
+  it("update_project_field rejects invalid engagementType at tool boundary", async () => {
+    const result = await registeredTools.get("update_project_field")!({
+      clientSlug: "convergix",
+      projectName: "CDS",
+      field: "engagementType",
+      newValue: "retainer-v2",
+      updatedBy: "mcp",
+    });
+    expect(mockOps.updateProjectField).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/engagementType must be/);
+  });
+
+  it("update_project_field rejects shape-invalid contractStart at tool boundary", async () => {
+    const result = await registeredTools.get("update_project_field")!({
+      clientSlug: "convergix",
+      projectName: "CDS",
+      field: "contractStart",
+      newValue: "not-a-date",
+      updatedBy: "mcp",
+    });
+    expect(mockOps.updateProjectField).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/contractStart must be a valid ISO/);
+  });
+
+  it("update_project_field rejects date-invalid contractStart (2026-13-45) at tool boundary", async () => {
+    const result = await registeredTools.get("update_project_field")!({
+      clientSlug: "convergix",
+      projectName: "CDS",
+      field: "contractStart",
+      newValue: "2026-13-45",
+      updatedBy: "mcp",
+    });
+    expect(mockOps.updateProjectField).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/contractStart must be a valid ISO/);
+  });
+
+  it("update_project_field accepts valid engagementType and forwards to helper", async () => {
+    const params = { clientSlug: "convergix", projectName: "CDS", field: "engagementType", newValue: "retainer", updatedBy: "mcp" };
+    await registeredTools.get("update_project_field")!(params);
+    expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
+  });
+
+  it("update_project_field accepts valid contractStart and forwards to helper", async () => {
+    const params = { clientSlug: "convergix", projectName: "CDS", field: "contractStart", newValue: "2026-02-01", updatedBy: "mcp" };
+    await registeredTools.get("update_project_field")!(params);
+    expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
+  });
+
+  it("update_project_field accepts empty string to clear engagementType", async () => {
+    const params = { clientSlug: "convergix", projectName: "CDS", field: "engagementType", newValue: "", updatedBy: "mcp" };
+    await registeredTools.get("update_project_field")!(params);
+    expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
+  });
+
   it("update_project_field surfaces cascadeDetail for dueDate changes", async () => {
     mockOps.updateProjectField.mockResolvedValueOnce({
       ok: true,
@@ -535,7 +717,7 @@ describe("registerRunwayTools", () => {
   });
 
   it("update_week_item calls operation", async () => {
-    const params = { weekOf: "2026-04-06", weekItemTitle: "Review", field: "status", newValue: "done", updatedBy: "mcp" };
+    const params = { weekOf: "2026-04-06", weekItemTitle: "Review", field: "status", newValue: "completed", updatedBy: "mcp" };
     const result = await registeredTools.get("update_week_item")!(params);
     expect(mockOps.updateWeekItemField).toHaveBeenCalledWith(params);
     expect(result).toEqual({ content: [{ type: "text", text: "Updated" }] });
@@ -705,7 +887,7 @@ describe("registerRunwayTools", () => {
   it("update_week_item returns error on failure", async () => {
     mockOps.updateWeekItemField.mockResolvedValueOnce({ ok: false, error: "Week item not found" });
     const result = await registeredTools.get("update_week_item")!({
-      weekOf: "2026-04-06", weekItemTitle: "nope", field: "status", newValue: "done", updatedBy: "mcp",
+      weekOf: "2026-04-06", weekItemTitle: "nope", field: "status", newValue: "completed", updatedBy: "mcp",
     });
     expect(result).toEqual({ content: [{ type: "text", text: "Week item not found" }] });
   });
@@ -827,4 +1009,157 @@ describe("registerRunwayTools", () => {
     const desc = registeredDescriptions.get("update_week_item")!;
     expect(desc).toContain("reverseCascadeDetail");
   });
+
+  // ── override_project_date / set_project_parent / batch_apply ──────────
+
+  it("override_project_date forwards params to helper", async () => {
+    const params = {
+      clientSlug: "convergix",
+      projectName: "CDS",
+      field: "startDate",
+      newValue: "2026-05-01",
+      updatedBy: "tester",
+    };
+    await registeredTools.get("override_project_date")!(params);
+    expect(mockOps.overrideProjectDate).toHaveBeenCalledWith(params);
+  });
+
+  it("override_project_date rejects shape-invalid newValue at tool boundary", async () => {
+    const result = await registeredTools.get("override_project_date")!({
+      clientSlug: "convergix",
+      projectName: "CDS",
+      field: "endDate",
+      newValue: "2026-13-45",
+      updatedBy: "tester",
+    });
+    expect(mockOps.overrideProjectDate).not.toHaveBeenCalled();
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    expect(text).toMatch(/endDate must be a valid ISO/);
+  });
+
+  it("set_project_parent forwards params to helper", async () => {
+    const params = {
+      clientSlug: "convergix",
+      projectName: "CDS",
+      parentProjectName: "Wrapper",
+      updatedBy: "tester",
+    };
+    await registeredTools.get("set_project_parent")!(params);
+    expect(mockOps.setProjectParent).toHaveBeenCalledWith(params);
+  });
+
+  it("batch_apply runs ops sequentially via dispatch table", async () => {
+    mockOps.setBatchId.mockClear();
+    const result = await registeredTools.get("batch_apply")!({
+      batchId: "test-batch-001",
+      updatedBy: "tester",
+      ops: [
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "Lane" } },
+        { tool: "create_week_item", args: { clientSlug: "convergix", title: "Drop 1", weekOf: "2026-04-13" } },
+        { tool: "update_project_status", args: { clientSlug: "convergix", projectName: "CDS", newStatus: "completed" } },
+      ],
+    });
+    // setBatchId called twice: once with batchId, once with null on cleanup
+    expect(mockOps.setBatchId).toHaveBeenCalledWith("test-batch-001");
+    expect(mockOps.setBatchId).toHaveBeenCalledWith(null);
+    expect(mockOps.updateProjectField).toHaveBeenCalled();
+    expect(mockOps.createWeekItem).toHaveBeenCalled();
+    expect(mockOps.updateProjectStatus).toHaveBeenCalled();
+
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.results).toHaveLength(3);
+    expect(parsed.data.results.every((r: { ok: boolean }) => r.ok)).toBe(true);
+  });
+
+  it("batch_apply with haltOnError=true stops after first failed op", async () => {
+    mockOps.updateProjectField
+      .mockResolvedValueOnce({ ok: true, message: "Updated" })
+      .mockResolvedValueOnce({ ok: false, error: "Validator rejected" });
+    const result = await registeredTools.get("batch_apply")!({
+      batchId: "test-batch-halt",
+      updatedBy: "tester",
+      ops: [
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "A" } },
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "B" } },
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "C" } },
+      ],
+      haltOnError: true,
+    });
+    // Only 2 calls — third should not run after halt.
+    expect(mockOps.updateProjectField).toHaveBeenCalledTimes(2);
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.data.results).toHaveLength(2);
+    expect(parsed.data.results[1].ok).toBe(false);
+    expect(parsed.data.results[1].error).toMatch(/Validator rejected/);
+  });
+
+  it("batch_apply with haltOnError=false runs every op and reports mixed results", async () => {
+    mockOps.updateProjectField
+      .mockResolvedValueOnce({ ok: true, message: "Updated" })
+      .mockResolvedValueOnce({ ok: false, error: "Validator rejected" })
+      .mockResolvedValueOnce({ ok: true, message: "Updated" });
+    const result = await registeredTools.get("batch_apply")!({
+      batchId: "test-batch-continue",
+      updatedBy: "tester",
+      ops: [
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "A" } },
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "B" } },
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "C" } },
+      ],
+      haltOnError: false,
+    });
+    expect(mockOps.updateProjectField).toHaveBeenCalledTimes(3);
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.data.results).toHaveLength(3);
+    expect(parsed.data.results[0].ok).toBe(true);
+    expect(parsed.data.results[1].ok).toBe(false);
+    expect(parsed.data.results[2].ok).toBe(true);
+  });
+
+  it("batch_apply unknown tool name records error result without dispatching", async () => {
+    const result = await registeredTools.get("batch_apply")!({
+      batchId: "test-batch-unknown",
+      updatedBy: "tester",
+      ops: [{ tool: "no_such_tool", args: {} }],
+    });
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.data.results[0].error).toMatch(/Unknown tool/);
+  });
+
+  it("batch_apply clears setBatchId in finally even when a handler throws", async () => {
+    mockOps.setBatchId.mockClear();
+    mockOps.updateProjectField.mockRejectedValueOnce(new Error("kaboom"));
+    const result = await registeredTools.get("batch_apply")!({
+      batchId: "test-batch-throw",
+      updatedBy: "tester",
+      ops: [
+        { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "A" } },
+      ],
+    });
+    expect(mockOps.setBatchId).toHaveBeenCalledWith("test-batch-throw");
+    expect(mockOps.setBatchId).toHaveBeenCalledWith(null);
+    const text = (result as { content: [{ text: string }] }).content[0].text;
+    const parsed = JSON.parse(text);
+    expect(parsed.data.results[0].ok).toBe(false);
+    expect(parsed.data.results[0].error).toMatch(/kaboom/);
+  });
+
+  it("batch_apply description excludes recursion (no batch_apply in dispatch table)", () => {
+    const desc = registeredDescriptions.get("batch_apply")!;
+    expect(desc).toMatch(/Recursive batch_apply is not allowed/);
+  });
+
+  // The 4 batch_apply rejection tests covering helper-level validators live
+  // in batch-apply-validators.test.ts — that file uses the real helpers
+  // backed by an in-memory DB (no operations-barrel mocks) so the validator
+  // code path is genuinely exercised end-to-end. A regression that deletes
+  // a validator from operations-utils would break those tests.
 });

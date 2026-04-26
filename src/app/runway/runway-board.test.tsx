@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { RunwayBoard } from "./runway-board";
 import { mergeWeekendDays, groupByWeek } from "./runway-board-utils";
 import { thisWeek, upcoming, accounts, pipeline } from "./runway-board-test-fixtures";
@@ -181,6 +181,44 @@ describe("RunwayBoard", () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-checked", "false");
     expect(mockToggleInFlight).toHaveBeenCalledWith(false);
+  });
+
+  // The TV dashboard runs continuously for days. todayStr was previously
+  // memoized at mount, so the "Today" indicator silently went stale at
+  // midnight. Confirm a re-render after midnight picks up the new day.
+  it("today indicator advances when system clock crosses midnight", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-06T23:59:59"));
+
+    const week: DayItem[] = [
+      {
+        date: "2026-04-06",
+        label: "Mon 4/6",
+        items: [{ title: "Monday Item", account: "Acme", type: "delivery" }],
+      },
+      {
+        date: "2026-04-07",
+        label: "Tue 4/7",
+        items: [{ title: "Tuesday Item", account: "Acme", type: "delivery" }],
+      },
+    ];
+
+    const { rerender } = render(
+      <RunwayBoard {...defaultProps} thisWeek={week} />
+    );
+
+    const todaySectionBefore = screen.getByText("Today").closest("section")!;
+    expect(within(todaySectionBefore).getByText("Monday Item")).toBeInTheDocument();
+    expect(within(todaySectionBefore).queryByText("Tuesday Item")).toBeNull();
+
+    vi.setSystemTime(new Date("2026-04-07T00:00:30"));
+    rerender(<RunwayBoard {...defaultProps} thisWeek={week} />);
+
+    const todaySectionAfter = screen.getByText("Today").closest("section")!;
+    expect(within(todaySectionAfter).getByText("Tuesday Item")).toBeInTheDocument();
+    expect(within(todaySectionAfter).queryByText("Monday Item")).toBeNull();
+
+    vi.useRealTimers();
   });
 });
 

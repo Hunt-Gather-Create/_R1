@@ -48,7 +48,10 @@ function useBoardData(
   upcoming: DayItem[],
   pipeline: PipelineItem[]
 ) {
-  const todayStr = useMemo(() => new Date().toDateString(), []);
+  // Recompute every render so the TV dashboard rolls over at midnight.
+  // Cost is one Date() + toDateString() per render — bounded by the 60s
+  // refresh interval upstream.
+  const todayStr = new Date().toDateString();
 
   const pipelineTotal = useMemo(
     () =>

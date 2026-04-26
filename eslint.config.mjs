@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     "public/nutrient-viewer/**",
     // docs/tmp is a scratch directory for investigation scripts and plan docs.
     "docs/tmp/**",
+    // scripts/worktree-scratch is a per-worktree local scratch dir (not for the repo).
+    "scripts/worktree-scratch/**",
   ]),
 ]);
 

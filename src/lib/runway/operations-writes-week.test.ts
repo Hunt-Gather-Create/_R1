@@ -45,69 +45,64 @@ const mockFindWeekItemByFuzzyTitle = vi.fn();
 const mockGetWeekItemsForWeek = vi.fn();
 const mockCheckIdempotency = vi.fn();
 
-vi.mock("./operations-utils", () => ({
-  WEEK_ITEM_FIELDS: [
-    "title", "status", "date", "dayOfWeek", "weekOf", "owner", "resources", "notes", "category",
-    "startDate", "endDate", "blockedBy",
-  ],
-  WEEK_ITEM_FIELD_TO_COLUMN: {
-    title: "title", status: "status", date: "date", dayOfWeek: "dayOfWeek", weekOf: "weekOf",
-    owner: "owner", resources: "resources", notes: "notes", category: "category",
-    startDate: "startDate", endDate: "endDate", blockedBy: "blockedBy",
-  },
-  generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
-  generateId: () => "mock-id-12345678901234",
-  getClientNameById: vi.fn().mockImplementation(async (clientId: string | null) => {
-    if (clientId === "c1") return "Convergix";
-    return undefined;
-  }),
-  getClientOrFail: async (slug: string) => {
-    const client = await mockGetClientBySlug(slug);
-    if (!client) return { ok: false, error: `Client '${slug}' not found.` };
-    return { ok: true, client };
-  },
-  findProjectByFuzzyName: (...args: unknown[]) =>
-    mockFindProjectByFuzzyName(...args),
-  resolveWeekItemOrFail: async (weekOf: string, title: string) => {
-    const result = await mockFindWeekItemByFuzzyTitle(weekOf, title);
-    if (!result) {
-      const items = await mockGetWeekItemsForWeek(weekOf);
-      return {
-        ok: false,
-        error: `Week item '${title}' not found for week of ${weekOf}.`,
-        available: items?.map((i: { title: string }) => i.title),
-      };
-    }
-    if (result === "__AMBIGUOUS__") {
-      return {
-        ok: false,
-        error: `Multiple week items match '${title}': CDS Review, CDS Delivery. Which one?`,
-        available: ["CDS Review", "CDS Delivery"],
-      };
-    }
-    return { ok: true, item: result };
-  },
-  checkDuplicate: async (idemKey: string, dupResult: unknown) => {
-    if (await mockCheckIdempotency(idemKey)) return dupResult;
-    return null;
-  },
-  insertAuditRecord: async (params: Record<string, unknown>) => {
-    const id = (params.id as string | undefined) ?? "mock-audit-id";
-    mockInsertValues({ ...params, id });
-    return id;
-  },
-  getPreviousValue: (entity: Record<string, unknown>, columnKey: string) => String(entity[columnKey] ?? ""),
-  validateAndResolveField: (field: string, allowed: readonly string[], fieldToColumn: Record<string, string>) => {
-    if (!allowed.includes(field)) {
-      return { ok: false, error: `Invalid field '${field}'. Allowed fields: ${allowed.join(", ")}` };
-    }
-    return { ok: true, typedField: field, columnKey: fieldToColumn[field] };
-  },
-  // v4 (Chunk 5): identity passthrough — preserves existing assertions that
-  // assume raw `newValue` flows straight to the db. Real normalization is
-  // asserted in operations-utils.test.ts.
-  normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
-}));
+// Mock `./operations-utils` while letting the real shared validators
+// (`validateIsoDateShape`, `validateWeekItemStatus`, `validateWeekItemCategory`)
+// and constants (`WEEK_ITEM_FIELDS`, `WEEK_ITEM_STATUSES`, …) come through via
+// `importOriginal`. Inline reimplementations would silently drift from the
+// production source; the helper's rejection paths must exercise the real
+// shared validators or this test is theatre.
+vi.mock("./operations-utils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./operations-utils")>();
+  return {
+    ...actual,
+    generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
+    generateId: () => "mock-id-12345678901234",
+    getClientNameById: vi.fn().mockImplementation(async (clientId: string | null) => {
+      if (clientId === "c1") return "Convergix";
+      return undefined;
+    }),
+    getClientOrFail: async (slug: string) => {
+      const client = await mockGetClientBySlug(slug);
+      if (!client) return { ok: false, error: `Client '${slug}' not found.` };
+      return { ok: true, client };
+    },
+    findProjectByFuzzyName: (...args: unknown[]) =>
+      mockFindProjectByFuzzyName(...args),
+    resolveWeekItemOrFail: async (weekOf: string, title: string) => {
+      const result = await mockFindWeekItemByFuzzyTitle(weekOf, title);
+      if (!result) {
+        const items = await mockGetWeekItemsForWeek(weekOf);
+        return {
+          ok: false,
+          error: `Week item '${title}' not found for week of ${weekOf}.`,
+          available: items?.map((i: { title: string }) => i.title),
+        };
+      }
+      if (result === "__AMBIGUOUS__") {
+        return {
+          ok: false,
+          error: `Multiple week items match '${title}': CDS Review, CDS Delivery. Which one?`,
+          available: ["CDS Review", "CDS Delivery"],
+        };
+      }
+      return { ok: true, item: result };
+    },
+    checkDuplicate: async (idemKey: string, dupResult: unknown) => {
+      if (await mockCheckIdempotency(idemKey)) return dupResult;
+      return null;
+    },
+    insertAuditRecord: async (params: Record<string, unknown>) => {
+      const id = (params.id as string | undefined) ?? "mock-audit-id";
+      mockInsertValues({ ...params, id });
+      return id;
+    },
+    getPreviousValue: (entity: Record<string, unknown>, columnKey: string) => String(entity[columnKey] ?? ""),
+    // v4 (Chunk 5): identity passthrough — preserves existing assertions that
+    // assume raw `newValue` flows straight to the db. Real normalization is
+    // asserted in operations-utils.test.ts.
+    normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
+  };
+});
 
 const client = { id: "c1", name: "Convergix", slug: "convergix" };
 
@@ -671,6 +666,250 @@ describe("updateWeekItemField", () => {
       if (!result.ok) return;
       expect(result.data?.reverseCascadeDetail?.previousDueDate).toBeNull();
       expect(result.data?.reverseCascadeDetail?.newDueDate).toBe("2026-04-28");
+    });
+  });
+
+  // Helper-level value validation — batch_apply bypasses the MCP wrapper, so
+  // these checks have to live in the helper. Mirrors the
+  // parent-project-id-validators.test.ts pattern.
+  describe("helper-level value validation", () => {
+    it("rejects invalid status before any DB write", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "status",
+        newValue: "Done",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/status must be one of/);
+        expect(result.error).toContain("Done");
+      }
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+      expect(mockInsertValues).not.toHaveBeenCalled();
+    });
+
+    it("rejects invalid category before any DB write", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "category",
+        newValue: "meeting",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/category must be one of/);
+        expect(result.error).toContain("meeting");
+      }
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("rejects shape-invalid date before any DB write", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "date",
+        newValue: "not-a-date",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/date must be a valid ISO/);
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("rejects date-invalid '2026-13-45' before any DB write", async () => {
+      // Same load-bearing case as the project-side test: lex compare against
+      // adjacent dates would silently accept this without the validator.
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "startDate",
+        newValue: "2026-13-45",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/startDate must be a valid ISO/);
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("accepts valid status and persists it", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "status",
+        newValue: "blocked",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "blocked" })
+      );
+    });
+  });
+
+  describe("createWeekItem helper-level value validation", () => {
+    it("rejects invalid status at create time", async () => {
+      const { createWeekItem } = await import("./operations-writes-week");
+      const result = await createWeekItem({
+        weekOf: "2026-04-06",
+        title: "Bogus Status",
+        status: "Done",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/status must be one of/);
+      expect(mockInsertValues).not.toHaveBeenCalled();
+    });
+
+    it("rejects invalid category at create time", async () => {
+      const { createWeekItem } = await import("./operations-writes-week");
+      const result = await createWeekItem({
+        weekOf: "2026-04-06",
+        title: "Bogus Category",
+        category: "meeting",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/category must be one of/);
+      expect(mockInsertValues).not.toHaveBeenCalled();
+    });
+
+    it("rejects shape-invalid startDate at create time", async () => {
+      const { createWeekItem } = await import("./operations-writes-week");
+      const result = await createWeekItem({
+        weekOf: "2026-04-06",
+        title: "Bogus Date",
+        startDate: "garbage",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/startDate must be a valid ISO/);
+      expect(mockInsertValues).not.toHaveBeenCalled();
+    });
+  });
+
+  // Null newValue support: retainer/v4 cleanup migrations need to clear L2
+  // status (NULL = scheduled) without falling back to raw drizzle. The helper
+  // accepts newValue: null as a first-class write.
+  describe("null newValue writes", () => {
+    const blockedItem = {
+      ...weekItem,
+      status: "blocked",
+    };
+
+    it("writes SQL NULL when newValue is null", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(blockedItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "status",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ status: null })
+      );
+    });
+
+    it("audit row newValue is null and summary uses (null) marker", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(blockedItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "status",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      const insertCall = mockInsertValues.mock.calls[0][0];
+      expect(insertCall.newValue).toBe(null);
+      expect(insertCall.summary).toContain('"(null)"');
+    });
+
+    it("idempotency key uses (null) marker for repeat collapsing", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(blockedItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "status",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      const insertCall = mockInsertValues.mock.calls[0][0];
+      expect(insertCall.idempotencyKey).toContain("|(null)|");
+    });
+
+    it("duplicate null write returns success without re-writing", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(blockedItem);
+      mockCheckIdempotency.mockResolvedValue(true);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "status",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.message).toContain("duplicate");
+        expect(result.data?.newValue).toBe(null);
+      }
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("clearing resources with null skips normalizer", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "resources",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ resources: null })
+      );
     });
   });
 });

@@ -28,6 +28,8 @@ import {
   addProject,
   addUpdate,
   updateProjectField,
+  overrideProjectDate,
+  setProjectParent,
   createWeekItem,
   updateWeekItemField,
   undoLastChange,
@@ -41,6 +43,10 @@ import {
   updateTeamMember,
   setBatchId,
   getBatchId,
+  validateEngagementType,
+  validateIsoDateShape,
+  validateWeekItemStatus,
+  validateWeekItemCategory,
 } from "@/lib/runway/operations";
 import { getRetainerTeam } from "@/lib/runway/operations-reads-retainers";
 import { postMutationUpdate } from "@/lib/slack/updates-channel";
@@ -80,6 +86,16 @@ function mutationResult(result: {
   const payload = { message: result.message, data: result.data };
   return textResult(payload);
 }
+
+// Tool-boundary value validators are imported from
+// @/lib/runway/operations (which re-exports from operations-utils):
+//   - validateEngagementType — enum + clear sentinel
+//   - validateIsoDateShape   — strict ISO YYYY-MM-DD + clear sentinel
+//   - validateWeekItemStatus / validateWeekItemCategory — week-item enums
+//
+// The same validators run inside each helper, so a `batch_apply` op that
+// bypasses the wrapper still gets full enforcement. One source of truth per
+// concern — see operations-utils.ts §"Shared value validators".
 
 export function registerRunwayTools(server: McpServer) {
   // ── Read tools ──────────────────────────────────────────
@@ -393,7 +409,17 @@ export function registerRunwayTools(server: McpServer) {
     {
       clientSlug: z.string().describe("Client slug (e.g. 'convergix')"),
       projectName: z.string().describe("Project name (fuzzy match)"),
-      newStatus: z.string().describe("New status value"),
+      newStatus: z
+        .enum([
+          "in-production",
+          "awaiting-client",
+          "not-started",
+          "blocked",
+          "on-hold",
+          "completed",
+          "canceled",
+        ])
+        .describe("New status value"),
       updatedBy: z.string().default("mcp").describe("Person making the update"),
       notes: z.string().optional().describe("Additional context"),
     },
@@ -414,7 +440,7 @@ export function registerRunwayTools(server: McpServer) {
 
   server.tool(
     "update_project_field",
-    "Update a specific field on a project. On success returns { message, data } where data includes { clientName, projectName, field, previousValue, newValue, cascadedItems, cascadeDetail ([{ itemId, itemTitle, field: 'date', previousValue, newValue, auditId }] — only populated when field='dueDate'), auditId }. Setting `parentProjectId` attaches a deliverable L1 to a retainer wrapper; pass an empty string to clear it (PR #88 Chunk F).",
+    "Update a specific field on a project. On success returns { message, data } where data includes { clientName, projectName, field, previousValue, newValue, cascadedItems, cascadeDetail ([{ itemId, itemTitle, field: 'date', previousValue, newValue, auditId }] — only populated when field='dueDate'), auditId }. Setting `parentProjectId` attaches a deliverable L1 to a retainer wrapper; pass an empty string to clear it. `engagementType` accepts 'retainer' | 'project' | '' (clear). `contractStart` / `contractEnd` accept ISO YYYY-MM-DD or '' (clear); helper enforces start < end when both are set.",
     {
       clientSlug: z.string().describe("Client slug"),
       projectName: z.string().describe("Project name (fuzzy match)"),
@@ -427,12 +453,31 @@ export function registerRunwayTools(server: McpServer) {
           "waitingOn",
           "notes",
           "parentProjectId",
+          "engagementType",
+          "contractStart",
+          "contractEnd",
         ])
         .describe("Field to update"),
-      newValue: z.string().describe("New value (pass empty string to clear parentProjectId)"),
+      newValue: z
+        .string()
+        .describe(
+          "New value. Pass empty string to clear parentProjectId / engagementType / contractStart / contractEnd."
+        ),
       updatedBy: z.string().default("mcp").describe("Person making the update"),
     },
     async (params) => {
+      // Tool-boundary value validation — defense in depth ahead of dispatch.
+      // Helper revalidates with the same shared validators so batch_apply
+      // (which bypasses this wrapper) is also covered.
+      if (params.field === "engagementType") {
+        const v = validateEngagementType(params.newValue);
+        if (!v.ok) return mutationResult({ ok: false, error: v.error });
+      }
+      if (params.field === "contractStart" || params.field === "contractEnd") {
+        const v = validateIsoDateShape(params.newValue, params.field);
+        if (!v.ok) return mutationResult({ ok: false, error: v.error });
+      }
+
       const result = await updateProjectField(params);
       if (result.ok && !getBatchId()) {
         await postMutationUpdate({
@@ -464,15 +509,39 @@ export function registerRunwayTools(server: McpServer) {
     return operationResultMessage(result);
   });
 
-  server.tool("add_project", "Create a new project under a client", {
+  server.tool("add_project", "Create a new project under a client. Optional v4 metadata: resources, waitingOn, engagementType ('retainer' | 'project'), contractStart / contractEnd (ISO; helper enforces start < end), startDate / endDate (ISO), parentProjectId (must be a retainer in the same client; cycle-checked).", {
     clientSlug: z.string().describe("Client slug"),
     name: z.string().describe("Project name"),
     status: z.string().optional().default("not-started"),
     category: z.string().optional().default("active"),
     owner: z.string().optional(),
+    resources: z.string().optional(),
+    waitingOn: z.string().optional(),
     notes: z.string().optional(),
+    engagementType: z.string().optional().describe("'retainer' | 'project'"),
+    contractStart: z.string().optional().describe("ISO YYYY-MM-DD"),
+    contractEnd: z.string().optional().describe("ISO YYYY-MM-DD"),
+    startDate: z.string().optional().describe("ISO YYYY-MM-DD"),
+    endDate: z.string().optional().describe("ISO YYYY-MM-DD"),
+    parentProjectId: z.string().optional().describe("Retainer wrapper id (same client, no cycle)"),
     updatedBy: z.string().default("mcp").describe("Person adding the project"),
   }, async (params) => {
+    // Tool-boundary validation — defense in depth. Helper revalidates with
+    // the same shared validators so batch_apply (which bypasses this
+    // wrapper) is also covered. Cross-field invariant + parentProjectId
+    // validators still run inside the helper transaction.
+    if (params.engagementType !== undefined) {
+      const v = validateEngagementType(params.engagementType);
+      if (!v.ok) return operationResultMessage({ ok: false, error: v.error });
+    }
+    for (const field of ["contractStart", "contractEnd", "startDate", "endDate"] as const) {
+      const value = params[field];
+      if (value !== undefined) {
+        const v = validateIsoDateShape(value, field);
+        if (!v.ok) return operationResultMessage({ ok: false, error: v.error });
+      }
+    }
+
     const result = await addProject(params);
     if (!getBatchId()) {
       await postMutationUpdate({
@@ -487,7 +556,7 @@ export function registerRunwayTools(server: McpServer) {
 
   // ── Mutation tools — week items ─────────────────────────
 
-  server.tool("create_week_item", "Add a new item to the weekly calendar", {
+  server.tool("create_week_item", "Add a new item to the weekly calendar. Multi-day spans use startDate + endDate; single-day items can use either `date` or `startDate`. blockedBy is a JSON array of week_item ids this item is blocked by.", {
     clientSlug: z.string().optional().describe("Client slug (if related to a client)"),
     projectName: z.string().optional().describe("Project name (fuzzy match)"),
     weekOf: z.string().optional().describe("ISO Monday date (auto-calculated from date if omitted)"),
@@ -499,8 +568,20 @@ export function registerRunwayTools(server: McpServer) {
     owner: z.string().optional(),
     resources: z.string().optional(),
     notes: z.string().optional(),
+    startDate: z.string().optional().describe("ISO YYYY-MM-DD; takes precedence over `date` for v4 spans"),
+    endDate: z.string().optional().describe("ISO YYYY-MM-DD; multi-day end"),
+    blockedBy: z.string().optional().describe("JSON array of week_item ids this item is blocked by"),
     updatedBy: z.string().default("mcp").describe("Person making the update"),
   }, async (params) => {
+    // Tool-boundary date validation — defense in depth. Helper revalidates
+    // with the same shared validators so batch_apply is also covered.
+    for (const field of ["date", "startDate", "endDate"] as const) {
+      const value = params[field];
+      if (value !== undefined) {
+        const v = validateIsoDateShape(value, field);
+        if (!v.ok) return operationResultMessage({ ok: false, error: v.error });
+      }
+    }
     const result = await createWeekItem(params);
     if (result.ok && !getBatchId() && result.data?.clientName) {
       await postMutationUpdate({
@@ -515,15 +596,49 @@ export function registerRunwayTools(server: McpServer) {
 
   server.tool(
     "update_week_item",
-    "Update a field on an existing week item. On success returns { message, data } where data includes { weekItemTitle, field, previousValue, newValue, clientName, reverseCascaded (boolean — legacy), reverseCascadeDetail ({ projectId, projectName, field: 'dueDate', previousDueDate, newDueDate, auditId } | null) for deadline-category date changes that back-propagate to the parent project, auditId }.",
+    "Update a field on an existing week item. On success returns { message, data } where data includes { weekItemTitle, field, previousValue, newValue, clientName, reverseCascaded (boolean — legacy), reverseCascadeDetail ({ projectId, projectName, field: 'dueDate', previousDueDate, newDueDate, auditId } | null) for deadline-category date changes that back-propagate to the parent project, auditId }. Status enum: scheduled | in-progress | blocked | at-risk | completed | canceled (or empty string for null/scheduled). Category enum: delivery | review | kickoff | deadline | approval | launch.",
     {
       weekOf: z.string().describe("ISO Monday date"),
       weekItemTitle: z.string().describe("Week item title (fuzzy match)"),
-      field: z.enum(["title", "status", "date", "dayOfWeek", "owner", "resources", "notes", "category"]).describe("Field to update"),
-      newValue: z.string().describe("New value"),
+      field: z
+        .enum([
+          "title",
+          "status",
+          "date",
+          "dayOfWeek",
+          "owner",
+          "resources",
+          "notes",
+          "category",
+          "startDate",
+          "endDate",
+          "blockedBy",
+        ])
+        .describe("Field to update"),
+      newValue: z.string().describe("New value (empty string clears null-able fields)"),
       updatedBy: z.string().default("mcp").describe("Person making the update"),
     },
     async (params) => {
+      // Tool-boundary value validation — defense in depth ahead of dispatch.
+      // Helper revalidates with the same shared validators so batch_apply
+      // (which bypasses this wrapper) is also covered.
+      if (params.field === "status") {
+        const v = validateWeekItemStatus(params.newValue);
+        if (!v.ok) return mutationResult({ ok: false, error: v.error });
+      }
+      if (params.field === "category") {
+        const v = validateWeekItemCategory(params.newValue);
+        if (!v.ok) return mutationResult({ ok: false, error: v.error });
+      }
+      if (
+        params.field === "date" ||
+        params.field === "startDate" ||
+        params.field === "endDate"
+      ) {
+        const v = validateIsoDateShape(params.newValue, params.field);
+        if (!v.ok) return mutationResult({ ok: false, error: v.error });
+      }
+
       const result = await updateWeekItemField(params);
       if (!getBatchId()) {
         await postMutationUpdate({
@@ -711,4 +826,190 @@ export function registerRunwayTools(server: McpServer) {
     setBatchId(batchId);
     return textMessage(batchId ? `Batch mode enabled: ${batchId}` : "Batch mode disabled");
   });
+
+  // ── Date override (raw drizzle past PROJECT_FIELDS whitelist) ──────────
+
+  server.tool(
+    "override_project_date",
+    "Force-write project.start_date or project.end_date past the PROJECT_FIELDS whitelist. Audit row uses update_type='date-override' with both old and new values; idempotency key includes oldValue so revert+retry doesn't poison the key. On retainer wrappers (engagementType='retainer' + EXISTS L1 children), bypassGuard=true is required or the call rejects.",
+    {
+      clientSlug: z.string().describe("Client slug"),
+      projectName: z.string().describe("Project name (fuzzy match)"),
+      field: z.enum(["startDate", "endDate"]).describe("Which derived date column to override"),
+      newValue: z
+        .string()
+        .nullable()
+        .describe("ISO YYYY-MM-DD or null (clears)"),
+      updatedBy: z.string().default("mcp").describe("Person making the override"),
+      bypassGuard: z
+        .boolean()
+        .optional()
+        .describe("Required true to override on a retainer wrapper L1"),
+    },
+    async (params) => {
+      // Tool-boundary date validation — helper revalidates with the same
+      // shared validator so batch_apply is also covered.
+      if (params.newValue !== null) {
+        const v = validateIsoDateShape(params.newValue, params.field);
+        if (!v.ok) return mutationResult({ ok: false, error: v.error });
+      }
+      const result = await overrideProjectDate(params);
+      if (result.ok && !getBatchId()) {
+        await postMutationUpdate({
+          result,
+          fallbackClientName: params.clientSlug,
+          projectName: result.data?.projectName as string,
+          updateText: `${params.field} override`,
+          updatedBy: params.updatedBy,
+        });
+      }
+      return mutationResult(result);
+    },
+  );
+
+  // ── Set project parent (resolves by name + reuses shared validator) ────
+
+  server.tool(
+    "set_project_parent",
+    "Attach an L1 project to a retainer wrapper, or clear the link. Resolves the parent by name within the same client and routes through update_project_field, which calls validateParentProjectIdAssignment (parent exists, parent is retainer, same client_id, no cycle).",
+    {
+      clientSlug: z.string().describe("Client slug"),
+      projectName: z.string().describe("Child project name (fuzzy match)"),
+      parentProjectName: z
+        .string()
+        .nullable()
+        .describe("Parent (wrapper) project name in the same client, or null to clear"),
+      updatedBy: z.string().default("mcp").describe("Person making the change"),
+    },
+    async (params) => {
+      const result = await setProjectParent(params);
+      if (result.ok && !getBatchId()) {
+        await postMutationUpdate({
+          result,
+          fallbackClientName: params.clientSlug,
+          projectName: result.data?.projectName as string,
+          updateText:
+            params.parentProjectName === null
+              ? "Cleared parentProjectId"
+              : `Set parentProjectId -> ${params.parentProjectName}`,
+          updatedBy: params.updatedBy,
+        });
+      }
+      return mutationResult(result);
+    },
+  );
+
+  // ── Batch apply (dispatch table, sequential) ──────────────────────────
+
+  // Dispatch table: tool name → underlying helper. Calls go through helpers,
+  // so semantic invariants (parentProjectId validators, contract-date
+  // invariant, recompute guard) all run. setBatchId tags audit rows; Slack
+  // updates are suppressed for ops in this batch because helpers do not
+  // post (only the MCP wrapper does, and we bypass it here).
+  type BatchOpHandler = (args: Record<string, unknown>) => Promise<{
+    ok: boolean;
+    message?: string;
+    error?: string;
+    data?: unknown;
+  }>;
+  const BATCH_DISPATCH: Record<string, BatchOpHandler> = {
+    update_project_field: (args) =>
+      updateProjectField(args as unknown as Parameters<typeof updateProjectField>[0]),
+    update_project_status: (args) =>
+      updateProjectStatus(args as unknown as Parameters<typeof updateProjectStatus>[0]),
+    add_project: (args) => addProject(args as unknown as Parameters<typeof addProject>[0]),
+    delete_project: (args) =>
+      deleteProject(args as unknown as Parameters<typeof deleteProject>[0]),
+    create_week_item: (args) =>
+      createWeekItem(args as unknown as Parameters<typeof createWeekItem>[0]),
+    update_week_item: (args) =>
+      updateWeekItemField(args as unknown as Parameters<typeof updateWeekItemField>[0]),
+    delete_week_item: (args) =>
+      deleteWeekItem(args as unknown as Parameters<typeof deleteWeekItem>[0]),
+    override_project_date: (args) =>
+      overrideProjectDate(args as unknown as Parameters<typeof overrideProjectDate>[0]),
+    set_project_parent: (args) =>
+      setProjectParent(args as unknown as Parameters<typeof setProjectParent>[0]),
+  };
+
+  server.tool(
+    "batch_apply",
+    "Apply a sequence of mutation tools under a single batch_id. Audit rows are tagged with the batchId; Slack updates are suppressed for the batch. Ops execute sequentially to preserve audit ordering. Per-op MutationResponses are captured into results[]. haltOnError defaults true (abort on first failure); pass false to run every op regardless of failures. Recursive batch_apply is not allowed.",
+    {
+      batchId: z.string().describe("Unique batch identifier (e.g. 'wrapper-rebalance-2026-04-25')"),
+      updatedBy: z.string().describe("Default updatedBy applied to every op (per-op args.updatedBy overrides)"),
+      ops: z
+        .array(
+          z.object({
+            tool: z.string().describe("Tool name from BATCH_DISPATCH (excludes batch_apply)"),
+            args: z
+              .record(z.string(), z.unknown())
+              .describe("Arguments object for the tool"),
+          }),
+        )
+        .describe("Sequence of operations"),
+      haltOnError: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe("Abort on first failure (default true)"),
+    },
+    async ({ batchId, updatedBy, ops, haltOnError }) => {
+      const results: Array<{
+        tool: string;
+        ok: boolean;
+        message?: string;
+        error?: string;
+        data?: unknown;
+      }> = [];
+      setBatchId(batchId);
+      try {
+        for (const op of ops) {
+          const handler = BATCH_DISPATCH[op.tool];
+          if (!handler) {
+            results.push({
+              tool: op.tool,
+              ok: false,
+              error: `Unknown tool '${op.tool}' in batch dispatch.`,
+            });
+            if (haltOnError) break;
+            continue;
+          }
+          const mergedArgs = { updatedBy, ...op.args };
+          let r;
+          try {
+            r = await handler(mergedArgs);
+          } catch (err) {
+            results.push({
+              tool: op.tool,
+              ok: false,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            if (haltOnError) break;
+            continue;
+          }
+          results.push({
+            tool: op.tool,
+            ok: r.ok,
+            message: r.message,
+            error: r.error,
+            data: r.data,
+          });
+          if (!r.ok && haltOnError) break;
+        }
+      } finally {
+        setBatchId(null);
+      }
+      const allOk = results.length > 0 && results.every((r) => r.ok);
+      const failureCount = results.filter((r) => !r.ok).length;
+      const payload = {
+        ok: allOk,
+        message: allOk
+          ? `Batch '${batchId}' applied ${results.length} ops successfully.`
+          : `Batch '${batchId}' completed with ${failureCount} failure(s) across ${results.length} op(s).`,
+        data: { results },
+      };
+      return textResult(payload);
+    },
+  );
 }

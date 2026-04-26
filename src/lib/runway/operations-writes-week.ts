@@ -22,6 +22,9 @@ import {
   validateAndResolveField,
   getPreviousValue,
   normalizeResourcesString,
+  validateIsoDateShape,
+  validateWeekItemStatus,
+  validateWeekItemCategory,
 } from "./operations-utils";
 import type {
   MutationResponse,
@@ -81,6 +84,30 @@ export async function recomputeProjectDatesWith(
   executor: RecomputeExecutor,
   projectId: string
 ): Promise<{ startDate: string | null; endDate: string | null }> {
+  // Retainer-wrapper guard: a retainer L1 with at least one L1 child pointing
+  // at it acts as a SOW-window wrapper. Its start_date / end_date are pinned
+  // to the contract dates the operator set, NOT recomputed from L2 widths.
+  // Children L1s under it still recompute normally because they're visited
+  // with their own projectId by L2 writes on those children.
+  const projectRows = await executor
+    .select({
+      engagementType: projects.engagementType,
+      startDate: projects.startDate,
+      endDate: projects.endDate,
+    })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  const project = projectRows[0];
+  if (project?.engagementType === "retainer") {
+    const childProjects = await executor
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.parentProjectId, projectId));
+    if (childProjects.length > 0) {
+      return { startDate: project.startDate, endDate: project.endDate };
+    }
+  }
+
   const children = await executor
     .select({
       startDate: weekItems.startDate,
@@ -140,6 +167,12 @@ export interface CreateWeekItemParams {
   owner?: string;
   resources?: string;
   notes?: string;
+  /** v4 explicit start date (ISO YYYY-MM-DD); falls back to `date` when omitted. */
+  startDate?: string;
+  /** v4 explicit end date (ISO YYYY-MM-DD) for multi-day spans. */
+  endDate?: string;
+  /** JSON-serialized array of week_item ids this item is blocked by, or null. */
+  blockedBy?: string;
   updatedBy: string;
 }
 
@@ -158,8 +191,34 @@ export async function createWeekItem(
     owner,
     resources,
     notes,
+    startDate,
+    endDate,
+    blockedBy,
     updatedBy,
   } = params;
+
+  // Helper-level value validation. batch_apply routes through here directly
+  // (bypassing the MCP wrapper), so these checks are the only enforcement
+  // point for batched ops. Reuses the shared validators hoisted to
+  // operations-utils so MCP wrapper + helper stay in lockstep.
+  if (status !== undefined) {
+    const v = validateWeekItemStatus(status);
+    if (!v.ok) return { ok: false, error: v.error };
+  }
+  if (category !== undefined) {
+    const v = validateWeekItemCategory(category);
+    if (!v.ok) return { ok: false, error: v.error };
+  }
+  for (const [label, value] of [
+    ["date", date],
+    ["startDate", startDate],
+    ["endDate", endDate],
+  ] as const) {
+    if (value !== undefined) {
+      const v = validateIsoDateShape(value, label);
+      if (!v.ok) return { ok: false, error: v.error };
+    }
+  }
 
   // Auto-calculate weekOf from date if not provided
   const weekOf = rawWeekOf ?? (date ? getMonday(date) : undefined);
@@ -228,8 +287,11 @@ export async function createWeekItem(
       weekOf,
       dayOfWeek: dayOfWeek ?? null,
       date: date ?? null,
-      // v4: mirror legacy `date` into `start_date` on create so derivation sees it.
-      startDate: date ?? null,
+      // v4: explicit startDate / endDate take precedence; otherwise mirror
+      // legacy `date` into `start_date` on create so derivation sees it.
+      startDate: startDate ?? date ?? null,
+      endDate: endDate ?? null,
+      blockedBy: blockedBy ?? null,
       title,
       status: status ?? null,
       category: category ?? null,
@@ -265,7 +327,13 @@ export interface UpdateWeekItemFieldParams {
   weekOf: string;
   weekItemTitle: string;
   field: string;
-  newValue: string;
+  /**
+   * New field value. `null` is a first-class write — stored as SQL NULL,
+   * audit-logged with `newValue = "(null)"` and an idempotency key that
+   * also uses `"(null)"` so repeat null writes collapse. v4 convention
+   * treats NULL as a canonical state (e.g., L2 status NULL = scheduled).
+   */
+  newValue: string | null;
   updatedBy: string;
 }
 
@@ -287,15 +355,42 @@ export async function updateWeekItemField(
 
   const previousValue = getPreviousValue(item, columnKey);
 
-  // v4 (Chunk 5): normalize resources on write so storage stays canonical.
-  const effectiveNewValue =
-    typedField === "resources" ? normalizeResourcesString(newValue) : newValue;
+  // Helper-level value validation. batch_apply routes through here directly
+  // (bypassing the MCP wrapper), so these checks are the only enforcement
+  // point for batched ops. Reuses the shared validators hoisted to
+  // operations-utils so MCP wrapper + helper stay in lockstep. `null` skips
+  // (explicit clear write — handled by the persistence layer).
+  if (typedField === "status" && newValue !== null) {
+    const v = validateWeekItemStatus(newValue);
+    if (!v.ok) return { ok: false, error: v.error };
+  }
+  if (typedField === "category" && newValue !== null) {
+    const v = validateWeekItemCategory(newValue);
+    if (!v.ok) return { ok: false, error: v.error };
+  }
+  if (
+    (typedField === "date" || typedField === "startDate" || typedField === "endDate") &&
+    newValue !== null
+  ) {
+    const v = validateIsoDateShape(newValue, typedField);
+    if (!v.ok) return { ok: false, error: v.error };
+  }
 
+  // v4 (Chunk 5): normalize resources on write so storage stays canonical.
+  // Null short-circuits the normalizer so explicit null clears pass through.
+  const effectiveNewValue: string | null =
+    typedField === "resources" && newValue !== null
+      ? normalizeResourcesString(newValue)
+      : newValue;
+
+  // Stable idempotency key for null writes — mirrors the "(null)" marker
+  // used in audit rows so repeat applies collapse.
+  const idemNewValue = effectiveNewValue ?? "(null)";
   const idemKey = generateIdempotencyKey(
     "week-field-change",
     item.id,
     field,
-    effectiveNewValue,
+    idemNewValue,
     updatedBy
   );
 
@@ -376,6 +471,10 @@ export async function updateWeekItemField(
     }));
   }
 
+  // Surface null as the literal "(null)" marker in the human-readable summary
+  // so null writes render consistently.
+  const summaryNewValue = effectiveNewValue ?? "(null)";
+
   const auditId = await insertAuditRecord({
     idempotencyKey: idemKey,
     clientId: item.clientId,
@@ -383,7 +482,7 @@ export async function updateWeekItemField(
     updateType: "week-field-change",
     previousValue,
     newValue: effectiveNewValue,
-    summary: `Week item '${item.title}': ${field} changed from "${previousValue}" to "${effectiveNewValue}"`,
+    summary: `Week item '${item.title}': ${field} changed from "${previousValue}" to "${summaryNewValue}"`,
     metadata: JSON.stringify({ field }),
   });
 

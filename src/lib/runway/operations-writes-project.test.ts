@@ -24,47 +24,54 @@ const mockGetProjectsForClient = vi.fn();
 const mockCheckIdempotency = vi.fn();
 
 let _idCounter = 0;
-vi.mock("./operations-utils", () => ({
-  PROJECT_FIELDS: ["name", "dueDate", "owner", "resources", "waitingOn", "notes", "category"],
-  PROJECT_FIELD_TO_COLUMN: {
-    name: "name", dueDate: "dueDate", owner: "owner", resources: "resources",
-    waitingOn: "waitingOn", notes: "notes", category: "category",
-  },
-  generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
-  generateId: () => `mock-id-${++_idCounter}`,
-  getClientOrFail: async (slug: string) => {
-    const client = await mockGetClientBySlug(slug);
-    if (!client) return { ok: false, error: `Client '${slug}' not found.` };
-    return { ok: true, client };
-  },
-  resolveProjectOrFail: async (_clientId: string, _clientName: string, projectName: string) => {
-    const result = await mockFindProjectByFuzzyName(_clientId, projectName);
-    if (!result) {
-      const available = await mockGetProjectsForClient(_clientId);
-      return { ok: false, error: `Project '${projectName}' not found for ${_clientName}.`, available: available?.map((p: { name: string }) => p.name) };
-    }
-    return { ok: true, project: result };
-  },
-  checkDuplicate: async (idemKey: string, dupResult: unknown) => {
-    if (await mockCheckIdempotency(idemKey)) return dupResult;
-    return null;
-  },
-  insertAuditRecord: async (params: Record<string, unknown>) => {
-    const id = (params.id as string | undefined) ?? `mock-id-${++_idCounter}`;
-    mockInsertValues({ ...params, id });
-    return id;
-  },
-  getPreviousValue: (entity: Record<string, unknown>, columnKey: string) => String(entity[columnKey] ?? ""),
-  validateAndResolveField: (field: string, allowed: readonly string[], fieldToColumn: Record<string, string>) => {
-    if (!allowed.includes(field)) {
-      return { ok: false, error: `Invalid field '${field}'. Allowed fields: ${allowed.join(", ")}` };
-    }
-    return { ok: true, typedField: field, columnKey: fieldToColumn[field] };
-  },
-  // v4 (Chunk 5): identity passthrough — real normalization asserted
-  // separately in operations-utils.test.ts.
-  normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
-}));
+// Mock `./operations-utils` while letting the real shared validators
+// (`validateEngagementType`, `validateIsoDateShape`, etc.) and constants
+// (`PROJECT_FIELDS`, `ENGAGEMENT_TYPES`, …) come through via `importOriginal`.
+// Inline reimplementations would silently drift from the production source —
+// out-of-sync mocks would let the helper-level engagementType / contractStart
+// / contractEnd / parentProjectId rejection tests below pass for the wrong
+// reason. Only the side-effect-y / DB-touching helpers are overridden.
+vi.mock("./operations-utils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./operations-utils")>();
+  return {
+    ...actual,
+    generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
+    generateId: () => `mock-id-${++_idCounter}`,
+    getClientOrFail: async (slug: string) => {
+      const client = await mockGetClientBySlug(slug);
+      if (!client) return { ok: false, error: `Client '${slug}' not found.` };
+      return { ok: true, client };
+    },
+    resolveProjectOrFail: async (_clientId: string, _clientName: string, projectName: string) => {
+      const result = await mockFindProjectByFuzzyName(_clientId, projectName);
+      if (!result) {
+        const available = await mockGetProjectsForClient(_clientId);
+        return { ok: false, error: `Project '${projectName}' not found for ${_clientName}.`, available: available?.map((p: { name: string }) => p.name) };
+      }
+      return { ok: true, project: result };
+    },
+    checkDuplicate: async (idemKey: string, dupResult: unknown) => {
+      if (await mockCheckIdempotency(idemKey)) return dupResult;
+      return null;
+    },
+    insertAuditRecord: async (params: Record<string, unknown>) => {
+      const id = (params.id as string | undefined) ?? `mock-id-${++_idCounter}`;
+      mockInsertValues({ ...params, id });
+      return id;
+    },
+    getPreviousValue: (entity: Record<string, unknown>, columnKey: string) => String(entity[columnKey] ?? ""),
+    // v4 (Chunk 5): identity passthrough — real normalization asserted
+    // separately in operations-utils.test.ts.
+    normalizeResourcesString: (raw: string | null | undefined) => raw ?? "",
+    // parentProjectId validator is a DB-touching check. The unit tests below
+    // exercise the field whitelist + non-validator paths only; the real
+    // validator is covered by the integration test in
+    // parent-project-id-validators.test.ts. Stub returns ok:true so the
+    // updateProjectField parentProjectId branch reaches the persistence step
+    // when needed.
+    validateParentProjectIdAssignment: async () => ({ ok: true }),
+  };
+});
 
 const mockGetLinkedDeadlineItems = vi.fn();
 
@@ -509,6 +516,255 @@ describe("updateProjectField", () => {
       expect(result.data?.cascadeDetail).toEqual([]);
       expect(result.data?.auditId).toBeTruthy();
       expect(mockGetLinkedDeadlineItems).not.toHaveBeenCalled();
+    });
+  });
+
+  // Helper-level value validation — batch_apply bypasses the MCP wrapper, so
+  // these checks have to live in the helper. Mirrors the
+  // parent-project-id-validators.test.ts pattern.
+  describe("helper-level value validation", () => {
+    it("rejects invalid engagementType before any DB write", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "engagementType",
+        newValue: "retainer-v2",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/engagementType must be/);
+        expect(result.error).toContain("retainer-v2");
+      }
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+      expect(mockInsertValues).not.toHaveBeenCalled();
+    });
+
+    it("accepts valid engagementType ('retainer') and persists it", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "engagementType",
+        newValue: "retainer",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ engagementType: "retainer" })
+      );
+    });
+
+    it("rejects shape-invalid contractStart before any DB write", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "contractStart",
+        newValue: "not-a-date",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/contractStart must be a valid ISO/);
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("rejects date-invalid contractStart '2026-13-45' before any DB write", async () => {
+      // This is the load-bearing case from the P1 finding — string compare
+      // against contractEnd would silently accept "2026-13-45" lexicographically.
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "contractStart",
+        newValue: "2026-13-45",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/contractStart must be a valid ISO/);
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("rejects shape-invalid contractEnd before any DB write", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "contractEnd",
+        newValue: "garbage",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/contractEnd must be a valid ISO/);
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("accepts valid contractStart and persists it", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue({ ...project, contractEnd: null });
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "contractStart",
+        newValue: "2027-02-01",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ contractStart: "2027-02-01" })
+      );
+    });
+
+    it("accepts empty string to clear engagementType (becomes null)", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue({
+        ...project,
+        engagementType: "retainer",
+      });
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "engagementType",
+        newValue: "",
+        updatedBy: "batch",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ engagementType: null })
+      );
+    });
+  });
+
+  // Null newValue support: retainer/v4 cleanup migrations clear fields like
+  // contractEnd, waitingOn, target. The helper accepts newValue: null as a
+  // first-class write — storing SQL NULL and audit-logging "(null)".
+  describe("null newValue writes", () => {
+    it("writes SQL NULL when newValue is null", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue({
+        ...project,
+        contractEnd: "2026-05-31",
+      });
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "contractEnd",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ contractEnd: null })
+      );
+    });
+
+    it("audit row newValue is null for null writes", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "waitingOn",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      const insertCall = mockInsertValues.mock.calls[0][0];
+      expect(insertCall.newValue).toBe(null);
+      expect(insertCall.summary).toContain('"(null)"');
+    });
+
+    it("idempotency key uses (null) marker so null writes collapse on re-run", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "waitingOn",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      // Mocked generateIdempotencyKey joins parts with "|" — the idemKey must
+      // contain the "(null)" marker rather than the literal string "null".
+      const auditCall = mockInsertValues.mock.calls[0][0];
+      expect(auditCall.idempotencyKey).toContain("|(null)|");
+    });
+
+    it("repeat null write returns duplicate result without re-writing", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+      mockCheckIdempotency.mockResolvedValue(true);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "waitingOn",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.message).toContain("duplicate");
+        expect(result.data?.newValue).toBe(null);
+      }
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("clearing resources with null skips normalizer and stores null", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "resources",
+        newValue: null,
+        updatedBy: "migration",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ resources: null })
+      );
+      if (result.ok) expect(result.data?.newValue).toBe(null);
     });
   });
 });

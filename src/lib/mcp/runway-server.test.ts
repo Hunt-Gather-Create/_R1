@@ -122,6 +122,10 @@ describe("createRunwayMcpServer", () => {
       "undo_last_change",
       // Batch mode
       "set_batch_mode",
+      // Date override + parent helper + batch dispatch (commit 13)
+      "override_project_date",
+      "set_project_parent",
+      "batch_apply",
     ];
     for (const name of expectedTools) {
       expect(registeredTools.has(name), `Missing tool: ${name}`).toBe(true);

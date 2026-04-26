@@ -29,7 +29,7 @@ import { recordTokenUsage } from "@/lib/token-usage";
 
 const RUNWAY_WORKSPACE_ID = "runway-bot";
 
-const MODEL = "claude-sonnet-4-6";
+const MODEL = "claude-haiku-4-5-20251001";
 
 /** Only log safe structural fields from tool inputs — never free-text content like notes/summary. */
 const SAFE_INPUT_FIELDS = [

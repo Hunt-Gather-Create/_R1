@@ -829,6 +829,152 @@ describe("parseResources", () => {
   });
 });
 
+// ── Shared value validators ─────────────────────────────
+
+describe("validateEngagementType", () => {
+  it("accepts 'retainer' and reports it as the typed value", async () => {
+    const { validateEngagementType } = await import("./operations-utils");
+    const result = validateEngagementType("retainer");
+    expect(result).toEqual({ ok: true, value: "retainer" });
+  });
+
+  it("accepts 'project' and reports it as the typed value", async () => {
+    const { validateEngagementType } = await import("./operations-utils");
+    const result = validateEngagementType("project");
+    expect(result).toEqual({ ok: true, value: "project" });
+  });
+
+  it("treats empty string as a clear and reports null", async () => {
+    const { validateEngagementType } = await import("./operations-utils");
+    const result = validateEngagementType("");
+    expect(result).toEqual({ ok: true, value: null });
+  });
+
+  it("rejects an unknown value with a stable error string", async () => {
+    const { validateEngagementType } = await import("./operations-utils");
+    const result = validateEngagementType("retainer-v2");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/engagementType must be/);
+      expect(result.error).toContain("retainer-v2");
+    }
+  });
+
+  it("rejects raw 'null' string (not a clear sentinel)", async () => {
+    const { validateEngagementType } = await import("./operations-utils");
+    const result = validateEngagementType("null");
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("validateIsoDateShape", () => {
+  it("accepts a valid ISO date and passes it through", async () => {
+    const { validateIsoDateShape } = await import("./operations-utils");
+    const result = validateIsoDateShape("2026-04-25", "contractStart");
+    expect(result).toEqual({ ok: true, value: "2026-04-25" });
+  });
+
+  it("treats empty string as a clear and reports null", async () => {
+    const { validateIsoDateShape } = await import("./operations-utils");
+    const result = validateIsoDateShape("", "contractEnd");
+    expect(result).toEqual({ ok: true, value: null });
+  });
+
+  it("rejects shape-invalid strings", async () => {
+    const { validateIsoDateShape } = await import("./operations-utils");
+    const result = validateIsoDateShape("not-a-date", "date");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/date must be a valid ISO/);
+      expect(result.error).toContain("not-a-date");
+    }
+  });
+
+  it("rejects shape-valid but date-invalid '2026-13-45'", async () => {
+    const { validateIsoDateShape } = await import("./operations-utils");
+    const result = validateIsoDateShape("2026-13-45", "contractStart");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/contractStart must be a valid ISO/);
+    }
+  });
+
+  it("rejects '2026-02-30' (Feb 30 doesn't exist)", async () => {
+    const { validateIsoDateShape } = await import("./operations-utils");
+    const result = validateIsoDateShape("2026-02-30", "startDate");
+    expect(result.ok).toBe(false);
+  });
+
+  it("interpolates the field label into the error", async () => {
+    const { validateIsoDateShape } = await import("./operations-utils");
+    const result = validateIsoDateShape("garbage", "endDate");
+    if (!result.ok) {
+      expect(result.error).toMatch(/^endDate must be/);
+    }
+  });
+});
+
+describe("validateWeekItemStatus", () => {
+  it.each(["scheduled", "in-progress", "blocked", "at-risk", "completed", "canceled"])(
+    "accepts '%s'",
+    async (status) => {
+      const { validateWeekItemStatus } = await import("./operations-utils");
+      const result = validateWeekItemStatus(status);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toBe(status);
+    },
+  );
+
+  it("treats empty string as a clear and reports null", async () => {
+    const { validateWeekItemStatus } = await import("./operations-utils");
+    const result = validateWeekItemStatus("");
+    expect(result).toEqual({ ok: true, value: null });
+  });
+
+  it("rejects unknown statuses", async () => {
+    const { validateWeekItemStatus } = await import("./operations-utils");
+    const result = validateWeekItemStatus("Done");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/status must be one of/);
+      expect(result.error).toContain("Done");
+    }
+  });
+
+  it("is case-sensitive ('In-Progress' rejects)", async () => {
+    const { validateWeekItemStatus } = await import("./operations-utils");
+    expect(validateWeekItemStatus("In-Progress").ok).toBe(false);
+  });
+});
+
+describe("validateWeekItemCategory", () => {
+  it.each(["delivery", "review", "kickoff", "deadline", "approval", "launch"])(
+    "accepts '%s'",
+    async (category) => {
+      const { validateWeekItemCategory } = await import("./operations-utils");
+      const result = validateWeekItemCategory(category);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toBe(category);
+    },
+  );
+
+  it("treats empty string as a clear and reports null", async () => {
+    const { validateWeekItemCategory } = await import("./operations-utils");
+    const result = validateWeekItemCategory("");
+    expect(result).toEqual({ ok: true, value: null });
+  });
+
+  it("rejects unknown categories", async () => {
+    const { validateWeekItemCategory } = await import("./operations-utils");
+    const result = validateWeekItemCategory("meeting");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/category must be one of/);
+      expect(result.error).toContain("meeting");
+    }
+  });
+});
+
 describe("normalizeResourcesString", () => {
   it("returns empty string for null / undefined / empty input", async () => {
     const { normalizeResourcesString } = await import("./operations-utils");

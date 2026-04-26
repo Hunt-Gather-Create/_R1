@@ -66,7 +66,7 @@ All database reads and writes go through `src/lib/runway/operations*.ts`. No con
 | `operations-writes-week.ts` | Create week items and update week item fields with reverse deadline cascade (deadline date changes sync back to project.dueDate) |
 | `operations-writes-undo.ts` | Undo last status or field change by user (reads field from `metadata` JSON, regex fallback for pre-migration records) |
 | `operations-reads-updates.ts` | Recent updates query (powers "what did I change?" recall) |
-| `operations-add.ts` | New projects (with duplicate name guard, expanded fields: resources, dueDate, target, waitingOn) and free-form updates (with disambiguation on ambiguous project matches) |
+| `operations-add.ts` | New projects (with duplicate name guard, expanded fields: resources, dueDate, waitingOn) and free-form updates (with disambiguation on ambiguous project matches) |
 | `operations-context.ts` | Team members (with roleCategory/accountsLed), client contacts, update history |
 
 ### Client Cache
@@ -95,9 +95,9 @@ All database reads and writes go through `src/lib/runway/operations*.ts`. No con
 
 Centralized in `operations-utils.ts` so field allowlists are defined once and shared across write, undo, and validation code:
 
-- `PROJECT_FIELDS` — editable project fields: `name`, `dueDate`, `owner`, `resources`, `waitingOn`, `target`, `notes`
+- `PROJECT_FIELDS` — editable project fields: `name`, `dueDate`, `owner`, `resources`, `waitingOn`, `notes`, `category`, `engagementType`, `contractStart`, `contractEnd`, `parentProjectId`
 - `PROJECT_FIELD_TO_COLUMN` — maps each `ProjectField` to its Drizzle column key
-- `WEEK_ITEM_FIELDS` — editable week item fields: `title`, `status`, `date`, `dayOfWeek`, `owner`, `resources`, `notes`, `category`
+- `WEEK_ITEM_FIELDS` — editable week item fields: `title`, `status`, `date`, `dayOfWeek`, `weekOf`, `owner`, `resources`, `notes`, `category`, `startDate`, `endDate`, `blockedBy`
 - `WEEK_ITEM_FIELD_TO_COLUMN` — maps each `WeekItemField` to its Drizzle column key
 - `UNDO_FIELDS` — derived from `[...PROJECT_FIELDS, "status", "category"]` so new project fields automatically become undoable
 
@@ -328,8 +328,8 @@ Defined in `src/lib/slack/bot-tools.ts`. Same operations as MCP but wrapped as A
 | `get_client_contacts` | Contact names and roles for a client (from reference data) |
 | `update_project_status` | Change status + cascade to linked week items + post to updates channel. Returns before/after in response. |
 | `add_update` | Log free-form update + post to updates channel. Does NOT change any DB field. |
-| `create_project` | Create a new project under a client (with owner, resources, dueDate, target, waitingOn). Rejects duplicate names under same client. |
-| `update_project_field` | Update a specific project field (name, dueDate, owner, resources, waitingOn, target, notes). ACTUALLY changes the DB. dueDate changes cascade to linked deadline week items. |
+| `create_project` | Create a new project under a client (with owner, resources, dueDate, waitingOn). Rejects duplicate names under same client. |
+| `update_project_field` | Update a specific project field (name, dueDate, owner, resources, waitingOn, notes). ACTUALLY changes the DB. dueDate changes cascade to linked deadline week items. |
 | `create_week_item` | Add a new item to the weekly calendar |
 | `undo_last_change` | Revert the user's most recent status or field change |
 | `get_recent_updates` | Look up recent changes (powers "what did I change?" queries) |

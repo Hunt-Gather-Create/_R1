@@ -31,12 +31,23 @@ export function InFlightToggle({
   const [isPending, startTransition] = useTransition();
 
   const handleClick = () => {
+    const prev = enabled;
     const next = !enabled;
     // Optimistic: flip local state immediately, persist in background.
     setEnabled(next);
     onChange?.(next);
     startTransition(async () => {
-      await onToggle(next);
+      try {
+        await onToggle(next);
+      } catch (err) {
+        // Revert the optimistic flip so the UI matches reality.
+        setEnabled(prev);
+        onChange?.(prev);
+        console.error(JSON.stringify({
+          event: "in_flight_toggle_error",
+          error: err instanceof Error ? err.message : String(err),
+        }));
+      }
     });
   };
 

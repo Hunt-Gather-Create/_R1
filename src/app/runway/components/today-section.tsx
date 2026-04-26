@@ -28,7 +28,7 @@ export function TodaySection({
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {todayColumn.items.map((item, i) => (
               <DayItemCard
-                key={`today-${item.title.slice(0, 20)}-${i}`}
+                key={item.id ?? `${item.account}|${item.title}|${i}`}
                 item={item}
                 size="lg"
               />

@@ -61,6 +61,14 @@ export {
   getBatchId,
   parseResources,
   normalizeResourcesString,
+  validateParentProjectIdAssignment,
+  ENGAGEMENT_TYPES,
+  WEEK_ITEM_STATUSES,
+  WEEK_ITEM_CATEGORIES,
+  validateEngagementType,
+  validateIsoDateShape,
+  validateWeekItemStatus,
+  validateWeekItemCategory,
 } from "./operations-utils";
 
 export type {
@@ -72,6 +80,16 @@ export type {
   ClientField,
   TeamMemberField,
   ResourceEntry,
+  ValidatorExecutor,
+  ParentProjectIdValidationContext,
+  ParentProjectIdValidationResult,
+  EngagementType,
+  EngagementTypeValidationResult,
+  IsoDateValidationResult,
+  WeekItemStatus,
+  WeekItemStatusValidationResult,
+  WeekItemCategory,
+  WeekItemCategoryValidationResult,
 } from "./operations-utils";
 
 // ── Structured mutation response shape (v4 / PR #86) ────
@@ -178,10 +196,15 @@ export type {
   ProjectStatusEnum,
   ProjectStatusWeekItem,
   ProjectStatusUpdate,
-  EngagementType,
   GetProjectStatusParams,
   GetProjectStatusResult,
 } from "./operations-reads-project-status";
+// Note: `EngagementType` re-export was removed in favor of the
+// validator-side `EngagementType` exported from operations-utils above
+// (line ~86). The read-side type in operations-reads-project-status.ts is
+// structurally different (it represents storage shape and includes
+// "break-fix" + null for legacy rows); the validator-side type is the
+// strict accept-on-write enum. Kept as a local type in the reads module.
 
 // ── Context operations ──────────────────────────────────
 export {
@@ -209,11 +232,16 @@ export type {
 export {
   deleteProject,
   updateProjectField,
+  overrideProjectDate,
+  setProjectParent,
 } from "./operations-writes-project";
 
 export type {
   DeleteProjectParams,
   UpdateProjectFieldParams,
+  OverrideProjectDateParams,
+  OverrideProjectDateData,
+  SetProjectParentParams,
 } from "./operations-writes-project";
 
 export {
