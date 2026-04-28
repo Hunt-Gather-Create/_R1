@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getMonday, getMondayISODate, parseISODate, toISODateString } from "./date-utils";
+import { getMonday, getMondayISODate, parseISODate, toISODateString, toShortDateString } from "./date-utils";
 
 describe("parseISODate", () => {
   it("returns a Date object at noon", () => {
@@ -100,5 +100,34 @@ describe("toISODateString", () => {
     // Create a date at noon local time — should reflect local date
     const d = new Date(2026, 3, 7, 12, 0, 0); // April 7
     expect(toISODateString(d)).toBe("2026-04-07");
+  });
+});
+
+describe("toShortDateString", () => {
+  it("formats a YYYY-MM-DD string as M/D with no zero-padding", () => {
+    expect(toShortDateString("2026-04-07")).toBe("4/7");
+    expect(toShortDateString("2026-09-03")).toBe("9/3");
+  });
+
+  it("formats double-digit month and day without padding changes", () => {
+    expect(toShortDateString("2026-12-31")).toBe("12/31");
+  });
+
+  it("returns null for null and undefined", () => {
+    expect(toShortDateString(null)).toBeNull();
+    expect(toShortDateString(undefined)).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(toShortDateString("")).toBeNull();
+  });
+
+  it("returns null for malformed input missing separators", () => {
+    expect(toShortDateString("20260407")).toBeNull();
+  });
+
+  it("returns null when month or day is non-numeric", () => {
+    expect(toShortDateString("2026-XX-07")).toBeNull();
+    expect(toShortDateString("2026-04-DD")).toBeNull();
   });
 });
