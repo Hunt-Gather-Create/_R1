@@ -635,6 +635,35 @@ describe("RunwayBoard version polling", () => {
     expect(screen.getByText(STALE_TEXT)).toBeInTheDocument();
   });
 
+  it("aborts previous fetch when a new poll fires before the previous resolves", async () => {
+    // Stub fetch with a never-resolving promise so we can inspect the
+    // signal it received without it ever completing. The hook should
+    // abort the first signal as soon as the next interval tick fires.
+    const signals: AbortSignal[] = [];
+    const fetch = vi.fn((_url: string, init?: RequestInit) => {
+      if (init?.signal) signals.push(init.signal);
+      // Never resolves — simulates a hung request.
+      return new Promise<Response>(() => {});
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<RunwayBoard {...defaultProps} />);
+    await act(async () => {
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(false);
+
+    // Trigger the next poll — the hung first fetch should be aborted.
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(signals[0].aborted).toBe(true);
+  });
+
   it("logs console.error exactly once across a 3-failure streak", async () => {
     mockFetchSequence([errorBody(500), errorBody(500), errorBody(500)]);
 

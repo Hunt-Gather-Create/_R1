@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
+import type { useRouter } from "next/navigation";
 
 // Cost: poll a cheap endpoint every 15s and only refresh when something
 // actually changed, instead of forcing a full RSC re-render every 60s.
@@ -29,7 +29,7 @@ const AUTH_EXPIRY_STATUSES = new Set([302, 401]);
  * Once stale, polling does NOT resume on visibility change. The user
  * must hard-refresh to recover.
  */
-export function useVersionPoll(router: AppRouterInstance): { isStale: boolean } {
+export function useVersionPoll(router: ReturnType<typeof useRouter>): { isStale: boolean } {
   const [isStale, setIsStale] = useState(false);
 
   // Hold the router in a ref so the effect doesn't re-run if the router
@@ -46,11 +46,21 @@ export function useVersionPoll(router: AppRouterInstance): { isStale: boolean } 
     let intervalId: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
     let stale = false;
+    // Tracks the in-flight fetch's AbortController so we can abort a
+    // hung request before starting a new one. Prevents connection-pool
+    // exhaustion when the server is slow or unresponsive. The `cancelled`
+    // closure flag is still needed: it guards against state writes from
+    // a fetch that resolved BEFORE unmount but is mid-await when the
+    // component tears down.
+    let controller: AbortController | null = null;
 
     // Refs-as-locals: these counters live for the lifetime of the effect
     // and don't need to trigger re-renders when they tick.
     const failureCount = { current: 0 };
     const loggedError = { current: false };
+
+    const isAbortError = (err: unknown): boolean =>
+      err instanceof DOMException && err.name === "AbortError";
 
     const stopInterval = () => {
       if (intervalId !== null) {
@@ -82,13 +92,25 @@ export function useVersionPoll(router: AppRouterInstance): { isStale: boolean } 
 
     const check = async () => {
       if (stale || cancelled) return;
+      // Abort the previous in-flight request (if any) before starting a
+      // new one. Without this, a hung request could pile up alongside
+      // each new tick and exhaust the browser's per-origin connection
+      // pool.
+      controller?.abort();
+      controller = new AbortController();
+      const signal = controller.signal;
+
       let res: Response;
       try {
         res = await fetch("/api/runway/version", {
           credentials: "same-origin",
+          signal,
         });
       } catch (err) {
         if (cancelled) return;
+        // AbortError from our own controller.abort() is benign — we
+        // either unmounted or superseded this request with a newer one.
+        if (isAbortError(err)) return;
         handleFailure(["[runway] version poll failed", err]);
         return;
       }
@@ -105,6 +127,8 @@ export function useVersionPoll(router: AppRouterInstance): { isStale: boolean } 
         body = (await res.json()) as { version: string | null };
       } catch (err) {
         if (cancelled) return;
+        // A partial/aborted response can throw from .json() too.
+        if (isAbortError(err)) return;
         handleFailure(["[runway] version poll failed", err]);
         return;
       }
@@ -155,6 +179,7 @@ export function useVersionPoll(router: AppRouterInstance): { isStale: boolean } 
 
     return () => {
       cancelled = true;
+      controller?.abort();
       stopInterval();
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
