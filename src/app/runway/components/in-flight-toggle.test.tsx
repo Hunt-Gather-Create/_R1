@@ -66,14 +66,61 @@ describe("InFlightToggle", () => {
     const onToggle = vi.fn().mockResolvedValue(undefined);
     render(<InFlightToggle initialEnabled={true} onToggle={onToggle} />);
     expect(
-      screen.getByText("Showing in-flight L2s above Today.")
+      screen.getByText("Showing tasks that are already in flight for projects.")
     ).toBeInTheDocument();
   });
 
   it("shows the hidden description when off", () => {
     const onToggle = vi.fn().mockResolvedValue(undefined);
     render(<InFlightToggle initialEnabled={false} onToggle={onToggle} />);
-    expect(screen.getByText("In Flight hidden.")).toBeInTheDocument();
+    expect(screen.getByText("Toggle on to view tasks that are in flight for projects.")).toBeInTheDocument();
+  });
+
+  it("uses aria-labelledby pointing at the visible 'In Flight' label", () => {
+    const onToggle = vi.fn().mockResolvedValue(undefined);
+    render(<InFlightToggle initialEnabled={true} onToggle={onToggle} />);
+    const toggle = screen.getByRole("switch", { name: "In Flight" });
+    expect(toggle).toHaveAttribute("aria-labelledby", "in-flight-label");
+    const label = document.getElementById("in-flight-label");
+    expect(label).not.toBeNull();
+    expect(label?.textContent).toBe("In Flight");
+  });
+
+  it("uses aria-describedby pointing at the ON description sentence when enabled", () => {
+    const onToggle = vi.fn().mockResolvedValue(undefined);
+    render(<InFlightToggle initialEnabled={true} onToggle={onToggle} />);
+    const toggle = screen.getByRole("switch", { name: "In Flight" });
+    expect(toggle).toHaveAttribute("aria-describedby", "in-flight-desc");
+    const desc = document.getElementById("in-flight-desc");
+    expect(desc).not.toBeNull();
+    expect(desc?.textContent).toBe(
+      "Showing tasks that are already in flight for projects."
+    );
+  });
+
+  it("uses aria-describedby pointing at the OFF description sentence when disabled", () => {
+    const onToggle = vi.fn().mockResolvedValue(undefined);
+    render(<InFlightToggle initialEnabled={false} onToggle={onToggle} />);
+    const toggle = screen.getByRole("switch", { name: "In Flight" });
+    expect(toggle).toHaveAttribute("aria-describedby", "in-flight-desc");
+    const desc = document.getElementById("in-flight-desc");
+    expect(desc).not.toBeNull();
+    expect(desc?.textContent).toBe(
+      "Toggle on to view tasks that are in flight for projects."
+    );
+  });
+
+  it("updates the description text inside #in-flight-desc when the switch is toggled", () => {
+    const onToggle = vi.fn().mockResolvedValue(undefined);
+    render(<InFlightToggle initialEnabled={false} onToggle={onToggle} />);
+    const toggle = screen.getByRole("switch", { name: "In Flight" });
+    expect(document.getElementById("in-flight-desc")?.textContent).toBe(
+      "Toggle on to view tasks that are in flight for projects."
+    );
+    fireEvent.click(toggle);
+    expect(document.getElementById("in-flight-desc")?.textContent).toBe(
+      "Showing tasks that are already in flight for projects."
+    );
   });
 
   // 4c: when the persistence call rejects, the optimistic flip must be
