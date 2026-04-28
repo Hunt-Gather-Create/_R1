@@ -216,4 +216,63 @@ describe("RunwayPage", () => {
     const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
     expect(props.staleItems).toEqual([staleDay]);
   });
+
+  // Regression-lock: page.tsx pre-bucketing dropped past-Monday day buckets
+  // before they reached InFlightSection, so multi-week in-progress items
+  // silently disappeared from the In Flight section in production. The fix
+  // builds `inFlightSource` from the FULL unfiltered getWeekItems() result
+  // and passes it through alongside the bucketed thisWeek/upcoming.
+  it("passes inFlightSource containing past-Monday day buckets while still bucketing thisWeek/upcoming", async () => {
+    // "Today" is 2026-04-27 (Mon). currentWeekOf = 2026-04-27.
+    vi.setSystemTime(new Date("2026-04-27T12:00:00"));
+
+    const pastMondayBucket = {
+      date: "2026-04-20", // Mon two weeks ago
+      label: "Mon 4/20",
+      items: [
+        {
+          title: "Past Monday In-Progress",
+          account: "OldClient",
+          type: "delivery" as const,
+          // endDate intentionally mid-future so filterInFlight would keep it
+          endDate: "2026-05-31",
+        },
+      ],
+    };
+    const thisWeekBucket = {
+      date: "2026-04-27", // current Monday
+      label: "Mon 4/27",
+      items: [{ title: "Current", account: "X", type: "delivery" as const }],
+    };
+    const upcomingBucket = {
+      date: "2026-05-04", // next Monday
+      label: "Mon 5/4",
+      items: [{ title: "Future", account: "X", type: "delivery" as const }],
+    };
+
+    mockGetClientsWithProjects.mockResolvedValue([]);
+    mockGetWeekItems.mockResolvedValue([pastMondayBucket, thisWeekBucket, upcomingBucket]);
+    mockGetPipeline.mockResolvedValue([]);
+
+    const el = await RunwayPage();
+    render(el);
+
+    const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+
+    // inFlightSource is the new prop — full unfiltered set including
+    // past-Monday buckets that bucketing dropped.
+    const inFlightDates = props.inFlightSource.map((d: { date: string }) => d.date);
+    expect(inFlightDates).toContain("2026-04-20");
+    expect(inFlightDates).toContain("2026-04-27");
+    expect(inFlightDates).toContain("2026-05-04");
+
+    // Existing bucketing must remain intact: thisWeek = current Mon only,
+    // upcoming = future Mons only, past-Monday bucket dropped from both.
+    const thisWeekDates = props.thisWeek.map((d: { date: string }) => d.date);
+    const upcomingDates = props.upcoming.map((d: { date: string }) => d.date);
+    expect(thisWeekDates).toEqual(["2026-04-27"]);
+    expect(upcomingDates).toEqual(["2026-05-04"]);
+    expect(thisWeekDates).not.toContain("2026-04-20");
+    expect(upcomingDates).not.toContain("2026-04-20");
+  });
 });
