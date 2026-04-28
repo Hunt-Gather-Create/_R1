@@ -4,6 +4,7 @@ import {
   getWorkspaceBySlug,
   requireWorkspaceAccess,
 } from "@/lib/actions/workspace";
+import { isNextSentinelError } from "@/lib/utils/is-next-sentinel-error";
 
 interface WorkspaceLayoutProps {
   children: React.ReactNode;
@@ -34,13 +35,8 @@ export default async function WorkspaceLayout({
   } catch (error) {
     // Re-throw Next.js internal sentinel errors (DYNAMIC_SERVER_USAGE,
     // NEXT_REDIRECT, NEXT_NOT_FOUND, NEXT_HTTP_ERROR_FALLBACK, etc.)
-    // so Next's static-bailout mechanism works correctly.
-    if (
-      error &&
-      typeof error === "object" &&
-      "digest" in error &&
-      (error as { digest?: unknown }).digest
-    ) {
+    // so Next's static-bailout / control-flow mechanisms work correctly.
+    if (isNextSentinelError(error)) {
       throw error;
     }
     // User doesn't have access - redirect to home

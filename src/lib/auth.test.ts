@@ -126,11 +126,13 @@ describe("getCurrentUser (via getSessionFromCookie)", () => {
   });
 
   describe("Edge .digest values", () => {
-    // Spec interpretation: Next.js's own `isRedirectError` requires
-    // `typeof error.digest === 'string'`. A truthy non-string digest is NOT
-    // a real Next sentinel. The current implementation uses a truthy check
-    // which is more permissive — these tests document that behavior.
-    it("swallows error with digest: '' (empty string is falsy)", async () => {
+    // Spec: the sentinel check uses `typeof digest === 'string' && digest.length > 0`.
+    // Only a non-empty string digest passes the guard. This matches Next.js's
+    // own isRedirectError / isNotFoundError (which check typeof === 'string'),
+    // and extends it to exclude empty string since no real Next sentinel has
+    // an empty digest. A truthy non-string digest (object, number, etc.) and
+    // an empty-string digest are both NOT real Next sentinels and are swallowed.
+    it("swallows error with digest: '' (empty string fails length > 0 guard)", async () => {
       mockCookies.mockResolvedValue(makeCookieStore("c"));
       const err = Object.assign(new Error("e"), { digest: "" });
       mockUnsealData.mockRejectedValue(err);
@@ -169,19 +171,22 @@ describe("getCurrentUser (via getSessionFromCookie)", () => {
       consoleSpy.mockRestore();
     });
 
-    it("re-throws error with digest: { nested: 'obj' } (truthy non-string)", async () => {
-      // Edge: implementation re-throws on truthy digest, but Next would NOT
-      // recognize a non-string digest as a sentinel. Document current behavior
-      // — re-throw. If a real bug surfaces here it'd be a false positive
-      // re-throw, not a swallowed sentinel.
+    it("swallows error with digest: { nested: 'obj' } (truthy non-string is not a Next sentinel)", async () => {
+      // Under typeof === 'string' check: a non-string digest does not satisfy
+      // the guard, so the error is swallowed and null returned. Previously the
+      // truthy check caused a false-positive re-throw here.
       mockCookies.mockResolvedValue(makeCookieStore("c"));
       const err = Object.assign(new Error("e"), {
         digest: { nested: "obj" },
       });
       mockUnsealData.mockRejectedValue(err);
+      const consoleSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
 
       const { getCurrentUser } = await import("./auth");
-      await expect(getCurrentUser()).rejects.toBe(err);
+      await expect(getCurrentUser()).resolves.toBeNull();
+      consoleSpy.mockRestore();
     });
 
     it("re-throws error with digest containing valid Next redirect format string", async () => {

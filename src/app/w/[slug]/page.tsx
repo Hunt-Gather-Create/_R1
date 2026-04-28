@@ -11,6 +11,7 @@ import { WorkspaceProvider } from "@/components/workspace";
 import { VIEW } from "@/lib/design-tokens";
 import { getWorkspaceBySlugWithIssues } from "@/lib/actions/board";
 import { getCurrentUser } from "@/lib/auth";
+import { isNextSentinelError } from "@/lib/utils/is-next-sentinel-error";
 import type { WorkspaceWithColumnsAndIssues } from "@/lib/types";
 
 // Dynamic imports for heavy components - only loaded when needed
@@ -167,6 +168,12 @@ export default function WorkspacePage() {
           }
         })
         .catch((err) => {
+          // Re-throw Next.js sentinel errors (NEXT_REDIRECT, NEXT_NOT_FOUND) so
+          // the runtime can handle the redirect/not-found instead of swallowing
+          // it as a generic error message in the UI.
+          if (isNextSentinelError(err)) {
+            throw err;
+          }
           setError(err.message || "Failed to load workspace");
         });
     }
