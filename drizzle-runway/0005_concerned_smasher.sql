@@ -1,0 +1,1 @@
+CREATE INDEX `idx_updates_created_at` ON `updates` (`created_at`);

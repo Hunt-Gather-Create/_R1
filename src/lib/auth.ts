@@ -3,6 +3,7 @@
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { unsealData } from "iron-session";
+import { isNextSentinelError } from "@/lib/utils/is-next-sentinel-error";
 
 // WorkOS uses these env vars
 const WORKOS_COOKIE_NAME = process.env.WORKOS_COOKIE_NAME || "wos-session";
@@ -46,13 +47,9 @@ async function getSessionFromCookie(): Promise<Session | null> {
   } catch (error) {
     // Re-throw Next.js internal sentinel errors (DYNAMIC_SERVER_USAGE,
     // NEXT_REDIRECT, NEXT_NOT_FOUND, NEXT_HTTP_ERROR_FALLBACK, etc.)
-    // so Next's static-bailout mechanism works correctly.
-    if (
-      error &&
-      typeof error === "object" &&
-      "digest" in error &&
-      (error as { digest?: unknown }).digest
-    ) {
+    // so Next's static-bailout / control-flow mechanisms work correctly.
+    // See `isNextSentinelError` for the exact digest contract.
+    if (isNextSentinelError(error)) {
       throw error;
     }
     console.error("Failed to decrypt session:", error);

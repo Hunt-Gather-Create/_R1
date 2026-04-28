@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, within, act } from "@testing-library/react";
 import { RunwayBoard } from "./runway-board";
 import { mergeWeekendDays, groupByWeek } from "./runway-board-utils";
 import { thisWeek, upcoming, accounts, pipeline } from "./runway-board-test-fixtures";
@@ -18,7 +18,60 @@ vi.mock("./actions", () => ({
   toggleInFlightAction: (next: boolean) => mockToggleInFlight(next),
 }));
 
-const defaultProps = { thisWeek, upcoming, accounts, pipeline };
+// Stub InFlightSection so we can assert which weekItems source it received
+// without coupling to its internal filterInFlight logic.
+vi.mock("./components/in-flight-section", () => ({
+  InFlightSection: ({ weekItems, enabled }: { weekItems: DayItem[]; enabled: boolean }) => (
+    <div
+      data-testid="in-flight-section-stub"
+      data-week-items={JSON.stringify(weekItems)}
+      data-enabled={String(enabled)}
+    />
+  ),
+}));
+
+const inFlightSource: DayItem[] = [
+  ...thisWeek,
+  ...upcoming,
+  {
+    date: "2026-04-20",
+    label: "Mon 4/20",
+    items: [
+      { title: "Past-Monday In-Progress", account: "OldClient", type: "delivery" },
+    ],
+  },
+];
+
+const defaultProps = { thisWeek, upcoming, accounts, pipeline, inFlightSource };
+
+/** Helper: stub a fetch sequence returning the given version values in order. */
+function mockVersionFetch(versions: Array<string | null>) {
+  const fetch = vi.fn(async () => {
+    const v = versions.shift() ?? null;
+    return new Response(JSON.stringify({ version: v }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  vi.stubGlobal("fetch", fetch);
+  return fetch;
+}
+
+function setVisibility(state: "visible" | "hidden") {
+  Object.defineProperty(document, "visibilityState", {
+    value: state,
+    configurable: true,
+  });
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
+async function flushPromises() {
+  // Each pending microtask. We loop a few times because awaiting fetch().json()
+  // chains a few microtasks before the version comparison runs.
+  for (let i = 0; i < 5; i++) {
+    await Promise.resolve();
+  }
+}
 
 describe("RunwayBoard", () => {
   it("renders the header", () => {
@@ -145,17 +198,21 @@ describe("RunwayBoard", () => {
     expect(screen.queryByText("Convergix")).not.toBeInTheDocument();
   });
 
-  it("calls router.refresh on 60-second interval", () => {
-    vi.useFakeTimers();
-    mockRefresh.mockClear();
+  // Regression-lock: passes `inFlightSource` (NOT `allWeekItems`) to
+  // <InFlightSection>. The bug was that page.tsx's pre-bucketing dropped
+  // past-Monday day buckets; InFlightSection silently rendered nothing in
+  // prod despite real in-progress items. inFlightSource is built from the
+  // full unfiltered fetch, so this prop is the wire from "all items" to
+  // "in flight rendering."
+  it("passes inFlightSource (not allWeekItems) to InFlightSection", () => {
     render(<RunwayBoard {...defaultProps} />);
-
-    expect(mockRefresh).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(60 * 1000);
-    expect(mockRefresh).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(60 * 1000);
-    expect(mockRefresh).toHaveBeenCalledTimes(2);
-    vi.useRealTimers();
+    const stub = screen.getByTestId("in-flight-section-stub");
+    const passed = JSON.parse(stub.getAttribute("data-week-items")!);
+    expect(passed).toEqual(inFlightSource);
+    // Sanity check the regression: passed source contains the past-Monday
+    // bucket that bucketing would have dropped.
+    const dates = passed.map((d: DayItem) => d.date);
+    expect(dates).toContain("2026-04-20");
   });
 
   // Chunk 3 #6: In Flight toggle default ON + persistence hook
@@ -219,6 +276,412 @@ describe("RunwayBoard", () => {
     expect(within(todaySectionAfter).queryByText("Monday Item")).toBeNull();
 
     vi.useRealTimers();
+  });
+});
+
+describe("RunwayBoard version polling", () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    mockRefresh.mockClear();
+    vi.useFakeTimers();
+    setVisibility("visible");
+    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("fetches /api/runway/version once on mount and does not refresh on baseline response", async () => {
+    const fetch = mockVersionFetch(["v1"]);
+    render(<RunwayBoard {...defaultProps} />);
+
+    // Mount-time fetch fires synchronously inside the effect.
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith("/api/runway/version", expect.any(Object));
+
+    await act(async () => {
+      await flushPromises();
+    });
+
+    expect(mockRefresh).not.toHaveBeenCalled();
+  });
+
+  it("calls router.refresh after 15s when version changed", async () => {
+    mockVersionFetch(["v1", "v2"]);
+    render(<RunwayBoard {...defaultProps} />);
+    await act(async () => {
+      await flushPromises();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT call router.refresh when version is unchanged", async () => {
+    mockVersionFetch(["v1", "v1", "v1"]);
+    render(<RunwayBoard {...defaultProps} />);
+    await act(async () => {
+      await flushPromises();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+
+    expect(mockRefresh).not.toHaveBeenCalled();
+  });
+
+  it("pauses polling while document.visibilityState is hidden", async () => {
+    const fetch = mockVersionFetch(["v1", "v2", "v3", "v4"]);
+    render(<RunwayBoard {...defaultProps} />);
+    await act(async () => {
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    // Hide the tab — interval pauses.
+    await act(async () => {
+      setVisibility("hidden");
+      await flushPromises();
+    });
+
+    // Advance well past 15s; no extra fetches should fire.
+    await act(async () => {
+      vi.advanceTimersByTime(60 * 1000);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("on visibility return to visible: fires one fetch immediately, then resumes the interval", async () => {
+    const fetch = mockVersionFetch(["v1", "v2", "v2", "v2"]);
+    render(<RunwayBoard {...defaultProps} />);
+    await act(async () => {
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      setVisibility("hidden");
+      await flushPromises();
+    });
+
+    // Become visible — one immediate fetch.
+    await act(async () => {
+      setVisibility("visible");
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    // That fetch saw v2 vs baseline v1 → triggers refresh.
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+
+    // Then the resumed interval ticks once at 15s — no double-fire.
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(3);
+
+    // Verify it doesn't double-fire from a leftover pre-pause timer:
+    // total fetches at 15s should be exactly 3, not 4+.
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("logs once and continues polling on a single non-fatal non-OK response", async () => {
+    // 500 is a transient failure, NOT an auth expiry — polling should
+    // resume on the next tick and the failure counter should reset
+    // when the next response succeeds. (302/401 trip stale immediately;
+    // see the dedicated auth-expiry tests below.)
+    let call = 0;
+    const fetch = vi.fn(async () => {
+      call += 1;
+      if (call === 1) {
+        return new Response("upstream blew up", { status: 500 });
+      }
+      return new Response(JSON.stringify({ version: "v2" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<RunwayBoard {...defaultProps} />);
+    await act(async () => {
+      await flushPromises();
+    });
+
+    expect(mockRefresh).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+
+    // Polling continues — next tick still fires.
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    // Now baseline=null (first response failed), version="v2" → first
+    // successful response sets the baseline; should NOT refresh.
+    expect(mockRefresh).not.toHaveBeenCalled();
+  });
+
+  it("logs once and continues polling when response.json() throws", async () => {
+    let call = 0;
+    const fetch = vi.fn(async () => {
+      call += 1;
+      if (call === 1) {
+        return new Response("not-json-body", {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ version: "v1" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<RunwayBoard {...defaultProps} />);
+    await act(async () => {
+      await flushPromises();
+    });
+
+    expect(mockRefresh).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  // --- Staleness behavior (loop-stop + chip + log-once) ---
+
+  /** Helper: stub fetch returning the given Response factories in order. */
+  function mockFetchSequence(
+    responses: Array<() => Response>
+  ): ReturnType<typeof vi.fn> {
+    let idx = 0;
+    const fetch = vi.fn(async () => {
+      const factory = responses[idx];
+      idx += 1;
+      return factory
+        ? factory()
+        : new Response(JSON.stringify({ version: null }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+    });
+    vi.stubGlobal("fetch", fetch);
+    return fetch;
+  }
+
+  const STALE_TEXT = "Live updates paused — refresh to reconnect";
+  const errorBody = (status: number) => () =>
+    new Response("err", { status });
+  const okBody = (version: string | null) => () =>
+    new Response(JSON.stringify({ version }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  it("stops polling and renders staleness chip after 3 consecutive non-OK responses", async () => {
+    const fetch = mockFetchSequence([
+      errorBody(500),
+      errorBody(500),
+      errorBody(500),
+      okBody("vX"),
+    ]);
+
+    render(<RunwayBoard {...defaultProps} />);
+    // Mount-time fetch (call #1).
+    await act(async () => {
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(STALE_TEXT)).toBeNull();
+
+    // Tick 2 (call #2) — second consecutive failure.
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(STALE_TEXT)).toBeNull();
+
+    // Tick 3 (call #3) — third consecutive failure → trips threshold.
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(screen.getByText(STALE_TEXT)).toBeInTheDocument();
+
+    // Further interval ticks must NOT fire additional fetches.
+    await act(async () => {
+      vi.advanceTimersByTime(60 * 1000);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops polling and renders staleness chip immediately on a single 401 response", async () => {
+    const fetch = mockFetchSequence([errorBody(401), okBody("vX")]);
+
+    render(<RunwayBoard {...defaultProps} />);
+    await act(async () => {
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(STALE_TEXT)).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(60 * 1000);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops polling and renders staleness chip immediately on a single 302 response", async () => {
+    const fetch = mockFetchSequence([errorBody(302), okBody("vX")]);
+
+    render(<RunwayBoard {...defaultProps} />);
+    await act(async () => {
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(STALE_TEXT)).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(60 * 1000);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("resets the failure counter after a successful response (no chip until 3 NEW consecutive failures)", async () => {
+    // seed-success, fail, fail, success (resets), fail, fail, fail (trips).
+    const fetch = mockFetchSequence([
+      okBody("v1"),
+      errorBody(500),
+      errorBody(500),
+      okBody("v1"),
+      errorBody(500),
+      errorBody(500),
+      errorBody(500),
+    ]);
+
+    render(<RunwayBoard {...defaultProps} />);
+    await act(async () => {
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    // Tick 1: fail
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+    // Tick 2: fail
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(screen.queryByText(STALE_TEXT)).toBeNull();
+
+    // Tick 3: success — resets counter.
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(screen.queryByText(STALE_TEXT)).toBeNull();
+
+    // Now 2 more failures — should NOT trip yet (counter starts at 0 after success).
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(6);
+    expect(screen.queryByText(STALE_TEXT)).toBeNull();
+
+    // Third NEW failure trips the chip.
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(7);
+    expect(screen.getByText(STALE_TEXT)).toBeInTheDocument();
+  });
+
+  it("aborts previous fetch when a new poll fires before the previous resolves", async () => {
+    // Stub fetch with a never-resolving promise so we can inspect the
+    // signal it received without it ever completing. The hook should
+    // abort the first signal as soon as the next interval tick fires.
+    const signals: AbortSignal[] = [];
+    const fetch = vi.fn((_url: string, init?: RequestInit) => {
+      if (init?.signal) signals.push(init.signal);
+      // Never resolves — simulates a hung request.
+      return new Promise<Response>(() => {});
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<RunwayBoard {...defaultProps} />);
+    await act(async () => {
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(false);
+
+    // Trigger the next poll — the hung first fetch should be aborted.
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(signals[0].aborted).toBe(true);
+  });
+
+  it("logs console.error exactly once across a 3-failure streak", async () => {
+    mockFetchSequence([errorBody(500), errorBody(500), errorBody(500)]);
+
+    render(<RunwayBoard {...defaultProps} />);
+    await act(async () => {
+      await flushPromises();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(15 * 1000);
+      await flushPromises();
+    });
+
+    expect(screen.getByText(STALE_TEXT)).toBeInTheDocument();
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
   });
 });
 

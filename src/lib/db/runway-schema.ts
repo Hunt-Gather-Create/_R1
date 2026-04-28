@@ -129,7 +129,9 @@ export const updates = sqliteTable("updates", {
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),
-});
+}, (table) => [
+  index("idx_updates_created_at").on(table.createdAt),
+]);
 
 export const teamMembers = sqliteTable("team_members", {
   id: text("id").primaryKey(),

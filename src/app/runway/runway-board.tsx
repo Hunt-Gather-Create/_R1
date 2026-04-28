@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { DayItem, Account, PipelineItem } from "./types";
 import type { UnifiedAccount } from "./unified-view";
@@ -16,8 +16,7 @@ import { NeedsUpdateSection } from "./components/needs-update-section";
 import { InFlightSection } from "./components/in-flight-section";
 import { InFlightToggle } from "./components/in-flight-toggle";
 import { toggleInFlightAction } from "./actions";
-
-const REFRESH_INTERVAL_MS = 60 * 1000;
+import { useVersionPoll } from "./use-version-poll";
 
 type View = "triage" | "accounts" | "pipeline";
 
@@ -35,6 +34,13 @@ interface RunwayBoardProps {
   staleItems?: DayItem[];
   /** Initial persisted toggle value. Defaults to true (chunk 3 #6). */
   initialInFlightEnabled?: boolean;
+  /**
+   * Full unfiltered day-bucket array from `getWeekItems()`. Page-level
+   * bucketing for thisWeek/upcoming drops past-Monday buckets, which
+   * silently hid multi-week in-progress items from In Flight in prod.
+   * This source bypasses that bucketing so InFlightSection sees them.
+   */
+  inFlightSource: DayItem[];
 }
 
 const TABS = [
@@ -49,8 +55,8 @@ function useBoardData(
   pipeline: PipelineItem[]
 ) {
   // Recompute every render so the TV dashboard rolls over at midnight.
-  // Cost is one Date() + toDateString() per render — bounded by the 60s
-  // refresh interval upstream.
+  // The board only re-renders when the version poll detects a change, so
+  // the dashboard may sit idle for long stretches between renders.
   const todayStr = new Date().toDateString();
 
   const pipelineTotal = useMemo(
@@ -98,31 +104,31 @@ export function RunwayBoard({
   flags = [],
   staleItems = [],
   initialInFlightEnabled = true,
+  inFlightSource,
 }: RunwayBoardProps) {
   const router = useRouter();
   const [view, setView] = useState<View>("triage");
   const [inFlightEnabled, setInFlightEnabled] = useState(initialInFlightEnabled);
   const { pipelineTotal, todayColumn, restOfWeek, upcomingWeeks } = useBoardData(thisWeek, upcoming, pipeline);
-
-  // Combined week-items source for In Flight — today's day, rest of this
-  // week, plus upcoming. Flatten once so InFlightSection can filter cheaply.
-  const allWeekItems = useMemo<DayItem[]>(
-    () => [...thisWeek, ...upcoming],
-    [thisWeek, upcoming]
-  );
-
-  useEffect(() => {
-    const id = setInterval(() => router.refresh(), REFRESH_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [router]);
+  const { isStale } = useVersionPoll(router);
 
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1800px] items-center justify-between px-4 py-3 sm:px-6 sm:py-4 2xl:px-10">
-          <h1 className="font-display text-xl font-bold tracking-tight text-foreground sm:text-3xl">
-            Civilization Runway
-          </h1>
+        <div className="mx-auto flex max-w-[1800px] items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4 2xl:px-10">
+          <div className="flex min-w-0 items-center gap-3">
+            <h1 className="font-display text-xl font-bold tracking-tight text-foreground sm:text-3xl">
+              Civilization Runway
+            </h1>
+            {isStale ? (
+              <span
+                role="status"
+                className="rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground"
+              >
+                Live updates paused — refresh to reconnect
+              </span>
+            ) : null}
+          </div>
           <nav className="flex gap-1 rounded-lg border border-border bg-card/50 p-1">
             {TABS.map((tab) => (
               <button
@@ -153,7 +159,7 @@ export function RunwayBoard({
                 />
                 <NeedsUpdateSection staleItems={staleItems} />
                 <InFlightSection
-                  weekItems={allWeekItems}
+                  weekItems={inFlightSource}
                   enabled={inFlightEnabled}
                 />
                 <TodaySection todayColumn={todayColumn} />

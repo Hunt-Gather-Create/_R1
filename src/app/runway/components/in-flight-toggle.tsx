@@ -57,7 +57,8 @@ export function InFlightToggle({
         type="button"
         role="switch"
         aria-checked={enabled}
-        aria-label="In Flight"
+        aria-labelledby="in-flight-label"
+        aria-describedby="in-flight-desc"
         data-testid="in-flight-toggle"
         disabled={isPending}
         onClick={handleClick}
@@ -74,11 +75,11 @@ export function InFlightToggle({
           }`}
         />
       </button>
-      <span className="text-sm font-medium text-foreground">In Flight</span>
-      <span className="text-xs text-muted-foreground">
+      <span id="in-flight-label" className="text-sm font-medium text-foreground">In Flight</span>
+      <span id="in-flight-desc" className="text-xs text-muted-foreground">
         {enabled
-          ? "Showing in-flight L2s above Today."
-          : "In Flight hidden."}
+          ? "Showing tasks that are already in flight for projects."
+          : "Toggle on to view tasks that are in flight for projects."}
       </span>
     </div>
   );

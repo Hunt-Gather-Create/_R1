@@ -101,6 +101,14 @@ export default async function RunwayPage() {
   // from the same combined fetch so By-Account renders milestones inline.
   const unifiedAccounts = buildUnifiedAccounts(accounts, [...thisWeekFiltered, ...upcomingFiltered]);
 
+  // In Flight regression fix: page-level bucketing for thisWeek/upcoming
+  // drops past-Monday day buckets entirely. Multi-week in-progress items
+  // whose bucket date is a past Monday were silently disappearing from
+  // InFlightSection in prod despite filterInFlight willing to render them.
+  // Pass the FULL unfiltered (but wrapper-filtered) source through so In
+  // Flight can see every item start/end-bracketed around today.
+  const inFlightSource = filterWrapperDayItems(allWeekItems, accounts);
+
   return (
     <RunwayBoard
       thisWeek={thisWeekFiltered}
@@ -110,6 +118,7 @@ export default async function RunwayPage() {
       flags={flags}
       staleItems={staleItems}
       initialInFlightEnabled={viewPrefs.inFlightToggle ?? true}
+      inFlightSource={inFlightSource}
     />
   );
 }

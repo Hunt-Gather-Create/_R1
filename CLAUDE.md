@@ -214,11 +214,27 @@ Uses @dnd-kit with custom collision detection in `src/lib/collision-detection.ts
 
 When a PR is from a fork (e.g., `jasonburks23/_R1` → `Hunt-Gather-Create/_R1:runway`), Vercel does NOT auto-fire a preview deploy for the PR. The merge into `runway` IS the deploy test. To validate before pushing to upstream:
 
-1. Bump local Vercel CLI to latest: `npm i -g vercel@latest`
-2. From the worktree, link a personal-scope canary project (one-time): `vercel link --scope=<your-personal-scope>`
-3. Pull env vars from a known-good runway deploy (one-time): `vercel env pull .env.canary` — or populate via the Vercel dashboard
-4. Deploy canary: `vercel deploy --prebuilt --scope=<your-personal-scope>`
-5. If the canary deploys green, push the PR for upstream review. If red, iterate locally without burning upstream review cycles.
+1. Bump local Vercel CLI to latest. If installed via Homebrew: `brew upgrade vercel-cli`. If installed via pnpm/npm: `pnpm add -g vercel@latest`.
+2. From the worktree, link a personal-scope canary project (one-time): `vercel link` (interactive — pick your personal scope, name the project e.g. `runway-canary`). **Do NOT pass `--scope=<personal-scope>`** — Vercel CLI v52 rejects personal accounts as a scope (only team scopes are valid). The link binds the worktree to the project; subsequent commands inherit it.
+3. Seed env vars on the new canary project (one-time, after first link). Either copy values from your `.env.local` to the canary project via the Vercel dashboard, or script it:
+   ```bash
+   while IFS= read -r line; do
+     [ -z "$line" ] && continue
+     case "$line" in '#'*) continue ;; esac
+     key="${line%%=*}"; value="${line#*=}"
+     value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
+     for env in production development; do
+       printf '%s' "$value" | vercel env add "$key" "$env"
+     done
+   done < .env.local
+   ```
+   Note: `.env.local` must end with a newline or the last line gets dropped by the read loop. Check with `tail -c 1 .env.local | xxd`.
+4. Pull project config + env: `vercel pull --environment=production --yes`
+5. Build: `vercel build --prod`
+6. Deploy: `vercel deploy --prebuilt --prod`
+7. If the canary deploys green (READY status), push the PR for upstream review. If red, iterate locally without burning upstream review cycles.
+
+The canary uses prod credentials and points at the prod Turso DB. **Do not interact with the canary URL like a normal user** (clicking toggles, etc.) — those clicks write to prod. The canary's purpose is verifying Vercel build + deploy succeed, not full functional testing. WorkOS auth on the canary URL will fail because `NEXT_PUBLIC_WORKOS_REDIRECT_URI` doesn't include the canary domain — that's expected and not a deploy failure.
 
 ### Build output vs. deploy success
 
