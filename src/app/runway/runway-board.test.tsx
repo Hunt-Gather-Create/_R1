@@ -19,11 +19,12 @@ vi.mock("./actions", () => ({
 }));
 
 // Stub InFlightSection so we can assert which weekItems source it received
-// without coupling to its internal filterInFlight logic.
+// without coupling to its internal filterInFlight logic. The testid mirrors
+// the real component's so document-order tests work against the same handle.
 vi.mock("./components/in-flight-section", () => ({
   InFlightSection: ({ weekItems, enabled }: { weekItems: DayItem[]; enabled: boolean }) => (
     <div
-      data-testid="in-flight-section-stub"
+      data-testid="in-flight-section"
       data-week-items={JSON.stringify(weekItems)}
       data-enabled={String(enabled)}
     />
@@ -206,7 +207,7 @@ describe("RunwayBoard", () => {
   // "in flight rendering."
   it("passes inFlightSource (not allWeekItems) to InFlightSection", () => {
     render(<RunwayBoard {...defaultProps} />);
-    const stub = screen.getByTestId("in-flight-section-stub");
+    const stub = screen.getByTestId("in-flight-section");
     const passed = JSON.parse(stub.getAttribute("data-week-items")!);
     expect(passed).toEqual(inFlightSource);
     // Sanity check the regression: passed source contains the past-Monday
@@ -274,6 +275,74 @@ describe("RunwayBoard", () => {
     const todaySectionAfter = screen.getByText("Today").closest("section")!;
     expect(within(todaySectionAfter).getByText("Tuesday Item")).toBeInTheDocument();
     expect(within(todaySectionAfter).queryByText("Monday Item")).toBeNull();
+
+    vi.useRealTimers();
+  });
+
+  // Section reorder (2026-04-28): Today moved above In Flight so the operator's
+  // first-glance view matches the actual reading order. Locks the new order so
+  // future edits don't silently regress it.
+  it("renders triage sections in document order: needs-update, today, in-flight, this-week", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-06T12:00:00")); // Monday
+
+    const orderFixture = {
+      thisWeek: [
+        // today-dated bucket → todayColumn populated
+        {
+          date: "2026-04-06",
+          label: "Mon 4/6",
+          items: [{ title: "Today Item", account: "X", type: "delivery" as const }],
+        },
+        // non-today bucket → restOfWeek > 0 → ThisWeek section renders
+        {
+          date: "2026-04-08",
+          label: "Wed 4/8",
+          items: [{ title: "Wed Item", account: "X", type: "delivery" as const }],
+        },
+      ],
+      upcoming: [],
+      accounts: [],
+      pipeline: [],
+      staleItems: [
+        {
+          date: "2026-03-30",
+          label: "Mon 3/30",
+          items: [{ title: "Stale", account: "X", type: "delivery" as const }],
+        },
+      ],
+      inFlightSource: [
+        {
+          date: "2026-04-06",
+          label: "Mon 4/6",
+          items: [
+            {
+              title: "Live",
+              account: "X",
+              type: "delivery" as const,
+              status: "in-progress",
+              startDate: "2026-04-01",
+              endDate: "2026-05-31",
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<RunwayBoard {...orderFixture} />);
+
+    const order = [
+      "needs-update-section",
+      "today-section",
+      "in-flight-section",
+      "this-week-section",
+    ];
+    const elements = order.map((id) => screen.getByTestId(id));
+
+    for (let i = 1; i < elements.length; i++) {
+      const relation = elements[i - 1].compareDocumentPosition(elements[i]);
+      expect(relation & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
 
     vi.useRealTimers();
   });

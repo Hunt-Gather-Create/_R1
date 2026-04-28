@@ -158,14 +158,14 @@ export function RunwayBoard({
                   onChange={setInFlightEnabled}
                 />
                 <NeedsUpdateSection staleItems={staleItems} />
+                <TodaySection todayColumn={todayColumn} />
                 <InFlightSection
                   weekItems={inFlightSource}
                   enabled={inFlightEnabled}
                 />
-                <TodaySection todayColumn={todayColumn} />
 
                 {restOfWeek.length > 0 ? (
-                  <section>
+                  <section data-testid="this-week-section">
                     <h2 className="mb-4 font-display text-2xl font-bold text-foreground">
                       This Week
                     </h2>
