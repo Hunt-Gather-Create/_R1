@@ -275,4 +275,70 @@ describe("RunwayPage", () => {
     expect(thisWeekDates).not.toContain("2026-04-20");
     expect(upcomingDates).not.toContain("2026-04-20");
   });
+
+  // Exclusivity: items appearing in BOTH Needs Update (stale) AND In Flight
+  // (in-progress + today inside [start, end]) must render only in Needs Update.
+  // Real pre-fix examples on prod: Bonterra "Impact Report — Dev IR Revisions",
+  // Soundly "Payment Gateway Page — In Dev". Stale wins because it's the action
+  // signal — once the item is updated, it drops from stale and reappears in
+  // In Flight on the next render.
+  it("excludes items from inFlightSource when their projectId appears in staleItems (stale wins)", async () => {
+    vi.setSystemTime(new Date("2026-04-27T12:00:00"));
+
+    const collidingProjectId = "p-bonterra-ir";
+    const staleDay = {
+      date: "2026-04-20",
+      label: "Mon 4/20",
+      items: [{
+        title: "Impact Report — Dev IR Revisions",
+        account: "Bonterra",
+        type: "delivery" as const,
+        projectId: collidingProjectId,
+      }],
+    };
+    const inFlightDay = {
+      date: "2026-04-27",
+      label: "Mon 4/27",
+      items: [
+        {
+          title: "Impact Report — Dev IR Revisions",
+          account: "Bonterra",
+          type: "delivery" as const,
+          projectId: collidingProjectId,
+          status: "in-progress",
+          startDate: "2026-04-20",
+          endDate: "2026-05-31",
+        },
+        {
+          title: "Other Live Work",
+          account: "Bonterra",
+          type: "delivery" as const,
+          projectId: "p-other",
+          status: "in-progress",
+          startDate: "2026-04-20",
+          endDate: "2026-05-31",
+        },
+      ],
+    };
+
+    mockGetClientsWithProjects.mockResolvedValue([]);
+    mockGetWeekItems.mockResolvedValue([inFlightDay]);
+    mockGetStaleWeekItems.mockResolvedValue([staleDay]);
+    mockGetPipeline.mockResolvedValue([]);
+
+    const el = await RunwayPage();
+    render(el);
+    const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+
+    const staleTitles = props.staleItems.flatMap(
+      (d: { items: { title: string }[] }) => d.items.map((i) => i.title)
+    );
+    expect(staleTitles).toContain("Impact Report — Dev IR Revisions");
+
+    const inFlightTitles = props.inFlightSource.flatMap(
+      (d: { items: { title: string }[] }) => d.items.map((i) => i.title)
+    );
+    expect(inFlightTitles).not.toContain("Impact Report — Dev IR Revisions");
+    expect(inFlightTitles).toContain("Other Live Work");
+  });
 });

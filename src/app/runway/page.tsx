@@ -109,6 +109,21 @@ export default async function RunwayPage() {
   // Flight can see every item start/end-bracketed around today.
   const inFlightSource = filterWrapperDayItems(allWeekItems, accounts);
 
+  // Stale wins: items in both Needs Update and In Flight render only in Needs Update.
+  // Once updated, they drop from stale and reappear in In Flight on the next render.
+  // Pre-fix examples: Bonterra "Impact Report", Soundly "Payment Gateway Page".
+  const staleProjectIds = new Set<string>(
+    staleItems
+      .flatMap((day) => day.items.map((item) => item.projectId))
+      .filter((id): id is string => Boolean(id))
+  );
+  const inFlightSourceDeduped = inFlightSource.map((day) => ({
+    ...day,
+    items: day.items.filter(
+      (item) => !item.projectId || !staleProjectIds.has(item.projectId)
+    ),
+  }));
+
   return (
     <RunwayBoard
       thisWeek={thisWeekFiltered}
@@ -118,7 +133,7 @@ export default async function RunwayPage() {
       flags={flags}
       staleItems={staleItems}
       initialInFlightEnabled={viewPrefs.inFlightToggle ?? true}
-      inFlightSource={inFlightSource}
+      inFlightSource={inFlightSourceDeduped}
     />
   );
 }
