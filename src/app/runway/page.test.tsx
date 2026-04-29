@@ -276,24 +276,24 @@ describe("RunwayPage", () => {
     expect(upcomingDates).not.toContain("2026-04-20");
   });
 
-  // Exclusivity: items appearing in BOTH Needs Update (stale) AND In Flight
-  // (in-progress + today inside [start, end]) must render only in Needs Update.
-  // Real pre-fix examples on prod: Bonterra "Impact Report — Dev IR Revisions",
-  // Soundly "Payment Gateway Page — In Dev". Stale wins because it's the action
-  // signal — once the item is updated, it drops from stale and reappears in
-  // In Flight on the next render.
-  it("excludes items from inFlightSource when their projectId appears in staleItems (stale wins)", async () => {
+  // Same-row dedup: the same week_item id appearing in BOTH Needs Update
+  // (stale) AND In Flight (in-progress + today inside [start, end]) must
+  // render only in Needs Update. Post-Commit 4 the predicates are mutually
+  // exclusive at the row level, but the dedup is retained as defense-in-depth
+  // against future regressions of that exclusivity.
+  it("excludes a row from inFlightSource when the same row id is in staleItems (same-row dedup)", async () => {
     vi.setSystemTime(new Date("2026-04-27T12:00:00"));
 
-    const collidingProjectId = "p-bonterra-ir";
+    const collidingId = "wi-bonterra-ir";
     const staleDay = {
       date: "2026-04-20",
       label: "Mon 4/20",
       items: [{
+        id: collidingId,
         title: "Impact Report — Dev IR Revisions",
         account: "Bonterra",
         type: "delivery" as const,
-        projectId: collidingProjectId,
+        projectId: "p-bonterra-ir",
       }],
     };
     const inFlightDay = {
@@ -301,15 +301,17 @@ describe("RunwayPage", () => {
       label: "Mon 4/27",
       items: [
         {
+          id: collidingId,
           title: "Impact Report — Dev IR Revisions",
           account: "Bonterra",
           type: "delivery" as const,
-          projectId: collidingProjectId,
+          projectId: "p-bonterra-ir",
           status: "in-progress",
           startDate: "2026-04-20",
           endDate: "2026-05-31",
         },
         {
+          id: "wi-other",
           title: "Other Live Work",
           account: "Bonterra",
           type: "delivery" as const,
@@ -340,6 +342,74 @@ describe("RunwayPage", () => {
     );
     expect(inFlightTitles).not.toContain("Impact Report — Dev IR Revisions");
     expect(inFlightTitles).toContain("Other Live Work");
+  });
+
+  // Multi-row in same project: when one L2 is overdue and another L2 in the
+  // same project is actively in-flight, ID-based dedup keeps each row in its
+  // correct section. Real example: HDL "Website Build" has parallel L2s
+  // (Batch 1 Design, Batch 2 Design, Final Review); if Batch 1 goes overdue,
+  // Batch 2 must remain visible in In Flight.
+  it("keeps active sibling rows in inFlightSource when a different row in the same project is stale", async () => {
+    vi.setSystemTime(new Date("2026-04-27T12:00:00"));
+
+    const sharedProjectId = "p-hdl-website-build";
+    const staleDay = {
+      date: "2026-04-20",
+      label: "Mon 4/20",
+      items: [{
+        id: "wi-batch-1-design",
+        title: "Website Build — Batch 1 Design",
+        account: "HDL",
+        type: "delivery" as const,
+        projectId: sharedProjectId,
+      }],
+    };
+    const inFlightDay = {
+      date: "2026-04-27",
+      label: "Mon 4/27",
+      items: [
+        {
+          id: "wi-batch-2-design",
+          title: "Website Build — Batch 2 Design",
+          account: "HDL",
+          type: "delivery" as const,
+          projectId: sharedProjectId,
+          status: "in-progress",
+          startDate: "2026-04-20",
+          endDate: "2026-05-31",
+        },
+        {
+          id: "wi-final-review",
+          title: "Website Build — Final Review",
+          account: "HDL",
+          type: "delivery" as const,
+          projectId: sharedProjectId,
+          status: "in-progress",
+          startDate: "2026-04-25",
+          endDate: "2026-06-15",
+        },
+      ],
+    };
+
+    mockGetClientsWithProjects.mockResolvedValue([]);
+    mockGetWeekItems.mockResolvedValue([inFlightDay]);
+    mockGetStaleWeekItems.mockResolvedValue([staleDay]);
+    mockGetPipeline.mockResolvedValue([]);
+
+    const el = await RunwayPage();
+    render(el);
+    const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+
+    const staleTitles = props.staleItems.flatMap(
+      (d: { items: { title: string }[] }) => d.items.map((i) => i.title)
+    );
+    expect(staleTitles).toContain("Website Build — Batch 1 Design");
+
+    const inFlightTitles = props.inFlightSource.flatMap(
+      (d: { items: { title: string }[] }) => d.items.map((i) => i.title)
+    );
+    expect(inFlightTitles).toContain("Website Build — Batch 2 Design");
+    expect(inFlightTitles).toContain("Website Build — Final Review");
   });
 
   // Commit 4 — end-to-end scenarios. These verify the bucket-key flip

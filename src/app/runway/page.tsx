@@ -109,23 +109,25 @@ export default async function RunwayPage() {
   // Flight can see every item start/end-bracketed around today.
   const inFlightSource = filterWrapperDayItems(allWeekItems, accounts);
 
-  // Stale wins: items in both Needs Update and In Flight render only in Needs Update.
-  // Once updated, they drop from stale and reappear in In Flight on the next render.
-  // Pre-fix examples: Bonterra "Impact Report", Soundly "Payment Gateway Page".
-  // Post-Commit 4: predicates are mutually exclusive at the row level
-  // (In Flight requires today <= endDate; Needs Update requires endDate < today),
-  // so a single row cannot satisfy both. Dedup retained as defense-in-depth
-  // for multi-row scenarios where the same project has separate rows in
-  // both collections (e.g. two scheduled milestones, one past-due, one mid-range).
-  const staleProjectIds = new Set<string>(
+  // Dedup belt-and-suspenders: post-Commit 4, the same row can't appear in both
+  // sections (predicates are mutually exclusive). ID-based dedup catches the
+  // original same-row duplication bug if it ever recurs, without punishing
+  // active sibling rows in the same project.
+  //
+  // Real example: HDL "Website Build" has multiple parallel L2s in flight
+  // (Batch 1 Design, Batch 2 Design, Final Review). When Batch 1 Design goes
+  // overdue, project-id dedup would have hidden ALL of Website Build from In
+  // Flight — wrong, because Batch 2 and Final Review are still actively in
+  // flight. ID-based dedup keeps each row in its correct section.
+  const staleItemIds = new Set<string>(
     staleItems
-      .flatMap((day) => day.items.map((item) => item.projectId))
+      .flatMap((day) => day.items.map((item) => item.id))
       .filter((id): id is string => Boolean(id))
   );
   const inFlightSourceDeduped = inFlightSource.map((day) => ({
     ...day,
     items: day.items.filter(
-      (item) => !item.projectId || !staleProjectIds.has(item.projectId)
+      (item) => !item.id || !staleItemIds.has(item.id)
     ),
   }));
 
