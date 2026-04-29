@@ -15,7 +15,11 @@ export function DatesLine({
   const endStr = toShortDateString(endDate);
 
   if (startStr && endStr && startStr === endStr) {
-    return <span className={className}>Dates: {startStr}</span>;
+    return (
+      <span className={className} data-testid="dates-line">
+        Dates: {startStr}
+      </span>
+    );
   }
 
   const NullSpan = (

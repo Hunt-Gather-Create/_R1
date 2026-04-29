@@ -12,8 +12,8 @@ describe("DatesLine", () => {
 
   it("collapses to a single date when start === end (milestone)", () => {
     render(<DatesLine startDate="2026-05-11" endDate="2026-05-11" />);
-    expect(screen.getByText("Dates: 5/11")).toBeInTheDocument();
-    expect(screen.queryByTestId("dates-line")).not.toBeInTheDocument();
+    const line = screen.getByTestId("dates-line");
+    expect(line).toHaveTextContent("Dates: 5/11");
     expect(screen.queryByTestId("dates-null")).not.toBeInTheDocument();
   });
 
