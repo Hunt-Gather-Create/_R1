@@ -212,11 +212,13 @@ Uses @dnd-kit with custom collision detection in `src/lib/collision-detection.ts
 
 ### Cross-fork Vercel canary procedure
 
-When a PR is from a fork (e.g., `jasonburks23/_R1` → `Hunt-Gather-Create/_R1:runway`), Vercel does NOT auto-fire a preview deploy for the PR. The merge into `runway` IS the deploy test. To validate before pushing to upstream:
+When a PR is from a fork (e.g., `jasonburks23/_R1` → `Hunt-Gather-Create/_R1:runway`), Vercel does NOT auto-fire a preview deploy for the PR. The merge into `runway` IS the deploy test. To validate before pushing to upstream, run `/canary` — see `.claude/skills/canary/SKILL.md`.
+
+**One-time setup** (run once per machine — provisions the canary project on Vercel's side):
 
 1. Bump local Vercel CLI to latest. If installed via Homebrew: `brew upgrade vercel-cli`. If installed via pnpm/npm: `pnpm add -g vercel@latest`.
-2. From the worktree, link a personal-scope canary project (one-time): `vercel link` (interactive — pick your personal scope, name the project e.g. `runway-canary`). **Do NOT pass `--scope=<personal-scope>`** — Vercel CLI v52 rejects personal accounts as a scope (only team scopes are valid). The link binds the worktree to the project; subsequent commands inherit it.
-3. Seed env vars on the new canary project (one-time, after first link). Either copy values from your `.env.local` to the canary project via the Vercel dashboard, or script it:
+2. From any single worktree, link a personal-scope canary project: `vercel link` (interactive — pick your personal scope, name the project e.g. `runway-canary`). **Do NOT pass `--scope=<personal-account>`** — Vercel CLI v52 rejects personal accounts as a scope flag value (only team scopes are valid there). The link binds the worktree to the project; subsequent commands inherit it.
+3. Seed env vars on the new canary project. Either copy values from your `.env.local` to the canary project via the Vercel dashboard, or script it:
    ```bash
    while IFS= read -r line; do
      [ -z "$line" ] && continue
@@ -230,9 +232,10 @@ When a PR is from a fork (e.g., `jasonburks23/_R1` → `Hunt-Gather-Create/_R1:r
    ```
    Note: `.env.local` must end with a newline or the last line gets dropped by the read loop. Check with `tail -c 1 .env.local | xxd`.
 4. Pull project config + env: `vercel pull --environment=production --yes`
-5. Build: `vercel build --prod`
-6. Deploy: `vercel deploy --prebuilt --prod`
-7. If the canary deploys green (READY status), push the PR for upstream review. If red, iterate locally without burning upstream review cycles.
+
+After this is done in any one worktree, the `.vercel/project.json` it produces is the source of truth `/canary` will copy from for new worktrees.
+
+**Per-PR canary deploy:** run `/canary` from any worktree. The skill auto-links the worktree on first run by copying `projectName` from any sibling worktree's `.vercel/project.json` (no manual `vercel link` needed per worktree — `.vercel/project.json` is gitignored). Then it handles pre-flight gates (branch, CLI, auth, link state, dirty tree), build, deploy, and reporting. If the canary deploys green (READY status), push the PR for upstream review. If red, iterate locally without burning upstream review cycles.
 
 The canary uses prod credentials and points at the prod Turso DB. **Do not interact with the canary URL like a normal user** (clicking toggles, etc.) — those clicks write to prod. The canary's purpose is verifying Vercel build + deploy succeed, not full functional testing. WorkOS auth on the canary URL will fail because `NEXT_PUBLIC_WORKOS_REDIRECT_URI` doesn't include the canary domain — that's expected and not a deploy failure.
 
@@ -258,6 +261,18 @@ When executing a plan that involves code changes:
 1. **Tests are part of each step, not a separate step.** If you're building `operations.ts`, the plan includes `operations.test.ts` in the same step. Not "Step 7: write tests for everything."
 2. **Cross-check data consistency** — types, enums, and status values must match across all files that reference them. If a bot prompt lists a status value the type system doesn't include, that's a bug.
 3. **If you can't state the full workflow from memory after reading these rules, you haven't internalized them.** Go back and re-read.
+
+### Post-build pipeline (run in this order before pushing)
+
+After the code is written, run these skills in order. Each is its own step — do not collapse or skip:
+
+1. `/code-review` — DRY, prop drilling, hooks/context, test coverage
+2. `/update-docs` — sync `/docs` knowledge base if patterns/versions changed
+3. `/pr-ready` — debug statements, unused imports, final cleanup
+4. `/preflight` — build + grep gate + tests + lint (and `vercel build` on runway-tracked branches)
+5. `/canary` — cross-fork Vercel preview deploy (runway-targeted PRs only); auto-links new worktrees and replaces the old manual `vercel build && vercel deploy --prebuilt` two-liner
+6. `/atomic-commits` — split working tree into focused commits
+7. Push the branch and open the PR (operator runs this; do NOT auto-push)
 
 ### Common Failure Modes
 
