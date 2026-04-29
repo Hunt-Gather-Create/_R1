@@ -582,6 +582,81 @@ describe("detectDeadlines", () => {
     expect(flags[0].title).toBe("Convergix: SOW");
     expect(flags[0].relatedClient).toBe("Convergix");
   });
+
+  // Commit 4.6: detectDeadlines now keys on item.endDate (falling back to
+  // day.date) so a range task whose bucket sits on the kickoff day still
+  // fires its deadline flag on the actual due day.
+  it("fires Due today flag for a range task with endDate=today even when bucketed on an earlier startDate", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-03-24", [
+        createDayItemEntry({
+          type: "delivery",
+          account: "Bonterra",
+          title: "Impact Report",
+          startDate: "2026-03-24",
+          endDate: "2026-04-07",
+        }),
+      ]),
+    ];
+
+    const flags = detectDeadlines(thisWeek);
+    expect(flags).toHaveLength(1);
+    expect(flags[0].detail).toBe("Due today");
+    expect(flags[0].severity).toBe("warning");
+  });
+
+  it("fires Due tomorrow flag for a range task with endDate=tomorrow regardless of bucket key", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-03-24", [
+        createDayItemEntry({
+          type: "delivery",
+          account: "Bonterra",
+          title: "Range work",
+          startDate: "2026-03-24",
+          endDate: "2026-04-08",
+        }),
+      ]),
+    ];
+
+    const flags = detectDeadlines(thisWeek);
+    expect(flags).toHaveLength(1);
+    expect(flags[0].detail).toBe("Due tomorrow");
+    expect(flags[0].severity).toBe("info");
+  });
+
+  it("does NOT fire when item.endDate is beyond today/tomorrow even if bucket date matches", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-07", [
+        createDayItemEntry({
+          type: "delivery",
+          account: "X",
+          title: "Long-running",
+          startDate: "2026-04-07",
+          endDate: "2026-04-30",
+        }),
+      ]),
+    ];
+
+    const flags = detectDeadlines(thisWeek);
+    expect(flags).toHaveLength(0);
+  });
+
+  it("falls back to day.date when item.endDate is absent (single-day items)", () => {
+    const thisWeek: DayItem[] = [
+      createDayItem("2026-04-07", [
+        createDayItemEntry({
+          type: "deadline",
+          account: "X",
+          title: "Single-day deadline",
+          // no endDate set — falls back to bucket key
+        }),
+      ]),
+    ];
+
+    const flags = detectDeadlines(thisWeek);
+    expect(flags).toHaveLength(1);
+    expect(flags[0].detail).toBe("Due today");
+  });
 });
 
 describe("detectBottlenecks", () => {

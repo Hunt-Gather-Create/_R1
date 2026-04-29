@@ -109,6 +109,28 @@ export default async function RunwayPage() {
   // Flight can see every item start/end-bracketed around today.
   const inFlightSource = filterWrapperDayItems(allWeekItems, accounts);
 
+  // Dedup belt-and-suspenders: post-Commit 4, the same row can't appear in both
+  // sections (predicates are mutually exclusive). ID-based dedup catches the
+  // original same-row duplication bug if it ever recurs, without punishing
+  // active sibling rows in the same project.
+  //
+  // Real example: HDL "Website Build" has multiple parallel L2s in flight
+  // (Batch 1 Design, Batch 2 Design, Final Review). When Batch 1 Design goes
+  // overdue, project-id dedup would have hidden ALL of Website Build from In
+  // Flight — wrong, because Batch 2 and Final Review are still actively in
+  // flight. ID-based dedup keeps each row in its correct section.
+  const staleItemIds = new Set<string>(
+    staleItems
+      .flatMap((day) => day.items.map((item) => item.id))
+      .filter((id): id is string => Boolean(id))
+  );
+  const inFlightSourceDeduped = inFlightSource.map((day) => ({
+    ...day,
+    items: day.items.filter(
+      (item) => !item.id || !staleItemIds.has(item.id)
+    ),
+  }));
+
   return (
     <RunwayBoard
       thisWeek={thisWeekFiltered}
@@ -118,7 +140,7 @@ export default async function RunwayPage() {
       flags={flags}
       staleItems={staleItems}
       initialInFlightEnabled={viewPrefs.inFlightToggle ?? true}
-      inFlightSource={inFlightSource}
+      inFlightSource={inFlightSourceDeduped}
     />
   );
 }

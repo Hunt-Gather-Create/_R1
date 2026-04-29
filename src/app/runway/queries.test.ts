@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   mockResults, resetMocks, createChainable,
   convergixClient, lppcClient, weekItemRows, pipelineRow, orphanPipelineRow,
-  createWeekItem, createUpdate,
+  createWeekItem,
 } from "./queries-test-helpers";
 
 vi.mock("@/lib/db/runway", () => ({
@@ -14,7 +14,12 @@ vi.mock("@/lib/db/runway", () => ({
 vi.mock("@/lib/db/runway-schema", () => ({
   clients: { name: "clients", id: "id" },
   projects: { sortOrder: "sortOrder", clientId: "clientId" },
-  weekItems: { weekOf: "weekOf", date: "date", sortOrder: "sortOrder" },
+  weekItems: {
+    weekOf: "weekOf",
+    date: "date",
+    endDate: "endDate",
+    sortOrder: "sortOrder",
+  },
   pipelineItems: { sortOrder: "sortOrder", clientId: "clientId" },
   teamMembers: { isActive: "isActive" },
   updates: { createdAt: "createdAt" },
@@ -23,8 +28,12 @@ vi.mock("@/lib/db/runway-schema", () => ({
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((a, b) => ({ eq: [a, b] })),
   and: vi.fn((...args: unknown[]) => ({ and: args })),
+  or: vi.fn((...args: unknown[]) => ({ or: args })),
   gte: vi.fn((a, b) => ({ gte: [a, b] })),
   lte: vi.fn((a, b) => ({ lte: [a, b] })),
+  lt: vi.fn((a, b) => ({ lt: [a, b] })),
+  isNull: vi.fn((col) => ({ isNull: col })),
+  isNotNull: vi.fn((col) => ({ isNotNull: col })),
   asc: vi.fn((col) => ({ asc: col })),
   desc: vi.fn((col) => ({ desc: col })),
 }));
@@ -221,17 +230,20 @@ describe("getStaleWeekItems", () => {
     vi.useRealTimers();
   });
 
-  it("excludes items from yesterday that HAVE updates", async () => {
+  // Commit 4.3c: freshness suppression removed. A past-due item with a
+  // recent update on its parent project is STILL stale — the only way out
+  // is staff action on the L2 itself (mark completed OR push endDate).
+  it("INCLUDES past-due items even when their project has a recent update (suppression removed)", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-07T12:00:00"));
 
     mockResults.push([createWeekItem({ date: "2026-04-06", projectId: "p1" })]);
-    mockResults.push([createUpdate({ projectId: "p1", createdAt: new Date("2026-04-06T14:00:00") })]);
 
     const { getStaleWeekItems } = await import("./queries");
     const result = await getStaleWeekItems();
 
-    expect(result).toHaveLength(0);
+    expect(result).toHaveLength(1);
+    expect(result[0].items[0].title).toBe("CDS Review");
 
     vi.useRealTimers();
   });
@@ -302,20 +314,22 @@ describe("getStaleWeekItems", () => {
     vi.useRealTimers();
   });
 
-  it("excludes overdue items from previous weeks that have updates", async () => {
+  // Commit 4.3c (extended): same suppression-removal behavior across week
+  // boundaries. Past-due items from earlier weeks remain stale even with
+  // a fresh project update.
+  it("INCLUDES past-due items from previous weeks even when their project has updates (suppression removed)", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-14T12:00:00"));
 
     mockResults.push([
       createWeekItem({ date: "2026-04-09", weekOf: "2026-04-06", projectId: "p1" }),
     ]);
-    // Update after the item's date — project has been updated
-    mockResults.push([createUpdate({ projectId: "p1", createdAt: new Date("2026-04-10T10:00:00") })]);
 
     const { getStaleWeekItems } = await import("./queries");
     const result = await getStaleWeekItems();
 
-    expect(result).toHaveLength(0);
+    expect(result).toHaveLength(1);
+    expect(result[0].items[0].title).toBe("CDS Review");
 
     vi.useRealTimers();
   });
@@ -353,47 +367,22 @@ describe("getStaleWeekItems", () => {
     vi.useRealTimers();
   });
 
-  // 4b: confirm the updates query is gated by a 30-day lookback
-  // (full-table scans on the updates table were the prior behavior).
-  it("filters the updates query to the last 30 days via gte", async () => {
+  // Commit 4.3b: past-due predicate now uses endDate ?? date, so range tasks
+  // with a past endDate but a date field that's still in the future (or vice
+  // versa) are correctly classified.
+  it("treats range tasks with endDate < today < date as past-due (endDate wins)", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-07T12:00:00"));
 
-    mockResults.push([createWeekItem({ date: "2026-04-06" })]);
-    mockResults.push([]);
-
-    const { gte } = await import("drizzle-orm");
-    (gte as unknown as ReturnType<typeof vi.fn>).mockClear();
-
-    const { getStaleWeekItems } = await import("./queries");
-    await getStaleWeekItems();
-
-    // gte fires twice: once for week-item lookback and once for updates.
-    // The updates call passes a Date (not a YYYY-MM-DD string) and lands
-    // ~30 days before "now".
-    const dateCalls = (gte as unknown as ReturnType<typeof vi.fn>).mock.calls
-      .filter((call: unknown[]) => call[1] instanceof Date);
-    expect(dateCalls.length).toBeGreaterThan(0);
-    const cutoff = dateCalls[0][1] as Date;
-    const now = Date.now();
-    const expected = now - 30 * 24 * 60 * 60 * 1000;
-    expect(Math.abs(cutoff.getTime() - expected)).toBeLessThan(2_000);
-
-    vi.useRealTimers();
-  });
-
-  // 4a: nested-loop fix — confirm correctness with multiple updates per
-  // project and updates that predate the item (should not mark as covered).
-  it("excludes items whose only updates predate the item date", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
-
-    mockResults.push([createWeekItem({ date: "2026-04-06", projectId: "p1" })]);
-    // Two updates for p1: one before the item date, one... still before.
-    // Neither covers the item, so it stays stale.
+    // Range task: kickoff 2026-03-20, ended 2026-04-06 (yesterday), date
+    // matches endDate per convention. Past endDate → past-due.
     mockResults.push([
-      createUpdate({ projectId: "p1", createdAt: new Date("2026-04-04T09:00:00") }),
-      createUpdate({ projectId: "p1", createdAt: new Date("2026-04-05T15:00:00") }),
+      createWeekItem({
+        date: "2026-04-06",
+        weekOf: "2026-03-16",
+        startDate: "2026-03-20",
+        endDate: "2026-04-06",
+      }),
     ]);
 
     const { getStaleWeekItems } = await import("./queries");
@@ -404,232 +393,119 @@ describe("getStaleWeekItems", () => {
 
     vi.useRealTimers();
   });
-});
 
-// ── Real-filter coverage for the 30-day update lookback ──────────────
-//
-// The "filters the updates query to the last 30 days via gte" test above
-// verifies the SQL signature (gte called with a Date ~30d ago) but the
-// chainable mock ignores where clauses entirely — push to mockResults and
-// the rows come back regardless of any filter. So that test would still
-// PASS if someone deleted the gte call from queries.ts.
-//
-// This describe block wires up a smarter mock that actually APPLIES the
-// gte filter against seeded update rows. It uses vi.doMock + resetModules
-// to swap in an alternate getRunwayDb just for these tests, then re-imports
-// queries.ts so the new mock binds.
-//
-// Two paired tests prove the filter outcome both ways:
-//   1. Old update (60d ago) gets filtered out → item is stale.
-//   2. Recent update (5d ago) passes through → item is covered (not stale).
-//
-// If the gte call is removed from queries.ts, test #1 fails: the old update
-// is no longer filtered, marks the project as covered, and the item drops
-// out of the stale list.
-describe("getStaleWeekItems — 30d update lookback (real-filter)", () => {
-  // Updates fed to the smart chainable on a per-test basis.
-  let updateFixtures: Array<ReturnType<typeof createUpdate>> = [];
-  // Week items fed to the smart chainable on a per-test basis.
-  let weekItemFixtures: Array<ReturnType<typeof createWeekItem>> = [];
-
-  beforeEach(() => {
-    updateFixtures = [];
-    weekItemFixtures = [];
-    vi.resetModules();
-  });
-
-  it("filters out updates older than the 30-day cutoff (item stays stale)", async () => {
+  it("does NOT classify range tasks as past-due when endDate is in the future", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-07T12:00:00"));
 
-    // Past-due item from ~52 days ago, project p1. (The DB-level weekOf
-    // lookback would normally exclude this; the mock chainable skips that
-    // filter so we can isolate the updates-side gte behavior.)
-    weekItemFixtures = [
+    // Range task starting in the past but ending tomorrow — endDate > today
+    // → not past-due. (Note: getStaleWeekItems also pre-filters via SQL
+    // weekOf <= currentMonday, so this test exercises the JS-level predicate.)
+    mockResults.push([
       createWeekItem({
-        date: "2026-02-15",
-        weekOf: "2026-02-09",
-        projectId: "p1",
+        date: "2026-04-08", // future per convention (matches endDate)
+        weekOf: "2026-03-30",
+        startDate: "2026-03-25",
+        endDate: "2026-04-08",
       }),
-    ];
-    // ONE update for p1, dated 5 days AFTER the item but ~46 days before
-    // "now" — outside the 30d window. With the gte filter the update gets
-    // dropped, leaving p1 with no recent coverage, so the item appears
-    // stale. WITHOUT the filter, this ancient update slips through,
-    // satisfies `latest >= item.date`, marks p1 as covered, and the item
-    // disappears from the stale list.
-    updateFixtures = [
-      createUpdate({
-        projectId: "p1",
-        createdAt: new Date("2026-02-20T14:00:00"),
-      }),
-    ];
-
-    // Re-mock @/lib/db/runway with a chainable that introspects the where
-    // clause and actually applies the gte filter against updateFixtures.
-    // This is intentionally local to this describe block; the file-level
-    // mock is overridden via vi.doMock + vi.resetModules + dynamic import.
-    vi.doMock("@/lib/db/runway", () => ({
-      getRunwayDb: () => ({
-        select: () => ({
-          from: (table: unknown) => createSmartChainable(table),
-        }),
-      }),
-    }));
-
-    function createSmartChainable(table: unknown) {
-      // The schema mock identifies tables by reference. updates table has
-      // shape { createdAt: "createdAt" }; weekItems has shape {
-      // weekOf: "weekOf", date: "date", sortOrder: "sortOrder" }.
-      const isUpdatesTable =
-        table != null &&
-        typeof table === "object" &&
-        "createdAt" in (table as Record<string, unknown>) &&
-        !("weekOf" in (table as Record<string, unknown>));
-
-      let capturedWhere: unknown = null;
-
-      const chainable: Record<string, unknown> = {
-        where: vi.fn((arg: unknown) => {
-          capturedWhere = arg;
-          return chainable;
-        }),
-        orderBy: vi.fn(() => chainable),
-        then: (resolve: (v: unknown) => void) => {
-          if (!isUpdatesTable) {
-            resolve(weekItemFixtures);
-            return;
-          }
-          // Apply the gte filter to updateFixtures using the captured
-          // where clause. The drizzle-orm mock returns gte calls as
-          // { gte: [column, cutoffDate] }. If the caller wrapped in and(),
-          // it becomes { and: [{ gte: [...] }, ...] }. We accept either
-          // shape for robustness.
-          const gteClauses = extractGteClauses(capturedWhere);
-          const filtered = updateFixtures.filter((row) => {
-            for (const clause of gteClauses) {
-              const [, cutoff] = clause;
-              if (cutoff instanceof Date && row.createdAt < cutoff) {
-                return false;
-              }
-            }
-            return true;
-          });
-          resolve(filtered);
-        },
-      };
-      return chainable;
-    }
-
-    function extractGteClauses(
-      where: unknown
-    ): Array<[unknown, unknown]> {
-      if (where == null || typeof where !== "object") return [];
-      const obj = where as Record<string, unknown>;
-      if ("gte" in obj && Array.isArray(obj.gte)) {
-        return [obj.gte as [unknown, unknown]];
-      }
-      if ("and" in obj && Array.isArray(obj.and)) {
-        return (obj.and as unknown[]).flatMap((sub) => extractGteClauses(sub));
-      }
-      return [];
-    }
+    ]);
 
     const { getStaleWeekItems } = await import("./queries");
     const result = await getStaleWeekItems();
 
-    // The 46-day-old update is filtered out by gte, so p1 has no recent
-    // coverage and the past-due item is reported as stale.
-    expect(result).toHaveLength(1);
-    expect(result[0].date).toBe("2026-02-15");
-    expect(result[0].items[0].title).toBe("CDS Review");
-
-    vi.useRealTimers();
-    vi.doUnmock("@/lib/db/runway");
-  });
-
-  it("keeps recent updates inside the 30-day window (item is covered, not stale)", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
-
-    weekItemFixtures = [createWeekItem({ date: "2026-04-06", projectId: "p1" })];
-    // Recent update (5d ago) — well inside the 30d window — should pass
-    // through the gte filter and mark p1 as covered, dropping the item
-    // from the stale list. This is the paired sanity check confirming the
-    // filter is not over-eager.
-    updateFixtures = [
-      createUpdate({
-        projectId: "p1",
-        createdAt: new Date("2026-04-06T14:00:00"),
-      }),
-    ];
-
-    vi.doMock("@/lib/db/runway", () => ({
-      getRunwayDb: () => ({
-        select: () => ({
-          from: (table: unknown) => createSmartChainable(table),
-        }),
-      }),
-    }));
-
-    function createSmartChainable(table: unknown) {
-      const isUpdatesTable =
-        table != null &&
-        typeof table === "object" &&
-        "createdAt" in (table as Record<string, unknown>) &&
-        !("weekOf" in (table as Record<string, unknown>));
-
-      let capturedWhere: unknown = null;
-
-      const chainable: Record<string, unknown> = {
-        where: vi.fn((arg: unknown) => {
-          capturedWhere = arg;
-          return chainable;
-        }),
-        orderBy: vi.fn(() => chainable),
-        then: (resolve: (v: unknown) => void) => {
-          if (!isUpdatesTable) {
-            resolve(weekItemFixtures);
-            return;
-          }
-          const gteClauses = extractGteClauses(capturedWhere);
-          const filtered = updateFixtures.filter((row) => {
-            for (const clause of gteClauses) {
-              const [, cutoff] = clause;
-              if (cutoff instanceof Date && row.createdAt < cutoff) {
-                return false;
-              }
-            }
-            return true;
-          });
-          resolve(filtered);
-        },
-      };
-      return chainable;
-    }
-
-    function extractGteClauses(
-      where: unknown
-    ): Array<[unknown, unknown]> {
-      if (where == null || typeof where !== "object") return [];
-      const obj = where as Record<string, unknown>;
-      if ("gte" in obj && Array.isArray(obj.gte)) {
-        return [obj.gte as [unknown, unknown]];
-      }
-      if ("and" in obj && Array.isArray(obj.and)) {
-        return (obj.and as unknown[]).flatMap((sub) => extractGteClauses(sub));
-      }
-      return [];
-    }
-
-    const { getStaleWeekItems } = await import("./queries");
-    const result = await getStaleWeekItems();
-
-    // Recent update slips through the gte filter and marks p1 as covered.
-    // The item is excluded from the stale list.
     expect(result).toHaveLength(0);
 
     vi.useRealTimers();
-    vi.doUnmock("@/lib/db/runway");
+  });
+
+  // Commit 4.3a: 180-day lookback (was 21d). Catches range tasks whose
+  // weekOf is older than the past-due window but whose endDate just passed.
+  it("uses a 180-day lookback for the weekOf SQL filter (catches old range tasks with recently-passed endDate)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    const { gte } = await import("drizzle-orm");
+    (gte as unknown as ReturnType<typeof vi.fn>).mockClear();
+    mockResults.push([]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    await getStaleWeekItems();
+
+    // The single gte call (week-item lookback) should pass an ISO string
+    // ~180 days before today's Monday.
+    const calls = (gte as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    const lookbackArg = calls[calls.length - 1][1];
+    expect(typeof lookbackArg).toBe("string");
+
+    // Today = 2026-04-07 (Tue), today's Monday = 2026-04-06.
+    // Lookback Monday = 2026-04-06 − 180d = ~2025-10-08.
+    expect(lookbackArg).toMatch(/^2025-10-/);
+
+    vi.useRealTimers();
+  });
+
+  // Llama PR #96 review #2: SQL pre-filter mirrors the JS-level
+  // `endDate ?? date < today` predicate so we don't fetch the entire 180-day
+  // weekOf window just to discard most rows in the JS pass.
+  it("pushes the past-due predicate into SQL (lt(endDate, today) OR lt(date, today) when endDate IS NULL)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    const drizzle = await import("drizzle-orm");
+    (drizzle.lt as unknown as ReturnType<typeof vi.fn>).mockClear();
+    (drizzle.or as unknown as ReturnType<typeof vi.fn>).mockClear();
+    (drizzle.isNull as unknown as ReturnType<typeof vi.fn>).mockClear();
+    (drizzle.isNotNull as unknown as ReturnType<typeof vi.fn>).mockClear();
+    mockResults.push([]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    await getStaleWeekItems();
+
+    // lt should be called twice — once for endDate < today, once for date < today.
+    const ltCalls = (drizzle.lt as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(ltCalls).toHaveLength(2);
+    // Both calls compare against today's ISO string.
+    expect(ltCalls[0][1]).toBe("2026-04-07");
+    expect(ltCalls[1][1]).toBe("2026-04-07");
+
+    // or() should be called to combine the two SQL branches.
+    const orCalls = (drizzle.or as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(orCalls).toHaveLength(1);
+
+    // Each branch is gated on endDate's null state — IS NULL for the date
+    // fallback, IS NOT NULL for the endDate comparison.
+    expect((drizzle.isNotNull as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+    expect((drizzle.isNull as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+
+    vi.useRealTimers();
+  });
+
+  // Commit 4.1+4.4(b): getStaleWeekItems buckets by endDate (due day) so
+  // Needs Update day-groups label "when did this go red" instead of kickoff.
+  it("buckets stale items by endDate, not startDate (Needs Update group label = due day)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    // Range task: kickoff 2026-03-20, ended 2026-04-02 (past). Under
+    // startDate-keyed bucketing the day-group would be 2026-03-20; under
+    // endDate-keyed bucketing (Commit 4) it's 2026-04-02.
+    mockResults.push([
+      createWeekItem({
+        date: "2026-04-02",
+        weekOf: "2026-03-16",
+        startDate: "2026-03-20",
+        endDate: "2026-04-02",
+      }),
+    ]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].date).toBe("2026-04-02");
+    expect(result[0].label).toBe("Thu 4/2");
+
+    vi.useRealTimers();
   });
 });

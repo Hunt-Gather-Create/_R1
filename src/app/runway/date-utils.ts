@@ -32,3 +32,18 @@ export function getMondayISODate(date: Date): string {
 export function toISODateString(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
+
+/**
+ * Format a YYYY-MM-DD ISO date string as "M/D" with no zero-padding and no
+ * year. Returns null for null/undefined input or any string that doesn't
+ * parse to a numeric month and day.
+ */
+export function toShortDateString(iso?: string | null): string | null {
+  if (!iso) return null;
+  const parts = iso.split("-");
+  if (parts.length < 3) return null;
+  const m = parseInt(parts[1], 10);
+  const d = parseInt(parts[2], 10);
+  if (Number.isNaN(m) || Number.isNaN(d)) return null;
+  return `${m}/${d}`;
+}

@@ -12,7 +12,7 @@ export function NeedsUpdateSection({ staleItems }: NeedsUpdateSectionProps) {
   if (totalCount === 0) return null;
 
   return (
-    <section>
+    <section data-testid="needs-update-section">
       <div className="mb-4 flex items-baseline gap-3">
         <h2 className="font-display text-2xl font-bold text-red-400">
           Needs Update

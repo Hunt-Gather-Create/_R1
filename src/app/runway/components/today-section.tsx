@@ -16,7 +16,7 @@ export function TodaySection({
   });
 
   return (
-    <section>
+    <section data-testid="today-section">
       <div className="mb-4 flex items-baseline gap-3">
         <h2 className="font-display text-2xl font-bold text-foreground">
           Today

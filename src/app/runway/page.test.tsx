@@ -275,4 +275,289 @@ describe("RunwayPage", () => {
     expect(thisWeekDates).not.toContain("2026-04-20");
     expect(upcomingDates).not.toContain("2026-04-20");
   });
+
+  // Same-row dedup: the same week_item id appearing in BOTH Needs Update
+  // (stale) AND In Flight (in-progress + today inside [start, end]) must
+  // render only in Needs Update. Post-Commit 4 the predicates are mutually
+  // exclusive at the row level, but the dedup is retained as defense-in-depth
+  // against future regressions of that exclusivity.
+  it("excludes a row from inFlightSource when the same row id is in staleItems (same-row dedup)", async () => {
+    vi.setSystemTime(new Date("2026-04-27T12:00:00"));
+
+    const collidingId = "wi-bonterra-ir";
+    const staleDay = {
+      date: "2026-04-20",
+      label: "Mon 4/20",
+      items: [{
+        id: collidingId,
+        title: "Impact Report — Dev IR Revisions",
+        account: "Bonterra",
+        type: "delivery" as const,
+        projectId: "p-bonterra-ir",
+      }],
+    };
+    const inFlightDay = {
+      date: "2026-04-27",
+      label: "Mon 4/27",
+      items: [
+        {
+          id: collidingId,
+          title: "Impact Report — Dev IR Revisions",
+          account: "Bonterra",
+          type: "delivery" as const,
+          projectId: "p-bonterra-ir",
+          status: "in-progress",
+          startDate: "2026-04-20",
+          endDate: "2026-05-31",
+        },
+        {
+          id: "wi-other",
+          title: "Other Live Work",
+          account: "Bonterra",
+          type: "delivery" as const,
+          projectId: "p-other",
+          status: "in-progress",
+          startDate: "2026-04-20",
+          endDate: "2026-05-31",
+        },
+      ],
+    };
+
+    mockGetClientsWithProjects.mockResolvedValue([]);
+    mockGetWeekItems.mockResolvedValue([inFlightDay]);
+    mockGetStaleWeekItems.mockResolvedValue([staleDay]);
+    mockGetPipeline.mockResolvedValue([]);
+
+    const el = await RunwayPage();
+    render(el);
+    const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+
+    const staleTitles = props.staleItems.flatMap(
+      (d: { items: { title: string }[] }) => d.items.map((i) => i.title)
+    );
+    expect(staleTitles).toContain("Impact Report — Dev IR Revisions");
+
+    const inFlightTitles = props.inFlightSource.flatMap(
+      (d: { items: { title: string }[] }) => d.items.map((i) => i.title)
+    );
+    expect(inFlightTitles).not.toContain("Impact Report — Dev IR Revisions");
+    expect(inFlightTitles).toContain("Other Live Work");
+  });
+
+  // Multi-row in same project: when one L2 is overdue and another L2 in the
+  // same project is actively in-flight, ID-based dedup keeps each row in its
+  // correct section. Real example: HDL "Website Build" has parallel L2s
+  // (Batch 1 Design, Batch 2 Design, Final Review); if Batch 1 goes overdue,
+  // Batch 2 must remain visible in In Flight.
+  it("keeps active sibling rows in inFlightSource when a different row in the same project is stale", async () => {
+    vi.setSystemTime(new Date("2026-04-27T12:00:00"));
+
+    const sharedProjectId = "p-hdl-website-build";
+    const staleDay = {
+      date: "2026-04-20",
+      label: "Mon 4/20",
+      items: [{
+        id: "wi-batch-1-design",
+        title: "Website Build — Batch 1 Design",
+        account: "HDL",
+        type: "delivery" as const,
+        projectId: sharedProjectId,
+      }],
+    };
+    const inFlightDay = {
+      date: "2026-04-27",
+      label: "Mon 4/27",
+      items: [
+        {
+          id: "wi-batch-2-design",
+          title: "Website Build — Batch 2 Design",
+          account: "HDL",
+          type: "delivery" as const,
+          projectId: sharedProjectId,
+          status: "in-progress",
+          startDate: "2026-04-20",
+          endDate: "2026-05-31",
+        },
+        {
+          id: "wi-final-review",
+          title: "Website Build — Final Review",
+          account: "HDL",
+          type: "delivery" as const,
+          projectId: sharedProjectId,
+          status: "in-progress",
+          startDate: "2026-04-25",
+          endDate: "2026-06-15",
+        },
+      ],
+    };
+
+    mockGetClientsWithProjects.mockResolvedValue([]);
+    mockGetWeekItems.mockResolvedValue([inFlightDay]);
+    mockGetStaleWeekItems.mockResolvedValue([staleDay]);
+    mockGetPipeline.mockResolvedValue([]);
+
+    const el = await RunwayPage();
+    render(el);
+    const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+
+    const staleTitles = props.staleItems.flatMap(
+      (d: { items: { title: string }[] }) => d.items.map((i) => i.title)
+    );
+    expect(staleTitles).toContain("Website Build — Batch 1 Design");
+
+    const inFlightTitles = props.inFlightSource.flatMap(
+      (d: { items: { title: string }[] }) => d.items.map((i) => i.title)
+    );
+    expect(inFlightTitles).toContain("Website Build — Batch 2 Design");
+    expect(inFlightTitles).toContain("Website Build — Final Review");
+  });
+
+  // Commit 4 — end-to-end scenarios. These verify the bucket-key flip
+  // (startDate-first for forward-looking sections, endDate-first for stale)
+  // and the strict-start In Flight predicate together produce the expected
+  // section membership for range and single-day items.
+  describe("Commit 4: range-task / single-day section membership", () => {
+    // Test 1 — multi-week range task surfaces in the right section per day.
+    const rangeFixture = {
+      startDate: "2026-06-03",
+      endDate: "2026-06-30",
+      date: "2026-06-30", // matches endDate per convention
+      title: "Multi-week deliverable",
+      account: "X",
+      type: "delivery" as const,
+      status: "in-progress",
+      projectId: "p-range",
+    };
+
+    it("range task on day before kickoff appears in upcoming under its bucket column", async () => {
+      vi.setSystemTime(new Date("2026-06-01T12:00:00")); // Mon, week-of 6/1
+
+      mockGetClientsWithProjects.mockResolvedValue([]);
+      mockGetWeekItems.mockResolvedValue([
+        { date: "2026-06-30", label: "Tue 6/30", items: [rangeFixture] },
+      ]);
+      mockGetStaleWeekItems.mockResolvedValue([]);
+      mockGetPipeline.mockResolvedValue([]);
+
+      const el = await RunwayPage();
+      render(el);
+      const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+
+      // page.test.tsx mocks getWeekItems directly, so the bucket key is
+      // whatever the test fixture provides — the actual rekey to startDate
+      // happens inside queries.ts and is covered by queries.test.ts. Here
+      // we verify page.tsx's own week-membership wiring.
+      const upcomingDates = props.upcoming.map((d: { date: string }) => d.date);
+      expect(upcomingDates).toContain("2026-06-30");
+    });
+
+    it("range task in mid-flight appears in inFlightSource", async () => {
+      vi.setSystemTime(new Date("2026-06-15T12:00:00")); // mid-range
+
+      mockGetClientsWithProjects.mockResolvedValue([]);
+      mockGetWeekItems.mockResolvedValue([
+        { date: "2026-06-30", label: "Tue 6/30", items: [rangeFixture] },
+      ]);
+      mockGetStaleWeekItems.mockResolvedValue([]);
+      mockGetPipeline.mockResolvedValue([]);
+
+      const el = await RunwayPage();
+      render(el);
+      const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+
+      const inFlightTitles = props.inFlightSource.flatMap(
+        (d: { items: { title: string }[] }) => d.items.map((i) => i.title)
+      );
+      expect(inFlightTitles).toContain("Multi-week deliverable");
+    });
+
+    it("past-end range task surfaces in staleItems with day-group label keyed on endDate (Tue 6/30, not the kickoff Wed 6/3)", async () => {
+      vi.setSystemTime(new Date("2026-07-01T12:00:00")); // past endDate
+
+      mockGetClientsWithProjects.mockResolvedValue([]);
+      mockGetWeekItems.mockResolvedValue([]);
+      // staleItems comes from getStaleWeekItems which (per queries.ts) buckets
+      // on endDate. Mock the bucketed shape directly.
+      mockGetStaleWeekItems.mockResolvedValue([
+        { date: "2026-06-30", label: "Tue 6/30", items: [rangeFixture] },
+      ]);
+      mockGetPipeline.mockResolvedValue([]);
+
+      const el = await RunwayPage();
+      render(el);
+      const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+
+      expect(props.staleItems).toHaveLength(1);
+      expect(props.staleItems[0].date).toBe("2026-06-30");
+      expect(props.staleItems[0].label).toBe("Tue 6/30");
+    });
+
+    // Test 2 — single-day deadline (date = startDate = endDate)
+    const singleDayFixture = {
+      startDate: "2026-05-15",
+      endDate: "2026-05-15",
+      date: "2026-05-15",
+      title: "Single-day milestone",
+      account: "X",
+      type: "deadline" as const,
+      status: "in-progress",
+      projectId: "p-single",
+    };
+
+    it("single-day item on its day surfaces in thisWeek (todayColumn at the board layer)", async () => {
+      vi.setSystemTime(new Date("2026-05-15T12:00:00"));
+
+      mockGetClientsWithProjects.mockResolvedValue([]);
+      mockGetWeekItems.mockResolvedValue([
+        { date: "2026-05-15", label: "Fri 5/15", items: [singleDayFixture] },
+      ]);
+      mockGetStaleWeekItems.mockResolvedValue([]);
+      mockGetPipeline.mockResolvedValue([]);
+
+      const el = await RunwayPage();
+      render(el);
+      const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+
+      const thisWeekDates = props.thisWeek.map((d: { date: string }) => d.date);
+      expect(thisWeekDates).toContain("2026-05-15");
+      // Note: strict-start In Flight exclusion (startDate == today → excluded
+      // from In Flight) is exercised by plate-summary.test.ts, not here.
+      // page.tsx hands the full inFlightSource through; InFlightSection
+      // applies filterInFlight at render time.
+    });
+
+    // Test 3 — suppression-removal proven end-to-end (page-level wiring).
+    // The queries-level test already covers the predicate; this asserts the
+    // page hands the stale list through to RunwayBoard regardless of what
+    // updates the project may have received.
+    it("past-end L2 stays in staleItems even when its project has a recent update (suppression removed)", async () => {
+      vi.setSystemTime(new Date("2026-04-28T12:00:00"));
+
+      const overdueWithUpdate = {
+        title: "Overdue with recent project update",
+        account: "X",
+        type: "delivery" as const,
+        endDate: "2026-04-20",
+        date: "2026-04-20",
+        projectId: "p-X",
+        status: "scheduled",
+      };
+
+      mockGetClientsWithProjects.mockResolvedValue([]);
+      mockGetWeekItems.mockResolvedValue([]);
+      mockGetStaleWeekItems.mockResolvedValue([
+        { date: "2026-04-20", label: "Mon 4/20", items: [overdueWithUpdate] },
+      ]);
+      mockGetPipeline.mockResolvedValue([]);
+
+      const el = await RunwayPage();
+      render(el);
+      const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+
+      const staleTitles = props.staleItems.flatMap(
+        (d: { items: { title: string }[] }) => d.items.map((i) => i.title)
+      );
+      expect(staleTitles).toContain("Overdue with recent project update");
+    });
+  });
 });

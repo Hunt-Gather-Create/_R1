@@ -5,6 +5,7 @@ import type { Account, TriageItem, DayItemEntry } from "../types";
 import { accountHasWrapper } from "../unified-view";
 import { getOwnerResourcesDisplay } from "./display-utils";
 import { StatusBadge, StaleBadge, ContractBadge, MetadataLabel } from "./status-badge";
+import { DatesLine } from "./dates-line";
 
 /**
  * Extended triage item with unified-view L2 milestones attached.
@@ -82,6 +83,9 @@ function ProjectCardBody({
             Outside retainer
           </span>
         ) : null}
+      </div>
+      <div className="mt-1">
+        <DatesLine startDate={item.startDate} endDate={item.endDate} />
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
         {displayResources ? (

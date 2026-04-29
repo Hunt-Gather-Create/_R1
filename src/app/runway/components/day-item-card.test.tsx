@@ -214,6 +214,15 @@ describe("DayItemCard", () => {
     expect(cue).toHaveTextContent("blocked by: Upstream Task");
     expect(cue).not.toHaveTextContent("(");
   });
+
+  it("renders the dates line above resources when start/end dates are present", () => {
+    render(
+      <DayItemCard
+        item={createEntry({ startDate: "2026-04-17", endDate: "2026-05-11" })}
+      />
+    );
+    expect(screen.getByTestId("dates-line")).toHaveTextContent("Dates: 4/17 – 5/11");
+  });
 });
 
 describe("getEffectiveType", () => {

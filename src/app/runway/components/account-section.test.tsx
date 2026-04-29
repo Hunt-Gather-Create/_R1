@@ -136,6 +136,26 @@ describe("AccountSection", () => {
     expect(screen.getByText("Gate for content")).toBeInTheDocument();
   });
 
+  it("renders the dates line on project cards when start/end dates are present", () => {
+    render(
+      <AccountSection
+        account={createAccount({
+          items: [
+            {
+              id: "p1",
+              title: "Dated Item",
+              status: "in-production",
+              category: "active",
+              startDate: "2026-04-17",
+              endDate: "2026-05-11",
+            },
+          ],
+        })}
+      />
+    );
+    expect(screen.getByTestId("dates-line")).toHaveTextContent("Dates: 4/17 – 5/11");
+  });
+
   it("shows resources prominently and owner muted when they differ", () => {
     render(
       <AccountSection

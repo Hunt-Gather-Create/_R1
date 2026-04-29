@@ -259,14 +259,37 @@ describe("contractExpiredPills", () => {
 describe("filterInFlight", () => {
   const NOW = "2026-04-20";
 
-  it("keeps in-progress items whose today is within start/end range", () => {
+  it("keeps in-progress items whose today is in (startDate, endDate]", () => {
+    // Strict-start rule (Commit 4): start < today < or == end. Items where
+    // start == today belong to Today, not In Flight.
     const items = [
       { status: "in-progress", startDate: "2026-04-10", endDate: "2026-04-30", title: "A" },
-      { status: "in-progress", startDate: "2026-04-20", endDate: "2026-04-20", title: "B" },
-      { status: "in-progress", startDate: "2026-04-20", endDate: null, title: "C" },
     ];
     const result = filterInFlight(items, NOW);
-    expect(result.map((i) => i.title)).toEqual(["A", "B", "C"]);
+    expect(result.map((i) => i.title)).toEqual(["A"]);
+  });
+
+  it("excludes Day 0 items where startDate == today (belongs to Today, not In Flight)", () => {
+    const items = [
+      { status: "in-progress", startDate: "2026-04-20", endDate: "2026-05-20", title: "Kickoff today" },
+      { status: "in-progress", startDate: "2026-04-20", endDate: "2026-04-20", title: "Single-day today" },
+      { status: "in-progress", startDate: "2026-04-20", endDate: null, title: "Single-day today, null end" },
+    ];
+    expect(filterInFlight(items, NOW)).toHaveLength(0);
+  });
+
+  it("keeps Day 1 items where startDate == today − 1", () => {
+    const items = [
+      { status: "in-progress", startDate: "2026-04-19", endDate: "2026-05-19", title: "Day 1" },
+    ];
+    expect(filterInFlight(items, NOW).map((i) => i.title)).toEqual(["Day 1"]);
+  });
+
+  it("keeps last-day items where endDate == today (today ≤ end is inclusive)", () => {
+    const items = [
+      { status: "in-progress", startDate: "2026-04-06", endDate: "2026-04-20", title: "Last day" },
+    ];
+    expect(filterInFlight(items, NOW).map((i) => i.title)).toEqual(["Last day"]);
   });
 
   it("excludes items whose status is not in-progress", () => {

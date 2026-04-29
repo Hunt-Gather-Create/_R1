@@ -3,6 +3,7 @@
 import type { DayItemEntry, DayItemType } from "../types";
 import { getOwnerResourcesDisplay } from "./display-utils";
 import { TYPE_INDICATORS, MetadataLabel } from "./status-badge";
+import { DatesLine } from "./dates-line";
 import { pastEndRedNote, pastEndNoteText } from "@/lib/runway/plate-summary";
 
 const HOLD_PATTERN = /\b(hold[s]?\s+until|on\s+hold|blocked|not\s+starting\s+until)\b/i;
@@ -83,6 +84,13 @@ export function DayItemCard({ item, size = "sm" }: DayItemCardProps) {
         <div className="min-w-0 flex-1">
           <p className={ACCOUNT_CLASS}>{item.account}</p>
           <p className={s.title}>{item.title}</p>
+          <div className={s.meta}>
+            <DatesLine
+              startDate={item.startDate}
+              endDate={item.endDate}
+              className={s.metaText}
+            />
+          </div>
           <div className={s.meta}>
             {displayResources ? (
               <MetadataLabel label="Resources" value={displayResources} className={s.metaText} />
