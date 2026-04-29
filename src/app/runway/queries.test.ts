@@ -14,7 +14,12 @@ vi.mock("@/lib/db/runway", () => ({
 vi.mock("@/lib/db/runway-schema", () => ({
   clients: { name: "clients", id: "id" },
   projects: { sortOrder: "sortOrder", clientId: "clientId" },
-  weekItems: { weekOf: "weekOf", date: "date", sortOrder: "sortOrder" },
+  weekItems: {
+    weekOf: "weekOf",
+    date: "date",
+    endDate: "endDate",
+    sortOrder: "sortOrder",
+  },
   pipelineItems: { sortOrder: "sortOrder", clientId: "clientId" },
   teamMembers: { isActive: "isActive" },
   updates: { createdAt: "createdAt" },
@@ -23,8 +28,12 @@ vi.mock("@/lib/db/runway-schema", () => ({
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((a, b) => ({ eq: [a, b] })),
   and: vi.fn((...args: unknown[]) => ({ and: args })),
+  or: vi.fn((...args: unknown[]) => ({ or: args })),
   gte: vi.fn((a, b) => ({ gte: [a, b] })),
   lte: vi.fn((a, b) => ({ lte: [a, b] })),
+  lt: vi.fn((a, b) => ({ lt: [a, b] })),
+  isNull: vi.fn((col) => ({ isNull: col })),
+  isNotNull: vi.fn((col) => ({ isNotNull: col })),
   asc: vi.fn((col) => ({ asc: col })),
   desc: vi.fn((col) => ({ desc: col })),
 }));
@@ -432,6 +441,42 @@ describe("getStaleWeekItems", () => {
     // Today = 2026-04-07 (Tue), today's Monday = 2026-04-06.
     // Lookback Monday = 2026-04-06 − 180d = ~2025-10-08.
     expect(lookbackArg).toMatch(/^2025-10-/);
+
+    vi.useRealTimers();
+  });
+
+  // Llama PR #96 review #2: SQL pre-filter mirrors the JS-level
+  // `endDate ?? date < today` predicate so we don't fetch the entire 180-day
+  // weekOf window just to discard most rows in the JS pass.
+  it("pushes the past-due predicate into SQL (lt(endDate, today) OR lt(date, today) when endDate IS NULL)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    const drizzle = await import("drizzle-orm");
+    (drizzle.lt as unknown as ReturnType<typeof vi.fn>).mockClear();
+    (drizzle.or as unknown as ReturnType<typeof vi.fn>).mockClear();
+    (drizzle.isNull as unknown as ReturnType<typeof vi.fn>).mockClear();
+    (drizzle.isNotNull as unknown as ReturnType<typeof vi.fn>).mockClear();
+    mockResults.push([]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    await getStaleWeekItems();
+
+    // lt should be called twice — once for endDate < today, once for date < today.
+    const ltCalls = (drizzle.lt as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(ltCalls).toHaveLength(2);
+    // Both calls compare against today's ISO string.
+    expect(ltCalls[0][1]).toBe("2026-04-07");
+    expect(ltCalls[1][1]).toBe("2026-04-07");
+
+    // or() should be called to combine the two SQL branches.
+    const orCalls = (drizzle.or as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(orCalls).toHaveLength(1);
+
+    // Each branch is gated on endDate's null state — IS NULL for the date
+    // fallback, IS NOT NULL for the endDate comparison.
+    expect((drizzle.isNotNull as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+    expect((drizzle.isNull as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
 
     vi.useRealTimers();
   });

@@ -5,7 +5,7 @@ import {
   weekItems,
   pipelineItems,
 } from "@/lib/db/runway-schema";
-import { eq, and, gte, lte, asc } from "drizzle-orm";
+import { eq, and, gte, lte, lt, or, isNull, isNotNull, asc } from "drizzle-orm";
 import type { ClientWithProjects, DayItemType, PipelineRow, WeekDay } from "./types";
 import { parseISODate, getMonday, getMondayISODate, toISODateString } from "./date-utils";
 import { getClientNameMap, groupBy } from "@/lib/runway/operations";
@@ -192,19 +192,35 @@ export async function getStaleWeekItems(): Promise<WeekDay[]> {
 
   // Look back 180 days (~6 months) to catch range tasks whose weekOf is
   // older than the past-due window but whose endDate just passed. The
-  // weekOf-based fetch is indexed; the JS-level endDate < today filter
-  // (below) is the actual past-due predicate.
+  // weekOf-based fetch is indexed; the JS-level past-due predicate (below)
+  // remains the source of truth, and the SQL OR clause mirrors it exactly so
+  // we don't haul back the entire 180-day window for the JS pass to discard.
   const lookbackMonday = new Date(getMonday(now));
   lookbackMonday.setDate(lookbackMonday.getDate() - 180);
   const lookbackISO = toISODateString(lookbackMonday);
 
   const clientNameById = await getClientNameMap();
 
-  // Fetch week items from the 180-day lookback window through this week.
+  // Fetch only past-due rows in the 180-day weekOf window. The OR clause
+  // mirrors `endDate ?? date < today` row-by-row:
+  //   - endDate present and < today, OR
+  //   - endDate null and date < today
+  // Verbose form (rather than `lt(coalesce(endDate, date), today)`) matches
+  // the JS predicate exactly and is drift-resistant against rows where
+  // date != endDate (the convention isn't yet guaranteed across all clients).
   const allItems = await db
     .select()
     .from(weekItems)
-    .where(and(gte(weekItems.weekOf, lookbackISO), lte(weekItems.weekOf, mondayISO)))
+    .where(
+      and(
+        gte(weekItems.weekOf, lookbackISO),
+        lte(weekItems.weekOf, mondayISO),
+        or(
+          and(isNotNull(weekItems.endDate), lt(weekItems.endDate, todayISO)),
+          and(isNull(weekItems.endDate), lt(weekItems.date, todayISO)),
+        ),
+      ),
+    )
     .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
 
   // Past-due predicate: endDate ?? date < today AND not completed.
