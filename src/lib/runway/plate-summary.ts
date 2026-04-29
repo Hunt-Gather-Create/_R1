@@ -139,8 +139,12 @@ export function contractExpiredPillText(pill: ContractExpiredPill): string {
 /**
  * Return only the items that are actively "in flight" today:
  *  - `status === 'in-progress'` AND
- *  - today is between `start_date` and `end_date` (inclusive). `end_date`
- *    null is treated as same as `start_date` (single-day item).
+ *  - today is in the half-open interval `(start_date, end_date]`. The
+ *    kickoff day (`start_date == today`) belongs to Today, not In Flight,
+ *    so the dashboard doesn't double-count items on Day 0. `end_date`
+ *    null is treated as same as `start_date` — under the strict-start
+ *    rule, single-day items never appear in In Flight (they belong to
+ *    Today on their one day).
  *
  * Does NOT mutate its input. Used by the Week Of In Flight toggle section.
  */
@@ -153,6 +157,6 @@ export function filterInFlight<T extends { status?: string | null; startDate?: s
     const start = item.startDate;
     if (!start) return false;
     const end = item.endDate ?? start;
-    return start <= nowISO && nowISO <= end;
+    return start < nowISO && nowISO <= end;
   });
 }

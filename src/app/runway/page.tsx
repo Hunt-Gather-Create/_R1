@@ -112,6 +112,11 @@ export default async function RunwayPage() {
   // Stale wins: items in both Needs Update and In Flight render only in Needs Update.
   // Once updated, they drop from stale and reappear in In Flight on the next render.
   // Pre-fix examples: Bonterra "Impact Report", Soundly "Payment Gateway Page".
+  // Post-Commit 4: predicates are mutually exclusive at the row level
+  // (In Flight requires today <= endDate; Needs Update requires endDate < today),
+  // so a single row cannot satisfy both. Dedup retained as defense-in-depth
+  // for multi-row scenarios where the same project has separate rows in
+  // both collections (e.g. two scheduled milestones, one past-due, one mid-range).
   const staleProjectIds = new Set<string>(
     staleItems
       .flatMap((day) => day.items.map((item) => item.projectId))

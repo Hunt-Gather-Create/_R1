@@ -225,6 +225,12 @@ export function detectStaleItems(accounts: Account[]): RunwayFlag[] {
 /**
  * Upcoming deadlines: week items due today or tomorrow
  * with type "deadline" or "delivery".
+ *
+ * Fires off each item's own due date (`endDate ?? day.date`), not the
+ * bucket key. After getStaleWeekItems / dashboard buckets shifted to be
+ * startDate-keyed (Commit 4), `day.date` for a range task reflects the
+ * kickoff day — but a deadline flag must fire on the day the work is
+ * actually DUE, regardless of which bucket the item lives in.
  */
 export function detectDeadlines(thisWeek: DayItem[]): RunwayFlag[] {
   const now = new Date();
@@ -235,13 +241,13 @@ export function detectDeadlines(thisWeek: DayItem[]): RunwayFlag[] {
 
   const flags: RunwayFlag[] = [];
   for (const day of thisWeek) {
-    if (day.date !== todayStr && day.date !== tomorrowStr) continue;
-
-    const isToday = day.date === todayStr;
     for (const item of day.items) {
       if (item.type !== "deadline" && item.type !== "delivery") continue;
+      const dueDate = item.endDate ?? day.date;
+      if (dueDate !== todayStr && dueDate !== tomorrowStr) continue;
+      const isToday = dueDate === todayStr;
       flags.push({
-        id: flagId("deadline", day.date, item.title, item.account),
+        id: flagId("deadline", dueDate, item.title, item.account),
         type: "deadline",
         severity: isToday ? "warning" : "info",
         title: `${item.account}: ${item.title}`,
