@@ -24,6 +24,13 @@ import {
   validateParentProjectIdAssignment,
   validateEngagementType,
   validateIsoDateShape,
+  validateStatusCategoryCompatibility,
+  validateRoleTagOnResources,
+  validateNotesMaxLength,
+} from "./operations-utils";
+import type {
+  AuditEvent,
+  AuditSource,
 } from "./operations-utils";
 import type {
   CascadedItemInfo,
@@ -116,12 +123,16 @@ export interface UpdateProjectFieldParams {
    */
   newValue: string | null;
   updatedBy: string;
+  /** Wave 0b §A4: optional observer fired after successful update. */
+  auditObserver?: (event: AuditEvent) => void;
+  /** Wave 0b §"Wave 0b" #7: write provenance. */
+  source?: AuditSource;
 }
 
 export async function updateProjectField(
   params: UpdateProjectFieldParams
 ): Promise<MutationResponse<UpdateProjectFieldData>> {
-  const { clientSlug, projectName, field, newValue, updatedBy } = params;
+  const { clientSlug, projectName, field, newValue, updatedBy, auditObserver, source } = params;
   const db = getRunwayDb();
 
   const fieldResult = validateAndResolveField(field, PROJECT_FIELDS, PROJECT_FIELD_TO_COLUMN);
@@ -153,6 +164,26 @@ export async function updateProjectField(
   ) {
     const v = validateIsoDateShape(newValue, typedField);
     if (!v.ok) return { ok: false, error: v.error };
+  }
+
+  // Wave 0b validators (pre-plan §A1) — fire on relevant field updates.
+  // updateProjectField does NOT route status changes (those use
+  // updateProjectStatus). Category writes still need the compat check vs the
+  // project's CURRENT status.
+  if (typedField === "category" && newValue !== null) {
+    const currentStatus = (project as { status?: string | null }).status ?? "";
+    const sccResult = validateStatusCategoryCompatibility(currentStatus, newValue);
+    if (!sccResult.ok) return { ok: false, error: sccResult.error };
+  }
+  // Role-tag on resources writes.
+  if (typedField === "resources" && newValue !== null) {
+    const r = validateRoleTagOnResources(newValue);
+    if (!r.ok) return { ok: false, error: r.error };
+  }
+  // L1 notes max length.
+  if (typedField === "notes" && newValue !== null) {
+    const n = validateNotesMaxLength(newValue, "L1");
+    if (!n.ok) return { ok: false, error: n.error };
   }
 
   // v4 (Chunk 5): normalize resources string on write so storage is canonical.
@@ -336,6 +367,16 @@ export async function updateProjectField(
       previousValue: prevDate,
       newValue: effectiveNewValue,
       auditId: childAuditId,
+    });
+  }
+
+  // Wave 0b §A4: emit AuditEvent for downstream observers.
+  if (auditObserver) {
+    auditObserver({
+      source: source ?? null,
+      entityId: project.id,
+      entityType: "project",
+      updatedBy,
     });
   }
 

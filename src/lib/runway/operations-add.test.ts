@@ -212,6 +212,100 @@ describe("addProject", () => {
     if (!result.ok) expect(result.error).toMatch(/contractStart must be a valid ISO/);
     expect(mockInsertValues).not.toHaveBeenCalled();
   });
+
+  // ── Wave 0b validators ───────────────────────────────────
+
+  it("Wave 0b: rejects incompatible status/category pair (not-started + on-hold)", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    const { addProject } = await import("./operations-add");
+    const result = await addProject({
+      clientSlug: "convergix",
+      name: "Stuck Project",
+      status: "not-started",
+      category: "on-hold",
+      updatedBy: "modal",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/'not-started' is incompatible with category 'on-hold'/);
+    }
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+
+  it("Wave 0b: rejects bare resource name (missing role prefix)", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    const { addProject } = await import("./operations-add");
+    const result = await addProject({
+      clientSlug: "convergix",
+      name: "P1",
+      resources: "Kathy",
+      updatedBy: "modal",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/role prefix/);
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+
+  it("Wave 0b: rejects startDate >= endDate", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    const { addProject } = await import("./operations-add");
+    const result = await addProject({
+      clientSlug: "convergix",
+      name: "P1",
+      startDate: "2026-05-01",
+      endDate: "2026-04-15",
+      updatedBy: "modal",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/startDate.*must be < endDate/);
+  });
+
+  it("Wave 0b: rejects notes exceeding L1 max length", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    const { addProject } = await import("./operations-add");
+    const result = await addProject({
+      clientSlug: "convergix",
+      name: "P1",
+      notes: "A".repeat(501),
+      updatedBy: "modal",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/L1 notes max length is 500/);
+  });
+
+  it("Wave 0b: auditObserver fires with project entityType + propagated source", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    const { addProject } = await import("./operations-add");
+    const events: unknown[] = [];
+    const result = await addProject({
+      clientSlug: "convergix",
+      name: "Observed Project",
+      updatedBy: "slack:U123:modal",
+      auditObserver: (e) => events.push(e),
+      source: "slack-modal-bot",
+    });
+    expect(result.ok).toBe(true);
+    expect(events).toHaveLength(1);
+    const e = events[0] as Record<string, unknown>;
+    expect(e.source).toBe("slack-modal-bot");
+    expect(e.entityType).toBe("project");
+    expect(e.entityId).toBe("mock-id-12345678901234");
+    expect(e.updatedBy).toBe("slack:U123:modal");
+  });
+
+  it("Wave 0b: auditObserver fires with source=null when source omitted", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    const { addProject } = await import("./operations-add");
+    const events: unknown[] = [];
+    await addProject({
+      clientSlug: "convergix",
+      name: "Legacy",
+      updatedBy: "jason",
+      auditObserver: (e) => events.push(e),
+    });
+    expect(events).toHaveLength(1);
+    expect((events[0] as { source: unknown }).source).toBeNull();
+  });
 });
 
 describe("addUpdate — edge cases", () => {

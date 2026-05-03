@@ -209,11 +209,13 @@ describe("Category A: simple field updates", () => {
     const before = await getWeekItem(testDb, "wi-social");
     expect(before?.resources).toBeNull();
 
+    // Wave 0b: resources require role prefix (e.g. "CD: Lane"); bare names
+    // reject. Test now uses role-tagged form per the validator contract.
     const result = await updateWeekItemField({
       weekOf: "2026-04-13",
       weekItemTitle: "AG1 Social Drafts",
       field: "resources",
-      newValue: "Lane, Leslie",
+      newValue: "CD: Lane, Dev: Leslie",
       updatedBy: "sami",
     });
 
@@ -221,7 +223,7 @@ describe("Category A: simple field updates", () => {
 
     // Verify exact field match
     const after = await getWeekItem(testDb, "wi-social");
-    expect(after?.resources).toBe("Lane, Leslie");
+    expect(after?.resources).toBe("CD: Lane, Dev: Leslie");
 
     // Exactly one audit record
     const audits = await getAuditRecords(testDb, { updateType: "week-field-change" });
@@ -235,6 +237,7 @@ describe("Category B: create operations", () => {
   it("B1: creates a week item linked to project", async () => {
     const { createWeekItem } = await import("./operations-writes-week");
 
+    // Wave 0b: resources require role prefix; bare "Lane" rejects.
     const result = await createWeekItem({
       clientSlug: "convergix",
       projectName: "CDS Messaging",
@@ -242,7 +245,7 @@ describe("Category B: create operations", () => {
       title: "CDS Final Review",
       category: "review",
       owner: "Kathy",
-      resources: "Lane",
+      resources: "CD: Lane",
       updatedBy: "kathy",
     });
 
@@ -260,7 +263,7 @@ describe("Category B: create operations", () => {
     expect(allItems[0].clientId).toBe("cl-convergix");
     expect(allItems[0].category).toBe("review");
     expect(allItems[0].owner).toBe("Kathy");
-    expect(allItems[0].resources).toBe("Lane");
+    expect(allItems[0].resources).toBe("CD: Lane");
     expect(allItems[0].weekOf).toBe("2026-04-13");
 
     const audits = await getAuditRecords(testDb, { updateType: "new-week-item" });
@@ -694,10 +697,12 @@ describe("Category E: undo and audit", () => {
 // ── Category F: Edge Cases ──────────────────────────────
 
 describe("Category F: edge cases", () => {
-  it("F1: handles very long notes field", async () => {
+  it("F1: handles long notes field within L1 max-length cap", async () => {
     const { updateProjectField } = await import("./operations-writes-project");
 
-    const longNotes = "A".repeat(10_000);
+    // Wave 0b: L1 notes capped at NOTES_MAX_LEN_L1 (500). Use 500 chars to
+    // exercise the upper boundary and confirm the validator does not over-fire.
+    const longNotes = "A".repeat(500);
     const result = await updateProjectField({
       clientSlug: "convergix",
       projectName: "CDS Messaging",
@@ -710,7 +715,26 @@ describe("Category F: edge cases", () => {
 
     const project = await getProject(testDb, "pj-cds");
     expect(project?.notes).toBe(longNotes);
-    expect(project?.notes?.length).toBe(10_000);
+    expect(project?.notes?.length).toBe(500);
+  });
+
+  it("F1b: rejects notes that exceed L1 max-length cap", async () => {
+    const { updateProjectField } = await import("./operations-writes-project");
+
+    // Wave 0b: 501 char notes exceed NOTES_MAX_LEN_L1 (500) and reject.
+    const tooLong = "A".repeat(501);
+    const result = await updateProjectField({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      field: "notes",
+      newValue: tooLong,
+      updatedBy: "jason",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/L1 notes max length/);
+    }
   });
 
   it("F2: handles special characters in values", async () => {

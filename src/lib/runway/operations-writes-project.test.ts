@@ -767,6 +767,103 @@ describe("updateProjectField", () => {
       if (result.ok) expect(result.data?.newValue).toBe(null);
     });
   });
+
+  // ── Wave 0b validators + auditObserver ───────────────────
+
+  describe("Wave 0b: updateProjectField validators + observer", () => {
+    it("rejects category update that violates status/category compat", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      // Project has status=in-production. Setting category=on-hold violates
+      // the matrix.
+      mockFindProjectByFuzzyName.mockResolvedValue({
+        ...project,
+        status: "in-production",
+      });
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "category",
+        newValue: "on-hold",
+        updatedBy: "modal",
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/'in-production' is incompatible with category 'on-hold'/);
+      }
+    });
+
+    it("rejects bare resource on resources update", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "resources",
+        newValue: "Kathy",
+        updatedBy: "modal",
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/role prefix/);
+    });
+
+    it("rejects notes update exceeding L1 max length (500)", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "notes",
+        newValue: "A".repeat(501),
+        updatedBy: "modal",
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/L1 notes max length is 500/);
+    });
+
+    it("auditObserver fires with project entityType + propagated source", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+      const { updateProjectField } = await import("./operations-writes-project");
+      const events: unknown[] = [];
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "owner",
+        newValue: "Lane",
+        updatedBy: "slack:U777:modal-edit",
+        auditObserver: (e) => events.push(e),
+        source: "slack-modal-bot",
+      });
+      expect(result.ok).toBe(true);
+      expect(events).toHaveLength(1);
+      const e = events[0] as Record<string, unknown>;
+      expect(e.source).toBe("slack-modal-bot");
+      expect(e.entityType).toBe("project");
+      expect(e.entityId).toBe("p1");
+      expect(e.updatedBy).toBe("slack:U777:modal-edit");
+    });
+
+    it("auditObserver passes source=null when omitted", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+      const { updateProjectField } = await import("./operations-writes-project");
+      const events: unknown[] = [];
+      await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "owner",
+        newValue: "Lane",
+        updatedBy: "kathy",
+        auditObserver: (e) => events.push(e),
+      });
+      expect(events).toHaveLength(1);
+      expect((events[0] as { source: unknown }).source).toBeNull();
+    });
+  });
 });
 
 describe("deleteProject", () => {
