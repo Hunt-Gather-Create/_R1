@@ -47,6 +47,7 @@ export const ROLE_CATEGORY_OPTIONS: ReadonlyArray<{ value: string; label: string
   { value: "dev", label: "Development" },
   { value: "am", label: "Account Management" },
   { value: "pm", label: "Project Management" },
+  { value: "strategy", label: "Strategy" },
   { value: "leadership", label: "Leadership" },
   { value: "community", label: "Community" },
   { value: "contractor", label: "Contractor" },

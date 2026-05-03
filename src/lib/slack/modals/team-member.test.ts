@@ -201,11 +201,11 @@ describe("notify_on_close (Wave 11 contract)", () => {
 // ---------------------------------------------------------------------------
 
 describe("ROLE_CATEGORY_OPTIONS", () => {
-  it("contains all 7 schema-truth role categories", () => {
-    expect(ROLE_CATEGORY_OPTIONS).toHaveLength(7);
+  it("contains all 8 schema-truth role categories", () => {
+    expect(ROLE_CATEGORY_OPTIONS).toHaveLength(8);
     const values = ROLE_CATEGORY_OPTIONS.map((o) => o.value).sort();
     expect(values).toEqual(
-      ["am", "community", "contractor", "creative", "dev", "leadership", "pm"].sort(),
+      ["am", "community", "contractor", "creative", "dev", "leadership", "pm", "strategy"].sort(),
     );
   });
 
@@ -215,7 +215,7 @@ describe("ROLE_CATEGORY_OPTIONS", () => {
     }
   });
 
-  it("renders all 7 options in the role_category dropdown", () => {
+  it("renders all 8 options in the role_category dropdown", () => {
     const view = buildTeamMemberModal(baseCreateParams());
     const roleBlock = findBlock(
       view.blocks as Array<{ block_id?: string }>,
@@ -223,10 +223,10 @@ describe("ROLE_CATEGORY_OPTIONS", () => {
     ) as
       | { element?: { options?: ReadonlyArray<{ value: string }> } }
       | undefined;
-    expect(roleBlock?.element?.options).toHaveLength(7);
+    expect(roleBlock?.element?.options).toHaveLength(8);
     const values = (roleBlock?.element?.options ?? []).map((o) => o.value).sort();
     expect(values).toEqual(
-      ["am", "community", "contractor", "creative", "dev", "leadership", "pm"].sort(),
+      ["am", "community", "contractor", "creative", "dev", "leadership", "pm", "strategy"].sort(),
     );
   });
 });
