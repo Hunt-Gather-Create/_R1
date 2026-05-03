@@ -26,6 +26,14 @@ import { createBotTools } from "./bot-tools";
 import { buildBotSystemPrompt } from "@/lib/runway/bot-context";
 import { formatProactiveFollowUp } from "./bot-proactive";
 import { recordTokenUsage } from "@/lib/token-usage";
+import { generateId } from "@/lib/runway/operations-utils";
+import {
+  composeButtonBearingReply,
+  extractInterceptedProposals,
+  stopOnModalOpened,
+  type ConvoState,
+} from "./modals/intercept";
+import { updatePostedMessage } from "./modals/proposal";
 
 const RUNWAY_WORKSPACE_ID = "runway-bot";
 
@@ -56,6 +64,7 @@ const MUTATION_TOOLS = [
   "create_project",
   "create_week_item",
   "update_week_item",
+  "create_team_member",
 ] as const;
 const MAX_THREAD_MESSAGES = 20;
 
@@ -160,7 +169,26 @@ export async function handleDirectMessage(
 
   const displayName = userName ?? "Unknown team member";
   const now = new Date();
-  const tools = createBotTools(displayName, now);
+
+  // Wave 7 / Builder 7: per-conversation state + intent_group_id thread
+  // through the modal-routed create_* tools. The intercept fires when
+  // MODAL_INTERCEPT_ENABLED=true; otherwise the tools fall through to the
+  // legacy direct-write path (source: "bot-direct").
+  const convoState: ConvoState = {
+    modalAlreadyOpened: false,
+    openStep: null,
+    currentStep: 0,
+  };
+  const intentGroupId = `ig_${generateId()}`;
+  const tools = createBotTools(displayName, now, {
+    convoState,
+    context: {
+      slackUserId,
+      channelId,
+      threadTs: threadTs ?? null,
+      intentGroupId,
+    },
+  });
 
   // Build message content — use content blocks when images are present
   let userContent: UserContent = messageText;
@@ -205,7 +233,18 @@ export async function handleDirectMessage(
       model: anthropic(MODEL),
       messages,
       tools,
-      stopWhen: stepCountIs(MAX_STEPS),
+      // Wave 7: pair stepCountIs with stopOnModalOpened. The modal-intercept
+      // tools return `{modalOpened: true, ...}` from execute(); the predicate
+      // halts the loop after step 0 so we don't burn an extra Anthropic
+      // roundtrip just to have the LLM acknowledge the form opened.
+      stopWhen: [stepCountIs(MAX_STEPS), stopOnModalOpened],
+      // Track step number into convoState so the intercept's step-aware
+      // flag can allow N parallel calls in step 0 but reject any call in a
+      // subsequent step.
+      prepareStep: ({ stepNumber }) => {
+        convoState.currentStep = stepNumber;
+        return {};
+      },
       maxRetries: 1,
     });
 
@@ -252,11 +291,47 @@ export async function handleDirectMessage(
 
     const replyTs = threadTs ?? messageTs;
 
-    await slack.chat.postMessage({
-      channel: channelId,
-      text: result.text,
-      thread_ts: replyTs,
-    });
+    // Wave 7: branch on intercepted proposals. If any modal-routed create_*
+    // tool fired and staged a proposal, post a button-bearing reply (single
+    // or multi-detect). Mixed read+create: the LLM's `result.text` is
+    // prepended above the button intro, all in ONE chat.postMessage.
+    const intercepted = extractInterceptedProposals(result);
+    if (intercepted.length > 0) {
+      const reply = composeButtonBearingReply(intercepted, result.text ?? "");
+      const posted = await slack.chat.postMessage({
+        channel: channelId,
+        text: reply.text,
+        blocks: reply.blocks,
+        thread_ts: replyTs,
+      });
+      // Carryover #2: persist the posted message (channel, ts) on each
+      // intercepted proposal so Wave 8's multi-detect chat.update can locate
+      // the original reply when the parent project saves. Best-effort — a DB
+      // failure here doesn't crash the user-facing reply.
+      const postedTs = (posted as { ts?: string }).ts;
+      const postedChannel = (posted as { channel?: string }).channel ?? channelId;
+      if (postedTs) {
+        await Promise.all(
+          intercepted.map(async (r) => {
+            try {
+              await updatePostedMessage(r.proposalId, postedTs, postedChannel);
+            } catch (err) {
+              console.error(JSON.stringify({
+                event: "runway_update_posted_message_failed",
+                proposalId: r.proposalId,
+                error: err instanceof Error ? err.message : String(err),
+              }));
+            }
+          }),
+        );
+      }
+    } else {
+      await slack.chat.postMessage({
+        channel: channelId,
+        text: result.text,
+        thread_ts: replyTs,
+      });
+    }
 
     // Proactive follow-up: only on first message (not thread replies), for account leads
     if (!threadTs) {
