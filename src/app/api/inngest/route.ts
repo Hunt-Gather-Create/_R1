@@ -11,6 +11,8 @@ import {
   generateAudienceMembers,
   generateSoul,
   processRunwaySlackMessage,
+  sweepExpiredProposals,
+  slackModalSubmit,
 } from "@/lib/inngest/functions";
 
 export const { GET, POST, PUT } = serve({
@@ -26,5 +28,7 @@ export const { GET, POST, PUT } = serve({
     generateAudienceMembers,
     generateSoul,
     processRunwaySlackMessage,
+    sweepExpiredProposals,
+    slackModalSubmit,
   ],
 });
