@@ -826,6 +826,7 @@ async function applyL1FieldWrite(
     field: plan.field,
     newValue: plan.newValue,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`${plan.specId} write failed (${plan.clientSlug}/${plan.projectName}.${plan.field}): ${result.error}`);
@@ -850,6 +851,7 @@ async function applyConvergixRetainerSweep(
       field: op.field,
       newValue: op.newValue,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!result.ok) {
       throw new Error(`A.1 write failed (convergix/${projectName}.${op.field}): ${result.error}`);
@@ -877,6 +879,7 @@ async function applyL2FieldWrite(
     field: plan.field,
     newValue: plan.newValue,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`${plan.specId} write failed (L2 '${plan.title}'.${plan.field}): ${result.error}`);
@@ -915,6 +918,7 @@ async function applyL2Create(
     owner: plan.owner,
     notes: plan.notes,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!createResult.ok) {
     throw new Error(`${plan.specId} create failed: ${createResult.error}`);
@@ -942,6 +946,7 @@ async function applyL2Create(
       field: "endDate",
       newValue: plan.endDate,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!res.ok) {
       throw new Error(`${plan.specId} endDate follow-up failed: ${res.error}`);
@@ -974,6 +979,7 @@ async function applyD6NotesAppend(
     field: "notes",
     newValue: newNotes,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`D.6 write failed: ${result.error}`);

@@ -419,6 +419,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
             field: "resources",
             newValue: newResources,
             updatedBy: UPDATED_BY,
+            source: "migration",
           });
           if (!result.ok) throw new Error(`Update ${plan.idPrefix}.resources failed: ${result.error}`);
         }
@@ -460,6 +461,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
           newStatus: plan.target.status,
           updatedBy: UPDATED_BY,
           notes: "v4 realign: L2 in-progress drives L1 status flip",
+          source: "migration",
         });
         if (!result.ok) throw new Error(`Status flip ${plan.idPrefix} failed: ${result.error}`);
       }
@@ -476,6 +478,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
           field: "category",
           newValue: plan.target.category,
           updatedBy: UPDATED_BY,
+          source: "migration",
         });
         if (!result.ok) throw new Error(`Category flip ${plan.idPrefix} failed: ${result.error}`);
       }

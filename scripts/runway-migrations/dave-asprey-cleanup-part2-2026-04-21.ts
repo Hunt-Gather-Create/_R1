@@ -358,6 +358,7 @@ async function applyCreateWeekItem(
     resources: spec.resources,
     notes: spec.notes,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`Create '${spec.title}' failed: ${result.error}`);

@@ -424,7 +424,7 @@ export function registerRunwayTools(server: McpServer) {
       notes: z.string().optional().describe("Additional context"),
     },
     async (params) => {
-      const result = await updateProjectStatus(params);
+      const result = await updateProjectStatus({ ...params, source: "mcp" });
       if (result.ok && !getBatchId()) {
         await postMutationUpdate({
           result,
@@ -478,7 +478,7 @@ export function registerRunwayTools(server: McpServer) {
         if (!v.ok) return mutationResult({ ok: false, error: v.error });
       }
 
-      const result = await updateProjectField(params);
+      const result = await updateProjectField({ ...params, source: "mcp" });
       if (result.ok && !getBatchId()) {
         await postMutationUpdate({
           result,
@@ -542,7 +542,7 @@ export function registerRunwayTools(server: McpServer) {
       }
     }
 
-    const result = await addProject(params);
+    const result = await addProject({ ...params, source: "mcp" });
     if (!getBatchId()) {
       await postMutationUpdate({
         result,
@@ -582,7 +582,7 @@ export function registerRunwayTools(server: McpServer) {
         if (!v.ok) return operationResultMessage({ ok: false, error: v.error });
       }
     }
-    const result = await createWeekItem(params);
+    const result = await createWeekItem({ ...params, source: "mcp" });
     if (result.ok && !getBatchId() && result.data?.clientName) {
       await postMutationUpdate({
         result,
@@ -639,7 +639,7 @@ export function registerRunwayTools(server: McpServer) {
         if (!v.ok) return mutationResult({ ok: false, error: v.error });
       }
 
-      const result = await updateWeekItemField(params);
+      const result = await updateWeekItemField({ ...params, source: "mcp" });
       if (!getBatchId()) {
         await postMutationUpdate({
           result,
@@ -760,7 +760,7 @@ export function registerRunwayTools(server: McpServer) {
     roleCategory: z.string().optional().describe("Role category (am, pm, creative, dev)"),
     updatedBy: z.string().default("mcp").describe("Person making the update"),
   }, async (params) => {
-    const result = await createTeamMember(params);
+    const result = await createTeamMember({ ...params, source: "mcp" });
     if (!getBatchId()) {
       await postMutationUpdate({
         result,

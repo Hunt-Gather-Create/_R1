@@ -168,6 +168,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
           field: "resources",
           newValue: plan.newResources,
           updatedBy: UPDATED_BY,
+          source: "migration",
         });
         if (!result.ok) {
           throw new Error(`L1 ${plan.idPrefix} resources update failed: ${result.error}`);
@@ -274,6 +275,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "title",
         newValue: plan.newTitle,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) {
         throw new Error(`L2 ${plan.idPrefix} title update failed: ${result.error}`);

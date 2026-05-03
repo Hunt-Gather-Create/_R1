@@ -257,6 +257,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       resources: PARENT_RESOURCES,
       notes: PARENT_NOTES,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!result.ok) throw new Error(`Create parent failed: ${result.error}`);
 
@@ -323,6 +324,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         resources: item.resources ?? undefined,
         notes: item.notes,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) throw new Error(`Create '${item.title}' failed: ${result.error}`);
     }
@@ -525,6 +527,7 @@ async function writeField(
     field,
     newValue,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`Update ${prefix}.${field} failed: ${result.error}`);

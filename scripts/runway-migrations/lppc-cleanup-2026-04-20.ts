@@ -442,6 +442,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         waitingOn: spec.waitingOn,
         notes: spec.notes,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) throw new Error(`Create ${spec.name} failed: ${result.error}`);
       const created = await findProjectByFuzzyName(LPPC_ID, spec.name);
@@ -567,6 +568,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         resources: spec.resources,
         notes: spec.notes,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) throw new Error(`Create '${spec.title}' failed: ${result.error}`);
     }
@@ -828,6 +830,7 @@ async function applyProjectFieldUpdates(
         projectName: project.name,
         newStatus: f.status,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) {
         throw new Error(`Update status ${project.name} failed: ${result.error}`);
@@ -893,6 +896,7 @@ async function writeProjectField(
     field,
     newValue,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`Update ${projectName}.${field} failed: ${result.error}`);
@@ -1020,6 +1024,7 @@ async function writeWeekItemField(
     field,
     newValue,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`Update ${prefix}.${field} failed: ${result.error}`);

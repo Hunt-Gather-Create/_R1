@@ -147,6 +147,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       name: PARENT_PROJECT_NAME,
       owner: "Jill",
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!result.ok) throw new Error(`Create parent failed: ${result.error}`);
 
@@ -196,6 +197,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       resources: "Dev: Leslie",
       notes: "Build HTML/CSS/JS against final approved design",
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!result.ok) throw new Error(`Create Dev K/O failed: ${result.error}`);
   }
@@ -214,6 +216,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       resources: "Dev: Leslie",
       notes: "Walk team through Dev build; flag issues to fix before 4/28 handoff",
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!result.ok) throw new Error(`Create Internal Review failed: ${result.error}`);
   }
@@ -453,6 +456,7 @@ async function writeField(
     field,
     newValue,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`Update ${prefix}.${field} failed: ${result.error}`);

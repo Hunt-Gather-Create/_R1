@@ -666,6 +666,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         waitingOn: spec.waitingOn,
         notes: spec.notes,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) throw new Error(`Create ${spec.name} failed: ${result.error}`);
       // Re-query by fuzzy name to capture new ID
@@ -706,6 +707,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         projectName: project.name,
         newStatus: "completed",
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!statusResult.ok) {
         throw new Error(`Flip status ${project.name} failed: ${statusResult.error}`);
@@ -716,6 +718,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "category",
         newValue: "completed",
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!categoryResult.ok) {
         throw new Error(`Flip category ${project.name} failed: ${categoryResult.error}`);
@@ -767,6 +770,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "status",
         newValue: "completed",
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) throw new Error(`Mark completed ${prefix} failed: ${result.error}`);
     }
@@ -803,6 +807,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         resources: spec.resources,
         notes: spec.notes,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) throw new Error(`Create '${spec.title}' failed: ${result.error}`);
     }
@@ -1097,6 +1102,7 @@ async function applyProjectFieldUpdates(
         projectName: project.name,
         newStatus: f.status,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) {
         throw new Error(`Update status ${project.name} failed: ${result.error}`);
@@ -1135,6 +1141,7 @@ async function writeProjectField(
     field,
     newValue,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`Update ${projectName}.${field} failed: ${result.error}`);
@@ -1231,6 +1238,7 @@ async function writeWeekItemField(
     field,
     newValue,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`Update ${prefix}.${field} failed: ${result.error}`);

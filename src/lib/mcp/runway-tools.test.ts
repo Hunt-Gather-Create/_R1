@@ -255,7 +255,7 @@ describe("registerRunwayTools", () => {
   it("update_project_status calls operation and returns message when no data", async () => {
     const params = { clientSlug: "convergix", projectName: "CDS", newStatus: "completed", updatedBy: "Kathy", notes: "Delivered" };
     const result = await registeredTools.get("update_project_status")!(params);
-    expect(mockOps.updateProjectStatus).toHaveBeenCalledWith(params);
+    expect(mockOps.updateProjectStatus).toHaveBeenCalledWith({ ...params, source: "mcp" });
     expect(result).toEqual({ content: [{ type: "text", text: "Updated" }] });
   });
 
@@ -297,7 +297,7 @@ describe("registerRunwayTools", () => {
   it("add_project calls operation", async () => {
     const params = { clientSlug: "convergix", name: "New Site", updatedBy: "Jason" };
     await registeredTools.get("add_project")!(params);
-    expect(mockOps.addProject).toHaveBeenCalledWith(params);
+    expect(mockOps.addProject).toHaveBeenCalledWith({ ...params, source: "mcp" });
   });
 
   it("add_project rejects invalid engagementType at tool boundary", async () => {
@@ -335,7 +335,7 @@ describe("registerRunwayTools", () => {
       updatedBy: "Jason",
     };
     await registeredTools.get("add_project")!(params);
-    expect(mockOps.addProject).toHaveBeenCalledWith(params);
+    expect(mockOps.addProject).toHaveBeenCalledWith({ ...params, source: "mcp" });
   });
 
   it("update_week_item rejects invalid status at tool boundary", async () => {
@@ -386,7 +386,7 @@ describe("registerRunwayTools", () => {
       updatedBy: "test",
     };
     await registeredTools.get("update_week_item")!(params);
-    expect(mockOps.updateWeekItemField).toHaveBeenCalledWith(params);
+    expect(mockOps.updateWeekItemField).toHaveBeenCalledWith({ ...params, source: "mcp" });
   });
 
   it("create_week_item rejects shape-invalid startDate at tool boundary", async () => {
@@ -411,7 +411,7 @@ describe("registerRunwayTools", () => {
       updatedBy: "test",
     };
     await registeredTools.get("create_week_item")!(params);
-    expect(mockOps.createWeekItem).toHaveBeenCalledWith(params);
+    expect(mockOps.createWeekItem).toHaveBeenCalledWith({ ...params, source: "mcp" });
   });
 
   it("add_update calls operation", async () => {
@@ -580,14 +580,14 @@ describe("registerRunwayTools", () => {
   it("update_project_field calls operation and returns message when no data", async () => {
     const params = { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "Lane", updatedBy: "mcp" };
     const result = await registeredTools.get("update_project_field")!(params);
-    expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
+    expect(mockOps.updateProjectField).toHaveBeenCalledWith({ ...params, source: "mcp" });
     expect(result).toEqual({ content: [{ type: "text", text: "Updated" }] });
   });
 
   it("update_project_field forwards parentProjectId field (PR #88 Chunk F)", async () => {
     const params = { clientSlug: "convergix", projectName: "CDS", field: "parentProjectId", newValue: "pj-wrap", updatedBy: "mcp" };
     await registeredTools.get("update_project_field")!(params);
-    expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
+    expect(mockOps.updateProjectField).toHaveBeenCalledWith({ ...params, source: "mcp" });
   });
 
   it("update_project_field rejects invalid engagementType at tool boundary", async () => {
@@ -632,19 +632,19 @@ describe("registerRunwayTools", () => {
   it("update_project_field accepts valid engagementType and forwards to helper", async () => {
     const params = { clientSlug: "convergix", projectName: "CDS", field: "engagementType", newValue: "retainer", updatedBy: "mcp" };
     await registeredTools.get("update_project_field")!(params);
-    expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
+    expect(mockOps.updateProjectField).toHaveBeenCalledWith({ ...params, source: "mcp" });
   });
 
   it("update_project_field accepts valid contractStart and forwards to helper", async () => {
     const params = { clientSlug: "convergix", projectName: "CDS", field: "contractStart", newValue: "2026-02-01", updatedBy: "mcp" };
     await registeredTools.get("update_project_field")!(params);
-    expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
+    expect(mockOps.updateProjectField).toHaveBeenCalledWith({ ...params, source: "mcp" });
   });
 
   it("update_project_field accepts empty string to clear engagementType", async () => {
     const params = { clientSlug: "convergix", projectName: "CDS", field: "engagementType", newValue: "", updatedBy: "mcp" };
     await registeredTools.get("update_project_field")!(params);
-    expect(mockOps.updateProjectField).toHaveBeenCalledWith(params);
+    expect(mockOps.updateProjectField).toHaveBeenCalledWith({ ...params, source: "mcp" });
   });
 
   it("update_project_field surfaces cascadeDetail for dueDate changes", async () => {
@@ -712,14 +712,14 @@ describe("registerRunwayTools", () => {
   it("create_week_item calls operation", async () => {
     const params = { clientSlug: "convergix", title: "Review", weekOf: "2026-04-06", updatedBy: "mcp" };
     const result = await registeredTools.get("create_week_item")!(params);
-    expect(mockOps.createWeekItem).toHaveBeenCalledWith(params);
+    expect(mockOps.createWeekItem).toHaveBeenCalledWith({ ...params, source: "mcp" });
     expect(result).toEqual({ content: [{ type: "text", text: "Created" }] });
   });
 
   it("update_week_item calls operation", async () => {
     const params = { weekOf: "2026-04-06", weekItemTitle: "Review", field: "status", newValue: "completed", updatedBy: "mcp" };
     const result = await registeredTools.get("update_week_item")!(params);
-    expect(mockOps.updateWeekItemField).toHaveBeenCalledWith(params);
+    expect(mockOps.updateWeekItemField).toHaveBeenCalledWith({ ...params, source: "mcp" });
     expect(result).toEqual({ content: [{ type: "text", text: "Updated" }] });
   });
 
@@ -768,7 +768,7 @@ describe("registerRunwayTools", () => {
   it("create_team_member calls operation", async () => {
     const params = { name: "Lane", fullName: "Lane Davis", updatedBy: "mcp" };
     const result = await registeredTools.get("create_team_member")!(params);
-    expect(mockOps.createTeamMember).toHaveBeenCalledWith(params);
+    expect(mockOps.createTeamMember).toHaveBeenCalledWith({ ...params, source: "mcp" });
     expect(result).toEqual({ content: [{ type: "text", text: "Created" }] });
   });
 

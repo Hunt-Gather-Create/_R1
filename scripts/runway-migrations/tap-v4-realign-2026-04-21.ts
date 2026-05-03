@@ -297,6 +297,7 @@ async function applyL1Updates(ctx: MigrationContext, r: ResolvedState): Promise<
       field: "name",
       newValue: L1_NEW_NAME,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!result.ok) throw new Error(`Update L1.name failed: ${result.error}`);
   }
@@ -311,6 +312,7 @@ async function applyL1Updates(ctx: MigrationContext, r: ResolvedState): Promise<
       field: "resources",
       newValue: L1_NEW_RESOURCES,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!result.ok) throw new Error(`Update L1.resources failed: ${result.error}`);
   }
@@ -359,6 +361,7 @@ async function applyL2TitleUpdate(ctx: MigrationContext, plan: L2Plan): Promise<
     field: "title",
     newValue: plan.newTitle,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`Update L2 ${plan.prefix} title failed: ${result.error}`);
@@ -390,6 +393,7 @@ async function applyL2BlockedByUpdate(
     field: "blockedBy",
     newValue: blockedByJson,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`Update L2 ${plan.prefix} blocked_by failed: ${result.error}`);

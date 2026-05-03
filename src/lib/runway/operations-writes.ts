@@ -20,6 +20,10 @@ import {
   checkDuplicate,
   insertAuditRecord,
 } from "./operations-utils";
+import type {
+  AuditEvent,
+  AuditSource,
+} from "./operations-utils";
 import { getLinkedWeekItems } from "./operations-reads-week";
 import type {
   CascadedItemInfo,
@@ -35,6 +39,18 @@ export interface UpdateProjectStatusParams {
   newStatus: string;
   updatedBy: string;
   notes?: string;
+  /**
+   * Wave 0b §A4 / Wave 0d: optional callback fired on successful status
+   * update. Wave 14 intercept-miss alert subscribes here. Pre-modal-era
+   * callers omit it.
+   */
+  auditObserver?: (event: AuditEvent) => void;
+  /**
+   * Wave 0b §"Wave 0b" #7 / Wave 0d: write provenance. Pre-modal-era callers
+   * pass null/omit. Modal Phase 1 surfaces pass `slack-modal-bot` /
+   * `slack-modal-slash`.
+   */
+  source?: AuditSource;
 }
 
 // ── Write Operation ─────────────────────────────────────
@@ -42,7 +58,7 @@ export interface UpdateProjectStatusParams {
 export async function updateProjectStatus(
   params: UpdateProjectStatusParams
 ): Promise<MutationResponse<UpdateProjectStatusData>> {
-  const { clientSlug, projectName, newStatus, updatedBy, notes } = params;
+  const { clientSlug, projectName, newStatus, updatedBy, notes, auditObserver, source } = params;
   const db = getRunwayDb();
 
   const lookup = await getClientOrFail(clientSlug);
@@ -160,6 +176,18 @@ export async function updateProjectStatus(
       previousValue: itemPrev,
       newValue: newStatus,
       auditId: childAuditId,
+    });
+  }
+
+  // Wave 0b §A4 / Wave 0d: emit AuditEvent for downstream observers (Wave
+  // 14 intercept-miss alert). Source nullable per pre-plan §A4 — pre-modal-
+  // era callers that don't pass `source` see null.
+  if (auditObserver) {
+    auditObserver({
+      source: source ?? null,
+      entityId: project.id,
+      entityType: "project",
+      updatedBy,
     });
   }
 

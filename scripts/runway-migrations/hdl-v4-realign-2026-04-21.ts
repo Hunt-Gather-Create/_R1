@@ -121,6 +121,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "name",
       newValue: L1_NEW_NAME,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!result.ok) throw new Error(`Rename L1 failed: ${result.error}`);
   }
@@ -135,6 +136,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "resources",
       newValue: L1_NEW_RESOURCES,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!result.ok) throw new Error(`Update L1 resources failed: ${result.error}`);
   }
@@ -182,6 +184,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "resources",
         newValue: fill.newResources,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) {
         throw new Error(`Update L2 ${fill.idPrefix} resources failed: ${result.error}`);
