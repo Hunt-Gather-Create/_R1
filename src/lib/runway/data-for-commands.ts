@@ -14,7 +14,7 @@ import {
   weekItems,
   teamMembers,
 } from "@/lib/db/runway-schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 export interface ProjectForFuzzy {
   id: string;
@@ -38,15 +38,24 @@ export interface TeamMemberForFuzzy {
 
 /**
  * Fetch all projects for fuzzy matching. Optionally narrow to a single client
- * id when the slash arg includes a known client slug -> id mapping.
+ * id when the slash arg includes a known client slug -> id mapping. Phase 4
+ * adds an optional `engagementType` filter so the Options Load URL can
+ * surface retainer-only projects to the project modal's parent_retainer
+ * picker.
  */
 export async function getProjectsForFuzzy(
   clientId?: string,
+  opts?: { engagementType?: string },
 ): Promise<ProjectForFuzzy[]> {
   const db = getRunwayDb();
-  const rows = clientId
-    ? await db.select().from(projects).where(eq(projects.clientId, clientId))
-    : await db.select().from(projects);
+  const conditions = [];
+  if (clientId) conditions.push(eq(projects.clientId, clientId));
+  if (opts?.engagementType) conditions.push(eq(projects.engagementType, opts.engagementType));
+  const rows = conditions.length === 0
+    ? await db.select().from(projects)
+    : conditions.length === 1
+    ? await db.select().from(projects).where(conditions[0])
+    : await db.select().from(projects).where(and(...conditions));
   return rows.map((p) => ({ id: p.id, name: p.name, clientId: p.clientId }));
 }
 

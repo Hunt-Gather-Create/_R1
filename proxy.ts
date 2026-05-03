@@ -10,6 +10,7 @@ export const proxy = authkitMiddleware({
       "/api/slack/events",        // Slack signature verification handled in route
       "/api/slack/interactivity", // Slack signature verification handled in route
       "/api/slack/commands",      // Slack signature verification handled in route
+      "/api/slack/options",       // Slack signature verification handled in route
     ],
   },
 });

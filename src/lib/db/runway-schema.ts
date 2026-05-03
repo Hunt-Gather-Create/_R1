@@ -147,7 +147,7 @@ export const teamMembers = sqliteTable("team_members", {
   nicknames: text("nicknames"), // JSON array of strings, e.g. ["Allie"]
   title: text("title"),
   slackUserId: text("slack_user_id").unique(),
-  roleCategory: text("role_category"), // creative, dev, am, pm, leadership, community, contractor
+  roleCategory: text("role_category"), // creative, dev, am, pm, leadership, community, contractor, strategy
   accountsLed: text("accounts_led"), // JSON array of client slugs
   channelPurpose: text("channel_purpose"),
   isActive: integer("is_active").notNull().default(1),
