@@ -1,0 +1,120 @@
+{
+  "type": "view_submission",
+  "team": {
+    "id": "T_TEST_001",
+    "domain": "test-workspace"
+  },
+  "user": {
+    "id": "U_TEST_001",
+    "username": "test.user",
+    "name": "test.user",
+    "team_id": "T_TEST_001"
+  },
+  "api_app_id": "A_TEST_APPID",
+  "token": "REDACTED_TOKEN",
+  "trigger_id": "123456789.987654321.deadbeefdeadbeef",
+  "team_id": "T_TEST_001",
+  "user_id": "U_TEST_001",
+  "view": {
+    "id": "V_TEST_001",
+    "team_id": "T_TEST_001",
+    "type": "modal",
+    "callback_id": "runway_new_task",
+    "private_metadata": "{\"proposalId\":\"prop_01JKVQX5MNRZF8GH2TKXYZAB7C\"}",
+    "external_id": "",
+    "app_id": "A_TEST_APPID",
+    "bot_id": "B_TEST_BOTID",
+    "title": {
+      "type": "plain_text",
+      "text": "Review and save",
+      "emoji": true
+    },
+    "submit": {
+      "type": "plain_text",
+      "text": "Save",
+      "emoji": true
+    },
+    "close": {
+      "type": "plain_text",
+      "text": "Cancel",
+      "emoji": true
+    },
+    "blocks": [],
+    "state": {
+      "values": {
+        "title_block": {
+          "title_input": {
+            "type": "plain_text_input",
+            "value": "Concept Writeup"
+          }
+        },
+        "category_block": {
+          "category_select": {
+            "type": "static_select",
+            "selected_option": {
+              "text": { "type": "plain_text", "text": "Delivery", "emoji": true },
+              "value": "delivery"
+            }
+          }
+        },
+        "date_type_block": {
+          "date_type_radio": {
+            "type": "radio_buttons",
+            "selected_option": {
+              "text": { "type": "plain_text", "text": "Single day", "emoji": true },
+              "value": "single"
+            }
+          }
+        },
+        "date_block": {
+          "date_picker": {
+            "type": "datepicker",
+            "selected_date": "2026-05-04"
+          }
+        },
+        "parent_project_block": {
+          "parent_project_select": {
+            "type": "external_select",
+            "selected_option": {
+              "text": { "type": "plain_text", "text": "AG1 Pro 2026", "emoji": true },
+              "value": "proj_01JKPROJEXISTING0001ABCDEF"
+            }
+          }
+        },
+        "owner_block": {
+          "owner_select": {
+            "type": "external_select",
+            "selected_option": {
+              "text": { "type": "plain_text", "text": "CW: Kathy", "emoji": true },
+              "value": "tm_01JKTMKATHY0001ABCDEFGHJK"
+            }
+          }
+        },
+        "resources_block_0": {
+          "resources_select_0": {
+            "type": "external_select",
+            "selected_option": {
+              "text": { "type": "plain_text", "text": "CW: Kathy", "emoji": true },
+              "value": "tm_01JKTMKATHY0001ABCDEFGHJK"
+            }
+          }
+        },
+        "notes_block": {
+          "notes_input": {
+            "type": "plain_text_input",
+            "value": ""
+          }
+        }
+      }
+    },
+    "hash": "1714492810.abcdef00",
+    "clear_on_close": false,
+    "notify_on_close": true,
+    "submit_disabled": false,
+    "root_view_id": "V_TEST_001",
+    "previous_view_id": null
+  },
+  "response_urls": [],
+  "is_enterprise_install": false,
+  "enterprise": null
+}

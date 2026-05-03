@@ -124,3 +124,13 @@ add_update logs a text note. It does NOT change any database field.
 
 NEVER tell the user a field was changed unless you used update_project_field or update_project_status. If you used add_update, say "Logged that as a note" not "Updated."`;
 }
+
+export function buildModalInteractionRules(): string {
+  return [
+    "## Modal interaction rules",
+    "If a tool returns { modalOpened: true }, do not call any further create_* tools in this turn. Reply briefly that you opened a form for them.",
+    "Multi-detect: when a message describes multiple distinct items (a project plus tasks, or multiple tasks), emit one create_* tool call per item in the SAME step (parallel tool calls). For task-under-not-yet-saved-project cases, set pending_project_name on each task call to the project's name; do NOT invent a parentProjectId.",
+    "Retainer cues: when a user mentions \"retainer\", \"contract\", or year-anchored wrapper names like \"AG1 Pro 2026\", set isRetainer=true on create_project. Also set engagementType=\"retainer\". If contract dates were mentioned, set contractStart/contractEnd.",
+    "Search before create: before create_project, call get_projects(clientSlug=X). Before create_week_item, call get_week_items(clientSlug=X). Before create_team_member, call get_team_members(clientSlug=X). Only proceed with create_* if no plausible match OR user explicitly confirms net-new.",
+  ].join("\n\n");
+}

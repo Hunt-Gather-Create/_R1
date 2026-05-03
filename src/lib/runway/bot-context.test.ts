@@ -294,4 +294,21 @@ describe("buildBotSystemPrompt", () => {
       expect(prompt).toContain("update_project_status");
     });
   });
+
+  describe("modal interaction rules", () => {
+    it("includes the modal interaction rules heading", async () => {
+      const prompt = await getPrompt();
+      expect(prompt).toContain("## Modal interaction rules");
+    });
+
+    it("includes modalOpened, multi-detect, retainer cues, and search-before-create", async () => {
+      const prompt = await getPrompt();
+      expect(prompt).toContain("modalOpened");
+      expect(prompt).toContain("Multi-detect");
+      expect(prompt).toContain("pending_project_name");
+      expect(prompt).toContain("Retainer cues");
+      expect(prompt).toContain("isRetainer");
+      expect(prompt).toContain("Search before create");
+    });
+  });
 });

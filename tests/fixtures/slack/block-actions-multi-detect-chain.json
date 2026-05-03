@@ -1,0 +1,208 @@
+[
+  {
+    "stage": "project-button-click",
+    "description": "Stage 1: User clicks the parent project button on the multi-detect bot reply (1 project + 3 task buttons). Task buttons are still disabled at this point. trigger_id is fresh.",
+    "payload": {
+      "type": "block_actions",
+      "team": { "id": "T_TEST_001", "domain": "test-workspace" },
+      "user": {
+        "id": "U_TEST_001",
+        "username": "test.user",
+        "name": "test.user",
+        "team_id": "T_TEST_001"
+      },
+      "api_app_id": "A_TEST_APPID",
+      "token": "REDACTED_TOKEN",
+      "container": {
+        "type": "message",
+        "message_ts": "1714492800.001000",
+        "channel_id": "C_TEST_001",
+        "is_ephemeral": false
+      },
+      "trigger_id": "123456789.987654321.deadbeefdeadbeef",
+      "team_id": "T_TEST_001",
+      "user_id": "U_TEST_001",
+      "channel": { "id": "C_TEST_001", "name": "directmessage" },
+      "channel_id": "C_TEST_001",
+      "message": {
+        "bot_id": "B_TEST_BOTID",
+        "type": "message",
+        "text": "Got it - I caught 4 items. Click each below to review and save.",
+        "user": "U_TEST_BOTUSER",
+        "ts": "1714492800.001000",
+        "app_id": "A_TEST_APPID",
+        "team": "T_TEST_001",
+        "blocks": [
+          {
+            "type": "section",
+            "block_id": "multi_detect_header",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Got it - I caught 4 items. Click each below to review and save."
+            }
+          },
+          {
+            "type": "actions",
+            "block_id": "multi_detect_actions",
+            "elements": [
+              {
+                "type": "button",
+                "action_id": "open_create_modal",
+                "text": { "type": "plain_text", "text": "Project: AG1 Pro 2026", "emoji": true },
+                "style": "primary",
+                "value": "{\"proposalId\":\"prop_01JKVQX5MNRZF8GH2TKXYZAB7C\",\"kind\":\"project\"}"
+              },
+              {
+                "type": "button",
+                "action_id": "open_create_modal",
+                "text": { "type": "plain_text", "text": "Task: Concept Writeup (Mon May 4) - save project first", "emoji": true },
+                "value": "{\"proposalId\":\"prop_01JKVQX6P2A3B4C5D6E7F8G9H0\",\"kind\":\"task\",\"disabled\":true,\"pendingProjectName\":\"AG1 Pro 2026\"}"
+              },
+              {
+                "type": "button",
+                "action_id": "open_create_modal",
+                "text": { "type": "plain_text", "text": "Task: Concept Writeup (Mon May 11) - save project first", "emoji": true },
+                "value": "{\"proposalId\":\"prop_01JKVQX7Q3B4C5D6E7F8G9H0J1\",\"kind\":\"task\",\"disabled\":true,\"pendingProjectName\":\"AG1 Pro 2026\"}"
+              },
+              {
+                "type": "button",
+                "action_id": "open_create_modal",
+                "text": { "type": "plain_text", "text": "Task: Concept Writeup (Mon May 18) - save project first", "emoji": true },
+                "value": "{\"proposalId\":\"prop_01JKVQX8R4C5D6E7F8G9H0J1K2\",\"kind\":\"task\",\"disabled\":true,\"pendingProjectName\":\"AG1 Pro 2026\"}"
+              }
+            ]
+          }
+        ]
+      },
+      "state": { "values": {} },
+      "response_url": "https://hooks.slack.com/actions/T_TEST_001/0000000000000/REDACTED_RESPONSE_URL",
+      "actions": [
+        {
+          "type": "button",
+          "action_id": "open_create_modal",
+          "block_id": "multi_detect_actions",
+          "text": { "type": "plain_text", "text": "Project: AG1 Pro 2026", "emoji": true },
+          "value": "{\"proposalId\":\"prop_01JKVQX5MNRZF8GH2TKXYZAB7C\",\"kind\":\"project\"}",
+          "style": "primary",
+          "action_ts": "1714492810.123456"
+        }
+      ]
+    }
+  },
+  {
+    "stage": "chat-update-after-project-saved",
+    "description": "Stage 2: After the project view_submission succeeds, the bot calls chat.update on the original message — re-emitting all 4 buttons with task buttons now enabled and carrying the resolved projectId. This is the OUTBOUND request body the bot sends to Slack (not an interaction payload). Recorded here to lock the wire shape for tests.",
+    "request": {
+      "method": "POST",
+      "url": "https://slack.com/api/chat.update",
+      "headers": {
+        "Authorization": "Bearer REDACTED_BOT_TOKEN",
+        "Content-Type": "application/json; charset=utf-8"
+      },
+      "body": {
+        "channel": "C_TEST_001",
+        "ts": "1714492800.001000",
+        "text": "Got it - I caught 4 items. Click each below to review and save.",
+        "blocks": [
+          {
+            "type": "section",
+            "block_id": "multi_detect_header",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Got it - I caught 4 items. Project saved - tasks are now enabled."
+            }
+          },
+          {
+            "type": "actions",
+            "block_id": "multi_detect_actions",
+            "elements": [
+              {
+                "type": "button",
+                "action_id": "open_create_modal",
+                "text": { "type": "plain_text", "text": "Project: AG1 Pro 2026 (saved)", "emoji": true },
+                "value": "{\"proposalId\":\"prop_01JKVQX5MNRZF8GH2TKXYZAB7C\",\"kind\":\"project\",\"saved\":true}"
+              },
+              {
+                "type": "button",
+                "action_id": "open_create_modal",
+                "text": { "type": "plain_text", "text": "Task: Concept Writeup (Mon May 4)", "emoji": true },
+                "style": "primary",
+                "value": "{\"proposalId\":\"prop_01JKVQX6P2A3B4C5D6E7F8G9H0\",\"kind\":\"task\",\"projectId\":\"proj_01JKPROJSAVED0001ABCDEFGHJ\"}"
+              },
+              {
+                "type": "button",
+                "action_id": "open_create_modal",
+                "text": { "type": "plain_text", "text": "Task: Concept Writeup (Mon May 11)", "emoji": true },
+                "style": "primary",
+                "value": "{\"proposalId\":\"prop_01JKVQX7Q3B4C5D6E7F8G9H0J1\",\"kind\":\"task\",\"projectId\":\"proj_01JKPROJSAVED0001ABCDEFGHJ\"}"
+              },
+              {
+                "type": "button",
+                "action_id": "open_create_modal",
+                "text": { "type": "plain_text", "text": "Task: Concept Writeup (Mon May 18)", "emoji": true },
+                "style": "primary",
+                "value": "{\"proposalId\":\"prop_01JKVQX8R4C5D6E7F8G9H0J1K2\",\"kind\":\"task\",\"projectId\":\"proj_01JKPROJSAVED0001ABCDEFGHJ\"}"
+              }
+            ]
+          }
+        ]
+      },
+      "expected_response": {
+        "ok": true,
+        "channel": "C_TEST_001",
+        "ts": "1714492800.001000",
+        "text": "Got it - I caught 4 items. Project saved - tasks are now enabled."
+      }
+    }
+  },
+  {
+    "stage": "child-task-button-click",
+    "description": "Stage 3: User clicks one of the now-enabled child task buttons. value JSON now carries the resolved projectId. trigger_id is fresh again (each click brings a new one).",
+    "payload": {
+      "type": "block_actions",
+      "team": { "id": "T_TEST_001", "domain": "test-workspace" },
+      "user": {
+        "id": "U_TEST_001",
+        "username": "test.user",
+        "name": "test.user",
+        "team_id": "T_TEST_001"
+      },
+      "api_app_id": "A_TEST_APPID",
+      "token": "REDACTED_TOKEN",
+      "container": {
+        "type": "message",
+        "message_ts": "1714492800.001000",
+        "channel_id": "C_TEST_001",
+        "is_ephemeral": false
+      },
+      "trigger_id": "234567890.876543210.cafef00dcafef00d",
+      "team_id": "T_TEST_001",
+      "user_id": "U_TEST_001",
+      "channel": { "id": "C_TEST_001", "name": "directmessage" },
+      "channel_id": "C_TEST_001",
+      "message": {
+        "bot_id": "B_TEST_BOTID",
+        "type": "message",
+        "text": "Got it - I caught 4 items. Project saved - tasks are now enabled.",
+        "user": "U_TEST_BOTUSER",
+        "ts": "1714492800.001000",
+        "app_id": "A_TEST_APPID",
+        "team": "T_TEST_001",
+        "blocks": []
+      },
+      "state": { "values": {} },
+      "response_url": "https://hooks.slack.com/actions/T_TEST_001/0000000000001/REDACTED_RESPONSE_URL_2",
+      "actions": [
+        {
+          "type": "button",
+          "action_id": "open_create_modal",
+          "block_id": "multi_detect_actions",
+          "text": { "type": "plain_text", "text": "Task: Concept Writeup (Mon May 4)", "emoji": true },
+          "value": "{\"proposalId\":\"prop_01JKVQX6P2A3B4C5D6E7F8G9H0\",\"kind\":\"task\",\"projectId\":\"proj_01JKPROJSAVED0001ABCDEFGHJ\"}",
+          "style": "primary",
+          "action_ts": "1714493000.234567"
+        }
+      ]
+    }
+  }
+]

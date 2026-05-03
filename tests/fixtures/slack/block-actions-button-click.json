@@ -1,0 +1,84 @@
+{
+  "type": "block_actions",
+  "team": {
+    "id": "T_TEST_001",
+    "domain": "test-workspace"
+  },
+  "user": {
+    "id": "U_TEST_001",
+    "username": "test.user",
+    "name": "test.user",
+    "team_id": "T_TEST_001"
+  },
+  "api_app_id": "A_TEST_APPID",
+  "token": "REDACTED_TOKEN",
+  "container": {
+    "type": "message",
+    "message_ts": "1714492800.001000",
+    "channel_id": "C_TEST_001",
+    "is_ephemeral": false
+  },
+  "trigger_id": "123456789.987654321.deadbeefdeadbeef",
+  "team_id": "T_TEST_001",
+  "user_id": "U_TEST_001",
+  "channel": {
+    "id": "C_TEST_001",
+    "name": "directmessage"
+  },
+  "channel_id": "C_TEST_001",
+  "message": {
+    "bot_id": "B_TEST_BOTID",
+    "type": "message",
+    "text": "Got it - Click the button below to review and add any additional details, then click submit to save.",
+    "user": "U_TEST_BOTUSER",
+    "ts": "1714492800.001000",
+    "app_id": "A_TEST_APPID",
+    "team": "T_TEST_001",
+    "blocks": [
+      {
+        "type": "section",
+        "block_id": "header_block",
+        "text": {
+          "type": "mrkdwn",
+          "text": "Got it - Click the button below to review and add any additional details, then click submit to save."
+        }
+      },
+      {
+        "type": "actions",
+        "block_id": "actions_block",
+        "elements": [
+          {
+            "type": "button",
+            "action_id": "open_create_modal",
+            "text": {
+              "type": "plain_text",
+              "text": "Open the form",
+              "emoji": true
+            },
+            "style": "primary",
+            "value": "prop_01JKVQX5MNRZF8GH2TKXYZAB7C"
+          }
+        ]
+      }
+    ]
+  },
+  "state": {
+    "values": {}
+  },
+  "response_url": "https://hooks.slack.com/actions/T_TEST_001/0000000000000/REDACTED_RESPONSE_URL",
+  "actions": [
+    {
+      "type": "button",
+      "action_id": "open_create_modal",
+      "block_id": "actions_block",
+      "text": {
+        "type": "plain_text",
+        "text": "Open the form",
+        "emoji": true
+      },
+      "value": "prop_01JKVQX5MNRZF8GH2TKXYZAB7C",
+      "style": "primary",
+      "action_ts": "1714492810.123456"
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import {
   buildConfirmationRules,
   buildToneRules,
   buildCapabilityBoundaries,
+  buildModalInteractionRules,
 } from "./bot-context-behaviors";
 
 describe("buildGlossary", () => {
@@ -154,5 +155,39 @@ describe("buildCapabilityBoundaries", () => {
     expect(result).toContain("## CRITICAL: add_update vs update_project_field");
     expect(result).toContain("does NOT change any database field");
     expect(result).toContain("NEVER tell the user a field was changed unless");
+  });
+});
+
+describe("buildModalInteractionRules", () => {
+  it("returns the modal interaction rules heading", () => {
+    const result = buildModalInteractionRules();
+    expect(result).toContain("## Modal interaction rules");
+  });
+
+  it("includes the modalOpened belt rule", () => {
+    const result = buildModalInteractionRules();
+    expect(result).toContain("modalOpened");
+  });
+
+  it("includes the multi-detect rule with pending_project_name guidance", () => {
+    const result = buildModalInteractionRules();
+    expect(result).toContain("Multi-detect");
+    expect(result).toContain("pending_project_name");
+  });
+
+  it("includes the retainer cues rule with isRetainer signal", () => {
+    const result = buildModalInteractionRules();
+    expect(result).toContain("Retainer cues");
+    expect(result).toContain("isRetainer");
+  });
+
+  it("includes the search-before-create rule", () => {
+    const result = buildModalInteractionRules();
+    expect(result).toContain("Search before create");
+  });
+
+  it("contains no em-dashes in the returned text", () => {
+    const result = buildModalInteractionRules();
+    expect(result).not.toMatch(/\u2014/);
   });
 });

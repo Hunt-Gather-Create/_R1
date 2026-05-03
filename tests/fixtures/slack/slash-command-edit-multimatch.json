@@ -1,0 +1,17 @@
+{
+  "_format": "form-urlencoded-parsed",
+  "_description": "Slack slash command for /runway-edit-project Brand — typed query that fuzzy-matches multiple projects. The handler is expected to surface a disambiguation step before opening the edit modal.",
+  "token": "REDACTED_TOKEN",
+  "team_id": "T_TEST_001",
+  "team_domain": "test-workspace",
+  "channel_id": "C_TEST_001",
+  "channel_name": "directmessage",
+  "user_id": "U_TEST_001",
+  "user_name": "test.user",
+  "command": "/runway-edit-project",
+  "text": "Brand",
+  "api_app_id": "A_TEST_APPID",
+  "is_enterprise_install": "false",
+  "response_url": "https://hooks.slack.com/commands/T_TEST_001/0000000000002/REDACTED_RESPONSE_URL",
+  "trigger_id": "345678901.765432109.feedfacefeedface"
+}
