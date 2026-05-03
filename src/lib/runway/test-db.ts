@@ -103,6 +103,7 @@ CREATE TABLE updates (
   batch_id TEXT,
   triggered_by_update_id TEXT,
   slack_message_ts TEXT,
+  source TEXT,
   created_at INTEGER NOT NULL
 );
 
@@ -120,6 +121,34 @@ CREATE TABLE team_members (
   is_active INTEGER NOT NULL DEFAULT 1,
   updated_at TEXT
 );
+
+CREATE TABLE bot_modal_proposals (
+  id TEXT PRIMARY KEY NOT NULL,
+  user_slack_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  thread_ts TEXT,
+  tool_name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  target_entity_id TEXT,
+  target_entity_type TEXT,
+  args TEXT NOT NULL,
+  conversation_ref TEXT,
+  parent_proposal_id TEXT,
+  intent_group_id TEXT,
+  pending_project_name TEXT,
+  posted_message_ts TEXT,
+  posted_message_channel TEXT,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  status_reason TEXT,
+  resolved_project_id TEXT
+);
+
+CREATE INDEX idx_bot_modal_proposals_status_expires_at ON bot_modal_proposals(status, expires_at);
+CREATE INDEX idx_bot_modal_proposals_user_slack_id_created_at ON bot_modal_proposals(user_slack_id, created_at);
+CREATE INDEX idx_bot_modal_proposals_intent_group_id_status ON bot_modal_proposals(intent_group_id, status);
+CREATE INDEX idx_bot_modal_proposals_parent_proposal_id_status ON bot_modal_proposals(parent_proposal_id, status);
 `;
 
 // ── Seed Data ───────────────────────────────────────────
