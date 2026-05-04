@@ -414,17 +414,24 @@ describe("buildTaskModal — field types", () => {
   });
 
   it("renders no free-text date input — only datepicker elements for date fields", () => {
-    const view = buildTaskModal({
+    const single = buildTaskModal({
       args: {},
-      proposalId: "prop_field_007",
+      proposalId: "prop_field_007a",
+      mode: "create",
+    });
+    const dateBlock = findBlock(single, "date_block") as Block;
+    expect((dateBlock.element as { type: string }).type).toBe("datepicker");
+
+    const range = buildTaskModal({
+      args: {},
+      proposalId: "prop_field_007b",
       mode: "create",
       currentValues: { dateType: "range" },
     });
-    // Both date_block and start_date_block must use datepicker, not text input.
-    const dateBlock = findBlock(view, "date_block") as Block;
-    const startBlock = findBlock(view, "start_date_block") as Block;
-    expect((dateBlock.element as { type: string }).type).toBe("datepicker");
+    const startBlock = findBlock(range, "start_date_block") as Block;
+    const endBlock = findBlock(range, "end_date_block") as Block;
     expect((startBlock.element as { type: string }).type).toBe("datepicker");
+    expect((endBlock.element as { type: string }).type).toBe("datepicker");
   });
 });
 
@@ -433,26 +440,30 @@ describe("buildTaskModal — field types", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildTaskModal — Range/Single-day toggle", () => {
-  it("hides start_date_block when dateType is single (default)", () => {
+  it("Single mode renders date_block and hides start/end", () => {
     const view = buildTaskModal({
       args: {},
       proposalId: "prop_range_001",
       mode: "create",
     });
+    expect(findBlock(view, "date_block")).toBeDefined();
     expect(findBlock(view, "start_date_block")).toBeUndefined();
+    expect(findBlock(view, "end_date_block")).toBeUndefined();
   });
 
-  it("renders start_date_block when dateType=range via currentValues", () => {
+  it("Range mode renders start_date_block + end_date_block and hides date_block", () => {
     const view = buildTaskModal({
       args: {},
       proposalId: "prop_range_002",
       mode: "create",
       currentValues: { dateType: "range" },
     });
+    expect(findBlock(view, "date_block")).toBeUndefined();
     expect(findBlock(view, "start_date_block")).toBeDefined();
+    expect(findBlock(view, "end_date_block")).toBeDefined();
   });
 
-  it("renders start_date_block in edit mode when dateType=range", () => {
+  it("renders start + end dates in edit mode when dateType=range", () => {
     const view = buildTaskModal({
       args: {},
       proposalId: "prop_range_003",
@@ -460,13 +471,33 @@ describe("buildTaskModal — Range/Single-day toggle", () => {
       currentValues: {
         title: "Range task",
         dateType: "range",
-        date: "2026-05-10",
         startDate: "2026-05-04",
+        endDate: "2026-05-10",
       },
     });
-    const block = findBlock(view, "start_date_block") as Block;
-    const element = block.element as { initial_date?: string };
-    expect(element.initial_date).toBe("2026-05-04");
+    const startBlock = findBlock(view, "start_date_block") as Block;
+    const endBlock = findBlock(view, "end_date_block") as Block;
+    expect((startBlock.element as { initial_date?: string }).initial_date).toBe(
+      "2026-05-04",
+    );
+    expect((endBlock.element as { initial_date?: string }).initial_date).toBe(
+      "2026-05-10",
+    );
+  });
+
+  it("date_type radio fires dispatch_action for views.update toggle", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_range_004",
+      mode: "create",
+    });
+    const radioBlock = findBlock(view, "date_type_block") as Block & {
+      dispatch_action?: boolean;
+    };
+    expect(radioBlock.dispatch_action).toBe(true);
+    expect((radioBlock.element as { action_id: string }).action_id).toBe(
+      "date_type_radio",
+    );
   });
 });
 

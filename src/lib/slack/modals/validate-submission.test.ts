@@ -462,6 +462,129 @@ describe("validateModalSubmission - required-field check (create flow)", () => {
   });
 });
 
+describe("validateModalSubmission - date_type radio mode (Issue 3)", () => {
+  let state: MockState;
+  let db: MockDb;
+  beforeEach(() => {
+    state = { projects: [], weekItems: [], teamMembers: [] };
+    db = makeDb(state);
+  });
+
+  it("Single mode: mirrors picked date to BOTH startDate AND endDate (data integrity)", async () => {
+    const proposal = makeProposal({ toolName: "create_week_item" });
+    const stateValues = taskState({
+      date_type_block: { date_type_radio: radioV("single") },
+      date_block: { date_picker: dateV("2026-05-08") },
+    });
+    const result = await validateModalSubmission({
+      proposal,
+      stateValues,
+      db,
+    } as unknown as ValidateModalSubmissionParams);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.normalized.date).toBe("2026-05-08");
+      expect(result.normalized.startDate).toBe("2026-05-08");
+      expect(result.normalized.endDate).toBe("2026-05-08");
+    }
+  });
+
+  it("Range mode: keeps separate startDate/endDate from the two pickers", async () => {
+    const proposal = makeProposal({ toolName: "create_week_item" });
+    const stateValues = taskState({
+      date_type_block: { date_type_radio: radioV("range") },
+      // date_block intentionally absent — Range mode doesn't render it
+      start_date_block: { start_date_picker: dateV("2026-05-04") },
+      end_date_block: { end_date_picker: dateV("2026-05-09") },
+    });
+    delete stateValues.date_block;
+    const result = await validateModalSubmission({
+      proposal,
+      stateValues,
+      db,
+    } as unknown as ValidateModalSubmissionParams);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.normalized.startDate).toBe("2026-05-04");
+      expect(result.normalized.endDate).toBe("2026-05-09");
+    }
+  });
+
+  it("Range mode: missing startDate fires errors[start_date_block]", async () => {
+    const proposal = makeProposal({ toolName: "create_week_item" });
+    const stateValues = taskState({
+      date_type_block: { date_type_radio: radioV("range") },
+      start_date_block: { start_date_picker: { type: "datepicker" } },
+      end_date_block: { end_date_picker: dateV("2026-05-09") },
+    });
+    delete stateValues.date_block;
+    const result = await validateModalSubmission({
+      proposal,
+      stateValues,
+      db,
+    } as unknown as ValidateModalSubmissionParams);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.start_date_block).toBeDefined();
+    }
+  });
+
+  it("Range mode: missing endDate fires errors[end_date_block]", async () => {
+    const proposal = makeProposal({ toolName: "create_week_item" });
+    const stateValues = taskState({
+      date_type_block: { date_type_radio: radioV("range") },
+      start_date_block: { start_date_picker: dateV("2026-05-04") },
+      end_date_block: { end_date_picker: { type: "datepicker" } },
+    });
+    delete stateValues.date_block;
+    const result = await validateModalSubmission({
+      proposal,
+      stateValues,
+      db,
+    } as unknown as ValidateModalSubmissionParams);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.end_date_block).toBeDefined();
+    }
+  });
+
+  it("Range mode: start > end fires the existing order validator", async () => {
+    const proposal = makeProposal({ toolName: "create_week_item" });
+    const stateValues = taskState({
+      date_type_block: { date_type_radio: radioV("range") },
+      start_date_block: { start_date_picker: dateV("2026-05-15") },
+      end_date_block: { end_date_picker: dateV("2026-05-04") },
+    });
+    delete stateValues.date_block;
+    const result = await validateModalSubmission({
+      proposal,
+      stateValues,
+      db,
+    } as unknown as ValidateModalSubmissionParams);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.start_date_block).toBeDefined();
+    }
+  });
+
+  it("Single mode: missing date fires errors[date_block]", async () => {
+    const proposal = makeProposal({ toolName: "create_week_item" });
+    const stateValues = taskState({
+      date_type_block: { date_type_radio: radioV("single") },
+      date_block: { date_picker: { type: "datepicker" } },
+    });
+    const result = await validateModalSubmission({
+      proposal,
+      stateValues,
+      db,
+    } as unknown as ValidateModalSubmissionParams);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.date_block).toBeDefined();
+    }
+  });
+});
+
 describe("validateModalSubmission - Wave 0b validator integration", () => {
   let state: MockState;
   let db: MockDb;

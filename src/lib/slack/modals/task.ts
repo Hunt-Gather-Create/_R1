@@ -261,6 +261,11 @@ function buildDateTypeBlock(currentValues?: Record<string, unknown>) {
     type: "input",
     block_id: "date_type_block",
     label: plainText("Date type"),
+    // dispatch_action fires block_actions on toggle so the interactivity
+    // handler can rebuild the view via views.update. Single mode shows
+    // one picker, Range mode shows two. Slack has no native conditional
+    // visibility; views.update is the documented in-modal pattern.
+    dispatch_action: true,
     element: {
       type: "radio_buttons",
       action_id: "date_type_radio",
@@ -298,6 +303,22 @@ function buildStartDateBlock(currentValues?: Record<string, unknown>) {
     type: "input",
     block_id: "start_date_block",
     label: plainText("Start date"),
+    element,
+  };
+}
+
+function buildEndDateBlock(currentValues?: Record<string, unknown>) {
+  const initial = asString(currentValues?.endDate);
+  const element: Record<string, unknown> = {
+    type: "datepicker",
+    action_id: "end_date_picker",
+    placeholder: plainText("Pick an end date"),
+  };
+  if (initial) element.initial_date = initial;
+  return {
+    type: "input",
+    block_id: "end_date_block",
+    label: plainText("End date"),
     element,
   };
 }
@@ -494,15 +515,17 @@ export function buildTaskModal(params: BuildTaskModalParams): SlackView {
   // 7. Category
   blocks.push(buildCategoryBlock(currentValues) as SlackView["blocks"][number]);
 
-  // 8. Date type radio (drives start_date visibility)
+  // 8. Date type radio (drives picker mode via dispatch_action → views.update)
   blocks.push(buildDateTypeBlock(currentValues) as SlackView["blocks"][number]);
 
-  // 9. Date (always rendered)
-  blocks.push(buildDateBlock(currentValues) as SlackView["blocks"][number]);
-
-  // 10. Start date (only when date type = range)
+  // 9. Date pickers. Single shows one, Range shows two. Validator + submit
+  // handler mirror Single's date to both startDate AND endDate so every task
+  // row has both dates populated (data integrity).
   if (dateType === "range") {
     blocks.push(buildStartDateBlock(currentValues) as SlackView["blocks"][number]);
+    blocks.push(buildEndDateBlock(currentValues) as SlackView["blocks"][number]);
+  } else {
+    blocks.push(buildDateBlock(currentValues) as SlackView["blocks"][number]);
   }
 
   // 11. Owner

@@ -452,14 +452,24 @@ function projectExtractToCanonical(
 function taskExtractToCanonical(
   fields: ExtractedTaskFields,
 ): Record<string, unknown> {
+  // Single mode mirrors the picked date to BOTH startDate AND endDate so
+  // every task row carries both columns populated (data integrity rule —
+  // never leave endDate null when Single day was selected). Range mode
+  // keeps the two pickers separate.
+  let startDate = fields.startDate;
+  let endDate = fields.endDate;
+  if (fields.dateType !== "range" && fields.date) {
+    startDate = fields.date;
+    endDate = fields.date;
+  }
   return {
     clientId: fields.clientId,
     projectId: fields.parentProjectId,
     title: fields.title,
     category: fields.category,
     date: fields.date,
-    startDate: fields.startDate,
-    endDate: fields.endDate,
+    startDate,
+    endDate,
     owner: fields.owner,
     resources: fields.resources || null,
     notes: fields.notes,
@@ -855,9 +865,19 @@ async function validateTaskModal(ctx: PerModalCtx): Promise<ValidationResult> {
   if (ctx.proposal.kind === "create") {
     if (!fields.title) ctx.errors["title_block"] = "Title is required.";
     if (!fields.category) ctx.errors["category_block"] = "Category is required.";
-    if (!fields.date) ctx.errors["date_block"] = "Date is required.";
     if (!resolvedParentId)
       ctx.errors["parent_project_block"] = "Parent project is required.";
+    // Date requirements depend on date_type radio:
+    //   single → date_block.date_picker required
+    //   range  → start_date_block.start_date_picker AND end_date_block.end_date_picker required
+    if (fields.dateType === "range") {
+      if (!fields.startDate)
+        ctx.errors["start_date_block"] = "Start date is required.";
+      if (!fields.endDate)
+        ctx.errors["end_date_block"] = "End date is required.";
+    } else {
+      if (!fields.date) ctx.errors["date_block"] = "Date is required.";
+    }
     if (Object.keys(ctx.errors).length > 0) {
       return { ok: false, errors: ctx.errors };
     }

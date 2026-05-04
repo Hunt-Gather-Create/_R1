@@ -1102,6 +1102,232 @@ describe("POST /api/slack/interactivity — target_entity_picker (Builder 8)", (
   });
 });
 
+describe("POST /api/slack/interactivity — date_type_radio (Issue 3)", () => {
+  beforeEach(() => {
+    process.env.SLACK_SIGNING_SECRET = SIGNING_SECRET;
+  });
+
+  function buildDateTypePayload(opts: {
+    newType: "single" | "range";
+    callbackId?: string;
+    proposalId?: string;
+    stateValues?: Record<string, Record<string, unknown>>;
+  }) {
+    return {
+      type: "block_actions",
+      team: { id: "T_TEST_TEAM" },
+      user: { id: "U_TEST_USER", team_id: "T_TEST_TEAM" },
+      trigger_id: "trigger_xyz",
+      response_url: null,
+      channel: { id: "C_TEST_001" },
+      view: {
+        id: "V_TEST_DT_001",
+        hash: "hash_v1",
+        callback_id: opts.callbackId ?? "runway_new_task",
+        private_metadata: JSON.stringify({
+          proposalId: opts.proposalId ?? "prop_dt_001",
+        }),
+        state: { values: opts.stateValues ?? {} },
+      },
+      actions: [
+        {
+          action_id: "date_type_radio",
+          block_id: "date_type_block",
+          type: "radio_buttons",
+          selected_option: { value: opts.newType },
+        },
+      ],
+    };
+  }
+
+  it("toggles to range mode and re-renders with views.update + correct view_id/hash", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_dt_001",
+          toolName: "create_week_item",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildDateTypePayload({ newType: "range" });
+    const body = encodePayload(payload);
+    const res = await POST(makeRequest(body) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.viewsUpdate).toHaveBeenCalledTimes(1);
+    const call = handles.viewsUpdate.mock.calls[0][0] as {
+      view_id: string;
+      hash?: string;
+    };
+    expect(call.view_id).toBe("V_TEST_DT_001");
+    expect(call.hash).toBe("hash_v1");
+    // Verify buildTaskModal was called with the new dateType.
+    expect(handles.buildTaskModal).toHaveBeenCalledTimes(1);
+    const cv = handles.buildTaskModal.mock.calls[0][0] as {
+      currentValues?: { dateType?: string };
+    };
+    expect(cv.currentValues?.dateType).toBe("range");
+  });
+
+  it("toggles to single mode and passes dateType=single to view builder", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_dt_002",
+          toolName: "create_week_item",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildDateTypePayload({
+      newType: "single",
+      proposalId: "prop_dt_002",
+      stateValues: {
+        date_type_block: {
+          date_type_radio: { selected_option: { value: "range" } },
+        },
+        start_date_block: {
+          start_date_picker: { selected_date: "2026-05-04" },
+        },
+        end_date_block: {
+          end_date_picker: { selected_date: "2026-05-09" },
+        },
+      },
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.viewsUpdate).toHaveBeenCalledTimes(1);
+    const cv = handles.buildTaskModal.mock.calls[0][0] as {
+      currentValues?: {
+        dateType?: string;
+        startDate?: string;
+        endDate?: string;
+      };
+    };
+    expect(cv.currentValues?.dateType).toBe("single");
+    // Existing range picks survive the toggle so the user can flip back
+    // without losing them.
+    expect(cv.currentValues?.startDate).toBe("2026-05-04");
+    expect(cv.currentValues?.endDate).toBe("2026-05-09");
+  });
+
+  // Operator's explicit Issue 3 requirement: views.update reconstruction
+  // must preserve every other in-flight field. UX-break risk if missed.
+  it("preserves Title, Client, Parent, Category, Owner, Resources, and Notes across radio toggle", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_dt_003",
+          toolName: "create_week_item",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const stateValues = {
+      client_block: {
+        client_select: { selected_option: { value: "client_xyz" } },
+      },
+      parent_project_block: {
+        parent_project_select: { selected_option: { value: "proj_q3_redesign" } },
+      },
+      title_block: { title_input: { value: "Concept Writeup" } },
+      category_block: {
+        category_select: { selected_option: { value: "delivery" } },
+      },
+      date_type_block: {
+        date_type_radio: { selected_option: { value: "single" } },
+      },
+      date_block: { date_picker: { selected_date: "2026-05-08" } },
+      owner_block: {
+        owner_select: { selected_option: { value: "tm_lane_id" } },
+      },
+      resources_block_0: {
+        resources_role_0: { selected_option: { value: "CD" } },
+      },
+      resources_name_block_0: {
+        resources_name_0: {
+          selected_option: { text: { text: "Lane Carter" }, value: "tm_lane_id" },
+        },
+      },
+      notes_block: { notes_input: { value: "Draft v1" } },
+    };
+
+    const payload = buildDateTypePayload({
+      newType: "range",
+      proposalId: "prop_dt_003",
+      stateValues,
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.buildTaskModal).toHaveBeenCalledTimes(1);
+    const cv = handles.buildTaskModal.mock.calls[0][0] as {
+      currentValues?: Record<string, unknown>;
+      mode?: string;
+    };
+    expect(cv.mode).toBe("create");
+    expect(cv.currentValues?.title).toBe("Concept Writeup");
+    expect(cv.currentValues?.notes).toBe("Draft v1");
+    expect(cv.currentValues?.category).toBe("delivery");
+    expect(cv.currentValues?.clientId).toBe("client_xyz");
+    expect(cv.currentValues?.projectId).toBe("proj_q3_redesign");
+    expect(cv.currentValues?.owner).toBe("tm_lane_id");
+    expect(cv.currentValues?.date).toBe("2026-05-08");
+    // Resources rebuilt as "Role: Name" string array — buildResourcesBlocks
+    // splits on the colon to repopulate the row.
+    expect(cv.currentValues?.resources).toEqual(["CD: Lane Carter"]);
+    // dateType flipped to the new value from the radio.
+    expect(cv.currentValues?.dateType).toBe("range");
+  });
+
+  it("ignores date_type_radio when callback_id is not a task modal", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_dt_004",
+          toolName: "create_project",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildDateTypePayload({
+      newType: "range",
+      callbackId: "runway_new_project",
+      proposalId: "prop_dt_004",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.viewsUpdate).not.toHaveBeenCalled();
+  });
+
+  it("swallows views.update hash_conflict errors gracefully", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_dt_005",
+          toolName: "create_week_item",
+        }),
+      ],
+    });
+    handles.viewsUpdate.mockRejectedValueOnce(new Error("hash_conflict"));
+    const { POST } = await import("./route");
+
+    const payload = buildDateTypePayload({
+      newType: "range",
+      proposalId: "prop_dt_005",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    // Handler must still ack 200 even when Slack rejects the update.
+    expect(res.status).toBe(200);
+  });
+});
+
 describe("POST /api/slack/interactivity — view_submission dispatch (Builder 8)", () => {
   beforeEach(() => {
     process.env.SLACK_SIGNING_SECRET = SIGNING_SECRET;

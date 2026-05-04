@@ -226,6 +226,8 @@ async function handleBlockActions(
       return await handleTaskButtonDisabled(payload, action!);
     case "target_entity_picker":
       return await handleTargetEntityPicker(payload, action!);
+    case "date_type_radio":
+      return await handleDateTypeToggle(payload, action!);
     default:
       // Repeater rows, in-modal pickers without `dispatch_action`, and any
       // action_id we don't explicitly handle on the server are no-ops here:
@@ -510,6 +512,164 @@ async function handleTargetEntityPicker(
     }
   }
   return new Response("OK", { status: 200 });
+}
+
+// -----------------------------------------------------------------------------
+// date_type_radio - Single vs Range toggle. Slack has no native conditional
+// visibility, so we re-render the view via views.update with the new mode.
+// Single mode shows one date picker; Range mode shows start + end pickers.
+// All other already-typed/picked field values are preserved by reading
+// view.state.values into a fresh currentValues snapshot before rebuild.
+// -----------------------------------------------------------------------------
+
+async function handleDateTypeToggle(
+  payload: SlackBlockActionsPayload,
+  action: SlackAction,
+): Promise<Response> {
+  const view = payload.view;
+  if (!view?.id) {
+    return new Response("OK", { status: 200 });
+  }
+
+  // Only Task modal renders a date_type_radio today. If callback_id ever
+  // surfaces another mode, route it here. For now bail on non-task callers.
+  const callbackId = view.callback_id;
+  if (
+    callbackId !== "runway_new_task" &&
+    callbackId !== "runway_edit_task"
+  ) {
+    return new Response("OK", { status: 200 });
+  }
+
+  const meta = parsePrivateMetadata(view.private_metadata);
+  const proposalId = meta.proposalId;
+  if (!proposalId) {
+    return new Response("OK", { status: 200 });
+  }
+
+  const newDateType =
+    action.selected_option?.value === "range" ? "range" : "single";
+
+  const proposal = await loadProposal(proposalId);
+  if (!proposal) {
+    return new Response("OK", { status: 200 });
+  }
+
+  let args: Record<string, unknown> = {};
+  try {
+    args = JSON.parse(proposal.args ?? "{}") as Record<string, unknown>;
+  } catch {
+    args = {};
+  }
+
+  const stateValues = isStateValuesShape(view.state?.values)
+    ? view.state.values
+    : {};
+  const preserved = extractTaskCurrentValuesFromState(stateValues);
+  const currentValues: Record<string, unknown> = {
+    ...args,
+    ...preserved,
+    dateType: newDateType,
+  };
+
+  const newView = buildViewForOpen({
+    kind: "task",
+    mode: proposal.kind === "edit" ? "edit" : "create",
+    proposalId,
+    args,
+    retainerMode: false,
+    currentValues,
+    baselineHint: BASELINE_PARENT_PICKER_HINT,
+  });
+
+  if (newView) {
+    try {
+      await getSlackClient().views.update({
+        view_id: view.id,
+        hash: typeof view.hash === "string" ? view.hash : undefined,
+        view: newView as Record<string, unknown>,
+      } as Parameters<ReturnType<typeof getSlackClient>["views"]["update"]>[0]);
+    } catch (err) {
+      // hash_conflict races are acceptable — Slack will sync state on the
+      // next interaction. Log for visibility but don't fail the handler.
+      console.error("[slack-interactivity] date_type views.update failed", err);
+    }
+  }
+
+  return new Response("OK", { status: 200 });
+}
+
+/**
+ * Reconstruct a view-builder `currentValues` snapshot from a Task modal's
+ * `view.state.values`. Preserves Title, Client, Parent, Category, Date type,
+ * Date(s), Owner, Resources rows, and Notes so a re-render via views.update
+ * keeps the user's in-progress input.
+ *
+ * Resources are rebuilt as the "Role: Name" string array shape that
+ * buildResourcesBlocks expects, walking up to RESOURCES_MAX_ROWS=10 row
+ * pairs.
+ */
+function extractTaskCurrentValuesFromState(
+  state: Record<string, Record<string, unknown>>,
+): Record<string, unknown> {
+  const cv: Record<string, unknown> = {};
+
+  const readSelect = (block: string, action: string): string | undefined => {
+    const a = (state[block]?.[action] as
+      | { selected_option?: { value?: string } }
+      | undefined);
+    return a?.selected_option?.value;
+  };
+  const readSelectLabel = (block: string, action: string): string | undefined => {
+    const a = (state[block]?.[action] as
+      | { selected_option?: { text?: { text?: string }; value?: string } }
+      | undefined);
+    return a?.selected_option?.text?.text ?? a?.selected_option?.value;
+  };
+  const readPlain = (block: string, action: string): string | undefined => {
+    const a = state[block]?.[action] as { value?: string } | undefined;
+    return a?.value;
+  };
+  const readDate = (block: string, action: string): string | undefined => {
+    const a = state[block]?.[action] as { selected_date?: string } | undefined;
+    return a?.selected_date;
+  };
+
+  const clientId = readSelect("client_block", "client_select");
+  if (clientId) cv.clientId = clientId;
+  const projectId = readSelect("parent_project_block", "parent_project_select");
+  if (projectId) cv.projectId = projectId;
+  const title = readPlain("title_block", "title_input");
+  if (title) cv.title = title;
+  const category = readSelect("category_block", "category_select");
+  if (category) cv.category = category;
+  const dateType = readSelect("date_type_block", "date_type_radio");
+  if (dateType) cv.dateType = dateType;
+  const date = readDate("date_block", "date_picker");
+  if (date) cv.date = date;
+  const startDate = readDate("start_date_block", "start_date_picker");
+  if (startDate) cv.startDate = startDate;
+  const endDate = readDate("end_date_block", "end_date_picker");
+  if (endDate) cv.endDate = endDate;
+  const owner = readSelect("owner_block", "owner_select");
+  if (owner) cv.owner = owner;
+
+  // Resources: walk up to 10 row pairs. Role lives in
+  // resources_block_<i>.resources_role_<i>; Name lives in
+  // resources_name_block_<i>.resources_name_<i>.
+  const resources: string[] = [];
+  for (let i = 0; i < 10; i++) {
+    const role = readSelect(`resources_block_${i}`, `resources_role_${i}`);
+    const name = readSelectLabel(`resources_name_block_${i}`, `resources_name_${i}`);
+    if (role && name) resources.push(`${role}: ${name}`);
+    else if (name) resources.push(name);
+  }
+  if (resources.length > 0) cv.resources = resources;
+
+  const notes = readPlain("notes_block", "notes_input");
+  if (notes) cv.notes = notes;
+
+  return cv;
 }
 
 // -----------------------------------------------------------------------------
