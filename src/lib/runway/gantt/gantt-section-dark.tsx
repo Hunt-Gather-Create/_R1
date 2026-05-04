@@ -112,6 +112,8 @@ function statusClass(row: AnnotatedRow): string {
   }
   if (status === "at-risk") return "at-risk";
   if (status === "blocked") return "blocked";
+  if (status === "completed") return "completed";
+  if (status === "canceled") return "canceled";
   if (status === "awaiting-client") return "scheduled";
   return "active";
 }
@@ -292,9 +294,6 @@ export function GanttSectionDark({ data }: { data: GanttData }): JSX.Element {
         {rows.map((row) => (
           <RowBlock key={row.id} row={row} axis={axis} todayPct={todayPct} />
         ))}
-
-        {/* Repeat axis at bottom — operator (2026-04-30) */}
-        {axis.kind !== "no-axis" && rows.length > 0 && <AxisRow axis={axis} />}
       </section>
     </>
   );

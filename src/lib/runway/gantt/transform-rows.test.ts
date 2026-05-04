@@ -195,14 +195,15 @@ describe("computeAxis", () => {
       // Min=4/15 (Wed), Monday-of-week = 4/13. Max=5/22, end = next Monday after 5/22 = 5/25.
       expect(axis.start).toBe("2026-04-13");
       expect(axis.end).toBe("2026-05-25");
-      // Weekly mode emits Monday + Thursday columns for finer granularity
-      // (operator 2026-04-30): 6 weeks * 2 = 12 ticks total.
-      expect(axis.columns).toHaveLength(12);
+      // Daily mode emits one column per weekday (Mon-Fri), skipping weekends.
+      // 4/13 (Mon) to 5/25 (Mon, exclusive) = 6 weeks × 5 weekdays = 30 ticks.
+      // (operator 2026-04-30): daily ticks pulled forward from fast-follow.
+      expect(axis.columns).toHaveLength(30);
       expect(axis.columns[0].date).toBe("2026-04-13"); // Monday
-      expect(axis.columns[0].label).toBe("4/13");
-      expect(axis.columns[1].date).toBe("2026-04-16"); // Thursday
-      expect(axis.columns[1].label).toBe("4/16");
-      expect(axis.columns[axis.columns.length - 1].date).toBe("2026-05-21"); // last Thursday
+      expect(axis.columns[0].label).toBe("4/13");      // Monday gets full M/D label
+      expect(axis.columns[1].date).toBe("2026-04-14"); // Tuesday
+      expect(axis.columns[1].label).toBe("T");         // abbreviated weekday
+      expect(axis.columns[axis.columns.length - 1].date).toBe("2026-05-22"); // last Friday
     }
   });
 

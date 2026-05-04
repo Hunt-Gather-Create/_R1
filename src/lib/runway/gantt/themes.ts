@@ -9,9 +9,9 @@
  *   bg-red-500/30 border-red-400
  *   bg-emerald-500/20 border-emerald-400 opacity-70
  *   bg-slate-600/20 line-through opacity-60
- *   // legend swatches:
+ *   // legend swatches (match bar palette exactly):
+ *   border-dashed border-slate-400/40
  *   bg-sky-400 bg-amber-400 bg-red-400 bg-emerald-400 bg-slate-400
- *   border-slate-400/40
  */
 
 import { readFileSync } from "fs";

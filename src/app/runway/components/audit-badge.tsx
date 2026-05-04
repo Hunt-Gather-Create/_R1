@@ -11,9 +11,10 @@ export function AuditBadge({ severity }: { severity: SeverityCounts }) {
   const tone = isCritical
     ? "bg-red-500/20 text-red-300 border-red-500/30"
     : "bg-amber-500/20 text-amber-300 border-amber-500/30";
+  const warnLabel = (n: number) => (n === 1 ? "1 warning" : `${n} warnings`);
   const label = isCritical
-    ? `${severity.critical} critical${severity.warn > 0 ? `, ${severity.warn} warn` : ""}`
-    : `${severity.warn} warn`;
+    ? `${severity.critical} critical${severity.warn > 0 ? `, ${warnLabel(severity.warn)}` : ""}`
+    : warnLabel(severity.warn);
 
   return (
     <span

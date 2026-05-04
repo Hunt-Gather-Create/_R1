@@ -17,8 +17,9 @@ import type {
   WeekItemRow,
 } from "./types";
 
-const MS_PER_WEEK = 7 * 24 * 60 * 60 * 1000;
-const WEEK_THRESHOLD = 16; // span < 16 weeks → weekly columns; else monthly
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const MS_PER_WEEK = 7 * MS_PER_DAY;
+const WEEK_THRESHOLD = 16; // span < 16 weeks → daily columns; else monthly
 
 // ── Row mapping + sort ────────────────────────────────────
 
@@ -108,6 +109,18 @@ function formatWeekLabel(d: Date): string {
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
 }
 
+// Short weekday labels for non-Monday daily axis ticks
+const WEEKDAY_SHORT = ["Su", "M", "T", "W", "Th", "F", "Sa"] as const;
+
+function formatDailyLabel(d: Date): string {
+  const dow = d.getUTCDay(); // 0=Sun
+  if (dow === 1) {
+    // Monday: full numeric date "M/D"
+    return formatWeekLabel(d);
+  }
+  return WEEKDAY_SHORT[dow];
+}
+
 function formatMonthLabel(d: Date): string {
   return d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
 }
@@ -145,17 +158,20 @@ export function computeAxis(
     const start = startOfWeekMonday(minDate);
     const end = addWeeks(startOfWeekMonday(maxDate), 1);
     const columns: AxisColumn[] = [];
-    // Emit Monday + Thursday as labeled ticks. Operator (2026-04-30): the
-    // weekly-only axis felt too sparse on multi-week ranges. Thursdays
-    // give a midweek reference. Daily gridlines (rendered separately by
-    // the template) supply finer texture.
-    for (let cur = new Date(start); cur < end; cur = addWeeks(cur, 1)) {
-      columns.push({ date: toISO(cur), label: formatWeekLabel(cur) });
-      const thu = new Date(cur);
-      thu.setUTCDate(thu.getUTCDate() + 3);
-      if (thu < end) {
-        columns.push({ date: toISO(thu), label: formatWeekLabel(thu) });
-      }
+    // Emit one column PER DAY (excluding weekends) across the span.
+    // Operator (2026-04-30): daily ticks pulled forward from fast-follow.
+    // Monday ticks get a full "M/D" label; other weekdays get an abbreviated
+    // letter label (T, W, Th, F). Saturdays and Sundays are omitted.
+    // At narrow container widths, CSS container queries hide non-Monday ticks
+    // (data-day attr drives the selectors) — the existing rules still fire.
+    for (
+      let cur = new Date(start);
+      cur < end;
+      cur = new Date(cur.getTime() + MS_PER_DAY)
+    ) {
+      const dow = cur.getUTCDay();
+      if (dow === 0 || dow === 6) continue; // skip weekends
+      columns.push({ date: toISO(cur), label: formatDailyLabel(cur) });
     }
     return { kind: "weekly", start: toISO(start), end: toISO(end), today: todayISO, columns };
   }

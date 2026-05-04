@@ -18,13 +18,20 @@ describe("AuditBadge", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("renders amber warn badge for warn-only severity", () => {
+  it("renders amber warn badge for warn-only severity (plural)", () => {
     render(<AuditBadge severity={counts({ warn: 3 })} />);
     const badge = screen.getByTestId("audit-badge");
     expect(badge).toBeInTheDocument();
     expect(badge).toHaveAttribute("data-severity", "warn");
-    expect(badge).toHaveTextContent("3 warn");
+    expect(badge).toHaveTextContent("3 warnings");
     expect(badge.className).toContain("text-amber-300");
+  });
+
+  it("renders amber warn badge for singular warn (1 warning)", () => {
+    render(<AuditBadge severity={counts({ warn: 1 })} />);
+    const badge = screen.getByTestId("audit-badge");
+    expect(badge).toHaveAttribute("data-severity", "warn");
+    expect(badge).toHaveTextContent("1 warning");
   });
 
   it("renders red critical badge with compound label for critical+warn", () => {
@@ -32,7 +39,7 @@ describe("AuditBadge", () => {
     const badge = screen.getByTestId("audit-badge");
     expect(badge).toBeInTheDocument();
     expect(badge).toHaveAttribute("data-severity", "critical");
-    expect(badge).toHaveTextContent("2 critical, 4 warn");
+    expect(badge).toHaveTextContent("2 critical, 4 warnings");
     expect(badge.className).toContain("text-red-300");
   });
 
