@@ -8,6 +8,7 @@ export const proxy = authkitMiddleware({
       "/login",
       "/api/mcp/runway",    // Bearer token auth handled in route
       "/api/slack/events",  // Slack signature verification handled in route
+      "/api/runway/gantt-share/:token",  // HMAC token auth handled in route
     ],
   },
 });
