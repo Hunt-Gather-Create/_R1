@@ -676,6 +676,26 @@ function GridLines({ axis }: { axis: AxisParams }): JSX.Element | null {
   );
 }
 
+const WEEKDAY_NAMES = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+] as const;
+
+/**
+ * Returns the lowercase weekday name for an ISO date string (YYYY-MM-DD).
+ * Parses as UTC midnight to avoid local-timezone day-shift.
+ * Used to populate `data-day` on axis-cell divs so container-query CSS can
+ * selectively hide Thursday ticks at ≤1300px and non-Monday ticks at ≤900px.
+ */
+function getDayName(dateStr: string): string {
+  return WEEKDAY_NAMES[parseISO(dateStr).getUTCDay()];
+}
+
 function AxisRow({ axis }: { axis: AxisParams }): JSX.Element | null {
   if (axis.kind === "no-axis") return null;
   const totalDays = dayDiff(axis.start, axis.end);
@@ -689,6 +709,7 @@ function AxisRow({ axis }: { axis: AxisParams }): JSX.Element | null {
             <div
               key={col.date}
               className="axis-cell"
+              data-day={getDayName(col.date)}
               style={{ left: `${colLeft}%` }}
             >
               {col.label}

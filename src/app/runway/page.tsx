@@ -1,10 +1,47 @@
+import React from "react";
 import { getClientsWithProjects, getWeekItems, getPipeline, getStaleWeekItems } from "./queries";
 import type { ItemStatus, ItemCategory } from "./types";
 import { RunwayBoard } from "./runway-board";
-import { getMondayISODate, parseISODate } from "./date-utils";
+import { getMondayISODate, parseISODate, toISODateString } from "./date-utils";
 import { analyzeFlags } from "@/lib/runway/flags";
 import { getViewPreferences } from "@/lib/runway/view-preferences";
 import { buildUnifiedAccounts, filterWrapperDayItems } from "./unified-view";
+import { extractClientRundown } from "@/lib/runway/gantt/extract-rundown";
+import { getRunwayDb } from "@/lib/db/runway";
+import { clients as clientsTable, projects as projectsTable } from "@/lib/db/runway-schema";
+import { and, asc, eq, isNull } from "drizzle-orm";
+import type { ClientRundownData } from "@/lib/runway/gantt/types";
+import type { UnifiedAccount } from "./types";
+
+type AccountWithRawRundown = UnifiedAccount & {
+  rundown: ClientRundownData | null;
+};
+
+/**
+ * Track 2: build a Map<clientId, ClientRundownData> for all clients.
+ * Called from Promise.all in RunwayPage so the rundown fetch parallelizes
+ * with the other top-level queries.
+ */
+async function getClientRundowns(): Promise<Map<string, ClientRundownData>> {
+  const db = getRunwayDb();
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const generatedAt = todayISO;
+
+  const allClients = await db.select().from(clientsTable);
+  const result = new Map<string, ClientRundownData>();
+  for (const client of allClients) {
+    const topLevels = await db
+      .select()
+      .from(projectsTable)
+      .where(
+        and(eq(projectsTable.clientId, client.id), isNull(projectsTable.parentProjectId)),
+      )
+      .orderBy(asc(projectsTable.name));
+    const rundown = await extractClientRundown(db, client, topLevels, generatedAt, todayISO);
+    result.set(client.id, rundown);
+  }
+  return result;
+}
 
 export const metadata = {
   title: "Runway — Civilization Agency",
@@ -13,12 +50,20 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function RunwayPage() {
-  const [clientsWithProjects, allWeekItems, pipelineData, staleItems, viewPrefs] = await Promise.all([
+  const [
+    clientsWithProjects,
+    allWeekItems,
+    pipelineData,
+    staleItems,
+    viewPrefs,
+    clientRundowns,
+  ] = await Promise.all([
     getClientsWithProjects(),
     getWeekItems(),
     getPipeline(),
     getStaleWeekItems(),
     getViewPreferences(),
+    getClientRundowns(),
   ]);
 
   // Split week items into thisWeek and upcoming in a single pass
@@ -99,7 +144,20 @@ export default async function RunwayPage() {
 
   // Chunk 3 #1 — unified Project View. Group L2s under their parent L1
   // from the same combined fetch so By-Account renders milestones inline.
-  const unifiedAccounts = buildUnifiedAccounts(accounts, [...thisWeekFiltered, ...upcomingFiltered]);
+  const unifiedBase = buildUnifiedAccounts(accounts, [...thisWeekFiltered, ...upcomingFiltered]);
+
+  // Track 2: attach per-client Gantt rundown (raw ClientRundownData).
+  // AccountSectionServer (server component) pre-renders each GanttSection
+  // to static HTML before passing to AccountSection (client component).
+  // This avoids importing GanttTemplate (react-dom/server + fs) in client
+  // component boundaries.
+  const unifiedAccounts: AccountWithRawRundown[] = unifiedBase.map((account) => {
+    const clientEntry = clientsWithProjects.find((c) => c.slug === account.slug);
+    const rundown: ClientRundownData | null = clientEntry
+      ? (clientRundowns.get(clientEntry.id) ?? null)
+      : null;
+    return { ...account, rundown };
+  });
 
   // In Flight regression fix: page-level bucketing for thisWeek/upcoming
   // drops past-Monday day buckets entirely. Multi-week in-progress items

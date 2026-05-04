@@ -1,10 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Account, TriageItem, DayItemEntry } from "../types";
+import type { Account, TriageItem, DayItemEntry, UnifiedAccountWithRundown, RenderedClientRundownData } from "../types";
+import type { ReactNode } from "react";
 import { accountHasWrapper } from "../unified-view";
 import { getOwnerResourcesDisplay } from "./display-utils";
 import { StatusBadge, StaleBadge, ContractBadge, MetadataLabel } from "./status-badge";
+import { AuditBadge } from "./audit-badge";
+import styles from "./gantt-dark-embed.module.css";
 import { DatesLine } from "./dates-line";
 
 /**
@@ -185,11 +188,54 @@ interface AccountSectionProps {
    * Account with standard triage items. When the caller provides items that
    * also carry `milestones` (unified Project View — chunk 3 #1), ProjectCard
    * renders them inline without any additional prop plumbing.
+   *
+   * When the caller also provides a `rundown` (Track 2), the section renders
+   * Gantt sections instead of the project-card layout.
    */
-  account: Account | (Omit<Account, "items"> & { items: TriageItemWithMilestones[] });
+  account:
+    | Account
+    | (Omit<Account, "items"> & { items: TriageItemWithMilestones[] })
+    | (Omit<Account, "items"> & { items: TriageItemWithMilestones[] } & UnifiedAccountWithRundown);
+}
+
+// ── Gantt rundown rendering (Track 2) ───────────────────
+
+/**
+ * Shell container for pre-rendered RSC Gantt content.
+ *
+ * `ganttContent` is a ReactNode returned by an RSC (RundownContentRSC) that
+ * renders <details> blocks + GanttSectionDark for each section. Rendered here
+ * as a simple slot — no dangerouslySetInnerHTML, no re-partitioning.
+ *
+ * Empty-sections fallback: shown when rundown.sections is empty OR when
+ * ganttContent is null/undefined (fetch failure propagated from page.tsx).
+ */
+function RundownSectionList({
+  rundown,
+  ganttContent,
+}: {
+  rundown: RenderedClientRundownData;
+  ganttContent: ReactNode;
+}) {
+  if (rundown.sections.length === 0 || !ganttContent) {
+    return <p className="py-4 text-sm text-muted-foreground/60">No active projects.</p>;
+  }
+  return (
+    <div className={`${styles.darkEmbed} space-y-4`} data-testid="rundown-section-list">
+      {ganttContent}
+    </div>
+  );
 }
 
 export function AccountSection({ account }: AccountSectionProps) {
+  const rundown = "rundown" in account
+    ? (account as UnifiedAccountWithRundown).rundown
+    : undefined;
+  const ganttContent = "ganttContent" in account
+    ? (account as UnifiedAccountWithRundown).ganttContent
+    : undefined;
+  const hasRundown = rundown !== undefined;
+
   const activeItems = useMemo(
     () =>
       account.items
@@ -223,30 +269,58 @@ export function AccountSection({ account }: AccountSectionProps) {
 
   const displayTerm = formatContractTerm(account.contractTerm);
 
-  return (
-    <div className="rounded-xl border border-border bg-card/30 p-3 sm:p-5">
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h3 className="text-lg font-bold text-foreground sm:text-xl">{account.name}</h3>
-          {account.team ? (
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {account.team}
-            </p>
-          ) : null}
-        </div>
-        <div className="sm:text-right">
-          {/* Dollar amounts moved to Pipeline view only (2026-04 operator
-              ask). By Account is the "what's in play" view; contract value
-              noise distracts from the work list. Contract term + status
-              badge stay — they describe the engagement, not its price. */}
-          {displayTerm ? (
-            <p className="text-xs text-muted-foreground">
-              {displayTerm}
-            </p>
-          ) : null}
+  const headerContent = (
+    <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <h3 className="text-lg font-bold text-foreground sm:text-xl">{account.name}</h3>
+        {account.team ? (
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {account.team}
+          </p>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-end">
+        {/* Dollar amounts moved to Pipeline view only (2026-04 operator
+            ask). By Account is the "what's in play" view; contract value
+            noise distracts from the work list. Contract term + status
+            badge stay — they describe the engagement, not its price. */}
+        {displayTerm ? (
+          <p className="text-xs text-muted-foreground">
+            {displayTerm}
+          </p>
+        ) : null}
+        <div className="flex items-center gap-2">
           <ContractBadge status={account.contractStatus} />
+          {hasRundown && rundown ? (
+            <AuditBadge severity={rundown.overallSeverity} />
+          ) : null}
         </div>
       </div>
+    </div>
+  );
+
+  // ── Rundown branch (Track 2) ─────────────────────────
+  if (hasRundown) {
+    return (
+      <details open className="rounded-xl border border-border bg-card/30">
+        <summary className="cursor-pointer list-none p-3 sm:p-5">
+          {headerContent}
+        </summary>
+        <div className="px-3 pb-3 sm:px-5 sm:pb-5">
+          {rundown ? (
+            <RundownSectionList rundown={rundown} ganttContent={ganttContent ?? null} />
+          ) : (
+            <p className="py-4 text-sm text-muted-foreground/60">No active projects.</p>
+          )}
+        </div>
+      </details>
+    );
+  }
+
+  // ── Legacy branch (backward compat) ─────────────────
+  return (
+    <div className="rounded-xl border border-border bg-card/30 p-3 sm:p-5">
+      {headerContent}
 
       {activeItems.length > 0 ? (
         <div className="space-y-0">

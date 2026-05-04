@@ -27,6 +27,10 @@ interface RunwayBoardProps {
    * Accepts either the base `Account[]` (legacy) or `UnifiedAccount[]`
    * with inline L2 milestones (chunk 3 #1). AccountSection renders both
    * shapes without branching.
+   *
+   * When `accountSections` is provided, this prop is used only for slug
+   * keys and is otherwise ignored for rendering (Track 2: pre-rendered
+   * server sections are passed via `accountSections`).
    */
   accounts: Account[] | UnifiedAccount[];
   pipeline: PipelineItem[];
@@ -228,7 +232,7 @@ export function RunwayBoard({
             ) : null}
           </div>
 
-          <FlagsPanel flags={flags} />
+          {view !== "accounts" && <FlagsPanel flags={flags} />}
         </div>
       </main>
     </div>

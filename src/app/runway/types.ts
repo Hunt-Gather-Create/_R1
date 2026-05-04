@@ -126,3 +126,44 @@ export type WeekDay = {
 export type PipelineRow = typeof pipelineItems.$inferSelect & {
   accountName: string | null;
 };
+
+// ── Gantt rundown extension ──────────────────────────────
+
+import type { ReactNode } from "react";
+
+/**
+ * A RundownSection descriptor (metadata only — no rendered content).
+ * The rendered JSX is passed separately via React's RSC slot mechanism.
+ */
+export interface RenderedRundownSection {
+  anchor: string;
+  kind: "wrapper" | "wrapper-child" | "standalone";
+  title: string;
+  parentTitle?: string;
+}
+
+/**
+ * Per-client severity + section metadata for the AuditBadge and section
+ * grouping. Does NOT include rendered HTML — content is passed as ReactNode
+ * via the RSC children pattern (react-dom/server is banned in Next.js 16
+ * App Router entrypoints, including route handlers).
+ */
+export interface RenderedClientRundownData {
+  generatedAt: string;
+  overallSeverity: import("@/lib/runway/gantt/types").SeverityCounts;
+  sections: RenderedRundownSection[];
+}
+
+/**
+ * UnifiedAccount extended with a per-client Gantt rundown.
+ * `rundown` carries section metadata + severity for AuditBadge.
+ * `ganttContent` is a pre-rendered RSC ReactNode passed as a slot
+ * to AccountSection (client component) — no dangerouslySetInnerHTML.
+ *
+ * `rundown: null` = extractClientRundown threw; renders "No active
+ * projects." fallback. `ganttContent: undefined` likewise falls back.
+ */
+export interface UnifiedAccountWithRundown {
+  rundown: RenderedClientRundownData | null;
+  ganttContent?: ReactNode;
+}

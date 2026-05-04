@@ -1,0 +1,180 @@
+/**
+ * Dark-embed CSS module for GanttSection rendered inside the By Account view.
+ *
+ * Decision 2 (operator-locked):
+ *   - @apply for color values (reuses Tailwind utility palette)
+ *   - Raw CSS for layout primitives (grid, positioning, container queries, dimensions)
+ *
+ * All rules are scoped under .darkEmbed so they cannot leak into the global
+ * page layout. Triple-truth styling consolidation deferred to Phase D.
+ *
+ * Container queries require container-type on .darkEmbed. The [data-day] attr
+ * is added to .axis-cell divs via Decision 1 (Phase B touch — AxisRow).
+ *
+ * @reference is required by Tailwind v4 for @apply inside CSS modules.
+ */
+
+@reference "../../globals.css";
+
+/* ── Container root ──────────────────────────────────── */
+
+.darkEmbed {
+  container-type: inline-size;
+  width: 100%;
+}
+
+/* ── Row + bar structural rules ─────────────────────── */
+/* The dark-account-view theme emits class names (row, bar, timeline,
+   axis-cell, etc.) but no <style> tag — the inline STYLES block is only
+   emitted by light themes. These rules supply the structural foundation. */
+
+.darkEmbed :global(.body) {
+  position: relative;
+  width: 100%;
+}
+
+.darkEmbed :global(.axis-row) {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  position: relative;
+  height: 24px;
+}
+
+.darkEmbed :global(.axis-spacer) {
+  /* aligns with .row-label column */
+}
+
+.darkEmbed :global(.axis-cells) {
+  position: relative;
+  height: 24px;
+}
+
+.darkEmbed :global(.axis-cell) {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding-left: 4px;
+  border-left: 1px solid;
+  font-size: 10px;
+  @apply border-slate-600 text-slate-400;
+}
+
+.darkEmbed :global(.axis-cell.minor) {
+  border-left-color: transparent;
+  color: transparent;
+}
+
+.darkEmbed :global(.row) {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  align-items: center;
+  min-height: 36px;
+  border-top: 1px solid;
+  @apply border-slate-700/50;
+}
+
+.darkEmbed :global(.row-label) {
+  padding: 4px 8px 4px 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  @apply text-slate-300;
+}
+
+.darkEmbed :global(.timeline) {
+  position: relative;
+  height: 20px;
+}
+
+.darkEmbed :global(.bar) {
+  position: absolute;
+  top: 4px;
+  height: 12px;
+  border-radius: 2px;
+  @apply bg-blue-500/70;
+}
+
+.darkEmbed :global(.bar.scheduled) {
+  @apply bg-slate-500/40;
+  border: 1px dashed;
+  @apply border-slate-500;
+}
+
+.darkEmbed :global(.bar.at-risk) {
+  @apply bg-amber-500/60;
+}
+
+.darkEmbed :global(.bar.blocked) {
+  @apply bg-red-500/60;
+}
+
+.darkEmbed :global(.milestone) {
+  position: absolute;
+  top: 3px;
+  width: 14px;
+  height: 14px;
+  transform: rotate(45deg) translateX(-50%);
+  @apply bg-blue-400;
+}
+
+.darkEmbed :global(.today-line) {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  @apply bg-emerald-400/70;
+}
+
+.darkEmbed :global(.no-axis-note) {
+  font-size: 11px;
+  padding: 8px 0;
+  @apply text-slate-500;
+}
+
+/* ── Section legend ──────────────────────────────────── */
+
+.darkEmbed :global(.section-legend) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 6px 0 10px;
+  font-size: 11px;
+  @apply text-slate-400;
+}
+
+.darkEmbed :global(.legend-item) {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ── Container queries: axis density ────────────────── */
+/* Decision 1 data-day attr is required for these selectors to fire.
+   Daily ticks (>1300px) deferred to fast-follow. */
+
+@container (max-width: 1300px) {
+  .darkEmbed :global(.axis-cell[data-day="thursday"]) {
+    display: none;
+  }
+}
+
+@container (max-width: 900px) {
+  .darkEmbed :global(.axis-cell:not([data-day="monday"])) {
+    display: none;
+  }
+}
+
+@container (max-width: 600px) {
+  .darkEmbed :global(.axis-cell) {
+    display: none;
+  }
+
+  .darkEmbed::before {
+    content: "Monthly view (resize for detail)";
+    display: block;
+    font-size: 10px;
+    padding: 2px 0 4px;
+    @apply text-slate-500;
+  }
+}

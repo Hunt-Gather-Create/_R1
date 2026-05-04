@@ -393,7 +393,7 @@ export function detectL1Issues(entity: ProjectRow, weekItemCount: number): Issue
   // tightening).
   if (isBlank(entity.engagementType)) {
     issues.push(issue("l1-null-engagement-type", "engagementType is null."));
-  } else if (!VALID_ENGAGEMENT_TYPES.has(entity.engagementType)) {
+  } else if (!VALID_ENGAGEMENT_TYPES.has(entity.engagementType!)) {
     issues.push(
       issue(
         "l1-bad-engagement-type",

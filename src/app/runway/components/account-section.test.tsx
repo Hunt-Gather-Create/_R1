@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { AccountSection } from "./account-section";
-import type { Account, TriageItem } from "../types";
+import type { Account, TriageItem, RenderedClientRundownData, RenderedRundownSection } from "../types";
 
 function createAccount(overrides: Partial<Account> = {}): Account {
   return {
@@ -543,6 +543,97 @@ describe("AccountSection", () => {
       expect(screen.getByText("Brand Guide v2")).toBeInTheDocument();
       expect(screen.getByText("Fanuc Article")).toBeInTheDocument();
       expect(screen.getByText("Social Playbook")).toBeInTheDocument();
+    });
+  });
+
+  // ── Track 2: rundown branch ───────────────────────────
+
+  function makeSection(title: string, kind: RenderedRundownSection["kind"] = "standalone", parentTitle?: string): RenderedRundownSection {
+    return {
+      anchor: title.toLowerCase().replace(/\s+/g, "-"),
+      kind,
+      title,
+      parentTitle,
+      // No renderedHtml — content is a ReactNode slot (ganttContent) now
+    };
+  }
+
+  function makeRundown(sections: RenderedRundownSection[], overallCritical = 0, overallWarn = 0): RenderedClientRundownData {
+    return {
+      sections,
+      generatedAt: "2026-04-30",
+      overallSeverity: { critical: overallCritical, warn: overallWarn, info: 0 },
+    };
+  }
+
+  describe("rundown branch", () => {
+    it("renders as a <details> element when rundown is present", () => {
+      const { container } = render(
+        <AccountSection
+          account={{
+            ...createAccount(),
+            rundown: makeRundown([makeSection("Brand Guide")]),
+            ganttContent: <div>Brand Guide stub</div>,
+          }}
+        />
+      );
+      const details = container.querySelector("details");
+      expect(details).toBeInTheDocument();
+    });
+
+    it("renders RundownSectionList with ganttContent when rundown has sections", () => {
+      render(
+        <AccountSection
+          account={{
+            ...createAccount(),
+            rundown: makeRundown([
+              makeSection("Brand Guide"),
+              makeSection("Social Playbook"),
+            ]),
+            ganttContent: (
+              <div>
+                <span>Brand Guide</span>
+                <span>Social Playbook</span>
+              </div>
+            ),
+          }}
+        />
+      );
+      expect(screen.getByTestId("rundown-section-list")).toBeInTheDocument();
+      expect(screen.getByText("Brand Guide")).toBeInTheDocument();
+      expect(screen.getByText("Social Playbook")).toBeInTheDocument();
+    });
+
+    it("renders 'No active projects.' fallback when rundown is null (failure sentinel)", () => {
+      render(
+        <AccountSection
+          account={{ ...createAccount(), rundown: null }}
+        />
+      );
+      expect(screen.getByText("No active projects.")).toBeInTheDocument();
+    });
+
+    it("renders 'No active projects.' fallback when rundown has empty sections", () => {
+      render(
+        <AccountSection
+          account={{ ...createAccount(), rundown: makeRundown([]) }}
+        />
+      );
+      expect(screen.getByText("No active projects.")).toBeInTheDocument();
+    });
+
+    it("renders AuditBadge when rundown has warn severity", () => {
+      render(
+        <AccountSection
+          account={{
+            ...createAccount(),
+            rundown: makeRundown([makeSection("Brand Guide")], 0, 3),
+            ganttContent: <div>Brand Guide stub</div>,
+          }}
+        />
+      );
+      expect(screen.getByTestId("audit-badge")).toBeInTheDocument();
+      expect(screen.getByTestId("audit-badge")).toHaveAttribute("data-severity", "warn");
     });
   });
 });

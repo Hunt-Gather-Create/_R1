@@ -31,6 +31,12 @@ vi.mock("./components/in-flight-section", () => ({
   ),
 }));
 
+// Stub FlagsPanel so visibility tests can assert presence/absence per tab
+// without rendering the real component's internals.
+vi.mock("./components/flags-panel", () => ({
+  FlagsPanel: () => <div data-testid="flags-panel-stub" />,
+}));
+
 const inFlightSource: DayItem[] = [
   ...thisWeek,
   ...upcoming,
@@ -751,6 +757,20 @@ describe("RunwayBoard version polling", () => {
 
     expect(screen.getByText(STALE_TEXT)).toBeInTheDocument();
     expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("FlagsPanel tab visibility", () => {
+  it("renders FlagsPanel on This Week (triage) tab", () => {
+    render(<RunwayBoard {...defaultProps} />);
+    // Default view is triage — FlagsPanel should be present.
+    expect(screen.getByTestId("flags-panel-stub")).toBeInTheDocument();
+  });
+
+  it("hides FlagsPanel on By Account tab", () => {
+    render(<RunwayBoard {...defaultProps} />);
+    fireEvent.click(screen.getByText("By Account"));
+    expect(screen.queryByTestId("flags-panel-stub")).not.toBeInTheDocument();
   });
 });
 

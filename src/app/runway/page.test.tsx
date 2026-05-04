@@ -14,6 +14,46 @@ vi.mock("./queries", () => ({
   getStaleWeekItems: () => mockGetStaleWeekItems(),
 }));
 
+// Mock extract-rundown so page tests don't touch the DB
+vi.mock("@/lib/runway/gantt/extract-rundown", () => ({
+  extractClientRundown: vi.fn().mockResolvedValue({
+    generatedAt: "2026-04-30",
+    overallSeverity: { critical: 0, warn: 0, info: 0 },
+    sections: [],
+  }),
+}));
+
+// Mock DB + schema so page tests don't open a DB connection
+vi.mock("@/lib/db/runway", () => {
+  // Chainable thenable: each chained call returns the same object;
+  // awaiting the chain end resolves to []. Covers both
+  // .select().from(t)  and  .select().from(t).where(...).orderBy(...).
+  const chain: Record<string, unknown> = {};
+  chain.select = vi.fn(() => chain);
+  chain.from = vi.fn(() => chain);
+  chain.where = vi.fn(() => chain);
+  chain.orderBy = vi.fn(() => chain);
+  chain.then = (resolve: (v: unknown[]) => unknown) => Promise.resolve([]).then(resolve);
+  return {
+    getRunwayDb: vi.fn().mockReturnValue(chain),
+  };
+});
+
+vi.mock("@/lib/db/runway-schema", () => ({
+  clients: {},
+  projects: {},
+}));
+
+vi.mock("drizzle-orm", async () => {
+  const actual = await vi.importActual<typeof import("drizzle-orm")>("drizzle-orm");
+  return { ...actual, isNull: vi.fn(), eq: vi.fn(), and: vi.fn(), asc: vi.fn() };
+});
+
+// Mock RundownContentRSC (RSC component) for test environment
+vi.mock("./components/rundown-content-rsc", () => ({
+  RundownContentRSC: () => null,
+}));
+
 const mockAnalyzeFlags = vi.fn().mockReturnValue([]);
 vi.mock("@/lib/runway/flags", () => ({
   analyzeFlags: (...args: unknown[]) => mockAnalyzeFlags(...args),
@@ -39,6 +79,7 @@ vi.mock("./date-utils", () => ({
     return d.toISOString().split("T")[0];
   },
   parseISODate: (dateStr: string) => new Date(dateStr + "T12:00:00"),
+  toISODateString: (date: Date) => date.toISOString().split("T")[0],
 }));
 
 import { render, screen } from "@testing-library/react";
