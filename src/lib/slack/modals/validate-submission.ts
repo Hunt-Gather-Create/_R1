@@ -274,19 +274,21 @@ function extractTaskFields(
   const startDate = readDate(values, "start_date_block", "start_date_picker");
   const endDate = readDate(values, "end_date_block", "end_date_picker");
 
-  // Slack does not always include selected_option in view_submission's
-  // state.values for a radio_buttons element whose value came from
-  // initial_option and was not user-clicked in the current rendering.
-  // After a date_type_radio toggle (handled by views.update rebuild), the
-  // user may submit without re-clicking the radio - state.values then
-  // misses dateType, which falsely routes the validator to the single-day
-  // branch and rejects a fully-filled range submission with
-  // "date_block: Date is required". Infer dateType from which date fields
-  // are populated when the radio reads null.
-  let dateType: string | null = dateRaw;
-  if (!dateType) {
-    if (startDate || endDate) dateType = "range";
-    else if (date) dateType = "single";
+  // dateType inference: the radio's reading from state.values is unreliable
+  // across views.update rebuilds. Slack returns either nothing OR the prior
+  // initial_option value (e.g. "single") even after the user toggled to
+  // Range and the rebuild swapped the rendered pickers. The actual filled
+  // date fields are the authoritative signal: if the user populated start
+  // or end, they want Range mode; if they populated `date`, they want
+  // Single. Fall back to the radio reading only when no date fields are
+  // populated (so the required-field check below can still fire correctly).
+  let dateType: string | null;
+  if (startDate || endDate) {
+    dateType = "range";
+  } else if (date) {
+    dateType = "single";
+  } else {
+    dateType = dateRaw;
   }
 
   const resourceRows = collectResourceRows(values);

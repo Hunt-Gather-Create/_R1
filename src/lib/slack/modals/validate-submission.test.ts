@@ -651,6 +651,55 @@ describe("validateModalSubmission - date_type radio mode (Issue 3)", () => {
       expect(result.normalized.endDate).toBe("2026-05-08");
     }
   });
+
+  // Live-fire bug 2026-05-04 round 2: Slack returned the STALE "single"
+  // initial_option in state.values even after the user toggled to Range,
+  // filled in start+end, and submitted. The radio reading conflicted with
+  // the actual filled fields. Trust the date fields - they're the
+  // authoritative signal.
+  it("Range mode: overrides stale 'single' radio reading when start+end are populated", async () => {
+    const proposal = makeProposal({ toolName: "create_week_item" });
+    const stateValues = taskState({
+      // Slack's stale state: radio still says single because the rebuild's
+      // initial_option = range was never user-clicked in the new rendering.
+      date_type_block: { date_type_radio: radioV("single") },
+      // But the user filled in start + end - they ARE in range mode.
+      start_date_block: { start_date_picker: dateV("2026-05-05") },
+      end_date_block: { end_date_picker: dateV("2026-05-06") },
+    });
+    delete stateValues.date_block;
+    const result = await validateModalSubmission({
+      proposal,
+      stateValues,
+      db,
+    } as unknown as ValidateModalSubmissionParams);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.normalized.startDate).toBe("2026-05-05");
+      expect(result.normalized.endDate).toBe("2026-05-06");
+    }
+  });
+
+  it("Single mode: overrides stale 'range' radio reading when only date is populated", async () => {
+    const proposal = makeProposal({ toolName: "create_week_item" });
+    const stateValues = taskState({
+      // Mirror image: stale 'range' from a prior toggle, but user ended on
+      // single mode and only filled in `date`.
+      date_type_block: { date_type_radio: radioV("range") },
+      date_block: { date_picker: dateV("2026-05-08") },
+    });
+    const result = await validateModalSubmission({
+      proposal,
+      stateValues,
+      db,
+    } as unknown as ValidateModalSubmissionParams);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.normalized.date).toBe("2026-05-08");
+      expect(result.normalized.startDate).toBe("2026-05-08");
+      expect(result.normalized.endDate).toBe("2026-05-08");
+    }
+  });
 });
 
 describe("validateModalSubmission - Wave 0b validator integration", () => {

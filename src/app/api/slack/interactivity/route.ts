@@ -390,16 +390,37 @@ async function handleOpenCreateModal(
 // -----------------------------------------------------------------------------
 // is_retainer_checkbox - flip the project modal between project and retainer
 // variants while preserving user-typed values. Builder 5 exported the helper.
+//
+// Slack does not honor response_action: "update" on a block_actions payload -
+// that response shape is only valid for view_submission. For block_actions
+// from inside a modal, Slack expects an empty 200 ack and a separate
+// views.update API call. Mirror the date_type_radio + client_select cascade
+// pattern so the rebuild actually reaches the user's UI.
 // -----------------------------------------------------------------------------
 
 async function handleRetainerToggle(
   payload: SlackBlockActionsPayload,
 ): Promise<Response> {
+  const view = payload.view;
+  if (!view?.id) {
+    return new Response("OK", { status: 200 });
+  }
+
   const responseAction = buildEphemeralRetainerToggle(payload as BlockActionsPayload);
-  return new Response(JSON.stringify(responseAction), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+
+  try {
+    await getSlackClient().views.update({
+      view_id: view.id,
+      hash: typeof view.hash === "string" ? view.hash : undefined,
+      view: responseAction.view as Record<string, unknown>,
+    } as Parameters<ReturnType<typeof getSlackClient>["views"]["update"]>[0]);
+  } catch (err) {
+    // hash_conflict races are acceptable - Slack will sync on the next
+    // interaction. Log for visibility but don't fail the handler.
+    console.error("[slack-interactivity] retainer toggle views.update failed", err);
+  }
+
+  return new Response("OK", { status: 200 });
 }
 
 // -----------------------------------------------------------------------------

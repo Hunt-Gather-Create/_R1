@@ -980,7 +980,12 @@ describe("POST /api/slack/interactivity — is_retainer_checkbox (Builder 8)", (
     process.env.SLACK_SIGNING_SECRET = SIGNING_SECRET;
   });
 
-  it("returns response_action=update body produced by buildEphemeralRetainerToggle", async () => {
+  it("calls views.update with the rebuilt view (response_action: update is invalid for block_actions)", async () => {
+    // Slack honors response_action: "update" only for view_submission. For
+    // block_actions on a modal, the route must ack 200 with no body and
+    // call views.update separately. Asserting on the API call, not the
+    // HTTP body, is the only way to catch the silent-no-op bug operator
+    // hit on 2026-05-04 (checked the box, view never flipped to retainer).
     const handles = setupRouteMocks();
     const { POST } = await import("./route");
 
@@ -990,10 +995,26 @@ describe("POST /api/slack/interactivity — is_retainer_checkbox (Builder 8)", (
     const res = await POST(req as never);
     expect(res.status).toBe(200);
     expect(handles.buildEphemeralRetainerToggle).toHaveBeenCalledTimes(1);
-    const text = await res.text();
-    const json = JSON.parse(text) as Record<string, unknown>;
-    expect(json.response_action).toBe("update");
-    expect(json.view).toBeDefined();
+    expect(handles.viewsUpdate).toHaveBeenCalledTimes(1);
+
+    const updateCall = handles.viewsUpdate.mock.calls[0][0] as {
+      view_id: unknown;
+      view: { type?: string };
+    };
+    expect(updateCall.view_id).toBeDefined();
+    expect(updateCall.view).toBeDefined();
+    expect(updateCall.view.type).toBe("modal");
+  });
+
+  it("swallows views.update hash_conflict errors gracefully", async () => {
+    const handles = setupRouteMocks();
+    handles.viewsUpdate.mockRejectedValueOnce(new Error("hash_conflict"));
+    const { POST } = await import("./route");
+
+    const fx = loadFixture<Record<string, unknown>>("block-actions-checkbox-toggle");
+    const body = encodePayload(fx);
+    const res = await POST(makeRequest(body) as never);
+    expect(res.status).toBe(200);
   });
 });
 
