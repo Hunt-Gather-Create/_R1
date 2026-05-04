@@ -41,6 +41,7 @@ import {
 } from "@/lib/runway/operations";
 import { getClientContactsStructured } from "@/lib/runway/operations-context";
 import { getMonday, toISODateString } from "@/app/runway/date-utils";
+import { generateGanttShare } from "@/lib/runway/gantt/share-orchestrator";
 
 export function createBotTools(userName: string, now: Date = new Date()) {
   const currentMonday = toISODateString(getMonday(now));
@@ -774,6 +775,86 @@ export function createBotTools(userName: string, now: Date = new Date()) {
       }),
       execute: async ({ since, tables, clientSlug }) =>
         getRowsChangedSince(since, { tables, clientSlug }),
+    }),
+
+    // ── Gantt share tools (Track 1) ──
+
+    render_client_gantt: tool({
+      description:
+        "Generate a hosted, branded URL share link for a client's full project rundown gantt. Returns a 7-day TTL signed URL plus a summary. Use when the user asks 'render the gantt for X', 'send a gantt to X', 'share a rundown for X'. The URL is unauthenticated — anyone with it can view — so only share with trusted parties. The output uses Civilization's client-facing brand palette + logo and strips internal data-integrity warnings.",
+      inputSchema: z.object({
+        clientSlugOrId: z
+          .string()
+          .describe(
+            "Client slug, name, or id (fuzzy-matched, e.g. 'convergix', 'AG1', 'lppc').",
+          ),
+      }),
+      execute: async ({ clientSlugOrId }) => {
+        try {
+          const result = await generateGanttShare({
+            clientSlug: clientSlugOrId,
+            theme: "light-branded",
+          });
+          const expiresHuman = new Date(result.expiresAt).toLocaleDateString("en-US", {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+          });
+          const sev = result.summary.severity;
+          const sevLine =
+            sev.critical + sev.warn + sev.info > 0
+              ? ` Severity rollup: ${sev.critical} critical, ${sev.warn} warn, ${sev.info} info.`
+              : "";
+          return {
+            result: `Branded rundown for ${result.summary.clientName} ready: ${result.shareUrl}\nExpires ${expiresHuman}. ${result.summary.sectionCount ?? 0} sections, ${result.summary.rowCount ?? 0} rows.${sevLine}`,
+          };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return { error: message };
+        }
+      },
+    }),
+
+    render_project_gantt: tool({
+      description:
+        "Generate a hosted, branded URL share link for a single project's triage gantt. Returns a 7-day TTL signed URL plus a summary. Use when the user asks 'render the gantt for [project]', 'share the timeline for [project]'. The URL is unauthenticated — anyone with it can view — so only share with trusted parties. The output uses Civilization's client-facing brand palette + logo and strips internal data-integrity warnings.",
+      inputSchema: z.object({
+        clientSlugOrId: z
+          .string()
+          .describe(
+            "Client slug, name, or id that owns the project (e.g. 'ag1', 'convergix').",
+          ),
+        projectSlugOrId: z
+          .string()
+          .describe(
+            "Project name or id (fuzzy-matched, e.g. 'AG1 PRO Content', 'CDS Messaging').",
+          ),
+      }),
+      execute: async ({ clientSlugOrId, projectSlugOrId }) => {
+        try {
+          const result = await generateGanttShare({
+            clientSlug: clientSlugOrId,
+            projectSlug: projectSlugOrId,
+            theme: "light-branded",
+          });
+          const expiresHuman = new Date(result.expiresAt).toLocaleDateString("en-US", {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+          });
+          const sev = result.summary.severity;
+          const sevLine =
+            sev.critical + sev.warn + sev.info > 0
+              ? ` Severity rollup: ${sev.critical} critical, ${sev.warn} warn, ${sev.info} info.`
+              : "";
+          return {
+            result: `Branded triage for ${result.summary.projectName} (${result.summary.clientName}) ready: ${result.shareUrl}\nExpires ${expiresHuman}. ${result.summary.rowCount ?? 0} rows.${sevLine}`,
+          };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return { error: message };
+        }
+      },
     }),
   };
 }

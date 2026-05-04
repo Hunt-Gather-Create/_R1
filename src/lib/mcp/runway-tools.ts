@@ -50,6 +50,7 @@ import {
 } from "@/lib/runway/operations";
 import { getRetainerTeam } from "@/lib/runway/operations-reads-retainers";
 import { postMutationUpdate } from "@/lib/slack/updates-channel";
+import { generateGanttShare } from "@/lib/runway/gantt/share-orchestrator";
 
 function textResult(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
@@ -896,6 +897,72 @@ export function registerRunwayTools(server: McpServer) {
         });
       }
       return mutationResult(result);
+    },
+  );
+
+  // ── Mutation tools — gantt share ─────────────────────────────────────
+
+  server.tool(
+    "render_client_gantt",
+    "Generate a hosted-URL share link for a client's full project rundown (all top-level projects, retainer wrappers + their L1 children, sorted with content-bearing sections first). Returns { shareUrl, expiresAt, summary } where summary includes clientName, sectionCount, rowCount, severity rollup. URL is a 7-day-TTL signed link served by R2; anyone with the URL can fetch the HTML (no auth wall — do not share with untrusted parties). Default theme is 'light-branded' (client-facing, brand palette + logo, no internal alerts). Use 'light-internal' to mint a CLI-equivalent rundown with the data-integrity panel included. The 'dark-account-view' theme is RSC-only and is rejected here.",
+    {
+      clientSlugOrId: z
+        .string()
+        .describe("Client slug, name, or id (fuzzy-matched against the clients table)."),
+      theme: z
+        .enum(["light-internal", "light-branded"])
+        .optional()
+        .default("light-branded")
+        .describe(
+          "Render theme. 'light-branded' = client-facing (default). 'light-internal' = full internal CLI variant. 'dark-account-view' is rejected — use the Runway Account View RSC for that theme.",
+        ),
+    },
+    async ({ clientSlugOrId, theme }) => {
+      try {
+        const result = await generateGanttShare({
+          clientSlug: clientSlugOrId,
+          theme: theme ?? "light-branded",
+        });
+        return textResult(result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return textMessage(`Error: ${message}`);
+      }
+    },
+  );
+
+  server.tool(
+    "render_project_gantt",
+    "Generate a hosted-URL share link for a single-project triage gantt (one L1 project, or a retainer wrapper rendered as a wrapper-shape with its child L1s). Returns { shareUrl, expiresAt, summary } where summary includes clientName, projectName, rowCount, severity rollup. URL is a 7-day-TTL signed link; anyone with the URL can fetch (no auth wall — do not share with untrusted parties). Default theme is 'light-branded'. The 'dark-account-view' theme is RSC-only and is rejected here. Caller must supply the project's client; the resolver verifies the project belongs to that client.",
+    {
+      clientSlugOrId: z
+        .string()
+        .describe("Client slug, name, or id that owns the project (fuzzy-matched)."),
+      projectSlugOrId: z
+        .string()
+        .describe(
+          "Project name or id (fuzzy-matched against projects.name within the client; can also be a retainer wrapper).",
+        ),
+      theme: z
+        .enum(["light-internal", "light-branded"])
+        .optional()
+        .default("light-branded")
+        .describe(
+          "Render theme. 'light-branded' = client-facing (default). 'light-internal' = full internal CLI variant. 'dark-account-view' is rejected — use the Runway Account View RSC.",
+        ),
+    },
+    async ({ clientSlugOrId, projectSlugOrId, theme }) => {
+      try {
+        const result = await generateGanttShare({
+          clientSlug: clientSlugOrId,
+          projectSlug: projectSlugOrId,
+          theme: theme ?? "light-branded",
+        });
+        return textResult(result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return textMessage(`Error: ${message}`);
+      }
     },
   );
 

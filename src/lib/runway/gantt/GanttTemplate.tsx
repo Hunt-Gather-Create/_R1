@@ -16,7 +16,12 @@
  */
 
 import * as React from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+// react-dom/server is loaded lazily via require() inside renderGantt /
+// renderClientRundown to break Turbopack's static module-condition analysis.
+// ES `import` of react-dom/server is banned in App Router module graphs;
+// CommonJS `require()` calls are not traced by Turbopack's static analyzer.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { renderToStaticMarkup } = require("react-dom/server") as typeof import("react-dom/server");
 import { formatHeadline } from "./counter";
 import { getThemeTokens } from "./themes";
 import type {
