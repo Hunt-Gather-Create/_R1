@@ -3,10 +3,11 @@
  * `renderToStaticMarkup`. Self-contained: inline `<style>` block, no JS.
  *
  * Render order (operator-locked):
- *   1. Header (name + raw date range + generated stamp + legend)
- *   2. Data Integrity panel (severity rollup + grouped issues + per-child
- *      rollup for wrapper view)
- *   3. Gantt body (table-style row + sub-row alerts)
+ *   1. Header (name + raw date range + generated stamp)
+ *   2. Per-section legend (inside each SectionBlock, above DataIntegrityPanel)
+ *   3. Data Integrity panel (severity rollup + grouped issues + per-child
+ *      rollup for wrapper view) — light-internal only
+ *   4. Gantt body (table-style row + sub-row alerts)
  *
  * The panel replaces the older "counter + alerts" duo. Chart-level issues
  * render with full messages; row-level issues collapse to code + count +
@@ -17,6 +18,7 @@
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { formatHeadline } from "./counter";
+import { getThemeTokens } from "./themes";
 import type {
   AnnotatedRow,
   AxisParams,
@@ -28,6 +30,7 @@ import type {
   Severity,
   SeverityCounts,
   Summary,
+  Theme,
 } from "./types";
 
 function numericDate(iso: string): string {
@@ -98,6 +101,7 @@ const STYLES = `
 
   /* Legend — actual rendered swatches, not text-only */
   .legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 10px; font-size: 11px; color: #555; }
+  .legend-in-section { margin: 8px 0 12px 0; }
   .legend-item { display: inline-flex; align-items: center; gap: 6px; }
   .legend-swatch { display: inline-block; width: 28px; height: 12px; border-radius: 2px; }
   .legend-swatch.active { background: #3b82f6; }
@@ -248,6 +252,90 @@ const STYLES = `
   .rundown-section .section-head .kind-tag.wrapper-child { background: #e0f2fe; color: #075985; }
   .rundown-section .section-head .kind-tag.standalone { background: #f1f5f9; color: #475569; }
   .rundown-section .section-head .meta { font-size: 11px; color: #777; margin-top: 2px; }
+`;
+
+const STYLES_BRANDED = `
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #333333; background: #ffffff; }
+  .gantt { max-width: 1400px; margin: 24px auto; padding: 20px 24px; background: #ffffff; border: 1px solid #E5E7EB; border-radius: 6px; }
+  .header { border-bottom: 2px solid #0E5DFF; padding-bottom: 12px; margin-bottom: 16px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .header-text { flex: 1 1 auto; }
+  .header h1 { margin: 0 0 4px 0; font-size: 20px; font-weight: 700; color: #000000; }
+  .header .meta { font-size: 12px; color: #333333; }
+  .header-logo { flex: 0 0 auto; max-height: 0.85in; max-width: 2in; object-fit: contain; }
+
+  /* Legend — brand palette */
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 10px; font-size: 11px; color: #333333; }
+  .legend-in-section { margin: 8px 0 12px 0; }
+  .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+  .legend-swatch { display: inline-block; width: 28px; height: 12px; border-radius: 2px; }
+  .legend-swatch.active { background: #0E5DFF; }
+  .legend-swatch.scheduled { background: #F9FAFB; border: 1px dashed #D1D5DB; box-sizing: border-box; }
+  .legend-swatch.at-risk { background: #F59E0B; opacity: 0.7; }
+  .legend-swatch.blocked { background: #DC2626; opacity: 0.7; }
+  .legend-swatch.completed { background: #10B981; opacity: 0.6; border: 1px solid #059669; box-sizing: border-box; }
+  .legend-swatch.canceled { background: #9CA3AF; }
+  .legend-diamond { display: inline-block; width: 11px; height: 11px; transform: rotate(45deg); background: #0E5DFF; }
+  .legend-strike { text-decoration: line-through; color: #9CA3AF; }
+
+  /* Body */
+  .body { margin-top: 16px; }
+  .axis-row { display: grid; grid-template-columns: 340px 200px 130px 1fr; align-items: end; font-size: 11px; color: #333333; padding: 4px 0; border-bottom: 1px solid #E5E7EB; }
+  .axis-spacer { grid-column: span 3; }
+  .axis-cells { position: relative; height: 18px; }
+  .axis-cell { position: absolute; top: 0; bottom: 0; padding-left: 4px; border-left: 1px solid #E5E7EB; font-size: 10px; color: #333333; }
+  .axis-cell.minor { border-left-color: #F9FAFB; color: transparent; }
+  .row { display: grid; grid-template-columns: 340px 200px 130px 1fr; align-items: center; padding: 6px 0; border-bottom: 1px solid #E5E7EB; min-height: 28px; }
+  .row .title { font-size: 13px; font-weight: 600; padding-right: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #000000; }
+  .row .meta { font-size: 11px; color: #333333; padding-right: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .dates { font-size: 11px; color: #333333; font-variant-numeric: tabular-nums; padding-right: 8px; }
+  .row .dates.bad { color: #DC2626; font-weight: 600; }
+  .row .dates .null { color: #DC2626; font-weight: 600; }
+  .timeline { position: relative; height: 22px; background: #F9FAFB; border-radius: 3px; }
+  .grid-line { position: absolute; top: 0; bottom: 0; width: 1px; background: #F9FAFB; }
+  .grid-line.major { background: #E5E7EB; }
+  .bar { position: absolute; top: 4px; bottom: 4px; background: #0E5DFF; border-radius: 2px; }
+  .bar.scheduled { background: #F9FAFB; border: 1px dashed #D1D5DB; box-sizing: border-box; }
+  .bar.at-risk { background: #F59E0B; opacity: 0.7; }
+  .bar.blocked { background: #DC2626; opacity: 0.7; }
+  .row.completed .bar { background: #10B981; border: 1px solid #059669; box-sizing: border-box; opacity: 0.6; }
+  .row.completed .title, .row.completed .meta, .row.completed .dates { color: #333333; }
+  .row.canceled .bar { background: #9CA3AF; opacity: 1; }
+  .row.canceled .title, .row.canceled .meta, .row.canceled .dates { text-decoration: line-through; color: #9CA3AF; }
+  .milestone { position: absolute; top: 4px; width: 14px; height: 14px; transform: translateX(-7px) rotate(45deg); background: #0E5DFF; }
+  .milestone.scheduled { background: #F9FAFB; border: 1px dashed #D1D5DB; box-sizing: border-box; }
+  .milestone.at-risk { background: #F59E0B; opacity: 0.7; }
+  .milestone.blocked { background: #DC2626; opacity: 0.7; }
+  .row.completed .milestone { background: #10B981; border: 1px solid #059669; box-sizing: border-box; opacity: 0.6; }
+  .row.canceled .milestone { background: #9CA3AF; opacity: 0.6; }
+  .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #0E5DFF; pointer-events: none; z-index: 2; }
+  .today-label { position: absolute; top: -14px; transform: translateX(-50%); font-size: 9px; color: #0E5DFF; white-space: nowrap; }
+  .no-axis-note { font-size: 11px; color: #333333; padding: 10px; text-align: center; background: #F9FAFB; border-radius: 4px; margin: 8px 0; }
+
+  /* Rundown */
+  .rundown-head { padding: 4px 4px 16px; border-bottom: 2px solid #0E5DFF; margin-bottom: 18px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .rundown-head-text { flex: 1 1 auto; }
+  .rundown-head h1 { margin: 0; font-size: 24px; font-weight: 700; color: #000000; }
+  .rundown-head .meta { font-size: 12px; color: #333333; margin-top: 4px; }
+  .header-logo { flex: 0 0 auto; max-height: 0.85in; max-width: 2in; object-fit: contain; }
+  .rundown-toc { background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 6px; padding: 14px 16px; margin: 16px 0 24px; }
+  .rundown-toc h2 { margin: 0 0 10px 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #333333; }
+  .toc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px 18px; }
+  .toc-block { background: #ffffff; border: 1px solid #E5E7EB; border-radius: 5px; padding: 8px 12px; }
+  .toc-block.wrapper { border-color: #0E5DFF; background: #F9FAFB; grid-column: 1 / -1; }
+  .toc-block-head { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+  .toc-block-head .toc-emoji { flex: 0 0 auto; font-size: 14px; line-height: 1; }
+  .toc-block-head a { color: #0E5DFF; text-decoration: none; font-weight: 600; }
+  .toc-block-head a:hover { text-decoration: underline; }
+  .toc-block-head .toc-tally { font-size: 11px; margin-left: auto; padding-left: 8px; }
+  .toc-children { margin: 8px 0 0 0; padding: 8px 0 0 0; list-style: none; columns: 3; column-gap: 28px; column-rule: 1px solid #E5E7EB; border-top: 1px solid #E5E7EB; }
+  .toc-children li { break-inside: avoid; display: flex; align-items: baseline; gap: 6px; padding: 3px 0; font-size: 12px; }
+  .toc-children .toc-emoji { flex: 0 0 auto; font-size: 12px; line-height: 1; }
+  .toc-children a { color: #0E5DFF; text-decoration: none; }
+  .toc-children .toc-tally { color: #333333; font-size: 11px; margin-left: auto; padding-left: 6px; }
+  .rundown-section { margin: 22px 0 36px 0; padding-top: 12px; border-top: 1px solid #E5E7EB; }
+  .rundown-section .section-head h2 { margin: 0; font-size: 17px; font-weight: 700; color: #000000; }
+  .rundown-section .section-head .kind-tag { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 6px; border-radius: 3px; margin-left: 8px; vertical-align: middle; background: #F9FAFB; color: #333333; border: 1px solid #E5E7EB; }
+  .rundown-section .section-head .meta { font-size: 11px; color: #333333; margin-top: 2px; }
 `;
 
 function metaLine(row: AnnotatedRow): string {
@@ -455,9 +543,15 @@ function DataIntegrityPanel({
 
 // ── Legend ────────────────────────────────────────────────
 
-function Legend(): JSX.Element {
+/**
+ * Light-internal and light-branded legend (swatches + labels). Used by
+ * SectionLegend as the default rendering path for both light themes.
+ * Positioned inside each SectionBlock, above the DataIntegrityPanel.
+ * Margin tuned for in-section position via .legend-in-section class.
+ */
+function SectionLegendLight(): JSX.Element {
   return (
-    <div className="legend">
+    <div className="legend legend-in-section">
       <span className="legend-item">
         <span className="legend-swatch active" /> in-progress
       </span>
@@ -479,11 +573,45 @@ function Legend(): JSX.Element {
       <span className="legend-item">
         <span className="legend-diamond" /> milestone
       </span>
-      <span className="legend-item">
-        <span className="legend-alert">⚠</span> data issue
+    </div>
+  );
+}
+
+/**
+ * Dark-account-view legend using Tailwind classes for swatches.
+ */
+function SectionLegendDark(): JSX.Element {
+  return (
+    <div className="flex flex-wrap gap-3 items-center text-xs text-slate-400 mb-3">
+      <span className="inline-flex items-center gap-1.5">
+        <span className="inline-block w-7 h-3 rounded-sm bg-sky-400" /> in-progress
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="inline-block w-7 h-3 rounded-sm border border-slate-500/40 bg-slate-500/10" /> scheduled
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="inline-block w-7 h-3 rounded-sm bg-amber-400" /> at-risk
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="inline-block w-7 h-3 rounded-sm bg-red-400" /> blocked
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="inline-block w-7 h-3 rounded-sm bg-emerald-400" /> completed
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="inline-block w-7 h-3 rounded-sm bg-slate-400" /> <span className="line-through opacity-60">canceled</span>
       </span>
     </div>
   );
+}
+
+/**
+ * Per-section legend dispatcher. Renders above DataIntegrityPanel in every
+ * SectionBlock. Theme drives swatch styles.
+ */
+export function SectionLegend({ theme }: { theme: Theme }): JSX.Element {
+  if (theme === "dark-account-view") return <SectionLegendDark />;
+  return <SectionLegendLight />;
 }
 
 // ── Status → bar color class ──────────────────────────────
@@ -574,13 +702,20 @@ function AxisRow({ axis }: { axis: AxisParams }): JSX.Element | null {
  * both the standalone GanttTemplate (one-section page) and the
  * RundownTemplate (multi-section page) so the rendering logic stays in
  * one place.
+ *
+ * Band order: SectionLegend → DataIntegrityPanel (if enabled) → AxisRow →
+ * rows → AxisRow (repeat at bottom).
  */
-function GanttSection({ data }: { data: GanttData }): JSX.Element {
+export function GanttSection({ data, theme }: { data: GanttData; theme: Theme }): JSX.Element {
   const { raw, rows, axis, summary } = data;
   const todayPct = computeTodayPosition(axis);
+  const tokens = getThemeTokens(theme);
   return (
     <>
-      <DataIntegrityPanel summary={summary} isWrapper={raw.kind === "wrapper"} />
+      <SectionLegend theme={theme} />
+      {tokens.chrome.showDataIntegrityPanel && (
+        <DataIntegrityPanel summary={summary} isWrapper={raw.kind === "wrapper"} />
+      )}
       <section className="body">
         {axis.kind === "no-axis" && (
           <div className="no-axis-note">
@@ -590,7 +725,7 @@ function GanttSection({ data }: { data: GanttData }): JSX.Element {
         {axis.kind !== "no-axis" && <AxisRow axis={axis} />}
 
         {rows.map((row) => (
-          <RowBlock key={row.id} row={row} axis={axis} todayPct={todayPct} />
+          <RowBlock key={row.id} row={row} axis={axis} todayPct={todayPct} theme={theme} />
         ))}
 
         {/* Repeat axis at bottom — operator (2026-04-30) wants dates
@@ -601,8 +736,10 @@ function GanttSection({ data }: { data: GanttData }): JSX.Element {
   );
 }
 
-function GanttTemplate({ data }: { data: GanttData }): JSX.Element {
+export function GanttTemplate({ data, theme = "light-internal" }: { data: GanttData; theme?: Theme }): JSX.Element {
   const { raw, headerRange, generatedAt } = data;
+  const tokens = getThemeTokens(theme);
+  const styles = theme === "light-branded" ? STYLES_BRANDED : STYLES;
 
   return (
     <html lang="en">
@@ -610,25 +747,51 @@ function GanttTemplate({ data }: { data: GanttData }): JSX.Element {
       <head>
         <meta charSet="utf-8" />
         <title>{`Gantt — ${raw.client.name}: ${raw.entity.name}`}</title>
-        <style dangerouslySetInnerHTML={{ __html: STYLES }} />
+        {theme !== "dark-account-view" && <style dangerouslySetInnerHTML={{ __html: styles }} />}
       </head>
       <body>
         <div className="gantt">
           <header className="header">
-            <h1>
-              {raw.client.name}: {raw.entity.name}{" "}
-              <span style={{ fontSize: "12px", fontWeight: 400, color: "#888" }}>
-                ({chartLabel(data)})
-              </span>
-            </h1>
-            <div className="meta">
-              <span>{headerRange}</span>
-              <span> · Generated {generatedAt}</span>
-            </div>
-            <Legend />
+            {tokens.chrome.useBrandedHeader ? (
+              <>
+                <div className="header-text">
+                  <h1>
+                    {raw.client.name}: {raw.entity.name}{" "}
+                    <span style={{ fontSize: "12px", fontWeight: 400, color: "#333" }}>
+                      ({chartLabel(data)})
+                    </span>
+                  </h1>
+                  <div className="meta">
+                    <span>{headerRange}</span>
+                    <span> · Generated {generatedAt}</span>
+                  </div>
+                </div>
+                {tokens.chrome.showLogo && tokens.logo.dataUri && (
+                  // eslint-disable-next-line @next/next/no-img-element -- standalone HTML doc, not a Next.js page
+                  <img
+                    src={tokens.logo.dataUri}
+                    alt={tokens.logo.altText}
+                    className="header-logo"
+                  />
+                )}
+              </>
+            ) : (
+              <>
+                <h1>
+                  {raw.client.name}: {raw.entity.name}{" "}
+                  <span style={{ fontSize: "12px", fontWeight: 400, color: "#888" }}>
+                    ({chartLabel(data)})
+                  </span>
+                </h1>
+                <div className="meta">
+                  <span>{headerRange}</span>
+                  <span> · Generated {generatedAt}</span>
+                </div>
+              </>
+            )}
           </header>
 
-          <GanttSection data={data} />
+          <GanttSection data={data} theme={theme} />
         </div>
       </body>
     </html>
@@ -639,11 +802,14 @@ function RowBlock({
   row,
   axis,
   todayPct,
+  theme,
 }: {
   row: AnnotatedRow;
   axis: AxisParams;
   todayPct: number | null;
+  theme: Theme;
 }): JSX.Element {
+  const tokens = getThemeTokens(theme);
   const geom = computeBarGeometry(row, axis);
   const showTodayLine = todayPct !== null && axis.kind !== "no-axis";
   const allRowIssues = [...row.inline, ...row.subRow];
@@ -653,7 +819,7 @@ function RowBlock({
       <div className={rowClass(row)} data-row-kind={row.kind}>
         <div className="title">
           {row.title}
-          {row.subRow.length > 0 && rowSeverity && (
+          {tokens.chrome.showRowAlerts && row.subRow.length > 0 && rowSeverity && (
             <span className={`alert-badge ${rowSeverity}`}>⚠</span>
           )}
         </div>
@@ -682,7 +848,7 @@ function RowBlock({
           )}
         </div>
       </div>
-      {row.subRow.length > 0 && (
+      {tokens.chrome.showRowAlerts && row.subRow.length > 0 && (
         <div className={`sub-row ${highestSeverity(row.subRow) ?? "warn"}`}>
           {row.subRow.map((issue: Issue, idx: number) => (
             <span key={`${issue.code}-${idx}`} className="alert-line">
@@ -772,7 +938,8 @@ function TocLink({ section }: { section: RundownSection }): JSX.Element {
   );
 }
 
-function RundownToc({ sections }: { sections: RundownSection[] }): JSX.Element {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- theme reserved for future TOC theming
+function RundownToc({ sections, theme }: { sections: RundownSection[]; theme: Theme }): JSX.Element {
   const blocks = groupTocSections(sections);
   return (
     <nav className="rundown-toc">
@@ -816,7 +983,7 @@ function kindTag(kind: RundownSection["kind"]): string {
   return "L1";
 }
 
-function SectionBlock({ section }: { section: RundownSection }): JSX.Element {
+export function SectionBlock({ section, theme }: { section: RundownSection; theme: Theme }): JSX.Element {
   const { data } = section;
   return (
     <article id={section.anchor} className="rundown-section">
@@ -830,42 +997,68 @@ function SectionBlock({ section }: { section: RundownSection }): JSX.Element {
           <span>{data.headerRange}</span>
         </div>
       </header>
-      <GanttSection data={data} />
+      <GanttSection data={data} theme={theme} />
     </article>
   );
 }
 
-function RundownTemplate({ data }: { data: ClientRundownData }): JSX.Element {
+export function RundownTemplate({ data, theme = "light-internal" }: { data: ClientRundownData; theme?: Theme }): JSX.Element {
   const { client, sections, generatedAt, overallSeverity } = data;
+  const tokens = getThemeTokens(theme);
+  const styles = theme === "light-branded" ? STYLES_BRANDED : STYLES;
+
   return (
     <html lang="en">
       {/* eslint-disable-next-line @next/next/no-head-element -- standalone HTML doc, not a Next.js page */}
       <head>
         <meta charSet="utf-8" />
         <title>{`Rundown — ${client.name}`}</title>
-        <style dangerouslySetInnerHTML={{ __html: STYLES }} />
+        {theme !== "dark-account-view" && <style dangerouslySetInnerHTML={{ __html: styles }} />}
       </head>
       <body>
         <div className="gantt">
           <header className="rundown-head">
-            <h1>{client.name} — Rundown</h1>
-            <div className="meta">
-              <span>
-                {sections.length} section{sections.length === 1 ? "" : "s"}
-              </span>
-              <span> · Generated {generatedAt}</span>
-            </div>
-            <div className={overallSeverityClass(overallSeverity)}>
-              <span aria-hidden="true">{topSeverityEmoji(overallSeverity)}</span>{" "}
-              {severityCountsLabel(overallSeverity)} across all sections
-            </div>
-            <Legend />
+            {tokens.chrome.useBrandedHeader ? (
+              <>
+                <div className="rundown-head-text">
+                  <h1>{client.name} — Rundown</h1>
+                  <div className="meta">
+                    <span>
+                      {sections.length} section{sections.length === 1 ? "" : "s"}
+                    </span>
+                    <span> · Generated {generatedAt}</span>
+                  </div>
+                </div>
+                {tokens.chrome.showLogo && tokens.logo.dataUri && (
+                  // eslint-disable-next-line @next/next/no-img-element -- standalone HTML doc, not a Next.js page
+                  <img
+                    src={tokens.logo.dataUri}
+                    alt={tokens.logo.altText}
+                    className="header-logo"
+                  />
+                )}
+              </>
+            ) : (
+              <>
+                <h1>{client.name} — Rundown</h1>
+                <div className="meta">
+                  <span>
+                    {sections.length} section{sections.length === 1 ? "" : "s"}
+                  </span>
+                  <span> · Generated {generatedAt}</span>
+                </div>
+                <div className={overallSeverityClass(overallSeverity)}>
+                  <span aria-hidden="true">{topSeverityEmoji(overallSeverity)}</span>{" "}
+                  {severityCountsLabel(overallSeverity)} across all sections
+                </div>
+              </>
+            )}
           </header>
 
-          <RundownToc sections={sections} />
+          <RundownToc sections={sections} theme={theme} />
 
           {sections.map((s) => (
-            <SectionBlock key={s.anchor} section={s} />
+            <SectionBlock key={s.anchor} section={s} theme={theme} />
           ))}
         </div>
       </body>
@@ -873,14 +1066,14 @@ function RundownTemplate({ data }: { data: ClientRundownData }): JSX.Element {
   );
 }
 
-export { GanttTemplate, RundownTemplate };
+export { GanttTemplate as default };
 
 /** Render the full HTML document for one Gantt. */
-export function renderGantt(data: GanttData): string {
-  return "<!doctype html>" + renderToStaticMarkup(<GanttTemplate data={data} />);
+export function renderGantt(data: GanttData, theme: Theme = "light-internal"): string {
+  return "<!doctype html>" + renderToStaticMarkup(<GanttTemplate data={data} theme={theme} />);
 }
 
 /** Render a single-page rundown HTML document for an entire client. */
-export function renderClientRundown(data: ClientRundownData): string {
-  return "<!doctype html>" + renderToStaticMarkup(<RundownTemplate data={data} />);
+export function renderClientRundown(data: ClientRundownData, theme: Theme = "light-internal"): string {
+  return "<!doctype html>" + renderToStaticMarkup(<RundownTemplate data={data} theme={theme} />);
 }

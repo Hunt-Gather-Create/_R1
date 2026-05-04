@@ -200,3 +200,7 @@ export type ClientRundownData = {
   generatedAt: string; // YYYY-MM-DD
   overallSeverity: SeverityCounts;
 };
+
+// ── Theme ─────────────────────────────────────────────────
+
+export type Theme = "light-internal" | "light-branded" | "dark-account-view";

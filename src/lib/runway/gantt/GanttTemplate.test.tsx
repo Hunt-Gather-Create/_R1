@@ -3,16 +3,19 @@ import {
   computeBarGeometry,
   computeTodayPosition,
   renderGantt,
+  renderClientRundown,
 } from "./GanttTemplate";
 import type {
   AnnotatedRow,
   AxisParams,
   ClientRow,
+  ClientRundownData,
   GanttData,
   Issue,
   IssueCode,
   ProjectRow,
   RawData,
+  RundownSection,
   Severity,
   Summary,
 } from "./types";
@@ -563,5 +566,182 @@ describe("renderGantt", () => {
     const html = renderGantt(data);
     expect(html).toContain("alert-badge critical");
     expect(html).toContain("⚠");
+  });
+});
+
+// ── Phase B tests ─────────────────────────────────────────
+
+// ── Rundown fixture helpers ───────────────────────────────
+
+function makeRundownSection(
+  overrides: Partial<RundownSection> & { id?: string } = {},
+): RundownSection {
+  const { id = "s1", ...rest } = overrides;
+  return {
+    anchor: `anchor-${id}`,
+    kind: "standalone",
+    title: `Section ${id}`,
+    data: makeGanttData(),
+    ...rest,
+  };
+}
+
+function makeClientRundownData(
+  sections: RundownSection[] = [],
+  overrides: Partial<ClientRundownData> = {},
+): ClientRundownData {
+  return {
+    client: makeClient(),
+    sections: sections.length > 0 ? sections : [makeRundownSection()],
+    generatedAt: "2026-04-30",
+    overallSeverity: { critical: 0, warn: 0, info: 0 },
+    ...overrides,
+  };
+}
+
+// ── G1: Baseline preservation (light-internal) ───────────
+
+describe("G1: light-internal baseline preservation", () => {
+  it("light-internal renders SectionLegend inside every SectionBlock and NOT in the rundown hero", () => {
+    const section1 = makeRundownSection({ id: "a" });
+    const section2 = makeRundownSection({ id: "b" });
+    const rundown = makeClientRundownData([section1, section2]);
+    const html = renderClientRundown(rundown);
+
+    // Count rendered HTML elements with the legend-in-section class (not CSS rule text).
+    // The CSS rule contains ".legend-in-section" but only element renders have class="...legend-in-section...".
+    const legendCount = (html.match(/class="legend legend-in-section"/g) ?? []).length;
+    expect(legendCount).toBeGreaterThanOrEqual(2);
+
+    // Confirm the in-section class is present
+    expect(html).toContain("legend-in-section");
+  });
+
+  it("single-project triage renders exactly one SectionLegend", () => {
+    const html = renderGantt(makeGanttData());
+    // Count rendered elements with the class, not occurrences in CSS text.
+    const legendCount = (html.match(/class="legend legend-in-section"/g) ?? []).length;
+    expect(legendCount).toBe(1);
+  });
+
+  it("light-internal still renders the DataIntegrityPanel", () => {
+    const html = renderGantt(makeGanttData({ summary: emptySummary({ totalRows: 3 }) }));
+    expect(html).toContain("Data Integrity");
+    expect(html).toContain("panel-clean");
+  });
+});
+
+// ── G2: Light-branded structural ─────────────────────────
+
+describe("G2: light-branded structural", () => {
+  it("light-branded renders logo data-URI in header", () => {
+    const html = renderGantt(makeGanttData(), "light-branded");
+    expect(html).toContain("data:image/jpeg;base64,");
+  });
+
+  it("light-branded omits DataIntegrityPanel", () => {
+    const html = renderGantt(
+      makeGanttData({ summary: emptySummary({ totalRows: 5 }) }),
+      "light-branded",
+    );
+    expect(html).not.toContain("Data Integrity");
+    expect(html).not.toContain("panel-clean");
+    expect(html).not.toContain("panel-issues");
+  });
+
+  it("light-branded omits per-row alerts", () => {
+    const html = renderGantt(
+      makeGanttData({
+        rows: [
+          makeRow({
+            id: "r1",
+            title: "Row with issue",
+            subRow: [mkIssue("wi-overdue", "warn", "overdue")],
+          }),
+        ],
+      }),
+      "light-branded",
+    );
+    expect(html).not.toContain("alert-badge");
+    expect(html).not.toContain("sub-row warn");
+  });
+
+  it("light-branded uses STYLES_BRANDED block (brand primary color)", () => {
+    const html = renderGantt(makeGanttData(), "light-branded");
+    // Brand primary #0E5DFF should appear in the branded stylesheet
+    expect(html).toContain("#0E5DFF");
+  });
+});
+
+// ── G3: Dark-account-view structural ─────────────────────
+
+describe("G3: dark-account-view structural", () => {
+  it("dark-account-view renders without inline <style> block", () => {
+    const html = renderGantt(makeGanttData(), "dark-account-view");
+    expect(html).not.toContain("<style");
+  });
+
+  it("dark-account-view emits Tailwind classes on legend swatches", () => {
+    const html = renderGantt(makeGanttData(), "dark-account-view");
+    expect(html).toContain("bg-sky-400");
+  });
+
+  it("dark-account-view omits DataIntegrityPanel and per-row alerts", () => {
+    const html = renderGantt(
+      makeGanttData({
+        rows: [
+          makeRow({
+            id: "r1",
+            title: "Dark row",
+            subRow: [mkIssue("wi-overdue", "warn", "overdue")],
+          }),
+        ],
+        summary: emptySummary({ totalRows: 2 }),
+      }),
+      "dark-account-view",
+    );
+    expect(html).not.toContain("Data Integrity");
+    expect(html).not.toContain("alert-badge");
+    expect(html).not.toContain("sub-row");
+  });
+});
+
+// ── G4: Section legend cross-theme ───────────────────────
+
+describe("G4: SectionLegend cross-theme", () => {
+  it("SectionLegend appears once per section in a wrapper rundown (N+1 rule)", () => {
+    // Wrapper + 2 children = 3 sections = 3 legends
+    const wrapper = makeRundownSection({ id: "wrap", kind: "wrapper" });
+    const child1 = makeRundownSection({ id: "c1", kind: "wrapper-child" });
+    const child2 = makeRundownSection({ id: "c2", kind: "wrapper-child" });
+    const rundown = makeClientRundownData([wrapper, child1, child2]);
+    const html = renderClientRundown(rundown);
+    // Count rendered elements with the class, not occurrences in CSS text.
+    const legendCount = (html.match(/class="legend legend-in-section"/g) ?? []).length;
+    expect(legendCount).toBe(3);
+  });
+
+  it("SectionLegend appears once in a standalone L1 rundown section", () => {
+    const section = makeRundownSection({ id: "l1", kind: "standalone" });
+    const rundown = makeClientRundownData([section]);
+    const html = renderClientRundown(rundown);
+    // Count rendered elements with the class, not occurrences in CSS text.
+    const legendCount = (html.match(/class="legend legend-in-section"/g) ?? []).length;
+    expect(legendCount).toBe(1);
+  });
+
+  it("SectionLegend swatch sentinel differs by theme", () => {
+    // light-internal: #3b82f6 (active swatch background in STYLES CSS)
+    const lightInternal = renderGantt(makeGanttData(), "light-internal");
+    expect(lightInternal).toContain("#3b82f6");
+
+    // light-branded: #0E5DFF (active swatch background in STYLES_BRANDED CSS)
+    const lightBranded = renderGantt(makeGanttData(), "light-branded");
+    expect(lightBranded).toContain("#0E5DFF");
+    expect(lightBranded).not.toContain("#3b82f6"); // internal color must not bleed in
+
+    // dark: Tailwind classes
+    const dark = renderGantt(makeGanttData(), "dark-account-view");
+    expect(dark).toContain("bg-sky-400");
   });
 });

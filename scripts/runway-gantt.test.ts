@@ -16,6 +16,7 @@ describe("parseArgs", () => {
       ok: true,
       mode: "project",
       value: "AG1",
+      theme: "light-internal",
     });
   });
 
@@ -24,6 +25,7 @@ describe("parseArgs", () => {
       ok: true,
       mode: "client",
       value: "Convergix",
+      theme: "light-internal",
     });
   });
 
@@ -62,7 +64,44 @@ describe("parseArgs", () => {
       ok: true,
       mode: "project",
       value: "Website Build",
+      theme: "light-internal",
     });
+  });
+
+  it("defaults theme to light-internal when --theme is not provided", () => {
+    const result = parseArgs(["--project", "AG1"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.theme).toBe("light-internal");
+  });
+
+  it("accepts --theme light-internal explicitly", () => {
+    const result = parseArgs(["--project", "AG1", "--theme", "light-internal"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.theme).toBe("light-internal");
+  });
+
+  it("accepts --theme light-branded", () => {
+    const result = parseArgs(["--project", "AG1", "--theme", "light-branded"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.theme).toBe("light-branded");
+  });
+
+  it("rejects --theme dark-account-view with a clear error", () => {
+    const result = parseArgs(["--project", "AG1", "--theme", "dark-account-view"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/dark-account-view.*not available via the CLI/i);
+  });
+
+  it("rejects an unknown theme value", () => {
+    const result = parseArgs(["--project", "AG1", "--theme", "neon-nightmare"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/Unknown theme/);
+  });
+
+  it("rejects --theme with no value following", () => {
+    const result = parseArgs(["--project", "AG1", "--theme"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/Missing value after --theme/);
   });
 });
 
@@ -118,6 +157,20 @@ describe("buildOutputPath", () => {
         "runway-gantts",
         "convergix-automate-2026-booth-design-2026-04-29.html",
       ),
+    );
+  });
+
+  it("inserts -branded suffix for light-branded theme", () => {
+    const path = buildOutputPath("High Desert Law", "Website Build", "2026-04-30", "light-branded");
+    expect(path).toBe(
+      join(homedir(), "runway-gantts", "high-desert-law-website-build-branded-2026-04-30.html"),
+    );
+  });
+
+  it("no suffix for light-internal theme (byte-compatible with baseline)", () => {
+    const path = buildOutputPath("High Desert Law", "Website Build", "2026-04-30", "light-internal");
+    expect(path).toBe(
+      join(homedir(), "runway-gantts", "high-desert-law-website-build-2026-04-30.html"),
     );
   });
 });

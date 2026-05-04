@@ -46,8 +46,8 @@ import type {
 type DrizzleDb = ReturnType<typeof createRunwayDb>["db"];
 
 const USAGE = `Usage:
-  pnpm runway:gantt --project "<name|id>"
-  pnpm runway:gantt --client  "<name|slug|id>"`;
+  pnpm runway:gantt --project "<name|id>"  [--theme light-internal|light-branded]
+  pnpm runway:gantt --client  "<name|slug|id>"  [--theme light-internal|light-branded]`;
 
 // ── Pure helpers (exported for testing) ───────────────────
 
@@ -78,24 +78,32 @@ export function buildOutputPath(
   clientName: string,
   projectName: string,
   dateStr: string,
+  theme: "light-internal" | "light-branded" = "light-internal",
 ): string {
-  const filename = `${slugify(clientName)}-${slugify(projectName)}-${dateStr}.html`;
+  const themeSuffix = theme === "light-branded" ? "-branded" : "";
+  const filename = `${slugify(clientName)}-${slugify(projectName)}${themeSuffix}-${dateStr}.html`;
   return join(homedir(), "runway-gantts", filename);
 }
 
-export function buildRundownOutputPath(clientName: string, dateStr: string): string {
-  const filename = `${slugify(clientName)}-rundown-${dateStr}.html`;
+export function buildRundownOutputPath(
+  clientName: string,
+  dateStr: string,
+  theme: "light-internal" | "light-branded" = "light-internal",
+): string {
+  const themeSuffix = theme === "light-branded" ? "-branded" : "";
+  const filename = `${slugify(clientName)}-rundown${themeSuffix}-${dateStr}.html`;
   return join(homedir(), "runway-gantts", filename);
 }
 
 export type ParsedArgs =
-  | { ok: true; mode: "project"; value: string }
-  | { ok: true; mode: "client"; value: string }
+  | { ok: true; mode: "project"; value: string; theme: "light-internal" | "light-branded" }
+  | { ok: true; mode: "client"; value: string; theme: "light-internal" | "light-branded" }
   | { ok: false; error: string };
 
 export function parseArgs(argv: string[]): ParsedArgs {
   let project: string | undefined;
   let client: string | undefined;
+  let theme: "light-internal" | "light-branded" = "light-internal";
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -113,6 +121,26 @@ export function parseArgs(argv: string[]): ParsedArgs {
       }
       client = v;
       i += 1;
+    } else if (arg === "--theme") {
+      const v = argv[i + 1];
+      if (!v || v.startsWith("--")) {
+        return { ok: false, error: "Missing value after --theme." };
+      }
+      if (v === "dark-account-view") {
+        return {
+          ok: false,
+          error:
+            "--theme dark-account-view is not available via the CLI. Use light-internal or light-branded.",
+        };
+      }
+      if (v !== "light-internal" && v !== "light-branded") {
+        return {
+          ok: false,
+          error: `Unknown theme '${v}'. Accepted: light-internal, light-branded.`,
+        };
+      }
+      theme = v;
+      i += 1;
     } else if (arg.startsWith("--")) {
       return { ok: false, error: `Unknown flag '${arg}'.` };
     }
@@ -124,8 +152,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (!project && !client) {
     return { ok: false, error: "Provide either --project or --client." };
   }
-  if (project) return { ok: true, mode: "project", value: project };
-  return { ok: true, mode: "client", value: client! };
+  if (project) return { ok: true, mode: "project", value: project, theme };
+  return { ok: true, mode: "client", value: client!, theme };
 }
 
 // ── Pipeline ──────────────────────────────────────────────
@@ -136,6 +164,7 @@ async function renderSubject(
   client: ClientRow,
   today: Date,
   generatedAt: string,
+  theme: "light-internal" | "light-branded" = "light-internal",
 ): Promise<{ outputPath: string; consoleMirror: string }> {
   const data = await extractData(db, subject, client);
   const rows = transformRows(data);
@@ -156,8 +185,8 @@ async function renderSubject(
     generatedAt,
     summary,
   };
-  const html = renderGantt(ganttData);
-  const outputPath = buildOutputPath(client.name, data.entity.name, generatedAt);
+  const html = renderGantt(ganttData, theme);
+  const outputPath = buildOutputPath(client.name, data.entity.name, generatedAt, theme);
   mkdirSync(join(homedir(), "runway-gantts"), { recursive: true });
   writeFileSync(outputPath, html, "utf-8");
   return { outputPath, consoleMirror: formatCounterConsole(summary, outputPath) };
@@ -168,6 +197,7 @@ async function runProjectFlow(
   input: string,
   today: Date,
   generatedAt: string,
+  theme: "light-internal" | "light-branded" = "light-internal",
 ): Promise<void> {
   const result = await resolveProject(db, input);
   if (!result.ok) {
@@ -200,6 +230,7 @@ async function runProjectFlow(
     client,
     today,
     generatedAt,
+    theme,
   );
   console.log(consoleMirror);
 }
@@ -209,6 +240,7 @@ async function runClientFlow(
   input: string,
   today: Date,
   generatedAt: string,
+  theme: "light-internal" | "light-branded" = "light-internal",
 ): Promise<void> {
   const result = await resolveClient(db, input);
   if (!result.ok) {
@@ -236,8 +268,8 @@ async function runClientFlow(
     todayISO,
   );
 
-  const html = renderClientRundown(rundown);
-  const outputPath = buildRundownOutputPath(result.client.name, generatedAt);
+  const html = renderClientRundown(rundown, theme);
+  const outputPath = buildRundownOutputPath(result.client.name, generatedAt, theme);
   mkdirSync(join(homedir(), "runway-gantts"), { recursive: true });
   writeFileSync(outputPath, html, "utf-8");
 
@@ -267,9 +299,9 @@ async function run(): Promise<void> {
 
   try {
     if (parsed.mode === "project") {
-      await runProjectFlow(db, parsed.value, today, generatedAt);
+      await runProjectFlow(db, parsed.value, today, generatedAt, parsed.theme);
     } else {
-      await runClientFlow(db, parsed.value, today, generatedAt);
+      await runClientFlow(db, parsed.value, today, generatedAt, parsed.theme);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
