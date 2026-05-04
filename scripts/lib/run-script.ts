@@ -24,12 +24,16 @@ export function createRunwayDb(): { db: DrizzleDb; url: string } {
 /**
  * Run an async function only when the script is executed directly
  * (not when imported by tests).
+ *
+ * Matches both .ts and .tsx so React-component CLIs (e.g. runway-gantt.tsx)
+ * pass the same direct-execution guard.
  */
 export function runIfDirect(scriptName: string, fn: () => Promise<void>): void {
   const isDirectExecution =
     typeof process !== "undefined" &&
     process.argv[1] &&
     (process.argv[1].endsWith(`${scriptName}.ts`) ||
+      process.argv[1].endsWith(`${scriptName}.tsx`) ||
       process.argv[1].endsWith(scriptName));
 
   if (isDirectExecution) {
