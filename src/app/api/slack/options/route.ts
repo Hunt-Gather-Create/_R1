@@ -260,6 +260,13 @@ export async function POST(request: NextRequest): Promise<Response> {
     return jsonResponse({ error: "Invalid JSON in payload" }, 400);
   }
 
+  // TEMP DIAGNOSTIC for Issue 1 (parent_project cascade) — REMOVE WITH FIX.
+  // Captures the full block_suggestion payload so we can diagnose whether
+  // Slack propagates input-block state.values into parent_project_select
+  // requests. Operator runs through ngrok, captures dev server log,
+  // pastes back; we diagnose; remove this log in the same commit as the fix.
+  console.log("[options-debug]", JSON.stringify(payload, null, 2));
+
   switch (payload.action_id) {
     case "client_select":
       return handleClientSelect(payload);
