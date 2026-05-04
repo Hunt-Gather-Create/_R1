@@ -583,6 +583,74 @@ describe("validateModalSubmission - date_type radio mode (Issue 3)", () => {
       expect(result.errors.date_block).toBeDefined();
     }
   });
+
+  // Slack quirk: after a date_type_radio toggle that rebuilt the view via
+  // views.update, state.values may NOT include selected_option for the
+  // radio if the user did not re-click it in the new rendering. The
+  // extractor infers dateType from which date fields are populated so a
+  // fully-filled range submission does not get falsely rejected with
+  // "date_block: Date is required". (Live-fire bug 2026-05-04.)
+  it("Range mode: infers dateType=range when state.values has no date_type_block (radio not re-clicked after rebuild)", async () => {
+    const proposal = makeProposal({ toolName: "create_week_item" });
+    const stateValues = taskState({
+      start_date_block: { start_date_picker: dateV("2026-05-04") },
+      end_date_block: { end_date_picker: dateV("2026-05-09") },
+    });
+    // Simulate the Slack quirk: the radio's selected_option is missing
+    // from state.values entirely.
+    delete stateValues.date_type_block;
+    delete stateValues.date_block;
+    const result = await validateModalSubmission({
+      proposal,
+      stateValues,
+      db,
+    } as unknown as ValidateModalSubmissionParams);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.normalized.startDate).toBe("2026-05-04");
+      expect(result.normalized.endDate).toBe("2026-05-09");
+    }
+  });
+
+  it("Range mode: missing date_type_block + missing endDate still reports end_date_block error (not date_block)", async () => {
+    const proposal = makeProposal({ toolName: "create_week_item" });
+    const stateValues = taskState({
+      start_date_block: { start_date_picker: dateV("2026-05-04") },
+      end_date_block: { end_date_picker: { type: "datepicker" } },
+    });
+    delete stateValues.date_type_block;
+    delete stateValues.date_block;
+    const result = await validateModalSubmission({
+      proposal,
+      stateValues,
+      db,
+    } as unknown as ValidateModalSubmissionParams);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.end_date_block).toBeDefined();
+      expect(result.errors.date_block).toBeUndefined();
+    }
+  });
+
+  it("Single mode: infers dateType=single when state.values has no date_type_block but date is populated", async () => {
+    const proposal = makeProposal({ toolName: "create_week_item" });
+    const stateValues = taskState({
+      date_block: { date_picker: dateV("2026-05-08") },
+    });
+    delete stateValues.date_type_block;
+    const result = await validateModalSubmission({
+      proposal,
+      stateValues,
+      db,
+    } as unknown as ValidateModalSubmissionParams);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Single mode mirrors date to both startDate and endDate
+      expect(result.normalized.date).toBe("2026-05-08");
+      expect(result.normalized.startDate).toBe("2026-05-08");
+      expect(result.normalized.endDate).toBe("2026-05-08");
+    }
+  });
 });
 
 describe("validateModalSubmission - Wave 0b validator integration", () => {

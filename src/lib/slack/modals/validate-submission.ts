@@ -269,7 +269,26 @@ interface ExtractedTaskFields {
 function extractTaskFields(
   values: Record<string, Record<string, unknown>>,
 ): ExtractedTaskFields {
-  const dateType = readSelect(values, "date_type_block", "date_type_radio");
+  const dateRaw = readSelect(values, "date_type_block", "date_type_radio");
+  const date = readDate(values, "date_block", "date_picker");
+  const startDate = readDate(values, "start_date_block", "start_date_picker");
+  const endDate = readDate(values, "end_date_block", "end_date_picker");
+
+  // Slack does not always include selected_option in view_submission's
+  // state.values for a radio_buttons element whose value came from
+  // initial_option and was not user-clicked in the current rendering.
+  // After a date_type_radio toggle (handled by views.update rebuild), the
+  // user may submit without re-clicking the radio - state.values then
+  // misses dateType, which falsely routes the validator to the single-day
+  // branch and rejects a fully-filled range submission with
+  // "date_block: Date is required". Infer dateType from which date fields
+  // are populated when the radio reads null.
+  let dateType: string | null = dateRaw;
+  if (!dateType) {
+    if (startDate || endDate) dateType = "range";
+    else if (date) dateType = "single";
+  }
+
   const resourceRows = collectResourceRows(values);
   return {
     clientId: readSelect(values, "client_block", "client_select"),
@@ -281,9 +300,9 @@ function extractTaskFields(
     title: readPlainText(values, "title_block", "title_input"),
     category: readSelect(values, "category_block", "category_select"),
     dateType,
-    date: readDate(values, "date_block", "date_picker"),
-    startDate: readDate(values, "start_date_block", "start_date_picker"),
-    endDate: readDate(values, "end_date_block", "end_date_picker"),
+    date,
+    startDate,
+    endDate,
     owner: readSelect(values, "owner_block", "owner_select"),
     resources: resourceRowsToString(resourceRows),
     resourceRows,
