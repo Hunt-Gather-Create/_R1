@@ -41,7 +41,8 @@ vi.mock("@/lib/runway/operations-utils", async () => {
 vi.mock("@/lib/runway/data-for-commands", () => ({
   getProjectsForFuzzy: (clientId?: string, opts?: { engagementType?: string }) =>
     mockGetProjectsForFuzzy(clientId, opts),
-  getTeamMembersForFuzzy: () => mockGetTeamMembersForFuzzy(),
+  getTeamMembersForFuzzy: (opts?: { excludeRoleCategory?: string }) =>
+    mockGetTeamMembersForFuzzy(opts),
   getWeekItemsForFuzzy: (clientId?: string) => mockGetWeekItemsForFuzzy(clientId),
 }));
 
@@ -333,11 +334,20 @@ describe("POST /api/slack/options — parent_retainer_picker cascade", () => {
 
 describe("POST /api/slack/options — owner_select", () => {
   it("returns active team members with fullName preferred over name", async () => {
-    mockGetTeamMembersForFuzzy.mockResolvedValue([
-      { id: "t1", name: "Lane", fullName: "Lane Carter", roleCategory: "creative", isActive: 1 },
-      { id: "t2", name: "Sami", fullName: null, roleCategory: "pm", isActive: 1 },
-      { id: "t3", name: "Jordan", fullName: "Jordan Reed", roleCategory: "dev", isActive: 0 },
-    ]);
+    // Mock filters by roleCategory before returning — handler passes
+    // {excludeRoleCategory: "contractor"} so contractors never reach this list.
+    mockGetTeamMembersForFuzzy.mockImplementation((opts?: { excludeRoleCategory?: string }) => {
+      const all = [
+        { id: "t1", name: "Lane", fullName: "Lane Carter", roleCategory: "creative", isActive: 1 },
+        { id: "t2", name: "Sami", fullName: null, roleCategory: "pm", isActive: 1 },
+        { id: "t3", name: "Jordan", fullName: "Jordan Reed", roleCategory: "dev", isActive: 0 },
+      ];
+      return Promise.resolve(
+        opts?.excludeRoleCategory
+          ? all.filter((m) => m.roleCategory !== opts.excludeRoleCategory)
+          : all,
+      );
+    });
     const body = buildSuggestionPayload({ action_id: "owner_select" });
     const res = await callRoute(buildRequest(body));
     const json = (await res.json()) as {
@@ -364,6 +374,32 @@ describe("POST /api/slack/options — owner_select", () => {
     const json = (await res.json()) as { options: Array<{ value: string }> };
     expect(json.options.map((o) => o.value)).toContain("t1");
     expect(json.options.map((o) => o.value)).not.toContain("t2");
+  });
+
+  it("excludes contractors from the staff-only owner picker", async () => {
+    mockGetTeamMembersForFuzzy.mockImplementation((opts?: { excludeRoleCategory?: string }) => {
+      // Real getTeamMembersForFuzzy filters by excludeRoleCategory before
+      // returning. Mirror that here so the test exercises both layers.
+      const all = [
+        { id: "t1", name: "Lane", fullName: "Lane Carter", roleCategory: "creative", isActive: 1 },
+        { id: "t9", name: "Riley", fullName: "Riley Vendor", roleCategory: "contractor", isActive: 1 },
+      ];
+      return Promise.resolve(
+        opts?.excludeRoleCategory
+          ? all.filter((m) => m.roleCategory !== opts.excludeRoleCategory)
+          : all,
+      );
+    });
+    const body = buildSuggestionPayload({ action_id: "owner_select" });
+    const res = await callRoute(buildRequest(body));
+    const json = (await res.json()) as { options: Array<{ value: string }> };
+    const values = json.options.map((o) => o.value);
+    expect(values).toContain("t1");
+    expect(values).not.toContain("t9");
+    // Verify the handler passed the right exclusion option through.
+    expect(mockGetTeamMembersForFuzzy).toHaveBeenCalledWith({
+      excludeRoleCategory: "contractor",
+    });
   });
 });
 
@@ -455,6 +491,32 @@ describe("POST /api/slack/options — resources_name_N cascade", () => {
     const res = await callRoute(buildRequest(body));
     const json = (await res.json()) as { options: Array<{ value: string }> };
     expect(json.options.map((o) => o.value)).toEqual(["t1"]);
+  });
+
+  it("includes contractors (Resources picker is freelance-friendly, unlike Owner)", async () => {
+    mockGetTeamMembersForFuzzy.mockResolvedValue([
+      { id: "t1", name: "Lane", fullName: "Lane Carter", roleCategory: "contractor", isActive: 1 },
+    ]);
+    const body = buildSuggestionPayload({
+      action_id: "resources_name_0",
+      block_id: "resources_name_block_0",
+      view: {
+        state: {
+          values: {
+            resources_block_0: {
+              resources_role_0: { selected_option: { value: "Vendor" } },
+            },
+          },
+        },
+      },
+    });
+    const res = await callRoute(buildRequest(body));
+    const json = (await res.json()) as { options: Array<{ value: string }> };
+    expect(json.options.map((o) => o.value)).toEqual(["t1"]);
+    // Resources handler must NOT pass excludeRoleCategory.
+    expect(mockGetTeamMembersForFuzzy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ excludeRoleCategory: expect.anything() }),
+    );
   });
 });
 

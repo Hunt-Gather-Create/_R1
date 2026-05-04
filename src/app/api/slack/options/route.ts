@@ -169,7 +169,9 @@ async function handleParentProjectPicker(
 }
 
 async function handleOwnerSelect(payload: BlockSuggestionPayload): Promise<Response> {
-  const members = await getActiveTeamMembers();
+  // Owners are staff only — exclude the contractor bucket (freelancers/Vendors).
+  // Resources Name picker keeps contractors (handled below).
+  const members = await getActiveTeamMembers({ excludeRoleCategory: "contractor" });
   const query = (payload.value ?? "").trim();
   const matches = filterByQuery(query, members, getMemberLabel);
   return optionsResponse(matches.map((m) => toOption(m.id, getMemberLabel(m))));
@@ -215,8 +217,10 @@ interface ActiveMemberRow extends TeamMemberForFuzzy {
   isActive?: number;
 }
 
-async function getActiveTeamMembers(): Promise<TeamMemberForFuzzy[]> {
-  const rows = (await getTeamMembersForFuzzy()) as ActiveMemberRow[];
+async function getActiveTeamMembers(
+  opts?: { excludeRoleCategory?: string },
+): Promise<TeamMemberForFuzzy[]> {
+  const rows = (await getTeamMembersForFuzzy(opts)) as ActiveMemberRow[];
   return rows.filter((m) => m.isActive !== 0);
 }
 

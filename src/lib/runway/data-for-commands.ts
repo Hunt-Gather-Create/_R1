@@ -74,10 +74,15 @@ export async function getWeekItemsForFuzzy(
   }));
 }
 
-export async function getTeamMembersForFuzzy(): Promise<TeamMemberForFuzzy[]> {
+export async function getTeamMembersForFuzzy(
+  opts?: { excludeRoleCategory?: string },
+): Promise<TeamMemberForFuzzy[]> {
   const db = getRunwayDb();
   const rows = await db.select().from(teamMembers);
-  return rows.map((t) => ({
+  const filtered = opts?.excludeRoleCategory
+    ? rows.filter((t) => t.roleCategory !== opts.excludeRoleCategory)
+    : rows;
+  return filtered.map((t) => ({
     id: t.id,
     name: t.name,
     fullName: t.fullName,
