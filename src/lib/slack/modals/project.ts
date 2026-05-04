@@ -231,6 +231,12 @@ function buildClientBlock(currentValues?: Record<string, unknown>) {
     type: "input",
     block_id: "client_block",
     label: plainText("Client"),
+    // dispatch_action fires block_actions on Client pick. The handler writes
+    // the chosen clientId into private_metadata so the cascading Parent
+    // retainer picker's options-provider can read it. Input-block
+    // external_select state.values does NOT propagate into block_suggestion
+    // payloads, so private_metadata is the only reliable carrier.
+    dispatch_action: true,
     element,
   };
 }
@@ -641,10 +647,19 @@ export function buildProjectModal(params: BuildProjectModalParams): SlackView {
   // 15. Notes
   blocks.push(buildNotesBlock(currentValues) as SlackView["blocks"][number]);
 
+  // private_metadata carries proposalId, retainerMode, and clientId across
+  // renders. clientId is encoded so the Parent retainer picker (non-retainer
+  // mode) can cascade off it via the options-provider. Edit-mode opens with
+  // a prefilled clientId; create-mode opens without and gains it after the
+  // client_select cascade fires.
+  const meta: Record<string, unknown> = { proposalId, retainerMode };
+  const clientIdForMeta = asString(currentValues?.clientId);
+  if (clientIdForMeta) meta.clientId = clientIdForMeta;
+
   return {
     type: "modal",
     callback_id: mode === "create" ? "runway_new_project" : "runway_edit_project",
-    private_metadata: JSON.stringify({ proposalId, retainerMode }),
+    private_metadata: JSON.stringify(meta),
     title: plainText(header(mode, retainerMode, currentValues)),
     submit: plainText(truncate("Save", SLACK_TITLE_MAX)),
     close: plainText(truncate("Cancel", SLACK_TITLE_MAX)),

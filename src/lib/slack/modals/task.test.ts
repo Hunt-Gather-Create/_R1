@@ -71,6 +71,31 @@ describe("buildTaskModal — shell (create mode)", () => {
     expect(meta.proposalId).toBe("prop_abc_123");
   });
 
+  it("omits clientId from private_metadata when currentValues.clientId is unset (create mode)", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_no_client_001",
+      mode: "create",
+    });
+    const meta = JSON.parse(view.private_metadata);
+    expect(meta.clientId).toBeUndefined();
+  });
+
+  it("serializes clientId into private_metadata when currentValues.clientId is set", () => {
+    // Cascade case: client_select handler rebuilds the view with new clientId
+    // in currentValues. The view builder threads it into private_metadata so
+    // the Parent picker's options-provider can read it.
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_with_client_001",
+      mode: "create",
+      currentValues: { clientId: "client_42" },
+    });
+    const meta = JSON.parse(view.private_metadata);
+    expect(meta.proposalId).toBe("prop_with_client_001");
+    expect(meta.clientId).toBe("client_42");
+  });
+
   it("emits 'Save' submit and 'Cancel' close labels", () => {
     const view = buildTaskModal({
       args: {},
@@ -497,6 +522,26 @@ describe("buildTaskModal — Range/Single-day toggle", () => {
     expect(radioBlock.dispatch_action).toBe(true);
     expect((radioBlock.element as { action_id: string }).action_id).toBe(
       "date_type_radio",
+    );
+  });
+
+  it("client_select fires dispatch_action so cascade handler can rewrite private_metadata", () => {
+    // Issue 1: input-block external_select state.values does NOT propagate
+    // into block_suggestion payloads, so the Parent picker's options-provider
+    // cannot read clientId from state.values. dispatch_action fires
+    // block_actions on Client pick; the handler rebuilds the modal with
+    // clientId in private_metadata.
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_client_cascade_001",
+      mode: "create",
+    });
+    const clientBlock = findBlock(view, "client_block") as Block & {
+      dispatch_action?: boolean;
+    };
+    expect(clientBlock.dispatch_action).toBe(true);
+    expect((clientBlock.element as { action_id: string }).action_id).toBe(
+      "client_select",
     );
   });
 });

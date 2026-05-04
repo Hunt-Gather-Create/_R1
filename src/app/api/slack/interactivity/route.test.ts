@@ -1328,6 +1328,405 @@ describe("POST /api/slack/interactivity — date_type_radio (Issue 3)", () => {
   });
 });
 
+// ----------------------------------------------------------------------------
+// Issue 1: client_select cascade. Slack input-block external_select state.values
+// does NOT propagate into block_suggestion payloads, so the Parent picker's
+// options-provider cannot read clientId from state.values. The Client picker
+// fires block_actions on every pick (dispatch_action: true); the handler
+// rebuilds the modal via views.update with clientId in private_metadata.
+// ----------------------------------------------------------------------------
+
+describe("POST /api/slack/interactivity — client_select cascade (Issue 1)", () => {
+  beforeEach(() => {
+    process.env.SLACK_SIGNING_SECRET = SIGNING_SECRET;
+  });
+
+  function buildClientSelectPayload(opts: {
+    newClientId: string;
+    callbackId?: string;
+    proposalId?: string;
+    privateMetadata?: string;
+    stateValues?: Record<string, Record<string, unknown>>;
+  }) {
+    const proposalId = opts.proposalId ?? "prop_cs_001";
+    const meta =
+      opts.privateMetadata ?? JSON.stringify({ proposalId });
+    return {
+      type: "block_actions",
+      team: { id: "T_TEST_TEAM" },
+      user: { id: "U_TEST_USER", team_id: "T_TEST_TEAM" },
+      trigger_id: "trigger_cs",
+      response_url: null,
+      channel: { id: "C_TEST_001" },
+      view: {
+        id: "V_TEST_CS_001",
+        hash: "hash_cs_v1",
+        callback_id: opts.callbackId ?? "runway_new_task",
+        private_metadata: meta,
+        state: { values: opts.stateValues ?? {} },
+      },
+      actions: [
+        {
+          action_id: "client_select",
+          block_id: "client_block",
+          type: "external_select",
+          selected_option: { value: opts.newClientId },
+        },
+      ],
+    };
+  }
+
+  it("ignores client_select on Team Member callback (no parent cascade)", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_cs_001",
+          toolName: "create_team_member",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildClientSelectPayload({
+      newClientId: "client_zzz",
+      callbackId: "runway_new_team_member",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.viewsUpdate).not.toHaveBeenCalled();
+  });
+
+  it("returns 200 without rebuild when proposal cannot be loaded", async () => {
+    const handles = setupRouteMocks({ proposals: [] });
+    const { POST } = await import("./route");
+
+    const payload = buildClientSelectPayload({ newClientId: "client_zzz" });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.viewsUpdate).not.toHaveBeenCalled();
+  });
+
+  it("Task create: rebuilds via views.update with clientId in currentValues and projectId cleared", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_cs_task_create",
+          toolName: "create_week_item",
+          kind: "create",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildClientSelectPayload({
+      newClientId: "client_new_42",
+      callbackId: "runway_new_task",
+      proposalId: "prop_cs_task_create",
+      stateValues: {
+        // User has previously picked a stale parent that is no longer valid
+        // for the new client.
+        parent_project_block: {
+          parent_project_select: { selected_option: { value: "proj_stale" } },
+        },
+      },
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.viewsUpdate).toHaveBeenCalledTimes(1);
+    const call = handles.viewsUpdate.mock.calls[0][0] as {
+      view_id: string;
+      hash?: string;
+    };
+    expect(call.view_id).toBe("V_TEST_CS_001");
+    expect(call.hash).toBe("hash_cs_v1");
+
+    expect(handles.buildTaskModal).toHaveBeenCalledTimes(1);
+    const params = handles.buildTaskModal.mock.calls[0][0] as {
+      mode?: string;
+      currentValues?: Record<string, unknown>;
+    };
+    expect(params.mode).toBe("create");
+    expect(params.currentValues?.clientId).toBe("client_new_42");
+    expect(params.currentValues?.projectId).toBeUndefined();
+  });
+
+  it("Task edit: cascade fires on runway_edit_task and clears stale parent", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_cs_task_edit",
+          toolName: "create_week_item",
+          kind: "edit",
+          targetEntityType: "week_item",
+          targetEntityId: "wi_existing",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildClientSelectPayload({
+      newClientId: "client_edit_43",
+      callbackId: "runway_edit_task",
+      proposalId: "prop_cs_task_edit",
+      privateMetadata: JSON.stringify({
+        proposalId: "prop_cs_task_edit",
+        clientId: "client_old_99",
+      }),
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.buildTaskModal).toHaveBeenCalledTimes(1);
+    const params = handles.buildTaskModal.mock.calls[0][0] as {
+      mode?: string;
+      currentValues?: Record<string, unknown>;
+    };
+    expect(params.mode).toBe("edit");
+    expect(params.currentValues?.clientId).toBe("client_edit_43");
+    expect(params.currentValues?.projectId).toBeUndefined();
+  });
+
+  it("Project create non-retainer: rebuilds with retainerMode=false and parentProjectId cleared", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_cs_proj_create",
+          toolName: "create_project",
+          kind: "create",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildClientSelectPayload({
+      newClientId: "client_new_44",
+      callbackId: "runway_new_project",
+      proposalId: "prop_cs_proj_create",
+      privateMetadata: JSON.stringify({
+        proposalId: "prop_cs_proj_create",
+        retainerMode: false,
+      }),
+      stateValues: {
+        parent_retainer_block: {
+          parent_retainer_picker: { selected_option: { value: "retainer_stale" } },
+        },
+      },
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.buildProjectModal).toHaveBeenCalledTimes(1);
+    const params = handles.buildProjectModal.mock.calls[0][0] as {
+      mode?: string;
+      retainerMode?: boolean;
+      currentValues?: Record<string, unknown>;
+    };
+    expect(params.mode).toBe("create");
+    expect(params.retainerMode).toBe(false);
+    expect(params.currentValues?.clientId).toBe("client_new_44");
+    expect(params.currentValues?.parentProjectId).toBeUndefined();
+  });
+
+  it("Project edit non-retainer: cascade fires on runway_edit_project", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_cs_proj_edit",
+          toolName: "create_project",
+          kind: "edit",
+          targetEntityType: "project",
+          targetEntityId: "proj_existing",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildClientSelectPayload({
+      newClientId: "client_edit_45",
+      callbackId: "runway_edit_project",
+      proposalId: "prop_cs_proj_edit",
+      privateMetadata: JSON.stringify({
+        proposalId: "prop_cs_proj_edit",
+        retainerMode: false,
+        clientId: "client_old_88",
+      }),
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.buildProjectModal).toHaveBeenCalledTimes(1);
+    const params = handles.buildProjectModal.mock.calls[0][0] as {
+      mode?: string;
+      retainerMode?: boolean;
+      currentValues?: Record<string, unknown>;
+    };
+    expect(params.mode).toBe("edit");
+    expect(params.retainerMode).toBe(false);
+    expect(params.currentValues?.clientId).toBe("client_edit_45");
+    expect(params.currentValues?.parentProjectId).toBeUndefined();
+  });
+
+  it("Project create retainer: cascade preserves retainerMode=true and does not touch parentProjectId", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_cs_ret_create",
+          toolName: "create_project",
+          kind: "create",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildClientSelectPayload({
+      newClientId: "client_ret_46",
+      callbackId: "runway_new_project",
+      proposalId: "prop_cs_ret_create",
+      privateMetadata: JSON.stringify({
+        proposalId: "prop_cs_ret_create",
+        retainerMode: true,
+      }),
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.buildProjectModal).toHaveBeenCalledTimes(1);
+    const params = handles.buildProjectModal.mock.calls[0][0] as {
+      mode?: string;
+      retainerMode?: boolean;
+      currentValues?: Record<string, unknown>;
+    };
+    expect(params.mode).toBe("create");
+    expect(params.retainerMode).toBe(true);
+    expect(params.currentValues?.clientId).toBe("client_ret_46");
+    // Retainer mode renders no parent picker, so the handler does not touch
+    // parentProjectId. Whatever the extractor pulled from state stays.
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        params.currentValues ?? {},
+        "parentProjectId",
+      ) && params.currentValues?.parentProjectId === undefined,
+    ).toBe(false);
+  });
+
+  it("Project edit retainer: cascade preserves retainerMode=true on runway_edit_project", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_cs_ret_edit",
+          toolName: "create_project",
+          kind: "edit",
+          targetEntityType: "project",
+          targetEntityId: "proj_existing_retainer",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildClientSelectPayload({
+      newClientId: "client_ret_47",
+      callbackId: "runway_edit_project",
+      proposalId: "prop_cs_ret_edit",
+      privateMetadata: JSON.stringify({
+        proposalId: "prop_cs_ret_edit",
+        retainerMode: true,
+        clientId: "client_old_77",
+      }),
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.buildProjectModal).toHaveBeenCalledTimes(1);
+    const params = handles.buildProjectModal.mock.calls[0][0] as {
+      mode?: string;
+      retainerMode?: boolean;
+      currentValues?: Record<string, unknown>;
+    };
+    expect(params.mode).toBe("edit");
+    expect(params.retainerMode).toBe(true);
+    expect(params.currentValues?.clientId).toBe("client_ret_47");
+  });
+
+  it("preserves Title, Category, Owner, Resources, Notes, dateType, and dates across the rebuild", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_cs_preserve",
+          toolName: "create_week_item",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const stateValues = {
+      title_block: { title_input: { value: "Concept Writeup" } },
+      category_block: {
+        category_select: { selected_option: { value: "delivery" } },
+      },
+      date_type_block: {
+        date_type_radio: { selected_option: { value: "single" } },
+      },
+      date_block: { date_picker: { selected_date: "2026-05-08" } },
+      owner_block: {
+        owner_select: { selected_option: { value: "tm_lane_id" } },
+      },
+      resources_block_0: {
+        resources_role_0: { selected_option: { value: "CD" } },
+      },
+      resources_name_block_0: {
+        resources_name_0: {
+          selected_option: { text: { text: "Lane Carter" }, value: "tm_lane_id" },
+        },
+      },
+      notes_block: { notes_input: { value: "Draft v1" } },
+    };
+
+    const payload = buildClientSelectPayload({
+      newClientId: "client_new_99",
+      proposalId: "prop_cs_preserve",
+      stateValues,
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.buildTaskModal).toHaveBeenCalledTimes(1);
+    const cv = handles.buildTaskModal.mock.calls[0][0] as {
+      currentValues?: Record<string, unknown>;
+    };
+    expect(cv.currentValues?.title).toBe("Concept Writeup");
+    expect(cv.currentValues?.notes).toBe("Draft v1");
+    expect(cv.currentValues?.category).toBe("delivery");
+    expect(cv.currentValues?.owner).toBe("tm_lane_id");
+    expect(cv.currentValues?.dateType).toBe("single");
+    expect(cv.currentValues?.date).toBe("2026-05-08");
+    expect(cv.currentValues?.resources).toEqual(["CD: Lane Carter"]);
+    // New client overrides the old; old parent cleared.
+    expect(cv.currentValues?.clientId).toBe("client_new_99");
+    expect(cv.currentValues?.projectId).toBeUndefined();
+  });
+
+  it("swallows views.update hash_conflict errors gracefully", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_cs_hash",
+          toolName: "create_week_item",
+        }),
+      ],
+    });
+    handles.viewsUpdate.mockRejectedValueOnce(new Error("hash_conflict"));
+    const { POST } = await import("./route");
+
+    const payload = buildClientSelectPayload({
+      newClientId: "client_zz",
+      proposalId: "prop_cs_hash",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+  });
+});
+
 describe("POST /api/slack/interactivity — view_submission dispatch (Builder 8)", () => {
   beforeEach(() => {
     process.env.SLACK_SIGNING_SECRET = SIGNING_SECRET;

@@ -138,6 +138,27 @@ function readSelectedValue(
   return action?.selected_option?.value;
 }
 
+// Slack input-block external_select state.values does NOT propagate into
+// block_suggestion payloads, so cascading pickers (Parent project, Parent
+// retainer) cannot read clientId from state.values. The Client picker fires
+// a block_actions event (handled in interactivity/route.ts) that rebuilds
+// the modal with clientId encoded in private_metadata. Read it here.
+function parsePrivateMetadata(raw: string | undefined): { clientId?: string } {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    const obj = parsed as Record<string, unknown>;
+    return {
+      clientId: typeof obj.clientId === "string" ? obj.clientId : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Picker handlers
 // ---------------------------------------------------------------------------
@@ -153,7 +174,7 @@ async function handleParentProjectPicker(
   payload: BlockSuggestionPayload,
   opts: { engagementType?: "retainer" } = {},
 ): Promise<Response> {
-  const clientId = readSelectedValue(payload, "client_block", "client_select");
+  const clientId = parsePrivateMetadata(payload.view?.private_metadata).clientId;
   if (!clientId) {
     return optionsResponse([placeholder("Select a client first", "_no_client")]);
   }
@@ -259,13 +280,6 @@ export async function POST(request: NextRequest): Promise<Response> {
   } catch {
     return jsonResponse({ error: "Invalid JSON in payload" }, 400);
   }
-
-  // TEMP DIAGNOSTIC for Issue 1 (parent_project cascade) — REMOVE WITH FIX.
-  // Captures the full block_suggestion payload so we can diagnose whether
-  // Slack propagates input-block state.values into parent_project_select
-  // requests. Operator runs through ngrok, captures dev server log,
-  // pastes back; we diagnose; remove this log in the same commit as the fix.
-  console.log("[options-debug]", JSON.stringify(payload, null, 2));
 
   switch (payload.action_id) {
     case "client_select":

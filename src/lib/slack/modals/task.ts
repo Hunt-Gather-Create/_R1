@@ -195,6 +195,11 @@ function buildClientBlock(currentValues?: Record<string, unknown>) {
     type: "input",
     block_id: "client_block",
     label: plainText("Client"),
+    // dispatch_action fires block_actions on Client pick. The handler writes
+    // the chosen clientId into private_metadata so the cascading Parent
+    // picker's options-provider can read it (input-block external_select
+    // state.values does NOT propagate into block_suggestion payloads).
+    dispatch_action: true,
     element,
   };
 }
@@ -544,10 +549,19 @@ export function buildTaskModal(params: BuildTaskModalParams): SlackView {
     blocks.push(buildCascadeDeadlineBlock() as SlackView["blocks"][number]);
   }
 
+  // private_metadata carries clientId across renders so the Parent picker's
+  // options-provider can cascade off it without relying on state.values.
+  // Edit-mode flows prefill currentValues.clientId so the cascade works on
+  // first interaction; create-mode opens with no clientId and gains it after
+  // the client_select cascade fires.
+  const meta: Record<string, unknown> = { proposalId };
+  const clientIdForMeta = asString(currentValues?.clientId);
+  if (clientIdForMeta) meta.clientId = clientIdForMeta;
+
   return {
     type: "modal",
     callback_id: mode === "create" ? "runway_new_task" : "runway_edit_task",
-    private_metadata: JSON.stringify({ proposalId }),
+    private_metadata: JSON.stringify(meta),
     title: plainText(header(mode, currentValues)),
     submit: plainText(truncate("Save", SLACK_TITLE_MAX)),
     close: plainText(truncate("Cancel", SLACK_TITLE_MAX)),

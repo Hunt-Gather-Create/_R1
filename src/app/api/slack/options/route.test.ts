@@ -228,7 +228,12 @@ describe("POST /api/slack/options — client_select", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/slack/options — parent_project_select cascade", () => {
-  it("returns no-matches placeholder when client is not yet selected", async () => {
+  // Issue 1: clientId travels in private_metadata, NOT view.state.values.
+  // Slack input-block external_select state.values does NOT propagate into
+  // block_suggestion payloads, so the Client picker fires block_actions
+  // (dispatch_action: true) and the interactivity handler rebuilds the modal
+  // with clientId encoded into private_metadata. Read it here.
+  it("returns no-matches placeholder when private_metadata is missing", async () => {
     const body = buildSuggestionPayload({
       action_id: "parent_project_select",
       view: { state: { values: {} } },
@@ -240,7 +245,59 @@ describe("POST /api/slack/options — parent_project_select cascade", () => {
     expect(json.options[0].text.text.toLowerCase()).toContain("client");
   });
 
-  it("returns projects for the selected client only", async () => {
+  it("returns no-matches placeholder when private_metadata has no clientId", async () => {
+    const body = buildSuggestionPayload({
+      action_id: "parent_project_select",
+      view: {
+        private_metadata: JSON.stringify({ proposalId: "prop_1" }),
+        state: { values: {} },
+      },
+    });
+    const res = await callRoute(buildRequest(body));
+    const json = (await res.json()) as { options: Array<{ value: string }> };
+    expect(json.options[0].value).toBe("_no_client");
+  });
+
+  it("returns no-matches placeholder when private_metadata is malformed JSON", async () => {
+    const body = buildSuggestionPayload({
+      action_id: "parent_project_select",
+      view: {
+        private_metadata: "{not valid json",
+        state: { values: {} },
+      },
+    });
+    const res = await callRoute(buildRequest(body));
+    const json = (await res.json()) as { options: Array<{ value: string }> };
+    expect(json.options[0].value).toBe("_no_client");
+  });
+
+  it("returns no-matches placeholder when private_metadata parses to a non-object (array)", async () => {
+    const body = buildSuggestionPayload({
+      action_id: "parent_project_select",
+      view: {
+        private_metadata: JSON.stringify(["c1", "c2"]),
+        state: { values: {} },
+      },
+    });
+    const res = await callRoute(buildRequest(body));
+    const json = (await res.json()) as { options: Array<{ value: string }> };
+    expect(json.options[0].value).toBe("_no_client");
+  });
+
+  it("returns no-matches placeholder when private_metadata parses to null", async () => {
+    const body = buildSuggestionPayload({
+      action_id: "parent_project_select",
+      view: {
+        private_metadata: "null",
+        state: { values: {} },
+      },
+    });
+    const res = await callRoute(buildRequest(body));
+    const json = (await res.json()) as { options: Array<{ value: string }> };
+    expect(json.options[0].value).toBe("_no_client");
+  });
+
+  it("returns projects for the clientId from private_metadata", async () => {
     mockGetProjectsForFuzzy.mockResolvedValue([
       { id: "p1", name: "Q3 Redesign", clientId: "c1" },
       { id: "p2", name: "Brand Refresh", clientId: "c1" },
@@ -248,13 +305,8 @@ describe("POST /api/slack/options — parent_project_select cascade", () => {
     const body = buildSuggestionPayload({
       action_id: "parent_project_select",
       view: {
-        state: {
-          values: {
-            client_block: {
-              client_select: { selected_option: { value: "c1" } },
-            },
-          },
-        },
+        private_metadata: JSON.stringify({ proposalId: "prop_1", clientId: "c1" }),
+        state: { values: {} },
       },
     });
     const res = await callRoute(buildRequest(body));
@@ -273,13 +325,8 @@ describe("POST /api/slack/options — parent_project_select cascade", () => {
       action_id: "parent_project_select",
       value: "redesign",
       view: {
-        state: {
-          values: {
-            client_block: {
-              client_select: { selected_option: { value: "c1" } },
-            },
-          },
-        },
+        private_metadata: JSON.stringify({ proposalId: "prop_1", clientId: "c1" }),
+        state: { values: {} },
       },
     });
     const res = await callRoute(buildRequest(body));
@@ -294,20 +341,19 @@ describe("POST /api/slack/options — parent_project_select cascade", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/slack/options — parent_retainer_picker cascade", () => {
-  it("filters to retainer-mode projects only", async () => {
+  it("filters to retainer-mode projects using clientId from private_metadata", async () => {
     mockGetProjectsForFuzzy.mockResolvedValue([
       { id: "p1", name: "AG1 Pro 2026", clientId: "c1" },
     ]);
     const body = buildSuggestionPayload({
       action_id: "parent_retainer_picker",
       view: {
-        state: {
-          values: {
-            client_block: {
-              client_select: { selected_option: { value: "c1" } },
-            },
-          },
-        },
+        private_metadata: JSON.stringify({
+          proposalId: "prop_1",
+          retainerMode: false,
+          clientId: "c1",
+        }),
+        state: { values: {} },
       },
     });
     const res = await callRoute(buildRequest(body));
@@ -317,10 +363,23 @@ describe("POST /api/slack/options — parent_retainer_picker cascade", () => {
     expect(json.options.map((o) => o.value)).toEqual(["p1"]);
   });
 
-  it("returns no-client placeholder when client unset", async () => {
+  it("returns no-client placeholder when private_metadata is missing", async () => {
     const body = buildSuggestionPayload({
       action_id: "parent_retainer_picker",
       view: { state: { values: {} } },
+    });
+    const res = await callRoute(buildRequest(body));
+    const json = (await res.json()) as { options: Array<{ value: string }> };
+    expect(json.options[0].value).toBe("_no_client");
+  });
+
+  it("returns no-client placeholder when private_metadata has no clientId", async () => {
+    const body = buildSuggestionPayload({
+      action_id: "parent_retainer_picker",
+      view: {
+        private_metadata: JSON.stringify({ proposalId: "prop_1", retainerMode: false }),
+        state: { values: {} },
+      },
     });
     const res = await callRoute(buildRequest(body));
     const json = (await res.json()) as { options: Array<{ value: string }> };

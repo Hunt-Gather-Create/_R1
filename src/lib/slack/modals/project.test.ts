@@ -101,6 +101,59 @@ describe("buildProjectModal — shell (create, project mode)", () => {
     expect(meta.retainerMode).toBe(false);
   });
 
+  it("omits clientId from private_metadata when currentValues.clientId is unset (create)", () => {
+    const view = buildProjectModal({
+      args: {},
+      proposalId: "prop_no_client_001",
+      mode: "create",
+      retainerMode: false,
+    });
+    const meta = JSON.parse(view.private_metadata);
+    expect(meta.clientId).toBeUndefined();
+  });
+
+  it("serializes clientId into private_metadata when currentValues.clientId is set (create, non-retainer)", () => {
+    const view = buildProjectModal({
+      args: {},
+      proposalId: "prop_with_client_001",
+      mode: "create",
+      retainerMode: false,
+      currentValues: { clientId: "client_42" },
+    });
+    const meta = JSON.parse(view.private_metadata);
+    expect(meta.proposalId).toBe("prop_with_client_001");
+    expect(meta.retainerMode).toBe(false);
+    expect(meta.clientId).toBe("client_42");
+  });
+
+  it("serializes clientId into private_metadata in retainer mode too", () => {
+    const view = buildProjectModal({
+      args: {},
+      proposalId: "prop_with_client_002",
+      mode: "create",
+      retainerMode: true,
+      currentValues: { clientId: "client_43" },
+    });
+    const meta = JSON.parse(view.private_metadata);
+    expect(meta.retainerMode).toBe(true);
+    expect(meta.clientId).toBe("client_43");
+  });
+
+  it("serializes clientId into private_metadata in edit mode (prefilled flow)", () => {
+    // Edit-mode opens already know the clientId; serializing it on the
+    // initial render means the Parent picker works on first interaction
+    // without requiring the user to re-pick the client.
+    const view = buildProjectModal({
+      args: {},
+      proposalId: "prop_with_client_003",
+      mode: "edit",
+      retainerMode: false,
+      currentValues: { clientId: "client_44", name: "Existing project" },
+    });
+    const meta = JSON.parse(view.private_metadata);
+    expect(meta.clientId).toBe("client_44");
+  });
+
   it("emits 'Save' submit and 'Cancel' close labels", () => {
     const view = buildProjectModal(basicCreate(false));
     expect(view.submit?.text).toBe("Save");
@@ -266,6 +319,17 @@ describe("buildProjectModal — layout (retainerMode=false)", () => {
     const view = buildProjectModal(basicCreate(false));
     const cb = findBlock(view, "is_retainer_block") as Block;
     expect(cb.dispatch_action).toBe(true);
+  });
+
+  it("renders the client_block with dispatch_action so client_select fires the cascade handler", () => {
+    // Issue 1: input-block external_select state.values does NOT propagate
+    // into block_suggestion payloads, so the Parent retainer picker's
+    // options-provider cannot read clientId from state.values.
+    const view = buildProjectModal(basicCreate(false));
+    const cb = findBlock(view, "client_block") as Block;
+    expect(cb.dispatch_action).toBe(true);
+    const element = cb.element as { action_id: string };
+    expect(element.action_id).toBe("client_select");
   });
 
   it("renders the engagementType radio (Project / Break-fix), NOT a context block", () => {
