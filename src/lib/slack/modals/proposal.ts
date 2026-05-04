@@ -56,10 +56,27 @@ export interface InsertProposalParams {
   pendingProjectName?: string;
   conversationRef?: string;
   ttlMinutes?: number;
+  /**
+   * Optional pre-generated id. Lets the slash-command path generate the id
+   * synchronously, build the modal view, and run views.open in parallel
+   * with the DB insert via Promise.all so trigger_id consumption is not
+   * gated on the Turso write latency.
+   */
+  id?: string;
 }
 
 const DEFAULT_TTL_MINUTES = 30;
 const PROPOSAL_ID_PREFIX = "prop_";
+
+/**
+ * Generate a fresh proposal id without touching the database. Use this when
+ * the caller needs the id before the DB write completes (e.g. to stuff into
+ * a modal view's private_metadata while running the insert in parallel with
+ * views.open).
+ */
+export function generateProposalId(): string {
+  return `${PROPOSAL_ID_PREFIX}${generateId()}`;
+}
 
 /**
  * Insert a fresh `pending` proposal row. Returns the generated id so the
@@ -70,7 +87,7 @@ export async function insertProposal(
   params: InsertProposalParams,
 ): Promise<{ proposalId: string }> {
   const db = getRunwayDb();
-  const id = `${PROPOSAL_ID_PREFIX}${generateId()}`;
+  const id = params.id ?? generateProposalId();
   const createdAt = new Date();
   const ttlMs =
     (params.ttlMinutes ?? DEFAULT_TTL_MINUTES) * 60 * 1000;

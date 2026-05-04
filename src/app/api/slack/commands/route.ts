@@ -43,6 +43,7 @@ import { NextRequest } from "next/server";
 import { verifySlackSignature } from "@/lib/slack/verify";
 import { getSlackClient } from "@/lib/slack/client";
 import {
+  generateProposalId,
   insertProposal,
   type ProposalTargetEntityType,
 } from "@/lib/slack/modals/proposal";
@@ -382,13 +383,11 @@ async function handleCreate(
     baselineHint = BASELINE_PARENT_PICKER_HINT;
   }
 
-  const { proposalId } = await insertProposal({
-    kind: "create",
-    toolName: spec.toolName,
-    args,
-    userSlackId: ctx.userSlackId,
-    channelId: ctx.channelId,
-  });
+  // Generate the proposal id locally so views.open and the DB insert can
+  // run in parallel. trigger_id is only valid for ~3 seconds; gating
+  // views.open behind the Turso write put us at the edge (2.9s on a cold
+  // connection => expired_trigger_id => Slack "operation_timeout").
+  const proposalId = generateProposalId();
 
   const view = buildModalView({
     kind: spec.kind,
@@ -399,7 +398,17 @@ async function handleCreate(
     multiMatchHint,
   });
 
-  await getSlackClient().views.open({ trigger_id: ctx.triggerId, view });
+  await Promise.all([
+    getSlackClient().views.open({ trigger_id: ctx.triggerId, view }),
+    insertProposal({
+      id: proposalId,
+      kind: "create",
+      toolName: spec.toolName,
+      args,
+      userSlackId: ctx.userSlackId,
+      channelId: ctx.channelId,
+    }),
+  ]);
   return jsonResponse({ ok: true }, 200);
 }
 
@@ -479,14 +488,7 @@ async function handleEdit(
     multiMatchQuery: query,
     candidates: matches.map((m) => ({ id: m.id, label: m.label })),
   };
-  const { proposalId } = await insertProposal({
-    kind: "edit",
-    toolName: spec.toolName,
-    args,
-    userSlackId: ctx.userSlackId,
-    channelId: ctx.channelId,
-  });
-
+  const proposalId = generateProposalId();
   const view = buildModalView({
     kind: spec.kind,
     mode: "edit",
@@ -495,7 +497,17 @@ async function handleEdit(
     multiMatchHint,
     multiMatchCandidates: matches.map((m) => ({ id: m.id, label: m.label })),
   });
-  await getSlackClient().views.open({ trigger_id: ctx.triggerId, view });
+  await Promise.all([
+    getSlackClient().views.open({ trigger_id: ctx.triggerId, view }),
+    insertProposal({
+      id: proposalId,
+      kind: "edit",
+      toolName: spec.toolName,
+      args,
+      userSlackId: ctx.userSlackId,
+      channelId: ctx.channelId,
+    }),
+  ]);
   return jsonResponse({ ok: true }, 200);
 }
 
@@ -505,16 +517,7 @@ async function openEditModalSingleMatch(
   entityId: string,
   row: Record<string, unknown>,
 ): Promise<Response> {
-  const { proposalId } = await insertProposal({
-    kind: "edit",
-    toolName: spec.toolName,
-    args: { ...row },
-    userSlackId: ctx.userSlackId,
-    channelId: ctx.channelId,
-    targetEntityId: entityId,
-    targetEntityType: targetEntityType(spec.kind),
-  });
-
+  const proposalId = generateProposalId();
   const view = buildModalView({
     kind: spec.kind,
     mode: "edit",
@@ -523,7 +526,19 @@ async function openEditModalSingleMatch(
     currentValues: { ...row },
     baselineHint: spec.hasParentPicker ? BASELINE_PARENT_PICKER_HINT : undefined,
   });
-  await getSlackClient().views.open({ trigger_id: ctx.triggerId, view });
+  await Promise.all([
+    getSlackClient().views.open({ trigger_id: ctx.triggerId, view }),
+    insertProposal({
+      id: proposalId,
+      kind: "edit",
+      toolName: spec.toolName,
+      args: { ...row },
+      userSlackId: ctx.userSlackId,
+      channelId: ctx.channelId,
+      targetEntityId: entityId,
+      targetEntityType: targetEntityType(spec.kind),
+    }),
+  ]);
   return jsonResponse({ ok: true }, 200);
 }
 
