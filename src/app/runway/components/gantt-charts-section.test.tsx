@@ -332,3 +332,166 @@ describe("RundownContentRSC ready-to-close chip (dark embed)", () => {
     expect(screen.queryByTestId("ready-to-close-chip")).not.toBeInTheDocument();
   });
 });
+
+// ── Track 4 Wave 4.4 — chevron-rotation polish on dark <details> ──
+//
+// Mirrors the Wave 4.1 CollapsibleSection pattern (which uses class
+// `account-tier-details` + `account-tier-chevron`). Here every <details>
+// emitted by RundownContentRSC gets `gantt-charts-details` + a custom
+// chevron <span> as the first child of <summary>. Default open stays
+// driven by the `open` attribute already wired to each element.
+describe("RundownContentRSC chevron-rotation polish (Wave 4.4)", () => {
+  const NOW = new Date("2026-05-04T00:00:00Z");
+
+  function makeClient(): ClientRow {
+    return {
+      id: "c1",
+      name: "Acme",
+      slug: "acme",
+      nicknames: null,
+      contractValue: null,
+      contractTerm: null,
+      contractStatus: null,
+      team: null,
+      clientContacts: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+  }
+
+  function makeProject(overrides: Partial<ProjectRow> = {}): ProjectRow {
+    return {
+      id: "p1",
+      clientId: "c1",
+      name: "P1",
+      status: null,
+      category: null,
+      owner: null,
+      resources: null,
+      waitingOn: null,
+      dueDate: null,
+      startDate: null,
+      endDate: null,
+      contractStart: null,
+      contractEnd: null,
+      engagementType: null,
+      parentProjectId: null,
+      notes: null,
+      staleDays: null,
+      sortOrder: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      ...overrides,
+    };
+  }
+
+  function makeData(l1: ProjectRow, weekItems: WeekItemRow[]): GanttData {
+    return {
+      raw: { kind: "l1", entity: l1, client: makeClient(), children: weekItems },
+      rows: [],
+      chartIssues: [],
+      axis: { kind: "no-axis", today: "2026-05-04" },
+      headerRange: "null – null",
+      generatedAt: "2026-05-04",
+      summary: {
+        rowsWithGaps: 0,
+        totalRows: 0,
+        chartIssueCount: 0,
+        byCode: {},
+        codeSeverity: {},
+        severity: { critical: 0, warn: 0, info: 0 },
+        chartIssues: [],
+      },
+    };
+  }
+
+  function makeStandaloneSection(l1: ProjectRow): RundownSection {
+    return {
+      anchor: `s-${l1.id}`,
+      kind: "standalone",
+      title: l1.name,
+      data: makeData(l1, []),
+    };
+  }
+
+  function makeWrapperChildSection(l1: ProjectRow, parentTitle = "Wrapper"): RundownSection {
+    return {
+      anchor: `wc-${l1.id}`,
+      kind: "wrapper-child",
+      title: l1.name,
+      parentTitle,
+      data: makeData(l1, []),
+    };
+  }
+
+  function makeWrapperSection(wrapperId: string, title = "Wrapper"): RundownSection {
+    const wrapper = makeProject({ id: wrapperId, name: title, engagementType: "retainer" });
+    return {
+      anchor: `w-${wrapperId}`,
+      kind: "wrapper",
+      title,
+      data: {
+        raw: {
+          kind: "wrapper",
+          entity: wrapper,
+          client: makeClient(),
+          children: [],
+          orphanWeekItems: [],
+        },
+        rows: [],
+        chartIssues: [],
+        axis: { kind: "no-axis", today: "2026-05-04" },
+        headerRange: "null – null",
+        generatedAt: "2026-05-04",
+        summary: {
+          rowsWithGaps: 0,
+          totalRows: 0,
+          chartIssueCount: 0,
+          byCode: {},
+          codeSeverity: {},
+          severity: { critical: 0, warn: 0, info: 0 },
+          chartIssues: [],
+        },
+      },
+    };
+  }
+
+  it("applies the gantt-charts-details class to every <details> element rendered by the RSC", () => {
+    // One wrapper + one child + one standalone — three separate
+    // <details> elements should all carry the chevron polish class.
+    const wrapper = makeWrapperSection("wrap1", "Wrapper Title");
+    const child = makeProject({ id: "child-1", name: "Child", parentProjectId: "wrap1" });
+    const standalone = makeProject({ id: "solo", name: "Solo Project" });
+    const { container } = render(
+      <RundownContentRSC
+        sections={[
+          wrapper,
+          makeWrapperChildSection(child, "Wrapper Title"),
+          makeStandaloneSection(standalone),
+        ]}
+      />
+    );
+    const allDetails = container.querySelectorAll("details");
+    expect(allDetails.length).toBe(3);
+    for (const d of allDetails) {
+      expect(d.classList.contains("gantt-charts-details")).toBe(true);
+      // Default-open stays wired so users see content on first paint.
+      expect(d.hasAttribute("open")).toBe(true);
+    }
+  });
+
+  it("renders a hidden chevron span as the first child of every <summary>", () => {
+    const standalone = makeProject({ id: "solo", name: "Solo Project" });
+    const { container } = render(
+      <RundownContentRSC sections={[makeStandaloneSection(standalone)]} />
+    );
+    const summary = container.querySelector("summary");
+    expect(summary).not.toBeNull();
+    const firstChild = summary!.firstElementChild;
+    expect(firstChild).not.toBeNull();
+    expect(firstChild!.tagName.toLowerCase()).toBe("span");
+    expect(firstChild!.classList.contains("gantt-charts-chevron")).toBe(true);
+    expect(firstChild!.getAttribute("aria-hidden")).toBe("true");
+    expect(firstChild!.textContent).toBe("▶");
+  });
+});
