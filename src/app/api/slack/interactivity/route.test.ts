@@ -2434,6 +2434,88 @@ describe("POST /api/slack/interactivity - multi_match_candidate_select (Wave 2)"
     // dateType reflects the toggle.
     expect(call.currentValues?.dateType).toBe("range");
   });
+
+  it("Single -> Range toggle drops stale date initials so new pickers render empty", async () => {
+    // Repro: Slack's datepicker reports `initial_date` as `selected_date` on
+    // view_submission even when the user never opened the picker. Carrying
+    // the prior Single mode's mirrored dates (date == startDate == endDate)
+    // forward into the new Range pickers caused the user's startDate change
+    // to combine with the carried-forward endDate (= prior date) and trip
+    // the start <= end write-time guard. The toggle handler must clear the
+    // date trio when dateType changes so the new mode's pickers render
+    // empty and the user must explicitly pick.
+    const enrichedArgs = {
+      title: "TEST Task Single A",
+      clientId: "client_abm",
+      projectId: "proj_retainer",
+      owner: "Jason Burks",
+      category: "delivery",
+      resources: ["AM: Lane Jordan"],
+      // Single-mode mirroring (the row enrichment shape).
+      date: "2026-05-12",
+      startDate: "2026-05-12",
+      endDate: "2026-05-12",
+    };
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_dt_drop_stale",
+          kind: "edit",
+          toolName: "update_week_item",
+          targetEntityId: "wi_test_single_a",
+          targetEntityType: "week_item",
+          args: JSON.stringify(enrichedArgs),
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = {
+      type: "block_actions",
+      team: { id: "T_TEST_TEAM" },
+      user: { id: "U_TEST_001", team_id: "T_TEST_TEAM" },
+      trigger_id: "trigger_dt_drop",
+      response_url: null,
+      channel: { id: "C_TEST_001" },
+      view: {
+        id: "V_DT_DROP",
+        hash: "hash_dt_drop_v1",
+        callback_id: "runway_edit_task",
+        private_metadata: JSON.stringify({ proposalId: "prop_dt_drop_stale" }),
+        state: {
+          values: {
+            date_type_block: {
+              date_type_radio: { selected_option: { value: "range" } },
+            },
+          },
+        },
+      },
+      actions: [
+        {
+          action_id: "date_type_radio",
+          block_id: "date_type_block",
+          type: "radio_buttons",
+          selected_option: { value: "range" },
+        },
+      ],
+    };
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.buildTaskModal).toHaveBeenCalledTimes(1);
+    const call = handles.buildTaskModal.mock.calls[0][0] as {
+      currentValues?: Record<string, unknown>;
+    };
+    // Critical: the inherited Single-mode dates MUST NOT carry into the
+    // Range pickers. They render empty so the user must commit explicitly.
+    expect(call.currentValues?.date).toBeUndefined();
+    expect(call.currentValues?.startDate).toBeUndefined();
+    expect(call.currentValues?.endDate).toBeUndefined();
+    // Non-date prefills are still preserved.
+    expect(call.currentValues?.title).toBe("TEST Task Single A");
+    expect(call.currentValues?.owner).toBe("Jason Burks");
+    expect(call.currentValues?.dateType).toBe("range");
+  });
 });
 
 describe("POST /api/slack/interactivity — view_submission dispatch (Builder 8)", () => {

@@ -584,7 +584,7 @@ const TASK_DATE_FIELDS_SKIP: ReadonlySet<string> = new Set([
  * mode rows mirror date into both startDate and endDate, so when all three
  * agree we treat the bag as single-mode.
  */
-function inferDateTypeFromArgs(
+export function inferDateTypeFromArgs(
   args: Record<string, unknown>,
 ): "single" | "range" | undefined {
   const explicit = args.dateType;

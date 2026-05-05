@@ -62,6 +62,7 @@ import { inngest } from "@/lib/inngest/client";
 import { checkConcurrentProposal } from "@/lib/slack/modals/concurrency-check";
 import { recordProposalLifecycleTransition } from "@/lib/slack/modals/observability";
 import { loadEntityById } from "@/lib/slack/load-entity-by-id";
+import { inferDateTypeFromArgs } from "@/lib/slack/modals/validate-submission";
 
 // -----------------------------------------------------------------------------
 // Payload types - discriminated union, just enough for type-safe dispatch.
@@ -524,6 +525,20 @@ async function handleDateTypeToggle(
     ...preserved,
     dateType: newDateType,
   };
+
+  // Drop stale date initials when the toggle changes the dateType. Slack's
+  // datepicker reports `initial_date` as `selected_date` on view_submission
+  // even when the user never opened the picker, so carrying the prior mode's
+  // mirrored dates forward (e.g. Single's date == startDate == endDate)
+  // would silently re-submit those values under the new mode and trip the
+  // start <= end write-time guard. Render the new mode's pickers empty so
+  // the user must explicitly commit to dates compatible with the new mode.
+  const argsDateType = inferDateTypeFromArgs(args);
+  if (argsDateType !== undefined && argsDateType !== newDateType) {
+    delete currentValues.date;
+    delete currentValues.startDate;
+    delete currentValues.endDate;
+  }
 
   const candidates = Array.isArray(args.candidates)
     ? (args.candidates as { id: string; label: string }[]).filter(
