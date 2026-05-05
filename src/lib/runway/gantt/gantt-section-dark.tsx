@@ -1,18 +1,27 @@
 /**
- * Self-contained dark-account-view GanttSection renderer.
+ * Self-contained dark-account-view GanttSection renderer used exclusively by
+ * RundownContentRSC (src/app/runway/components/rundown-content-rsc.tsx) and
+ * the gantt-embed route handler (src/app/api/runway/gantt-embed/route.ts).
  *
- * WHY THIS FILE EXISTS:
- * GanttTemplate.tsx imports react-dom/server and themes.ts imports Node's fs.
- * Next.js 16 + Turbopack prohibits ANY file in a App Router entrypoint's
- * static import graph from importing react-dom/server or fs. This restriction
- * applies to route handlers and server components alike — even when those
- * imports are only used in unrelated export paths (e.g. renderGantt).
+ * WHY THIS FILE EXISTS SEPARATELY FROM GanttSection IN GanttTemplate.tsx:
+ * Even with the canonical `require("react-dom/server")` workaround in
+ * GanttTemplate.tsx (which dodges Turbopack's static analyzer for the
+ * react-dom/server wall), importing `GanttSection` into an RSC chain still
+ * pulls in themes.ts. themes.ts calls `fs.readFileSync` at module init to
+ * inline the CIV logo as a base64 data URI — Turbopack's static analyzer
+ * traces `fs` in App Router paths and walls the build the same way it walls
+ * `react-dom/server`. Keeping a parallel dark-only renderer here avoids the
+ * fs chain entirely.
  *
  * This file extracts exactly the components GanttSection uses when
  * theme === "dark-account-view", with:
  *   - No react-dom/server import
  *   - No themes.ts import (no fs)
  *   - Dark chrome hardcoded: showDataIntegrityPanel=false, showRowAlerts=false
+ *
+ * DO NOT delete this file or replace it with `<GanttSection theme="dark-
+ * account-view" />` without first verifying that RundownContentRSC + page.tsx
+ * + the gantt-embed route handler all still build cleanly under Turbopack.
  *
  * Keep in sync with GanttTemplate.tsx: GanttSection, RowBlock, AxisRow,
  * SectionLegendDark, GridLines, computeBarGeometry, computeTodayPosition,
@@ -81,7 +90,7 @@ function numericDate(iso: string): string {
   return `${parseInt(m[2], 10)}/${parseInt(m[3], 10)}`;
 }
 
-function DateOrNull({ value }: { value: string | null }): JSX.Element {
+function DateOrNull({ value }: { value: string | null }): React.JSX.Element {
   if (value === null) return <span className="null">null</span>;
   return <span>{numericDate(value)}</span>;
 }
@@ -146,7 +155,7 @@ function eachDayBetween(startISO: string, endISO: string): string[] {
   return out;
 }
 
-function GridLines({ axis }: { axis: AxisParams }): JSX.Element | null {
+function GridLines({ axis }: { axis: AxisParams }): React.JSX.Element | null {
   if (axis.kind !== "weekly") return null;
   const totalDays = dayDiff(axis.start, axis.end);
   if (totalDays <= 0) return null;
@@ -171,7 +180,7 @@ function GridLines({ axis }: { axis: AxisParams }): JSX.Element | null {
 
 // ── Axis row ───────────────────────────────��──────────────
 
-function AxisRow({ axis }: { axis: AxisParams }): JSX.Element | null {
+function AxisRow({ axis }: { axis: AxisParams }): React.JSX.Element | null {
   if (axis.kind === "no-axis") return null;
   const totalDays = dayDiff(axis.start, axis.end);
   return (
@@ -198,7 +207,7 @@ function AxisRow({ axis }: { axis: AxisParams }): JSX.Element | null {
 
 // ── Legend (dark variant) ───────────────────────────────���─
 
-function SectionLegendDark(): JSX.Element {
+function SectionLegendDark(): React.JSX.Element {
   return (
     <div className="flex flex-wrap gap-3 items-center text-xs text-slate-400 mb-3">
       <span className="inline-flex items-center gap-1.5">
@@ -235,7 +244,7 @@ function RowBlock({
   row: AnnotatedRow;
   axis: AxisParams;
   todayPct: number | null;
-}): JSX.Element {
+}): React.JSX.Element {
   const geom = computeBarGeometry(row, axis);
   const showTodayLine = todayPct !== null && axis.kind !== "no-axis";
   return (
@@ -276,7 +285,7 @@ function RowBlock({
 // Dark-specific GanttSection: no DataIntegrityPanel, no row alerts.
 // Mirrors GanttSection in GanttTemplate.tsx for theme="dark-account-view".
 
-export function GanttSectionDark({ data }: { data: GanttData }): JSX.Element {
+export function GanttSectionDark({ data }: { data: GanttData }): React.JSX.Element {
   const { rows, axis } = data;
   const todayPct = computeTodayPosition(axis);
   return (

@@ -44,7 +44,7 @@ function numericDate(iso: string): string {
   return `${parseInt(m[2], 10)}/${parseInt(m[3], 10)}`;
 }
 
-function DateOrNull({ value }: { value: string | null }): JSX.Element {
+function DateOrNull({ value }: { value: string | null }): React.JSX.Element {
   if (value === null) return <span className="null">null</span>;
   return <span>{numericDate(value)}</span>;
 }
@@ -422,7 +422,7 @@ function buildPanelEntries(summary: Summary): PanelEntry[] {
   return entries;
 }
 
-function PanelEntryItem({ entry }: { entry: PanelEntry }): JSX.Element {
+function PanelEntryItem({ entry }: { entry: PanelEntry }): React.JSX.Element {
   const sev = entrySeverity(entry);
   if (entry.kind === "chart") {
     return (
@@ -486,7 +486,7 @@ function rollupTallyText(e: ChildRollupEntry): string {
   return parts.join(" · ");
 }
 
-function PerChildRollup({ entries }: { entries: ChildRollupEntry[] }): JSX.Element | null {
+function PerChildRollup({ entries }: { entries: ChildRollupEntry[] }): React.JSX.Element | null {
   if (entries.length === 0) return null;
   return (
     <div className="panel-rollup">
@@ -512,7 +512,7 @@ function DataIntegrityPanel({
 }: {
   summary: Summary;
   isWrapper: boolean;
-}): JSX.Element {
+}): React.JSX.Element {
   const entries = buildPanelEntries(summary);
   const isClean = entries.length === 0;
   return (
@@ -554,7 +554,7 @@ function DataIntegrityPanel({
  * Positioned inside each SectionBlock, above the DataIntegrityPanel.
  * Margin tuned for in-section position via .legend-in-section class.
  */
-function SectionLegendLight(): JSX.Element {
+function SectionLegendLight(): React.JSX.Element {
   return (
     <div className="legend legend-in-section">
       <span className="legend-item">
@@ -585,7 +585,7 @@ function SectionLegendLight(): JSX.Element {
 /**
  * Dark-account-view legend using Tailwind classes for swatches.
  */
-function SectionLegendDark(): JSX.Element {
+function SectionLegendDark(): React.JSX.Element {
   return (
     <div className="flex flex-wrap gap-3 items-center text-xs text-slate-400 mb-3">
       <span className="inline-flex items-center gap-1.5">
@@ -614,7 +614,7 @@ function SectionLegendDark(): JSX.Element {
  * Per-section legend dispatcher. Renders above DataIntegrityPanel in every
  * SectionBlock. Theme drives swatch styles.
  */
-export function SectionLegend({ theme }: { theme: Theme }): JSX.Element {
+export function SectionLegend({ theme }: { theme: Theme }): React.JSX.Element {
   if (theme === "dark-account-view") return <SectionLegendDark />;
   return <SectionLegendLight />;
 }
@@ -653,7 +653,7 @@ function eachDayBetween(startISO: string, endISO: string): string[] {
   return out;
 }
 
-function GridLines({ axis }: { axis: AxisParams }): JSX.Element | null {
+function GridLines({ axis }: { axis: AxisParams }): React.JSX.Element | null {
   if (axis.kind !== "weekly") return null; // monthly = too noisy with daily lines
   const totalDays = dayDiff(axis.start, axis.end);
   if (totalDays <= 0) return null;
@@ -696,7 +696,7 @@ function getDayName(dateStr: string): string {
   return WEEKDAY_NAMES[parseISO(dateStr).getUTCDay()];
 }
 
-function AxisRow({ axis }: { axis: AxisParams }): JSX.Element | null {
+function AxisRow({ axis }: { axis: AxisParams }): React.JSX.Element | null {
   if (axis.kind === "no-axis") return null;
   const totalDays = dayDiff(axis.start, axis.end);
   return (
@@ -732,7 +732,7 @@ function AxisRow({ axis }: { axis: AxisParams }): JSX.Element | null {
  * Band order: SectionLegend → DataIntegrityPanel (if enabled) → AxisRow →
  * rows → AxisRow (repeat at bottom).
  */
-export function GanttSection({ data, theme }: { data: GanttData; theme: Theme }): JSX.Element {
+export function GanttSection({ data, theme }: { data: GanttData; theme: Theme }): React.JSX.Element {
   const { raw, rows, axis, summary } = data;
   const todayPct = computeTodayPosition(axis);
   const tokens = getThemeTokens(theme);
@@ -762,7 +762,7 @@ export function GanttSection({ data, theme }: { data: GanttData; theme: Theme })
   );
 }
 
-export function GanttTemplate({ data, theme = "light-internal" }: { data: GanttData; theme?: Theme }): JSX.Element {
+export function GanttTemplate({ data, theme = "light-internal" }: { data: GanttData; theme?: Theme }): React.JSX.Element {
   const { raw, headerRange, generatedAt } = data;
   const tokens = getThemeTokens(theme);
   const styles = theme === "light-branded" ? STYLES_BRANDED : STYLES;
@@ -834,7 +834,7 @@ function RowBlock({
   axis: AxisParams;
   todayPct: number | null;
   theme: Theme;
-}): JSX.Element {
+}): React.JSX.Element {
   const tokens = getThemeTokens(theme);
   const geom = computeBarGeometry(row, axis);
   const showTodayLine = todayPct !== null && axis.kind !== "no-axis";
@@ -951,7 +951,7 @@ function groupTocSections(sections: RundownSection[]): TocBlock[] {
   return blocks;
 }
 
-function TocLink({ section }: { section: RundownSection }): JSX.Element {
+function TocLink({ section }: { section: RundownSection }): React.JSX.Element {
   const sev = section.data.summary.severity;
   return (
     <>
@@ -965,7 +965,7 @@ function TocLink({ section }: { section: RundownSection }): JSX.Element {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- theme reserved for future TOC theming
-function RundownToc({ sections, theme }: { sections: RundownSection[]; theme: Theme }): JSX.Element {
+function RundownToc({ sections, theme }: { sections: RundownSection[]; theme: Theme }): React.JSX.Element {
   const blocks = groupTocSections(sections);
   return (
     <nav className="rundown-toc">
@@ -1009,7 +1009,7 @@ function kindTag(kind: RundownSection["kind"]): string {
   return "L1";
 }
 
-export function SectionBlock({ section, theme }: { section: RundownSection; theme: Theme }): JSX.Element {
+export function SectionBlock({ section, theme }: { section: RundownSection; theme: Theme }): React.JSX.Element {
   const { data } = section;
   return (
     <article id={section.anchor} className="rundown-section">
@@ -1028,7 +1028,7 @@ export function SectionBlock({ section, theme }: { section: RundownSection; them
   );
 }
 
-export function RundownTemplate({ data, theme = "light-internal" }: { data: ClientRundownData; theme?: Theme }): JSX.Element {
+export function RundownTemplate({ data, theme = "light-internal" }: { data: ClientRundownData; theme?: Theme }): React.JSX.Element {
   const { client, sections, generatedAt, overallSeverity } = data;
   const tokens = getThemeTokens(theme);
   const styles = theme === "light-branded" ? STYLES_BRANDED : STYLES;

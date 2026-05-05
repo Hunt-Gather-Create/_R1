@@ -21,11 +21,16 @@
  */
 
 import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+// Turbopack walls static `import ... from "react-dom/server"` in any App Router
+// entrypoint's import graph (including route handlers). The require() call
+// bypasses static analysis; same workaround used in
+// src/lib/runway/gantt/GanttTemplate.tsx.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { renderToStaticMarkup } = require("react-dom/server") as typeof import("react-dom/server");
 import { type NextRequest, NextResponse } from "next/server";
 import { getRunwayDb } from "@/lib/db/runway";
 import { clients, projects as projectsTable } from "@/lib/db/runway-schema";
-import { extractClientRundown } from "@/lib/runway/gantt/extract-rundown";
+import { extractClientRundown } from "@/lib/runway/gantt/server";
 import { GanttSectionDark } from "@/lib/runway/gantt/gantt-section-dark";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { toISODateString } from "@/app/runway/date-utils";

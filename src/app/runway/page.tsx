@@ -6,15 +6,18 @@ import { getMondayISODate, parseISODate, toISODateString } from "./date-utils";
 import { analyzeFlags } from "@/lib/runway/flags";
 import { getViewPreferences } from "@/lib/runway/view-preferences";
 import { buildUnifiedAccounts, filterWrapperDayItems } from "./unified-view";
-import { extractClientRundown } from "@/lib/runway/gantt/extract-rundown";
+import { extractClientRundown } from "@/lib/runway/gantt/server";
 import { getRunwayDb } from "@/lib/db/runway";
 import { clients as clientsTable, projects as projectsTable } from "@/lib/db/runway-schema";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import type { ClientRundownData } from "@/lib/runway/gantt/types";
-import type { UnifiedAccount } from "./types";
+import type { UnifiedAccount } from "./unified-view";
+import type { ReactNode } from "react";
+import { RundownContentRSC } from "./components/rundown-content-rsc";
 
 type AccountWithRawRundown = UnifiedAccount & {
   rundown: ClientRundownData | null;
+  ganttContent?: ReactNode;
 };
 
 /**
@@ -146,17 +149,21 @@ export default async function RunwayPage() {
   // from the same combined fetch so By-Account renders milestones inline.
   const unifiedBase = buildUnifiedAccounts(accounts, [...thisWeekFiltered, ...upcomingFiltered]);
 
-  // Track 2: attach per-client Gantt rundown (raw ClientRundownData).
-  // AccountSectionServer (server component) pre-renders each GanttSection
-  // to static HTML before passing to AccountSection (client component).
-  // This avoids importing GanttTemplate (react-dom/server + fs) in client
-  // component boundaries.
+  // Track 2 + Track 3 Wave 1: attach per-client Gantt rundown + RSC slot.
+  // AccountSection (client component) reads `rundown` for severity/section
+  // metadata and renders `ganttContent` (a ReactNode produced here by the
+  // RundownContentRSC server component) directly as a slot. This pattern
+  // dodges Turbopack's react-dom/server + fs walls in client boundaries:
+  // RundownContentRSC imports GanttSectionDark which imports neither.
   const unifiedAccounts: AccountWithRawRundown[] = unifiedBase.map((account) => {
     const clientEntry = clientsWithProjects.find((c) => c.slug === account.slug);
     const rundown: ClientRundownData | null = clientEntry
       ? (clientRundowns.get(clientEntry.id) ?? null)
       : null;
-    return { ...account, rundown };
+    const ganttContent: ReactNode = rundown
+      ? <RundownContentRSC sections={rundown.sections} />
+      : null;
+    return { ...account, rundown, ganttContent };
   });
 
   // In Flight regression fix: page-level bucketing for thisWeek/upcoming

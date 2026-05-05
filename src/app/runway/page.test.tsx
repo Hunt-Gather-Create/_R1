@@ -14,8 +14,10 @@ vi.mock("./queries", () => ({
   getStaleWeekItems: () => mockGetStaleWeekItems(),
 }));
 
-// Mock extract-rundown so page tests don't touch the DB
-vi.mock("@/lib/runway/gantt/extract-rundown", () => ({
+// Mock extractClientRundown so page tests don't touch the DB. Both src/-side
+// extract-rundown.ts and server.ts export this name; mock both for safety in
+// case tests reach into either path.
+vi.mock("@/lib/runway/gantt/server", () => ({
   extractClientRundown: vi.fn().mockResolvedValue({
     generatedAt: "2026-04-30",
     overallSeverity: { critical: 0, warn: 0, info: 0 },
@@ -239,6 +241,57 @@ describe("RunwayPage", () => {
       expect.any(Array),
       expect.any(Array)
     );
+  });
+
+  // Track 3 Wave 1 — page.tsx must wire <RundownContentRSC sections=...> onto
+  // each account.ganttContent so AccountSection's rundown branch shows the
+  // dark Gantt embed instead of "No active projects." for clients with rundowns.
+  it("attaches a non-null ganttContent ReactNode to each account when rundown has sections", async () => {
+    // Override the DB chainable so getClientRundowns iterates one client and
+    // populates clientRundowns map with extractClientRundown's mocked result.
+    const { getRunwayDb } = await import("@/lib/db/runway");
+    const dbMock = vi.mocked(getRunwayDb);
+    type Chain = Record<string, unknown> & {
+      then: (resolve: (v: unknown[]) => unknown) => Promise<unknown>;
+    };
+    const chain: Chain = {
+      then: (resolve) =>
+        Promise.resolve([{ id: client.id, name: client.name, slug: client.slug }]).then(resolve),
+    };
+    chain.select = vi.fn(() => chain);
+    chain.from = vi.fn(() => chain);
+    chain.where = vi.fn(() => chain);
+    chain.orderBy = vi.fn(() => chain);
+    dbMock.mockReturnValueOnce(chain as unknown as ReturnType<typeof getRunwayDb>);
+
+    const { extractClientRundown } = await import("@/lib/runway/gantt/server");
+    (extractClientRundown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      generatedAt: "2026-04-30",
+      overallSeverity: { critical: 0, warn: 1, info: 0 },
+      sections: [
+        {
+          anchor: "brand-guide",
+          kind: "standalone",
+          title: "Brand Guide",
+          data: { rows: [], summary: { severity: { critical: 0, warn: 0, info: 0 } } },
+        },
+      ],
+    });
+    mockGetClientsWithProjects.mockResolvedValue([client]);
+    mockGetWeekItems.mockResolvedValue([]);
+    mockGetPipeline.mockResolvedValue([]);
+
+    const el = await RunwayPage();
+    render(el);
+
+    const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+    const account = props.accounts[0];
+    // ganttContent is a React element; JSON.stringify drops functions and
+    // Symbol-keyed fields ($$typeof) but preserves props/children, so the
+    // serialized shape is non-null when wiring is correct.
+    expect(account.ganttContent).not.toBeNull();
+    expect(account.ganttContent).toBeDefined();
+    expect(account.ganttContent.props).toBeDefined();
   });
 
   it("passes staleItems from getStaleWeekItems to RunwayBoard", async () => {
