@@ -1,8 +1,7 @@
-import React from "react";
 import { getClientsWithProjects, getWeekItems, getPipeline, getStaleWeekItems } from "./queries";
 import type { ItemStatus, ItemCategory } from "./types";
 import { RunwayBoard } from "./runway-board";
-import { getMondayISODate, parseISODate, toISODateString } from "./date-utils";
+import { getMondayISODate, parseISODate } from "./date-utils";
 import { analyzeFlags } from "@/lib/runway/flags";
 import { getViewPreferences } from "@/lib/runway/view-preferences";
 import { buildUnifiedAccounts, filterWrapperDayItems } from "./unified-view";
@@ -10,20 +9,18 @@ import { extractClientRundown } from "@/lib/runway/gantt/server";
 import { getRunwayDb } from "@/lib/db/runway";
 import { clients as clientsTable, projects as projectsTable } from "@/lib/db/runway-schema";
 import { and, asc, eq, isNull } from "drizzle-orm";
+import { filterActiveRundown } from "@/lib/runway/gantt/filter-active";
 import type { ClientRundownData } from "@/lib/runway/gantt/types";
-import type { UnifiedAccount } from "./unified-view";
-import type { ReactNode } from "react";
-import { RundownContentRSC } from "./components/rundown-content-rsc";
-
-type AccountWithRawRundown = UnifiedAccount & {
-  rundown: ClientRundownData | null;
-  ganttContent?: ReactNode;
-};
 
 /**
  * Track 2: build a Map<clientId, ClientRundownData> for all clients.
  * Called from Promise.all in RunwayPage so the rundown fetch parallelizes
  * with the other top-level queries.
+ *
+ * Track 3 Wave 3: rundowns are still extracted here so Wave 4 can reuse
+ * them on a separate "Gantt Charts" tab. The By Account tab no longer
+ * renders Gantt embeds, but the rundown drives the active-status filter
+ * that hides accounts whose work has all completed/canceled.
  */
 async function getClientRundowns(): Promise<Map<string, ClientRundownData>> {
   const db = getRunwayDb();
@@ -149,21 +146,19 @@ export default async function RunwayPage() {
   // from the same combined fetch so By-Account renders milestones inline.
   const unifiedBase = buildUnifiedAccounts(accounts, [...thisWeekFiltered, ...upcomingFiltered]);
 
-  // Track 2 + Track 3 Wave 1: attach per-client Gantt rundown + RSC slot.
-  // AccountSection (client component) reads `rundown` for severity/section
-  // metadata and renders `ganttContent` (a ReactNode produced here by the
-  // RundownContentRSC server component) directly as a slot. This pattern
-  // dodges Turbopack's react-dom/server + fs walls in client boundaries:
-  // RundownContentRSC imports GanttSectionDark which imports neither.
-  const unifiedAccounts: AccountWithRawRundown[] = unifiedBase.map((account) => {
+  // Track 3 Wave 3: drop accounts whose Gantt rundown has zero active
+  // sections after applying the active-status filter (completed/canceled
+  // L1s + their wrappers are hidden). Accounts without a rundown row in
+  // the map (data-integrity nudge) stay visible. The rundown itself is
+  // not passed to AccountSection — Wave 4 surfaces it on a separate
+  // Gantt Charts tab.
+  const unifiedAccounts = unifiedBase.filter((account) => {
     const clientEntry = clientsWithProjects.find((c) => c.slug === account.slug);
-    const rundown: ClientRundownData | null = clientEntry
-      ? (clientRundowns.get(clientEntry.id) ?? null)
-      : null;
-    const ganttContent: ReactNode = rundown
-      ? <RundownContentRSC sections={rundown.sections} />
-      : null;
-    return { ...account, rundown, ganttContent };
+    if (!clientEntry) return true;
+    const rundown = clientRundowns.get(clientEntry.id);
+    if (!rundown) return true;
+    const filtered = filterActiveRundown(rundown);
+    return filtered.sections.length > 0;
   });
 
   // In Flight regression fix: page-level bucketing for thisWeek/upcoming

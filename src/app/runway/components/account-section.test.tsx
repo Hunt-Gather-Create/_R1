@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { AccountSection } from "./account-section";
-import type { Account, TriageItem, RenderedClientRundownData, RenderedRundownSection } from "../types";
+import type { Account, TriageItem } from "../types";
 
 function createAccount(overrides: Partial<Account> = {}): Account {
   return {
@@ -546,94 +546,30 @@ describe("AccountSection", () => {
     });
   });
 
-  // ── Track 2: rundown branch ───────────────────────────
+  // ── Track 3 Wave 3: regression-lock — no Gantt embed on By Account ───
+  //
+  // Track 2 wired a rundown/ganttContent prop on AccountSection that swapped
+  // the info-card layout for a dark Gantt embed. Wave 3 reverted that pivot
+  // (Gantt charts move to a separate "Gantt Charts" tab in Wave 4). These
+  // tests lock the info-card shape so a future regression that re-introduces
+  // the embed under By Account fails loudly.
 
-  function makeSection(title: string, kind: RenderedRundownSection["kind"] = "standalone", parentTitle?: string): RenderedRundownSection {
-    return {
-      anchor: title.toLowerCase().replace(/\s+/g, "-"),
-      kind,
-      title,
-      parentTitle,
-      // No renderedHtml — content is a ReactNode slot (ganttContent) now
-    };
-  }
-
-  function makeRundown(sections: RenderedRundownSection[], overallCritical = 0, overallWarn = 0): RenderedClientRundownData {
-    return {
-      sections,
-      generatedAt: "2026-04-30",
-      overallSeverity: { critical: overallCritical, warn: overallWarn, info: 0 },
-    };
-  }
-
-  describe("rundown branch", () => {
-    it("renders as a <details> element when rundown is present", () => {
+  describe("Track 3 Wave 3 — info-card-only render", () => {
+    it("renders the info-card container, not a <details> wrapper", () => {
       const { container } = render(
-        <AccountSection
-          account={{
-            ...createAccount(),
-            rundown: makeRundown([makeSection("Brand Guide")]),
-            ganttContent: <div>Brand Guide stub</div>,
-          }}
-        />
+        <AccountSection account={createAccount()} />
       );
-      const details = container.querySelector("details");
-      expect(details).toBeInTheDocument();
+      expect(container.querySelector("details")).not.toBeInTheDocument();
     });
 
-    it("renders RundownSectionList with ganttContent when rundown has sections", () => {
-      render(
-        <AccountSection
-          account={{
-            ...createAccount(),
-            rundown: makeRundown([
-              makeSection("Brand Guide"),
-              makeSection("Social Playbook"),
-            ]),
-            ganttContent: (
-              <div>
-                <span>Brand Guide</span>
-                <span>Social Playbook</span>
-              </div>
-            ),
-          }}
-        />
-      );
-      expect(screen.getByTestId("rundown-section-list")).toBeInTheDocument();
-      expect(screen.getByText("Brand Guide")).toBeInTheDocument();
-      expect(screen.getByText("Social Playbook")).toBeInTheDocument();
+    it("does not render the rundown-section-list (Gantt embed) slot", () => {
+      render(<AccountSection account={createAccount()} />);
+      expect(screen.queryByTestId("rundown-section-list")).not.toBeInTheDocument();
     });
 
-    it("renders 'No active projects.' fallback when rundown is null (failure sentinel)", () => {
-      render(
-        <AccountSection
-          account={{ ...createAccount(), rundown: null }}
-        />
-      );
-      expect(screen.getByText("No active projects.")).toBeInTheDocument();
-    });
-
-    it("renders 'No active projects.' fallback when rundown has empty sections", () => {
-      render(
-        <AccountSection
-          account={{ ...createAccount(), rundown: makeRundown([]) }}
-        />
-      );
-      expect(screen.getByText("No active projects.")).toBeInTheDocument();
-    });
-
-    it("renders AuditBadge when rundown has warn severity", () => {
-      render(
-        <AccountSection
-          account={{
-            ...createAccount(),
-            rundown: makeRundown([makeSection("Brand Guide")], 0, 3),
-            ganttContent: <div>Brand Guide stub</div>,
-          }}
-        />
-      );
-      expect(screen.getByTestId("audit-badge")).toBeInTheDocument();
-      expect(screen.getByTestId("audit-badge")).toHaveAttribute("data-severity", "warn");
+    it("does not render the AuditBadge (Track 2 indicator)", () => {
+      render(<AccountSection account={createAccount()} />);
+      expect(screen.queryByTestId("audit-badge")).not.toBeInTheDocument();
     });
   });
 });

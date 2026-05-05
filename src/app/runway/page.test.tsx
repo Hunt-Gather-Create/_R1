@@ -51,11 +51,6 @@ vi.mock("drizzle-orm", async () => {
   return { ...actual, isNull: vi.fn(), eq: vi.fn(), and: vi.fn(), asc: vi.fn() };
 });
 
-// Mock RundownContentRSC (RSC component) for test environment
-vi.mock("./components/rundown-content-rsc", () => ({
-  RundownContentRSC: () => null,
-}));
-
 const mockAnalyzeFlags = vi.fn().mockReturnValue([]);
 vi.mock("@/lib/runway/flags", () => ({
   analyzeFlags: (...args: unknown[]) => mockAnalyzeFlags(...args),
@@ -243,12 +238,34 @@ describe("RunwayPage", () => {
     );
   });
 
-  // Track 3 Wave 1 — page.tsx must wire <RundownContentRSC sections=...> onto
-  // each account.ganttContent so AccountSection's rundown branch shows the
-  // dark Gantt embed instead of "No active projects." for clients with rundowns.
-  it("attaches a non-null ganttContent ReactNode to each account when rundown has sections", async () => {
-    // Override the DB chainable so getClientRundowns iterates one client and
-    // populates clientRundowns map with extractClientRundown's mocked result.
+  // Track 3 Wave 3 — page.tsx no longer attaches a Gantt embed (ganttContent)
+  // onto accounts. The dark Gantt embed has been removed from the By Account
+  // tab and will be reintroduced on a separate "Gantt Charts" tab in Wave 4.
+  // The rundown is still extracted for the active-status filter (and Wave 4)
+  // but is not passed to AccountSection.
+  it("does NOT attach ganttContent to accounts (By Account tab is info-card-only)", async () => {
+    mockGetClientsWithProjects.mockResolvedValue([client]);
+    mockGetWeekItems.mockResolvedValue([]);
+    mockGetPipeline.mockResolvedValue([]);
+
+    const el = await RunwayPage();
+    render(el);
+
+    const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+    for (const account of props.accounts) {
+      expect(account.ganttContent).toBeUndefined();
+      expect(account.rundown).toBeUndefined();
+    }
+  });
+
+  // Track 3 Wave 3 — accounts whose Gantt rundown filters down to zero
+  // active sections (every L1 + wrapper marked completed/canceled) must be
+  // excluded from the By Account list. The rundown extract still happens
+  // for clients with no surviving sections; the filter just hides them
+  // from the info-card view.
+  it("excludes accounts whose filtered rundown has zero sections (active-status filter)", async () => {
+    // Seed the DB chain to return our one client so getClientRundowns
+    // produces a rundown for it (otherwise the filter never runs).
     const { getRunwayDb } = await import("@/lib/db/runway");
     const dbMock = vi.mocked(getRunwayDb);
     type Chain = Record<string, unknown> & {
@@ -264,18 +281,14 @@ describe("RunwayPage", () => {
     chain.orderBy = vi.fn(() => chain);
     dbMock.mockReturnValueOnce(chain as unknown as ReturnType<typeof getRunwayDb>);
 
+    // extractClientRundown returns an empty-sections rundown — filter keeps
+    // it empty, account drops out.
     const { extractClientRundown } = await import("@/lib/runway/gantt/server");
     (extractClientRundown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      client: { id: client.id, name: client.name, slug: client.slug },
       generatedAt: "2026-04-30",
-      overallSeverity: { critical: 0, warn: 1, info: 0 },
-      sections: [
-        {
-          anchor: "brand-guide",
-          kind: "standalone",
-          title: "Brand Guide",
-          data: { rows: [], summary: { severity: { critical: 0, warn: 0, info: 0 } } },
-        },
-      ],
+      overallSeverity: { critical: 0, warn: 0, info: 0 },
+      sections: [],
     });
     mockGetClientsWithProjects.mockResolvedValue([client]);
     mockGetWeekItems.mockResolvedValue([]);
@@ -285,13 +298,24 @@ describe("RunwayPage", () => {
     render(el);
 
     const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
-    const account = props.accounts[0];
-    // ganttContent is a React element; JSON.stringify drops functions and
-    // Symbol-keyed fields ($$typeof) but preserves props/children, so the
-    // serialized shape is non-null when wiring is correct.
-    expect(account.ganttContent).not.toBeNull();
-    expect(account.ganttContent).toBeDefined();
-    expect(account.ganttContent.props).toBeDefined();
+    expect(props.accounts).toHaveLength(0);
+  });
+
+  // Track 3 Wave 3 — clients without a rundown row in the map (data-integrity
+  // nudge) stay visible. The base mocks above set up the DB chain to return
+  // [] for the client list inside getClientRundowns, so the rundowns map is
+  // empty and every account passes through the filter.
+  it("keeps accounts visible when there is no rundown row (data-integrity nudge)", async () => {
+    mockGetClientsWithProjects.mockResolvedValue([client]);
+    mockGetWeekItems.mockResolvedValue([]);
+    mockGetPipeline.mockResolvedValue([]);
+
+    const el = await RunwayPage();
+    render(el);
+
+    const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+    expect(props.accounts).toHaveLength(1);
+    expect(props.accounts[0].name).toBe("Convergix");
   });
 
   it("passes staleItems from getStaleWeekItems to RunwayBoard", async () => {

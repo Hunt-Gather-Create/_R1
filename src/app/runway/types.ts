@@ -128,8 +128,12 @@ export type PipelineRow = typeof pipelineItems.$inferSelect & {
 };
 
 // ── Gantt rundown extension ──────────────────────────────
-
-import type { ReactNode } from "react";
+//
+// Track 3 Wave 3: AccountSection no longer consumes a rundown. The Gantt
+// embed has been removed from the By Account tab and will be reintroduced
+// on a separate "Gantt Charts" tab in Wave 4. The rundown types below are
+// retained because the legacy `/api/runway/gantt-embed` route + helpers
+// still reference them.
 
 /**
  * A RundownSection descriptor (metadata only — no rendered content).
@@ -152,18 +156,4 @@ export interface RenderedClientRundownData {
   generatedAt: string;
   overallSeverity: import("@/lib/runway/gantt/types").SeverityCounts;
   sections: RenderedRundownSection[];
-}
-
-/**
- * UnifiedAccount extended with a per-client Gantt rundown.
- * `rundown` carries section metadata + severity for AuditBadge.
- * `ganttContent` is a pre-rendered RSC ReactNode passed as a slot
- * to AccountSection (client component) — no dangerouslySetInnerHTML.
- *
- * `rundown: null` = extractClientRundown threw; renders "No active
- * projects." fallback. `ganttContent: undefined` likewise falls back.
- */
-export interface UnifiedAccountWithRundown {
-  rundown: RenderedClientRundownData | null;
-  ganttContent?: ReactNode;
 }
