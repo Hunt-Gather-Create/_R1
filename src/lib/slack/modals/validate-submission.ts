@@ -578,25 +578,11 @@ const TASK_DATE_FIELDS_SKIP: ReadonlySet<string> = new Set([
   "endDate",
 ]);
 
-/**
- * Infer the dateType ("single" | "range") an args bag represents. Prefers an
- * explicit `dateType` key; otherwise reads the start/end/date shape. Single-
- * mode rows mirror date into both startDate and endDate, so when all three
- * agree we treat the bag as single-mode.
- */
-export function inferDateTypeFromArgs(
-  args: Record<string, unknown>,
-): "single" | "range" | undefined {
-  const explicit = args.dateType;
-  if (explicit === "single" || explicit === "range") return explicit;
-  const start = typeof args.startDate === "string" ? args.startDate : "";
-  const end = typeof args.endDate === "string" ? args.endDate : "";
-  const date = typeof args.date === "string" ? args.date : "";
-  if (date && start === date && end === date) return "single";
-  if (start || end) return "range";
-  if (date) return "single";
-  return undefined;
-}
+// inferDateTypeFromArgs lives in picker-state.ts so the modal builder can
+// share the inference at view-open time. Re-export for any consumers
+// importing from this module.
+import { inferDateTypeFromArgs } from "./picker-state";
+export { inferDateTypeFromArgs };
 
 function applyArgsFallback(
   canonical: Record<string, unknown>,

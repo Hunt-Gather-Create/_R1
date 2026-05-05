@@ -33,7 +33,7 @@ import {
   MODAL_HEADERS,
 } from "./copy";
 import { buildMultiMatchCandidatePicker } from "./picker-block";
-import { hasPickedEntity } from "./picker-state";
+import { hasPickedEntity, inferDateTypeFromArgs } from "./picker-state";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -289,8 +289,16 @@ function buildCategoryBlock(currentValues?: Record<string, unknown>) {
 }
 
 function buildDateTypeBlock(currentValues?: Record<string, unknown>) {
+  // Prefer an explicit dateType when prior submission state set one. Fall
+  // back to inferring from the date / startDate / endDate shape so a Range-
+  // shaped row (date null, start != end) opens with the Range radio
+  // pre-selected instead of defaulting to Single and stranding the user
+  // with an empty date_picker.
+  const explicit = asString(currentValues?.dateType);
+  const inferred = explicit ? undefined : inferDateTypeFromArgs(currentValues);
+  const resolved = explicit ?? inferred;
   const initial =
-    findOption(DATE_TYPE_OPTIONS, asString(currentValues?.dateType)) ?? DATE_TYPE_OPTIONS[0];
+    findOption(DATE_TYPE_OPTIONS, resolved) ?? DATE_TYPE_OPTIONS[0];
   return {
     type: "input",
     block_id: "date_type_block",

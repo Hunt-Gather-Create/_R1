@@ -44,3 +44,29 @@ export function hasPickedEntity(
     isNonEmptyString(currentValues.name)
   );
 }
+
+/**
+ * Infer the dateType ("single" | "range") an args/row bag represents. Prefers
+ * an explicit `dateType` key; otherwise reads the start/end/date shape.
+ * Single-mode rows mirror date into both startDate and endDate, so when all
+ * three agree we treat the bag as single-mode. A row with start != end (or
+ * date null while start/end set) is range-mode.
+ *
+ * Used both by the modal builder (to default the radio correctly when
+ * opening a Range-shaped row) and by the validator (to detect a dateType
+ * toggle mid-edit). Returns undefined when the bag carries no date data.
+ */
+export function inferDateTypeFromArgs(
+  args: Record<string, unknown> | undefined | null,
+): "single" | "range" | undefined {
+  if (!args || typeof args !== "object") return undefined;
+  const explicit = args.dateType;
+  if (explicit === "single" || explicit === "range") return explicit;
+  const start = typeof args.startDate === "string" ? args.startDate : "";
+  const end = typeof args.endDate === "string" ? args.endDate : "";
+  const date = typeof args.date === "string" ? args.date : "";
+  if (date && start === date && end === date) return "single";
+  if (start || end) return "range";
+  if (date) return "single";
+  return undefined;
+}

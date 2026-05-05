@@ -757,6 +757,33 @@ describe("buildTaskModal — Range/Single-day toggle", () => {
     );
   });
 
+  it("date_type radio defaults to Range when currentValues has Range-shape (no explicit dateType)", () => {
+    // Repro: row was edited from Single to Range previously, so prod has
+    // date=null, startDate != endDate. Reopening the edit modal builds with
+    // currentValues = row data (no dateType key). Pre-fix: the radio fell
+    // through to DATE_TYPE_OPTIONS[0] = Single, leaving the date picker
+    // empty and orphaning the saved Range dates. Post-fix:
+    // inferDateTypeFromArgs reads the shape and selects Range.
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_range_default",
+      mode: "edit",
+      currentValues: {
+        title: "TEST Task Single A",
+        date: null,
+        startDate: "2026-05-13",
+        endDate: "2026-05-16",
+      },
+    });
+    const radioBlock = findBlock(view, "date_type_block") as Block;
+    const initial = (
+      radioBlock.element as {
+        initial_option: { value: string };
+      }
+    ).initial_option;
+    expect(initial.value).toBe("range");
+  });
+
   it("date_type radio fires dispatch_action for views.update toggle", () => {
     const view = buildTaskModal({
       args: {},
