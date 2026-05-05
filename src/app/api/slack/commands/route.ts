@@ -151,6 +151,7 @@ function buildModalView(input: ViewBuilderInput): Record<string, unknown> {
       currentValues: input.currentValues,
       baselineHint: input.baselineHint,
       multiMatchHint: input.multiMatchHint,
+      multiMatchCandidates: input.multiMatchCandidates,
     }) as unknown as Record<string, unknown>;
   }
   if (input.kind === "project") {
@@ -164,6 +165,7 @@ function buildModalView(input: ViewBuilderInput): Record<string, unknown> {
       currentValues: input.currentValues,
       baselineHint: input.baselineHint,
       multiMatchHint: input.multiMatchHint,
+      multiMatchCandidates: input.multiMatchCandidates,
     }) as unknown as Record<string, unknown>;
   }
   return buildTeamMemberModal({
@@ -171,6 +173,7 @@ function buildModalView(input: ViewBuilderInput): Record<string, unknown> {
     proposalId: input.proposalId,
     mode: input.mode,
     currentValues: input.currentValues,
+    multiMatchCandidates: input.multiMatchCandidates,
   }) as unknown as Record<string, unknown>;
 }
 

@@ -40,6 +40,7 @@ import {
   BASELINE_PARENT_PICKER_HINT,
   CONCURRENT_PROPOSAL_SOFT_WARN,
   MODAL_CANCELLED_THREAD_REPLY,
+  formatEditMultiMatchHint,
   formatMultiMatchHint,
   PARENT_PROJECT_NOT_FOUND,
   TASK_BUTTON_DISABLED,
@@ -519,6 +520,21 @@ async function handleDateTypeToggle(
     dateType: newDateType,
   };
 
+  const candidates = Array.isArray(args.candidates)
+    ? (args.candidates as { id: string; label: string }[]).filter(
+        (c) => typeof c?.id === "string" && typeof c?.label === "string",
+      )
+    : undefined;
+  const multiMatchHintForRebuild =
+    typeof args.multiMatchQuery === "string"
+      ? formatEditMultiMatchHint(
+          candidates?.length ?? 0,
+          "task",
+          args.multiMatchQuery,
+          { truncated: (candidates?.length ?? 0) > 100 },
+        )
+      : undefined;
+
   const newView = buildViewForOpen({
     kind: "task",
     mode: proposal.kind === "edit" ? "edit" : "create",
@@ -527,6 +543,8 @@ async function handleDateTypeToggle(
     retainerMode: false,
     currentValues,
     baselineHint: BASELINE_PARENT_PICKER_HINT,
+    multiMatchCandidates: candidates,
+    multiMatchHint: multiMatchHintForRebuild,
   });
 
   if (newView) {
@@ -625,6 +643,24 @@ async function handleClientSelectCascade(
     currentValues.parentProjectId = undefined;
   }
 
+  // Preserve disambiguation-phase fields when the user picks a client
+  // before picking a candidate. args.candidates being set means the
+  // candidate picker should still render after the cascade rebuild.
+  const candidates = Array.isArray(args.candidates)
+    ? (args.candidates as { id: string; label: string }[]).filter(
+        (c) => typeof c?.id === "string" && typeof c?.label === "string",
+      )
+    : undefined;
+  const multiMatchHintForRebuild =
+    typeof args.multiMatchQuery === "string"
+      ? formatEditMultiMatchHint(
+          candidates?.length ?? 0,
+          isTask ? "task" : "project",
+          args.multiMatchQuery,
+          { truncated: (candidates?.length ?? 0) > 100 },
+        )
+      : undefined;
+
   const newView = buildViewForOpen({
     kind: isTask ? "task" : "project",
     mode: proposal.kind === "edit" ? "edit" : "create",
@@ -633,6 +669,8 @@ async function handleClientSelectCascade(
     retainerMode: meta.retainerMode === true,
     currentValues,
     baselineHint: BASELINE_PARENT_PICKER_HINT,
+    multiMatchCandidates: candidates,
+    multiMatchHint: multiMatchHintForRebuild,
   });
 
   if (newView) {
