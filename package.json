@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently --raw \"next dev\" \"pnpm dev:warm:wait\"",
     "build": "node scripts/build-with-migrations.mjs",
     "build:next": "next build",
     "start": "next start",
@@ -25,7 +25,8 @@
     "format:check": "prettier --check .",
     "dev:inngest": "NPM_CONFIG_CACHE=$(mktemp -d) npx --yes --ignore-scripts=false inngest-cli@latest dev",
     "dev:all": "concurrently \"pnpm dev\" \"pnpm dev:inngest\"",
-    "dev:warm": "for r in commands interactivity options events; do curl -s -o /dev/null -w \"%{http_code} /api/slack/$r\\n\" -X POST http://localhost:3000/api/slack/$r -d ''; done"
+    "dev:warm": "for r in commands interactivity options events; do curl -s -o /dev/null -w \"%{http_code} /api/slack/$r\\n\" -X POST http://localhost:3000/api/slack/$r -d ''; done",
+    "dev:warm:wait": "until curl -so /dev/null http://localhost:3000 2>/dev/null; do sleep 1; done && pnpm dev:warm"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.23",
