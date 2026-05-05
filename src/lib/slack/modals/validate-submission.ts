@@ -620,6 +620,32 @@ function applyArgsFallback(
 }
 
 /**
+ * Resources is special: args persists it as `string[]` (the form the picker
+ * rebuild reads) but the row stores it as a CSV string. applyArgsFallback's
+ * generic skip set excludes resources to avoid shape-mismatch false-positives
+ * on the diff, but the preserve semantics still apply when the user submitted
+ * with untouched resource pickers (Slack reports selected_option=null and
+ * `fields.resources` collapses to empty/null). Derive a CSV from args and
+ * stash it on canonical so the diff doesn't flag a spurious wipe.
+ *
+ * Same trade-off as the broader fallback: a user who explicitly clears all
+ * resource rows can't be distinguished from "Slack omitted untouched rows."
+ * Side with preserve over silent NULL-write.
+ */
+function applyResourcesArgsFallback(
+  canonical: Record<string, unknown>,
+  args: Record<string, unknown>,
+): void {
+  const current = canonical.resources;
+  if (current !== null && current !== undefined && current !== "") return;
+  if (!Array.isArray(args.resources)) return;
+  const csv = (args.resources as unknown[])
+    .filter((s): s is string => typeof s === "string" && s.trim() !== "")
+    .join(", ");
+  if (csv) canonical.resources = csv;
+}
+
+/**
  * Compute the changed-field diff per pre-plan §C5. Compares each canonical
  * field to its corresponding value on the target row. Slot names that don't
  * exist on the target are treated as "potentially changed" (best-effort).
@@ -750,6 +776,7 @@ async function validateProjectModal(ctx: PerModalCtx): Promise<ValidationResult>
     // real value and mistakenly flag the field as a change-to-null.
     const argsObj = parseProposalArgs(ctx.proposal.args);
     applyArgsFallback(canonical, argsObj);
+    applyResourcesArgsFallback(canonical, argsObj);
     changedFields = computeChangedFields(canonical, ctx.targetEntity);
     if (changedFields.length === 0) {
       ctx.errors["project_name_block"] =
@@ -1007,6 +1034,7 @@ async function validateTaskModal(ctx: PerModalCtx): Promise<ValidationResult> {
       argsDateType !== fields.dateType;
     const extraSkip = dateTypeChanged ? TASK_DATE_FIELDS_SKIP : undefined;
     applyArgsFallback(canonical, argsObj, extraSkip);
+    applyResourcesArgsFallback(canonical, argsObj);
     // When dateType toggled, require the new mode's date fields up front
     // so the user gets a clear "Start/End/Date is required" error instead
     // of a downstream write-time rejection.

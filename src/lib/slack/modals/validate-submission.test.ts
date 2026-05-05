@@ -1731,6 +1731,55 @@ describe("validateModalSubmission - edit flow dateType toggle", () => {
     }
   });
 
+  it("Single -> Range toggle, untouched resources are preserved from args (CSV-from-array fallback)", async () => {
+    // Repro from operator's Test 3: row had resources='AM: Lane Jordan',
+    // user toggled dateType and changed dates without touching resource
+    // pickers. Slack reports selected_option=null for untouched picker
+    // rows, so fields.resourceRows is empty and canonical.resources falls
+    // through to null. Pre-fix: applyArgsFallback skipped resources due to
+    // shape mismatch (args=array vs row=CSV) so canonical.resources stayed
+    // null and the diff flagged a wipe. Post-fix: applyResourcesArgsFallback
+    // serializes args.resources to CSV and re-hydrates canonical.
+    const proposal = makeProposal({
+      toolName: "update_week_item",
+      kind: "edit",
+      targetEntityId: "wi_target_xyz",
+      targetEntityType: "week_item",
+      args: JSON.stringify({
+        title: "TEST Single Verify",
+        clientId: "client_xyz",
+        projectId: "proj_p1",
+        category: "delivery",
+        date: "2026-05-06",
+        startDate: "2026-05-06",
+        endDate: "2026-05-06",
+        owner: "Jason Burks",
+        resources: ["AM: Lane Jordan"],
+        notes: "Single fix verify",
+      }),
+    });
+    const stateValues: StateValues = {
+      client_block: { client_select: externalSelectV("client_xyz") },
+      parent_project_block: {
+        parent_project_select: externalSelectV("proj_p1"),
+      },
+      date_type_block: { date_type_radio: radioV("range") },
+      start_date_block: { start_date_picker: dateV("2026-05-07") },
+      end_date_block: { end_date_picker: dateV("2026-05-11") },
+      // No resources blocks in state.values (user didn't touch them).
+    };
+    const result = await validateModalSubmission({
+      proposal,
+      stateValues,
+      db,
+    } as unknown as ValidateModalSubmissionParams);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.changedFields).not.toContain("resources");
+      expect(result.normalized.resources).toBe("AM: Lane Jordan");
+    }
+  });
+
   it("Single -> Range toggle, both startDate and endDate provided: save succeeds with new dates (no stale fallback)", async () => {
     // Same setup as the failing case but the user picks BOTH dates.
     // Confirms the toggle path doesn't over-reject when the user supplies
