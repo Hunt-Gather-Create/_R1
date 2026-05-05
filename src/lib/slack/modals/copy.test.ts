@@ -135,6 +135,38 @@ describe("MODAL_HEADERS — edit", () => {
   });
 });
 
+describe("MODAL_HEADERS - disambiguation phase (Wave 6 / Fix 6.5)", () => {
+  it("pickTask is locked verbatim", () => {
+    expect(MODAL_HEADERS.pickTask).toBe("Pick a task to edit");
+  });
+
+  it("pickProject is locked verbatim", () => {
+    expect(MODAL_HEADERS.pickProject).toBe("Pick a project to edit");
+  });
+
+  it("pickRetainer is locked verbatim", () => {
+    expect(MODAL_HEADERS.pickRetainer).toBe("Pick a retainer to edit");
+  });
+
+  it("pickTeamMember is locked verbatim (shortened to fit 25-char cap)", () => {
+    expect(MODAL_HEADERS.pickTeamMember).toBe("Pick team member to edit");
+  });
+
+  it("each pick header fits Slack's <25 char modal-title cap", () => {
+    expect(MODAL_HEADERS.pickTask.length).toBeLessThan(25);
+    expect(MODAL_HEADERS.pickProject.length).toBeLessThan(25);
+    expect(MODAL_HEADERS.pickRetainer.length).toBeLessThan(25);
+    expect(MODAL_HEADERS.pickTeamMember.length).toBeLessThan(25);
+  });
+
+  it("none of the pick headers contain an em-dash", () => {
+    expect(MODAL_HEADERS.pickTask).not.toMatch(/\u2014/);
+    expect(MODAL_HEADERS.pickProject).not.toMatch(/\u2014/);
+    expect(MODAL_HEADERS.pickRetainer).not.toMatch(/\u2014/);
+    expect(MODAL_HEADERS.pickTeamMember).not.toMatch(/\u2014/);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Confirmation messages — create
 // ---------------------------------------------------------------------------
@@ -340,6 +372,48 @@ describe("formatEditMultiMatchHint", () => {
   it("uses hyphen-space-hyphen before 'confirm'", () => {
     expect(formatEditMultiMatchHint(2, "project", "X")).toContain(" - confirm below.");
     expect(formatEditMultiMatchHint(2, "project", "X")).not.toMatch(/\u2014/);
+  });
+
+  it("appends a soft-truncation suffix when truncated=true (>100 candidates)", () => {
+    // Includes both the total count from the fuzzy match AND the "first 100"
+    // indicator so the user knows the picker is showing a subset.
+    const hint = formatEditMultiMatchHint(247, "task", "Hero", { truncated: true });
+    expect(hint).toContain("247 tasks");
+    expect(hint).toContain("Showing the first 100");
+    expect(hint).toContain("refine your search");
+    // Civ voice: ASCII hyphens only.
+    expect(hint).not.toMatch(/\u2014/);
+  });
+
+  // Wave 7 / Fix 7.3: route.ts:471-476 wires
+  //   { truncated: matches.length > 100 }
+  // into this helper. The boundary contract: 100 candidates -> no suffix,
+  // 101 candidates -> suffix appears. These three assertions lock the wiring
+  // without a full route integration test (the helper is the only thing that
+  // can produce or omit the "Showing the first 100" suffix).
+  it("at 100 candidates (boundary, NOT truncated) - no soft-truncation suffix", () => {
+    const hint = formatEditMultiMatchHint(100, "task", "Hero", {
+      truncated: false,
+    });
+    expect(hint).not.toContain("Showing the first 100");
+    expect(hint).toBe("We found 100 tasks matching 'Hero' - confirm below.");
+  });
+
+  it("at 101 candidates (boundary, truncated) - suffix appears", () => {
+    const hint = formatEditMultiMatchHint(101, "task", "Hero", {
+      truncated: true,
+    });
+    expect(hint).toContain("101 tasks");
+    expect(hint).toContain("Showing the first 100");
+    expect(hint).toContain("refine your search");
+  });
+
+  it("opts undefined behaves the same as truncated=false (no suffix)", () => {
+    // Defensive: route.ts only sets truncated:true when matches.length > 100.
+    // A caller passing no opts at all must not produce the soft-truncation
+    // suffix (otherwise the wiring contract changes meaning).
+    const hint = formatEditMultiMatchHint(100, "task", "Hero");
+    expect(hint).not.toContain("Showing the first 100");
   });
 });
 

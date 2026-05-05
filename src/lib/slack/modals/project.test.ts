@@ -890,6 +890,265 @@ describe("buildEphemeralRetainerToggle — on → off", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Multi-match candidate picker (disambiguation)
+// ---------------------------------------------------------------------------
+
+describe("buildProjectModal - multi-match candidate picker (retainerMode=false)", () => {
+  const candidates = [
+    { id: "proj_aaa", label: "AG1 Hero Refresh" },
+    { id: "proj_bbb", label: "AG1 Brand Refresh" },
+    { id: "proj_ccc", label: "AG1 Q2 Refresh" },
+  ];
+
+  it("renders the multi_match_candidate_block when candidates set and currentValues is undefined", () => {
+    const view = buildProjectModal({
+      ...basicCreate(false),
+      multiMatchHint: formatMultiMatchHint(3, "AG1", "project"),
+      multiMatchCandidates: candidates,
+    });
+    const block = findBlock(view, "multi_match_candidate_block") as Block;
+    expect(block).toBeDefined();
+    expect(block.type).toBe("input");
+    expect(block.dispatch_action).toBe(true);
+    const element = block.element as {
+      type: string;
+      action_id: string;
+      options: Array<{ text: { text: string }; value: string }>;
+    };
+    expect(element.type).toBe("static_select");
+    expect(element.action_id).toBe("multi_match_candidate_select");
+    expect(element.options).toHaveLength(candidates.length);
+    for (let i = 0; i < candidates.length; i++) {
+      expect(element.options[i].value).toBe(candidates[i].id);
+      expect(element.options[i].text.text).toBe(candidates[i].label);
+    }
+  });
+
+  it("positions the candidate picker AFTER multi_match_hint_block and BEFORE the first regular input block", () => {
+    const view = buildProjectModal({
+      ...basicCreate(false),
+      multiMatchHint: formatMultiMatchHint(3, "AG1", "project"),
+      multiMatchCandidates: candidates,
+    });
+    const hintIdx = indexOfBlock(view, "multi_match_hint_block");
+    const pickerIdx = indexOfBlock(view, "multi_match_candidate_block");
+    const clientIdx = indexOfBlock(view, "client_block");
+    expect(hintIdx).toBeGreaterThanOrEqual(0);
+    expect(pickerIdx).toBeGreaterThan(hintIdx);
+    // The picker must come BEFORE the next input block in the form. In
+    // non-retainer mode, the first regular input block is client_block.
+    expect(pickerIdx).toBeLessThan(clientIdx);
+  });
+
+  it("does NOT render the picker when currentValues is set (post-pick disambiguation done)", () => {
+    const view = buildProjectModal({
+      ...basicCreate(false),
+      multiMatchHint: formatMultiMatchHint(3, "AG1", "project"),
+      multiMatchCandidates: candidates,
+      currentValues: { name: "Foo" },
+    });
+    expect(findBlock(view, "multi_match_candidate_block")).toBeUndefined();
+  });
+
+  it("does NOT render the picker when candidates is missing", () => {
+    const view = buildProjectModal({
+      ...basicCreate(false),
+      multiMatchHint: formatMultiMatchHint(3, "AG1", "project"),
+    });
+    expect(findBlock(view, "multi_match_candidate_block")).toBeUndefined();
+  });
+
+  it("does NOT render the picker when candidates is an empty array", () => {
+    const view = buildProjectModal({
+      ...basicCreate(false),
+      multiMatchHint: formatMultiMatchHint(0, "AG1", "project"),
+      multiMatchCandidates: [],
+    });
+    expect(findBlock(view, "multi_match_candidate_block")).toBeUndefined();
+  });
+
+  it("caps the option list at 100 entries when candidates exceed the Slack limit", () => {
+    const big = Array.from({ length: 137 }, (_, i) => ({
+      id: `proj_${i}`,
+      label: `Project ${i}`,
+    }));
+    const view = buildProjectModal({
+      ...basicCreate(false),
+      multiMatchHint: formatMultiMatchHint(big.length, "AG1", "project"),
+      multiMatchCandidates: big,
+    });
+    const block = findBlock(view, "multi_match_candidate_block") as Block;
+    const element = block.element as {
+      options: Array<{ value: string }>;
+    };
+    expect(element.options).toHaveLength(100);
+    expect(element.options[0].value).toBe("proj_0");
+    expect(element.options[99].value).toBe("proj_99");
+  });
+
+  it("truncates option text to 72 chars + '...' when a candidate label exceeds 75 chars", () => {
+    const longLabel = "L".repeat(120);
+    const view = buildProjectModal({
+      ...basicCreate(false),
+      multiMatchHint: formatMultiMatchHint(1, "L", "project"),
+      multiMatchCandidates: [{ id: "proj_long", label: longLabel }],
+    });
+    const block = findBlock(view, "multi_match_candidate_block") as Block;
+    const element = block.element as {
+      options: Array<{ text: { text: string }; value: string }>;
+    };
+    const optText = element.options[0].text.text;
+    expect(optText.length).toBe(75);
+    expect(optText.endsWith("...")).toBe(true);
+    expect(optText.slice(0, 72)).toBe("L".repeat(72));
+    // Value remains the full id, untouched by label truncation.
+    expect(element.options[0].value).toBe("proj_long");
+  });
+
+  it("keeps short labels intact when they fit the 75-char cap", () => {
+    const view = buildProjectModal({
+      ...basicCreate(false),
+      multiMatchHint: formatMultiMatchHint(1, "AG1", "project"),
+      multiMatchCandidates: [{ id: "proj_aaa", label: "AG1 Hero Refresh" }],
+    });
+    const block = findBlock(view, "multi_match_candidate_block") as Block;
+    const element = block.element as {
+      options: Array<{ text: { text: string } }>;
+    };
+    expect(element.options[0].text.text).toBe("AG1 Hero Refresh");
+  });
+});
+
+describe("buildProjectModal - multi-match candidate picker (retainerMode=true)", () => {
+  const candidates = [
+    { id: "ret_aaa", label: "AG1 Pro 2026" },
+    { id: "ret_bbb", label: "AG1 Pro 2025" },
+  ];
+
+  it("renders the picker block in retainer mode when candidates set and currentValues undefined", () => {
+    const view = buildProjectModal({
+      ...basicCreate(true),
+      multiMatchCandidates: candidates,
+    });
+    const block = findBlock(view, "multi_match_candidate_block") as Block;
+    expect(block).toBeDefined();
+    expect(block.type).toBe("input");
+    expect(block.dispatch_action).toBe(true);
+    const element = block.element as {
+      type: string;
+      action_id: string;
+      options: Array<{ text: { text: string }; value: string }>;
+    };
+    expect(element.type).toBe("static_select");
+    expect(element.action_id).toBe("multi_match_candidate_select");
+    expect(element.options).toHaveLength(candidates.length);
+  });
+
+  it("positions the picker BEFORE the first regular input block in retainer mode", () => {
+    const view = buildProjectModal({
+      ...basicCreate(true),
+      multiMatchCandidates: candidates,
+    });
+    const pickerIdx = indexOfBlock(view, "multi_match_candidate_block");
+    const clientIdx = indexOfBlock(view, "client_block");
+    expect(pickerIdx).toBeGreaterThanOrEqual(0);
+    expect(clientIdx).toBeGreaterThanOrEqual(0);
+    expect(pickerIdx).toBeLessThan(clientIdx);
+  });
+
+  it("does NOT render the picker in retainer mode when currentValues is set", () => {
+    const view = buildProjectModal({
+      ...basicCreate(true),
+      multiMatchCandidates: candidates,
+      currentValues: { name: "AG1 Pro 2026" },
+    });
+    expect(findBlock(view, "multi_match_candidate_block")).toBeUndefined();
+  });
+});
+
+// Wave 6 / Fix 6.6: each option carries a description with the last 8 chars
+// of the entity id so two candidates with a long shared prefix render
+// distinguishably.
+describe("buildProjectModal - Fix 6.6 option description", () => {
+  it("each option carries a description with the last 8 chars of the id", () => {
+    const view = buildProjectModal({
+      ...basicCreate(false),
+      multiMatchCandidates: [
+        { id: "2a75b39dfeea4bc1a94a245e0", label: "Same Prefix Long Title" },
+        { id: "9zfe8c12bc99a3deedb71a2c0", label: "Same Prefix Other Title" },
+      ],
+    });
+    const block = findBlock(view, "multi_match_candidate_block") as Block;
+    const element = block.element as {
+      options: Array<{
+        value: string;
+        description?: { type: string; text: string };
+      }>;
+    };
+    expect(element.options[0].description?.type).toBe("plain_text");
+    expect(element.options[0].description?.text).toBe("...94a245e0");
+    expect(element.options[1].description?.text).toBe("...db71a2c0");
+  });
+});
+
+// Wave 6 / Fix 6.5: disambiguation-phase header. When the modal opens for an
+// edit flow with multi-match candidates and the user has not picked yet, the
+// title says "Pick a project to edit" (or "Pick a retainer to edit" in
+// retainer mode) rather than "Edit project - " (empty name).
+describe("buildProjectModal - Fix 6.5 disambiguation header", () => {
+  it("renders 'Pick a project to edit' in disambiguation phase (project mode)", () => {
+    const view = buildProjectModal({
+      args: {},
+      proposalId: "prop_disambig_proj_title",
+      mode: "edit",
+      retainerMode: false,
+      multiMatchCandidates: [
+        { id: "proj_a", label: "Project A" },
+        { id: "proj_b", label: "Project B" },
+      ],
+    });
+    expect(view.title.text).toBe("Pick a project to edit");
+  });
+
+  it("renders 'Pick a retainer to edit' in disambiguation phase (retainer mode)", () => {
+    const view = buildProjectModal({
+      args: {},
+      proposalId: "prop_disambig_ret_title",
+      mode: "edit",
+      retainerMode: true,
+      multiMatchCandidates: [
+        { id: "ret_a", label: "Retainer A" },
+        { id: "ret_b", label: "Retainer B" },
+      ],
+    });
+    expect(view.title.text).toBe("Pick a retainer to edit");
+  });
+
+  it("falls back to entity-name header once the user has picked (truncated to 24 chars)", () => {
+    const view = buildProjectModal({
+      args: {},
+      proposalId: "prop_picked_proj_title",
+      mode: "edit",
+      retainerMode: false,
+      multiMatchCandidates: [{ id: "proj_a", label: "Project A" }],
+      currentValues: { name: "Brand" },
+    });
+    expect(view.title.text).toBe("Edit project - Brand");
+  });
+
+  it("create mode is unaffected by disambiguation header", () => {
+    const view = buildProjectModal({
+      args: {},
+      proposalId: "prop_create_proj_title",
+      mode: "create",
+      retainerMode: false,
+      multiMatchCandidates: [{ id: "proj_a", label: "A" }],
+    });
+    expect(view.title.text).toBe("New project");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Slack hard-limits — title length + empty-options guards
 // ---------------------------------------------------------------------------
 

@@ -64,6 +64,17 @@ export const MODAL_HEADERS = {
   editRetainer: (title: string) => `Edit retainer - ${title}`,
   editTask: (title: string) => `Edit task - ${title}`,
   editTeamMember: (fullName: string) => `Edit team member - ${fullName}`,
+  // Wave 6 / Fix 6.5: disambiguation-phase titles. When the modal opens for an
+  // edit flow that returned multiple fuzzy-match candidates and the user has
+  // not yet picked one, the title formatter would otherwise produce
+  // "Edit task - " (empty entity name). These headers keep the UI honest
+  // about the current phase before any entity is identified.
+  pickTask: "Pick a task to edit",
+  pickProject: "Pick a project to edit",
+  pickRetainer: "Pick a retainer to edit",
+  // pickTeamMember is shortened from "Pick a team member to edit" (26 chars)
+  // to fit Slack's <25-char modal title cap.
+  pickTeamMember: "Pick team member to edit",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -177,13 +188,23 @@ export function formatEditNoMatch(
 /**
  * Edit-flow multi-match hint, rendered as a section block above the
  * target-entity picker when more than one entity matches the user's name.
+ *
+ * Slack's static_select option list caps at 100 entries, so when the fuzzy
+ * matcher returns more than 100 candidates the picker silently slices to
+ * the first 100. Pass `truncated: true` to surface a soft-truncation note
+ * to the user so they know to refine their search to see the rest.
  */
 export function formatEditMultiMatchHint(
   n: number,
   kind: "task" | "project" | "team-member",
   name: string,
+  opts?: { truncated?: boolean },
 ): string {
-  return `We found ${n} ${kind}s matching '${name}' - confirm below.`;
+  const base = `We found ${n} ${kind}s matching '${name}' - confirm below.`;
+  if (opts?.truncated) {
+    return `${base} Showing the first 100 - refine your search to see more.`;
+  }
+  return base;
 }
 
 // ---------------------------------------------------------------------------

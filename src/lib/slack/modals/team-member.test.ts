@@ -398,6 +398,258 @@ describe("buildTeamMemberModal — Slack empty-options guard", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Multi-match candidate picker (Wave: edit fuzzy-match disambiguation)
+// ---------------------------------------------------------------------------
+
+describe("multi-match candidate picker", () => {
+  const candidates = [
+    { id: "tm_01JKTM0001ABCDEFGHJKMNPQRS", label: "Sam Rivera" },
+    { id: "tm_01JKTM0002ABCDEFGHJKMNPQRS", label: "Sam Reynolds" },
+    { id: "tm_01JKTM0003ABCDEFGHJKMNPQRS", label: "Samira Patel" },
+  ];
+
+  it("renders the candidate picker block when multiMatchCandidates is set and currentValues is undefined", () => {
+    const view = buildTeamMemberModal({
+      ...baseCreateParams({ mode: "edit" }),
+      multiMatchCandidates: candidates,
+    });
+    const block = findBlock(
+      view.blocks as Array<{ block_id?: string }>,
+      "multi_match_candidate_block",
+    );
+    expect(block).toBeDefined();
+  });
+
+  it("the picker block element is a static_select with the locked action_id", () => {
+    const view = buildTeamMemberModal({
+      ...baseCreateParams({ mode: "edit" }),
+      multiMatchCandidates: candidates,
+    });
+    const block = findBlock(
+      view.blocks as Array<{ block_id?: string }>,
+      "multi_match_candidate_block",
+    ) as
+      | {
+          element?: { type?: string; action_id?: string };
+        }
+      | undefined;
+    expect(block?.element?.type).toBe("static_select");
+    expect(block?.element?.action_id).toBe("multi_match_candidate_select");
+  });
+
+  it("the picker block has dispatch_action: true at the input-block level", () => {
+    const view = buildTeamMemberModal({
+      ...baseCreateParams({ mode: "edit" }),
+      multiMatchCandidates: candidates,
+    });
+    const block = findBlock(
+      view.blocks as Array<{ block_id?: string }>,
+      "multi_match_candidate_block",
+    ) as { dispatch_action?: boolean } | undefined;
+    expect(block?.dispatch_action).toBe(true);
+  });
+
+  it("renders one option per candidate, each option carrying value === candidate.id and text === candidate.label", () => {
+    const view = buildTeamMemberModal({
+      ...baseCreateParams({ mode: "edit" }),
+      multiMatchCandidates: candidates,
+    });
+    const block = findBlock(
+      view.blocks as Array<{ block_id?: string }>,
+      "multi_match_candidate_block",
+    ) as
+      | {
+          element?: {
+            options?: ReadonlyArray<{
+              text: { text: string };
+              value: string;
+            }>;
+          };
+        }
+      | undefined;
+    const options = block?.element?.options ?? [];
+    expect(options).toHaveLength(candidates.length);
+    for (let i = 0; i < candidates.length; i++) {
+      expect(options[i].value).toBe(candidates[i].id);
+      expect(options[i].text.text).toBe(candidates[i].label);
+    }
+  });
+
+  it("positions the picker block at the top, before the first input block", () => {
+    const view = buildTeamMemberModal({
+      ...baseCreateParams({ mode: "edit" }),
+      multiMatchCandidates: candidates,
+    });
+    const blocks = view.blocks as Array<{ block_id?: string; type?: string }>;
+    const pickerIdx = blocks.findIndex(
+      (b) => b.block_id === "multi_match_candidate_block",
+    );
+    const firstClientIdx = blocks.findIndex((b) => b.block_id === "client_block");
+    expect(pickerIdx).toBeGreaterThanOrEqual(0);
+    expect(firstClientIdx).toBeGreaterThan(pickerIdx);
+  });
+
+  it("does NOT render the picker block when currentValues is set", () => {
+    const view = buildTeamMemberModal({
+      ...baseEditParams(),
+      multiMatchCandidates: candidates,
+    });
+    const block = findBlock(
+      view.blocks as Array<{ block_id?: string }>,
+      "multi_match_candidate_block",
+    );
+    expect(block).toBeUndefined();
+  });
+
+  it("does NOT render the picker block when multiMatchCandidates is empty", () => {
+    const view = buildTeamMemberModal({
+      ...baseCreateParams({ mode: "edit" }),
+      multiMatchCandidates: [],
+    });
+    const block = findBlock(
+      view.blocks as Array<{ block_id?: string }>,
+      "multi_match_candidate_block",
+    );
+    expect(block).toBeUndefined();
+  });
+
+  it("does NOT render the picker block when multiMatchCandidates is omitted", () => {
+    const view = buildTeamMemberModal(baseCreateParams({ mode: "edit" }));
+    const block = findBlock(
+      view.blocks as Array<{ block_id?: string }>,
+      "multi_match_candidate_block",
+    );
+    expect(block).toBeUndefined();
+  });
+
+  it("caps options at 100 when the candidate list exceeds 100", () => {
+    const huge = Array.from({ length: 150 }, (_, i) => ({
+      id: `tm_${i.toString().padStart(2, "0")}`,
+      label: `Member ${i}`,
+    }));
+    const view = buildTeamMemberModal({
+      ...baseCreateParams({ mode: "edit" }),
+      multiMatchCandidates: huge,
+    });
+    const block = findBlock(
+      view.blocks as Array<{ block_id?: string }>,
+      "multi_match_candidate_block",
+    ) as { element?: { options?: unknown[] } } | undefined;
+    expect(block?.element?.options).toHaveLength(100);
+  });
+
+  it("truncates an option label longer than 75 chars to 72 + '...'", () => {
+    const longLabel = "X".repeat(100);
+    const view = buildTeamMemberModal({
+      ...baseCreateParams({ mode: "edit" }),
+      multiMatchCandidates: [{ id: "tm_long", label: longLabel }],
+    });
+    const block = findBlock(
+      view.blocks as Array<{ block_id?: string }>,
+      "multi_match_candidate_block",
+    ) as
+      | { element?: { options?: ReadonlyArray<{ text: { text: string } }> } }
+      | undefined;
+    const optionText = block?.element?.options?.[0].text.text ?? "";
+    expect(optionText.length).toBe(75); // 72 chars + "..."
+    expect(optionText.endsWith("...")).toBe(true);
+    expect(optionText.slice(0, 72)).toBe("X".repeat(72));
+  });
+
+  it("does NOT truncate option labels that are exactly 75 chars or shorter", () => {
+    const labels = ["A".repeat(75), "B".repeat(74), "C".repeat(10)];
+    const view = buildTeamMemberModal({
+      ...baseCreateParams({ mode: "edit" }),
+      multiMatchCandidates: labels.map((label, i) => ({ id: `tm_${i}`, label })),
+    });
+    const block = findBlock(
+      view.blocks as Array<{ block_id?: string }>,
+      "multi_match_candidate_block",
+    ) as
+      | { element?: { options?: ReadonlyArray<{ text: { text: string } }> } }
+      | undefined;
+    const opts = block?.element?.options ?? [];
+    expect(opts[0].text.text).toBe(labels[0]);
+    expect(opts[1].text.text).toBe(labels[1]);
+    expect(opts[2].text.text).toBe(labels[2]);
+  });
+
+  // Wave 6 / Fix 6.6: each option carries a description with the last 8 chars
+  // of the entity id so two candidates with a long shared prefix don't render
+  // identically.
+  it("Fix 6.6: each option carries a description with the last 8 chars of the id", () => {
+    const view = buildTeamMemberModal({
+      ...baseCreateParams({ mode: "edit" }),
+      multiMatchCandidates: [
+        { id: "2a75b39dfeea4bc1a94a245e0", label: "Same Prefix Long Title" },
+        { id: "9zfe8c12bc99a3deedb71a2c0", label: "Same Prefix Other Title" },
+      ],
+    });
+    const block = findBlock(
+      view.blocks as Array<{ block_id?: string }>,
+      "multi_match_candidate_block",
+    ) as
+      | {
+          element?: {
+            options?: ReadonlyArray<{
+              value: string;
+              description?: { type: string; text: string };
+            }>;
+          };
+        }
+      | undefined;
+    const opts = block?.element?.options ?? [];
+    expect(opts[0].description?.type).toBe("plain_text");
+    expect(opts[0].description?.text).toBe("...94a245e0");
+    expect(opts[1].description?.text).toBe("...db71a2c0");
+  });
+});
+
+// Wave 6 / Fix 6.5: disambiguation-phase header. When the modal opens for an
+// edit flow with multi-match candidates and the user has not picked yet, the
+// title says "Pick team member to edit" rather than "Edit team member - ".
+// (Note: the literal copy is shortened from "Pick a team member to edit"
+// because the longer string overflows Slack's 25-char modal title cap.)
+describe("buildTeamMemberModal - Fix 6.5 disambiguation header", () => {
+  it("renders the pick header in disambiguation phase (edit mode, candidates set, no entity picked)", () => {
+    const view = buildTeamMemberModal({
+      args: {},
+      proposalId: "prop_disambig_tm_title",
+      mode: "edit",
+      multiMatchCandidates: [
+        { id: "tm_a", label: "Riley A" },
+        { id: "tm_b", label: "Riley B" },
+      ],
+    });
+    expect(view.title.text).toBe("Pick team member to edit");
+  });
+
+  it("falls back to entity-name header once the user has picked", () => {
+    const view = buildTeamMemberModal({
+      args: {},
+      proposalId: "prop_picked_tm_title",
+      mode: "edit",
+      multiMatchCandidates: [{ id: "tm_a", label: "L" }],
+      currentValues: { fullName: "L" },
+    });
+    // Header is truncated to 24 chars so "Edit team member - L" sits below
+    // the cap. The pick header is suppressed once currentValues.fullName
+    // exists.
+    expect(view.title.text).toBe("Edit team member - L");
+  });
+
+  it("create mode is unaffected by disambiguation header", () => {
+    const view = buildTeamMemberModal({
+      args: {},
+      proposalId: "prop_create_tm_title",
+      mode: "create",
+      multiMatchCandidates: [{ id: "tm_a", label: "A" }],
+    });
+    expect(view.title.text).toBe("New team member");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Source-level grep guard — Civ voice rules
 // ---------------------------------------------------------------------------
 

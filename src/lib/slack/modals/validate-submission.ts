@@ -556,8 +556,8 @@ export async function validateModalSubmission(
   if (proposal.kind === "edit") {
     if (!proposal.targetEntityId || !proposal.targetEntityType) {
       // Multi-match edit flow that reached submit without a target picker
-      // resolution. Wave 8's target_entity_picker handles this; if we get
-      // here something upstream missed.
+      // resolution. Wave 2's multi_match_candidate_select handles this; if
+      // we get here something upstream missed.
       errors["target_entity_block"] =
         "No edit target was selected. Cancel and try the edit command again.";
       return { ok: false, errors };
@@ -796,7 +796,7 @@ async function validateProjectModal(ctx: PerModalCtx): Promise<ValidationResult>
         fields.endDate &&
         wEnd &&
         fields.endDate > wEnd &&
-        (fieldsToValidate.has("endDate") || ctx.proposal.kind === "create")
+        (fieldsToValidate.has("endDate") || (ctx.proposal.kind as string) === "create")
       ) {
         ctx.softWarnings.push(
           `End date '${fields.endDate}' exceeds the parent retainer wrapper's contract range (${wStart ?? "?"} - ${wEnd}). Confirm this is intended.`,
@@ -806,7 +806,7 @@ async function validateProjectModal(ctx: PerModalCtx): Promise<ValidationResult>
         fields.startDate &&
         wStart &&
         fields.startDate < wStart &&
-        (fieldsToValidate.has("startDate") || ctx.proposal.kind === "create")
+        (fieldsToValidate.has("startDate") || (ctx.proposal.kind as string) === "create")
       ) {
         ctx.softWarnings.push(
           `Start date '${fields.startDate}' precedes the parent retainer wrapper's contract range (${wStart} - ${wEnd ?? "?"}). Confirm this is intended.`,

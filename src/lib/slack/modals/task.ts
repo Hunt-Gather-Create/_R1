@@ -32,6 +32,8 @@ import {
   CASCADE_DEADLINE_EXPLAINER,
   MODAL_HEADERS,
 } from "./copy";
+import { buildMultiMatchCandidatePicker } from "./picker-block";
+import { hasPickedEntity } from "./picker-state";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -84,6 +86,18 @@ export interface BuildTaskModalParams {
    * caller-side fuzzy match returned more than one candidate.
    */
   multiMatchHint?: string;
+  /**
+   * Multi-match candidate list for /runway-edit-task disambiguation. When set
+   * and non-empty (and `currentValues` has not yet been populated by a pick),
+   * the modal renders a static_select picker just under the multi-match hint
+   * so the user can choose the row to edit. Picking fires a block_actions
+   * event (handler wired separately) which rebuilds the modal in post-pick
+   * state with currentValues set, at which point the picker disappears.
+   *
+   * Slack caps option arrays at 100 entries and option labels at 75 chars.
+   * The builder truncates accordingly.
+   */
+  multiMatchCandidates?: { id: string; label: string }[];
   /**
    * Phase 2/3 validation tier passes a soft-warn or hard-reject error block
    * here so it renders above the rest of the form.
@@ -142,8 +156,16 @@ function truncate(s: string, max: number): string {
   return `${s.slice(0, max - 3)}...`;
 }
 
-function header(mode: "create" | "edit", currentValues?: Record<string, unknown>): string {
+function header(
+  mode: "create" | "edit",
+  currentValues?: Record<string, unknown>,
+  inDisambiguationPhase = false,
+): string {
   if (mode === "create") return MODAL_HEADERS.newTask;
+  // Disambiguation phase (Wave 6 / Fix 6.5): the user has not picked a
+  // candidate yet, so the entity name is empty. Use the explicit pick header
+  // instead of "Edit task - " (trailing hyphen + empty name).
+  if (inDisambiguationPhase) return MODAL_HEADERS.pickTask;
   const titleRaw = (currentValues?.title as string | undefined) ?? "";
   const full = MODAL_HEADERS.editTask(titleRaw);
   return truncate(full, SLACK_TITLE_MAX);
@@ -477,31 +499,62 @@ function buildCascadeDeadlineBlock() {
 // ---------------------------------------------------------------------------
 
 export function buildTaskModal(params: BuildTaskModalParams): SlackView {
-  const { proposalId, mode, currentValues, baselineHint, multiMatchHint, errorBlock } =
-    params;
+  const {
+    proposalId,
+    mode,
+    currentValues,
+    baselineHint,
+    multiMatchHint,
+    multiMatchCandidates,
+    errorBlock,
+  } = params;
 
   const dateType =
     asString(currentValues?.dateType) === "range" ? "range" : "single";
   const category = asString(currentValues?.category);
 
+  // Multi-match disambiguation phase: caller-side fuzzy match returned >1
+  // candidate AND the user has not yet picked one. The shared
+  // `hasPickedEntity` predicate (Wave 6 / Fix 6.2) keeps the per-kind picked
+  // check consistent with project + team-member builders.
+  const inDisambiguationPhase =
+    Array.isArray(multiMatchCandidates) &&
+    multiMatchCandidates.length > 0 &&
+    !hasPickedEntity(currentValues, "task");
+
   const blocks: SlackView["blocks"] = [];
 
-  // 1. Client picker
-  blocks.push(buildClientBlock(currentValues) as SlackView["blocks"][number]);
-
-  // 2. Error block (validator-injected, Phase 2/3)
+  // 1. Error block (validator-injected, Phase 2/3) - always at the top so the
+  //    user sees validation feedback before any input field.
   if (errorBlock) {
     blocks.push(buildErrorBlock(errorBlock) as SlackView["blocks"][number]);
   }
 
-  // 3. Multi-match hint (when caller-side fuzzy match returned >1 candidate)
+  // 2. Multi-match hint (when caller-side fuzzy match returned >1 candidate).
+  //    Renders before the candidate picker so the user understands the
+  //    disambiguation step.
   if (multiMatchHint) {
     blocks.push(
       buildMultiMatchHintBlock(multiMatchHint) as SlackView["blocks"][number],
     );
   }
 
-  // 4. Baseline hint (always-on when caller passes the locked constant)
+  // 3. Multi-match candidate picker (only in the disambiguation phase).
+  //    Positioned after the multi_match_hint_block and before the first input
+  //    block (client_block) so the user picks a row before touching the form.
+  if (inDisambiguationPhase) {
+    blocks.push(
+      buildMultiMatchCandidatePicker(
+        "task",
+        multiMatchCandidates as { id: string; label: string }[],
+      ) as SlackView["blocks"][number],
+    );
+  }
+
+  // 4. Client picker
+  blocks.push(buildClientBlock(currentValues) as SlackView["blocks"][number]);
+
+  // 5. Baseline hint (always-on when caller passes the locked constant)
   if (baselineHint) {
     blocks.push(buildBaselineHintBlock(baselineHint) as SlackView["blocks"][number]);
   }
@@ -509,7 +562,7 @@ export function buildTaskModal(params: BuildTaskModalParams): SlackView {
   // who import this module's types.
   void BASELINE_PARENT_PICKER_HINT;
 
-  // 5. Parent project picker (typeahead)
+  // 6. Parent project picker (typeahead)
   blocks.push(
     buildParentProjectBlock(currentValues) as SlackView["blocks"][number],
   );
@@ -562,7 +615,7 @@ export function buildTaskModal(params: BuildTaskModalParams): SlackView {
     type: "modal",
     callback_id: mode === "create" ? "runway_new_task" : "runway_edit_task",
     private_metadata: JSON.stringify(meta),
-    title: plainText(header(mode, currentValues)),
+    title: plainText(header(mode, currentValues, inDisambiguationPhase)),
     submit: plainText(truncate("Save", SLACK_TITLE_MAX)),
     close: plainText(truncate("Cancel", SLACK_TITLE_MAX)),
     blocks,

@@ -18,10 +18,21 @@
  *   - All strings flow through `MODAL_HEADERS` (./copy.ts) where possible.
  */
 
-import type { ModalView } from "@slack/types";
 import { MODAL_HEADERS } from "./copy";
+import { buildMultiMatchCandidatePicker } from "./picker-block";
+import { hasPickedEntity } from "./picker-state";
 
-export type SlackView = ModalView;
+export interface SlackView {
+  type: "modal";
+  callback_id: string;
+  private_metadata: string;
+  title: { type: "plain_text"; text: string; emoji?: boolean };
+  submit?: { type: "plain_text"; text: string; emoji?: boolean };
+  close?: { type: "plain_text"; text: string; emoji?: boolean };
+  blocks: Array<Record<string, unknown> & { type: string; block_id?: string }>;
+  notify_on_close: true;
+  clear_on_close?: boolean;
+}
 
 // Slack hard-caps modal title text at <25 chars. We truncate to 24 with " ... "
 // suffix when the full edit header overflows.
@@ -83,10 +94,44 @@ export interface BuildTeamMemberModalParams {
    * the handler can highlight the offending field if desired.
    */
   errorBlock?: { blockId: string; message: string };
+  /**
+   * Fuzzy-match candidates from the slash-command edit flow, surfaced as a
+   * static_select picker at the top of the modal so the user can disambiguate
+   * without re-filling every field. The picker is rendered ONLY when
+   * `currentValues` is undefined or has no entity-identifying field set;
+   * once the user picks a candidate (block_actions handler in a later wave)
+   * the modal is re-opened with `currentValues` populated and the picker
+   * disappears.
+   */
+  multiMatchCandidates?: { id: string; label: string }[];
+}
+
+// ---------------------------------------------------------------------------
+// Multi-match candidate picker
+// ---------------------------------------------------------------------------
+//
+// The picker block itself (label, placeholder, 75-char + 100-option caps,
+// id-suffix description) is the shared `buildMultiMatchCandidatePicker` from
+// ./picker-block.ts. Wave 7 / Fix 7.1 collapsed the per-modal duplicates.
+
+/**
+ * The picker should render only when the caller has not yet identified the
+ * target team member. Wave 6 / Fix 6.2 unified this behind the shared
+ * `hasPickedEntity` predicate so the per-kind picked check stays consistent
+ * across task / project / team-member builders. The team-member predicate
+ * accepts `fullName` OR legacy `name` as the picked signal.
+ */
+function shouldRenderCandidatePicker(
+  candidates: ReadonlyArray<{ id: string; label: string }> | undefined,
+  currentValues: Record<string, unknown> | undefined,
+): boolean {
+  if (!candidates || candidates.length === 0) return false;
+  return !hasPickedEntity(currentValues, "team-member");
 }
 
 export function buildTeamMemberModal(params: BuildTeamMemberModalParams): SlackView {
-  const { args, proposalId, mode, currentValues, errorBlock } = params;
+  const { args, proposalId, mode, currentValues, errorBlock, multiMatchCandidates } =
+    params;
 
   const source = mode === "edit" ? { ...args, ...(currentValues ?? {}) } : args;
 
@@ -97,8 +142,20 @@ export function buildTeamMemberModal(params: BuildTeamMemberModalParams): SlackV
     typeof source.roleCategory === "string" ? source.roleCategory : "";
   const roleCategory = ROLE_CATEGORY_VALUES.has(roleCategoryRaw) ? roleCategoryRaw : "";
 
+  // Wave 6 / Fix 6.5: when the modal renders in disambiguation phase (edit
+  // flow with multi-match candidates and no entity picked yet), use the
+  // explicit pick header instead of "Edit team member - " (trailing hyphen
+  // + empty fullName).
+  const showCandidatePicker = shouldRenderCandidatePicker(
+    multiMatchCandidates,
+    currentValues,
+  );
   const headerText = truncateTitle(
-    mode === "edit" ? MODAL_HEADERS.editTeamMember(fullName) : MODAL_HEADERS.newTeamMember,
+    mode === "edit"
+      ? showCandidatePicker
+        ? MODAL_HEADERS.pickTeamMember
+        : MODAL_HEADERS.editTeamMember(fullName)
+      : MODAL_HEADERS.newTeamMember,
   );
 
   const callbackId =
@@ -112,6 +169,21 @@ export function buildTeamMemberModal(params: BuildTeamMemberModalParams): SlackV
       block_id: "error_block",
       text: { type: "mrkdwn", text: `:warning: ${errorBlock.message}` },
     });
+  }
+
+  // Multi-match candidate picker - rendered at the top (after any error block)
+  // and BEFORE the first input block, so the user sees their disambiguation
+  // choice immediately. Only rendered when fuzzy match returned candidates and
+  // the user has not yet picked one (no entity-identifying field in
+  // currentValues). dispatch_action wires the picker into a block_actions
+  // handler in a later wave.
+  if (showCandidatePicker) {
+    blocks.push(
+      buildMultiMatchCandidatePicker(
+        "team-member",
+        multiMatchCandidates as ReadonlyArray<{ id: string; label: string }>,
+      ) as SlackView["blocks"][number],
+    );
   }
 
   // Client picker - assigns the team member to a client by accountsLed.

@@ -40,6 +40,8 @@ import {
   BASELINE_PARENT_PICKER_HINT,
   MODAL_HEADERS,
 } from "./copy";
+import { buildMultiMatchCandidatePicker } from "./picker-block";
+import { hasPickedEntity } from "./picker-state";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -103,6 +105,18 @@ export interface BuildProjectModalParams {
    * retainer mode.
    */
   multiMatchHint?: string;
+  /**
+   * Multi-match candidate list rendered as a static_select picker so the user
+   * can pick the entity to edit without re-typing every field. Each entry
+   * provides the entity id (option value) and a human label (option text).
+   * Slack caps option arrays at 100 entries and option label text at 75 chars;
+   * the builder truncates accordingly. Rendered immediately after the multi-
+   * match hint block, ONLY when `currentValues` is undefined (i.e. we are
+   * still in the disambiguation phase, before the user has picked). Rendered
+   * in BOTH retainer and non-retainer modes - disambiguation is independent
+   * of the retainer-vs-project layout swap.
+   */
+  multiMatchCandidates?: { id: string; label: string }[];
   /**
    * Phase 2/3 validation tier passes a soft-warn or hard-reject error block
    * here so it renders above the rest of the form.
@@ -179,9 +193,16 @@ function header(
   mode: "create" | "edit",
   retainerMode: boolean,
   currentValues?: Record<string, unknown>,
+  inDisambiguationPhase = false,
 ): string {
   if (mode === "create") {
     return retainerMode ? MODAL_HEADERS.newRetainer : MODAL_HEADERS.newProject;
+  }
+  // Disambiguation phase (Wave 6 / Fix 6.5): the user has not picked a
+  // candidate yet, so the entity name is empty. Use the explicit pick header
+  // instead of "Edit project - " (trailing hyphen + empty name).
+  if (inDisambiguationPhase) {
+    return retainerMode ? MODAL_HEADERS.pickRetainer : MODAL_HEADERS.pickProject;
   }
   const nameRaw = (currentValues?.name as string | undefined) ?? "";
   const full = retainerMode
@@ -528,10 +549,41 @@ export function buildProjectModal(params: BuildProjectModalParams): SlackView {
     currentValues,
     baselineHint,
     multiMatchHint,
+    multiMatchCandidates,
     errorBlock,
   } = params;
 
   const blocks: SlackView["blocks"] = [];
+
+  // 0a. Multi-match hint (non-retainer only) - moved above the form during the
+  // disambiguation phase so it sits right above the candidate picker. In
+  // retainer mode the hint is still suppressed regardless of caller input.
+  // The shared `hasPickedEntity` predicate (Wave 6 / Fix 6.2) keeps the per-
+  // kind picked check consistent with task + team-member builders.
+  const showCandidatePicker =
+    Array.isArray(multiMatchCandidates) &&
+    multiMatchCandidates.length > 0 &&
+    !hasPickedEntity(currentValues, "project");
+
+  if (multiMatchHint && !retainerMode) {
+    blocks.push(
+      buildMultiMatchHintBlock(multiMatchHint) as SlackView["blocks"][number],
+    );
+  }
+
+  // 0b. Multi-match candidate picker - renders in BOTH retainer and non-
+  // retainer modes when the user is still disambiguating (no currentValues
+  // yet). Picking an option fires block_actions; the handler is wired
+  // separately. Once the user has picked and the modal re-opens with
+  // currentValues populated, this block is suppressed.
+  if (showCandidatePicker) {
+    blocks.push(
+      buildMultiMatchCandidatePicker(
+        "project",
+        multiMatchCandidates as { id: string; label: string }[],
+      ) as SlackView["blocks"][number],
+    );
+  }
 
   // 1. Client picker
   blocks.push(buildClientBlock(currentValues) as SlackView["blocks"][number]);
@@ -556,13 +608,9 @@ export function buildProjectModal(params: BuildProjectModalParams): SlackView {
     blocks.push(
       buildEngagementTypeRadioBlock(currentValues) as SlackView["blocks"][number],
     );
-    // 6. Multi-match hint (when caller-side fuzzy match returned >1 candidate)
-    if (multiMatchHint) {
-      blocks.push(
-        buildMultiMatchHintBlock(multiMatchHint) as SlackView["blocks"][number],
-      );
-    }
-    // 7. Baseline hint (always-on when caller passes the locked constant)
+    // 6. Baseline hint (always-on when caller passes the locked constant).
+    // The multi-match hint moved to the top of the form (above client_block)
+    // so it sits next to the candidate picker during disambiguation.
     if (baselineHint) {
       blocks.push(
         buildBaselineHintBlock(baselineHint) as SlackView["blocks"][number],
@@ -660,7 +708,7 @@ export function buildProjectModal(params: BuildProjectModalParams): SlackView {
     type: "modal",
     callback_id: mode === "create" ? "runway_new_project" : "runway_edit_project",
     private_metadata: JSON.stringify(meta),
-    title: plainText(header(mode, retainerMode, currentValues)),
+    title: plainText(header(mode, retainerMode, currentValues, showCandidatePicker)),
     submit: plainText(truncate("Save", SLACK_TITLE_MAX)),
     close: plainText(truncate("Cancel", SLACK_TITLE_MAX)),
     blocks,

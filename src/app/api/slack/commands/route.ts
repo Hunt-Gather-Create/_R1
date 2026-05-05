@@ -63,7 +63,7 @@ import {
   weekItems,
   teamMembers,
 } from "@/lib/db/runway-schema";
-import { eq } from "drizzle-orm";
+import { loadEntityById } from "@/lib/slack/load-entity-by-id";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Slash command discriminator
@@ -260,23 +260,6 @@ async function loadFuzzyEntitiesByKind(kind: EntityKind): Promise<FuzzyEntity[]>
   return rows.map((r) => ({ id: r.id, label: r.fullName ?? r.name }));
 }
 
-async function loadEntityById(
-  kind: EntityKind,
-  id: string,
-): Promise<Record<string, unknown> | null> {
-  const db = getRunwayDb();
-  if (kind === "project") {
-    const rows = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
-    return (rows[0] as Record<string, unknown> | undefined) ?? null;
-  }
-  if (kind === "task") {
-    const rows = await db.select().from(weekItems).where(eq(weekItems.id, id)).limit(1);
-    return (rows[0] as Record<string, unknown> | undefined) ?? null;
-  }
-  const rows = await db.select().from(teamMembers).where(eq(teamMembers.id, id)).limit(1);
-  return (rows[0] as Record<string, unknown> | undefined) ?? null;
-}
-
 function targetEntityType(kind: EntityKind): ProposalTargetEntityType {
   if (kind === "project") return "project";
   if (kind === "task") return "week_item";
@@ -399,7 +382,7 @@ async function handleCreate(
   });
 
   await Promise.all([
-    getSlackClient().views.open({ trigger_id: ctx.triggerId, view }),
+    getSlackClient().views.open({ trigger_id: ctx.triggerId, view: view as never }),
     insertProposal({
       id: proposalId,
       kind: "create",
@@ -482,10 +465,14 @@ async function handleEdit(
   }
 
   // 3. Multi-match -> proposal w/o targetEntityId, modal renders picker.
+  // Slack's static_select option list caps at 100, so the modal builders
+  // silently slice candidates above that limit. Surface the truncation in
+  // the hint so the user knows to refine their search to see the rest.
   const multiMatchHint = formatEditMultiMatchHint(
     matches.length,
     copyKind(spec.kind),
     query,
+    { truncated: matches.length > 100 },
   );
   const args: Record<string, unknown> = {
     multiMatchQuery: query,
@@ -501,7 +488,7 @@ async function handleEdit(
     multiMatchCandidates: matches.map((m) => ({ id: m.id, label: m.label })),
   });
   await Promise.all([
-    getSlackClient().views.open({ trigger_id: ctx.triggerId, view }),
+    getSlackClient().views.open({ trigger_id: ctx.triggerId, view: view as never }),
     insertProposal({
       id: proposalId,
       kind: "edit",
@@ -533,7 +520,7 @@ async function openEditModalSingleMatch(
     baselineHint: spec.hasParentPicker ? BASELINE_PARENT_PICKER_HINT : undefined,
   });
   await Promise.all([
-    getSlackClient().views.open({ trigger_id: ctx.triggerId, view }),
+    getSlackClient().views.open({ trigger_id: ctx.triggerId, view: view as never }),
     insertProposal({
       id: proposalId,
       kind: "edit",

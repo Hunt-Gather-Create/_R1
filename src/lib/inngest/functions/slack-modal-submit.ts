@@ -197,11 +197,11 @@ export const slackModalSubmit = inngest.createFunction(
     const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
     // ── Step 1: Idempotency check ─────────────────────────
-    const idemResult = await step.run<{
+    const idemResult: {
       skip: boolean;
       reason?: string;
       proposal?: ProposalRow;
-    }>("idempotency-check", async () => {
+    } = await step.run("idempotency-check", async () => {
       const db = getRunwayDb();
       const rows = (await db
         .select()

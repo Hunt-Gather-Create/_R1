@@ -55,6 +55,7 @@ import { getProjectsFiltered } from "@/lib/runway/operations-reads-clients";
 import { inngest } from "@/lib/inngest/client";
 import { checkConcurrentProposal } from "@/lib/slack/modals/concurrency-check";
 import { recordProposalLifecycleTransition } from "@/lib/slack/modals/observability";
+import { loadEntityById } from "@/lib/slack/load-entity-by-id";
 
 // -----------------------------------------------------------------------------
 // Payload types - discriminated union, just enough for type-safe dispatch.
@@ -224,12 +225,12 @@ async function handleBlockActions(
       return await handleRetainerToggle(payload);
     case "task_button_disabled":
       return await handleTaskButtonDisabled(payload, action!);
-    case "target_entity_picker":
-      return await handleTargetEntityPicker(payload, action!);
     case "date_type_radio":
       return await handleDateTypeToggle(payload, action!);
     case "client_select":
       return await handleClientSelectCascade(payload, action!);
+    case "multi_match_candidate_select":
+      return await handleMultiMatchCandidateSelect(payload, action!);
     default:
       // Repeater rows, in-modal pickers without `dispatch_action`, and any
       // action_id we don't explicitly handle on the server are no-ops here:
@@ -376,7 +377,7 @@ async function handleOpenCreateModal(
   if (!triggerId) return new Response("OK", { status: 200 });
 
   try {
-    await getSlackClient().views.open({ trigger_id: triggerId, view });
+    await getSlackClient().views.open({ trigger_id: triggerId, view: view as never });
   } catch (err) {
     // views.open failure typically means trigger_id expired (>3s) or the modal
     // shape is malformed. Surface a soft-warn ephemeral so the user knows to
@@ -412,7 +413,7 @@ async function handleRetainerToggle(
     await getSlackClient().views.update({
       view_id: view.id,
       hash: typeof view.hash === "string" ? view.hash : undefined,
-      view: responseAction.view as Record<string, unknown>,
+      view: responseAction.view as never,
     } as Parameters<ReturnType<typeof getSlackClient>["views"]["update"]>[0]);
   } catch (err) {
     // hash_conflict races are acceptable - Slack will sync on the next
@@ -457,83 +458,6 @@ async function handleTaskButtonDisabled(
   // Surface PARENT_PROJECT_NOT_FOUND only if the proposal is genuinely lost;
   // here we just ack since the proposal is resolved.
   void PARENT_PROJECT_NOT_FOUND;
-  return new Response("OK", { status: 200 });
-}
-
-// -----------------------------------------------------------------------------
-// target_entity_picker - edit-flow disambiguation. User picked which entity
-// to edit; we update the proposal row's targetEntityId/Type and re-render the
-// modal with the picked entity's currentValues populated.
-// -----------------------------------------------------------------------------
-
-async function handleTargetEntityPicker(
-  payload: SlackBlockActionsPayload,
-  action: SlackAction,
-): Promise<Response> {
-  const view = payload.view;
-  if (!view?.id) {
-    return new Response("OK", { status: 200 });
-  }
-  const meta = parsePrivateMetadata(view.private_metadata);
-  const proposalId = meta.proposalId;
-  if (!proposalId) {
-    return new Response("OK", { status: 200 });
-  }
-  const selected =
-    action.selected_option?.value ?? action.selected_options?.[0]?.value ?? undefined;
-  if (!selected) {
-    return new Response("OK", { status: 200 });
-  }
-
-  const proposal = await loadProposal(proposalId);
-  if (!proposal) {
-    return new Response("OK", { status: 200 });
-  }
-  const kind = toolKind(proposal.toolName);
-  const targetType =
-    kind === "task" ? "week_item" : kind === "project" ? "project" : "team_member";
-
-  // Persist the picked target on the proposal row.
-  await getRunwayDb()
-    .update(botModalProposals)
-    .set({
-      targetEntityId: selected,
-      targetEntityType: targetType,
-    })
-    .where(eq(botModalProposals.id, proposalId));
-
-  // Re-render the modal with currentValues set. Args may already carry the
-  // selected entity in a `candidates` shape - in production the entity row
-  // would be fetched fresh; here we pass through whatever's on the proposal
-  // plus the selected id so the view builder can echo it.
-  let args: Record<string, unknown> = {};
-  try {
-    args = JSON.parse(proposal.args ?? "{}") as Record<string, unknown>;
-  } catch {
-    args = {};
-  }
-  const currentValues = { ...args, id: selected };
-  const newView = buildViewForOpen({
-    kind,
-    mode: "edit",
-    proposalId,
-    args,
-    retainerMode: false,
-    currentValues,
-    baselineHint: kind === "team-member" ? undefined : BASELINE_PARENT_PICKER_HINT,
-  });
-
-  if (newView) {
-    try {
-      await getSlackClient().views.update({
-        view_id: view.id,
-        hash: typeof view.hash === "string" ? view.hash : undefined,
-        view: newView as Record<string, unknown>,
-      } as Parameters<ReturnType<typeof getSlackClient>["views"]["update"]>[0]);
-    } catch (err) {
-      console.error("[slack-interactivity] views.update failed", err);
-    }
-  }
   return new Response("OK", { status: 200 });
 }
 
@@ -610,10 +534,10 @@ async function handleDateTypeToggle(
       await getSlackClient().views.update({
         view_id: view.id,
         hash: typeof view.hash === "string" ? view.hash : undefined,
-        view: newView as Record<string, unknown>,
+        view: newView as never,
       } as Parameters<ReturnType<typeof getSlackClient>["views"]["update"]>[0]);
     } catch (err) {
-      // hash_conflict races are acceptable — Slack will sync state on the
+      // hash_conflict races are acceptable - Slack will sync state on the
       // next interaction. Log for visibility but don't fail the handler.
       console.error("[slack-interactivity] date_type views.update failed", err);
     }
@@ -716,7 +640,7 @@ async function handleClientSelectCascade(
       await getSlackClient().views.update({
         view_id: view.id,
         hash: typeof view.hash === "string" ? view.hash : undefined,
-        view: newView as Record<string, unknown>,
+        view: newView as never,
       } as Parameters<ReturnType<typeof getSlackClient>["views"]["update"]>[0]);
     } catch (err) {
       // hash_conflict races are acceptable - Slack will sync on the next
@@ -725,6 +649,355 @@ async function handleClientSelectCascade(
     }
   }
 
+  return new Response("OK", { status: 200 });
+}
+
+// -----------------------------------------------------------------------------
+// multi_match_candidate_select - the Wave 2 picker dispatcher. Wave 1 added a
+// static_select block to all three edit modals when fuzzy match returned more
+// than one candidate. The block fires a block_actions event on pick; this
+// handler:
+//   1. Resolves the proposal via private_metadata.
+//   2. No-ops on terminal proposal status, missing proposal, or non-edit
+//      toolName (the picker is only rendered in edit flows; a create-flow
+//      proposal hitting this branch is a stale-event guard).
+//   3. Loads the picked entity row via the shared loadEntityById helper.
+//   4. On hit: persists targetEntityId/Type, rebuilds the modal in the
+//      prefilled-edit phase (currentValues set, no candidates, no error).
+//   5. On miss (race - row deleted between fuzzy lookup and pick): leaves the
+//      proposal untouched and re-renders the disambiguation phase with a
+//      Civ-voice errorBlock telling the user to start over.
+// All views.update failures (hash_conflict and otherwise) are swallowed with
+// console.error so the handler always acks 200.
+// -----------------------------------------------------------------------------
+
+const ROW_GONE_MESSAGE =
+  "That entity is gone now. Try a fresh /runway-edit-... query.";
+
+const LOAD_FAILED_MESSAGE =
+  "Couldn't load that entity right now. Try the slash command again.";
+
+/**
+ * Defensive cap on selected_option.value length (Wave 6 / Fix 6.10). Real
+ * entity ids are 25-char base32-like strings; anything north of 100 chars is
+ * a malformed or hostile payload and gets dropped.
+ */
+const SELECTED_VALUE_MAX_LEN = 100;
+
+/**
+ * Resolve the views.update hash from the inbound view, logging a single
+ * warning when it's missing so we still know we lost race detection on this
+ * call (Wave 6 / Fix 6.9). The user-visible behavior is unchanged - we still
+ * dispatch the views.update.
+ */
+function resolveViewHash(
+  view: SlackView,
+  proposalId: string,
+): string | undefined {
+  if (typeof view.hash === "string" && view.hash.length > 0) return view.hash;
+  console.warn(
+    "[slack-interactivity] views.update without hash, race detection lost",
+    { proposalId },
+  );
+  return undefined;
+}
+
+async function handleMultiMatchCandidateSelect(
+  payload: SlackBlockActionsPayload,
+  action: SlackAction,
+): Promise<Response> {
+  const view = payload.view;
+  if (!view?.id) {
+    return new Response("OK", { status: 200 });
+  }
+
+  const meta = parsePrivateMetadata(view.private_metadata);
+  const proposalId = meta.proposalId;
+  if (!proposalId) {
+    return new Response("OK", { status: 200 });
+  }
+
+  // Wave 6 / Fix 6.10: validate selected_option.value before passing it to
+  // the row loader. Trim, drop empty, and reject pathologically long values.
+  const selectedRaw =
+    action.selected_option?.value ?? action.selected_options?.[0]?.value ?? undefined;
+  if (typeof selectedRaw !== "string") {
+    return new Response("OK", { status: 200 });
+  }
+  const selected = selectedRaw.trim();
+  if (selected.length === 0) {
+    return new Response("OK", { status: 200 });
+  }
+  if (selected.length > SELECTED_VALUE_MAX_LEN) {
+    console.warn(
+      "[slack-interactivity] multi_match_candidate_select dropped oversized selected_option.value",
+      { proposalId, length: selected.length },
+    );
+    return new Response("OK", { status: 200 });
+  }
+
+  // Wave 6 / Fix 6.8: this handler chain is intentionally sequential.
+  // loadProposal -> ownership check -> idempotency guard -> loadEntityById ->
+  // DB update -> views.update. Each step's output gates the next; do not try
+  // to parallelize without rethinking the data flow.
+  const proposal = await loadProposal(proposalId);
+  if (!proposal) {
+    return new Response("OK", { status: 200 });
+  }
+
+  // Terminal-state guard: pending is the only status where a transition is
+  // valid. Anything else (submitted/cancelled/expired/failed) means the
+  // proposal lifecycle has closed and a stale picker click should not mutate
+  // state or re-open a view.
+  if (proposal.status !== "pending") {
+    return new Response("OK", { status: 200 });
+  }
+
+  // Ownership guard (defense-in-depth): only the user who staged the
+  // proposal may resolve its picker. Slack's trigger_id user-scoping closes
+  // the realistic threat model, but a stale-event from another workspace
+  // user should never mutate this proposal.
+  if (proposal.userSlackId !== payload.user?.id) {
+    return new Response("OK", { status: 200 });
+  }
+
+  // Defensive: the picker only renders in edit flows. A create-flow proposal
+  // reaching this branch is a stale Slack event; ignore it cleanly.
+  const isEditTool =
+    proposal.toolName === "update_week_item" ||
+    proposal.toolName === "update_project" ||
+    proposal.toolName === "update_team_member";
+  if (!isEditTool) {
+    return new Response("OK", { status: 200 });
+  }
+
+  const kind = toolKind(proposal.toolName);
+  const targetType =
+    kind === "task" ? "week_item" : kind === "project" ? "project" : "team_member";
+
+  // Parse args once; we either replay them on miss or rebuild without
+  // candidates on hit.
+  let args: Record<string, unknown> = {};
+  try {
+    args = JSON.parse(proposal.args ?? "{}") as Record<string, unknown>;
+  } catch {
+    args = {};
+  }
+
+  // Wave 6 / Fix 6.1: idempotency by candidates presence. The first pick
+  // clears `args.candidates` (see the happy-path strip below). Subsequent
+  // picks observe the cleared shape and become DB-write no-ops; the
+  // double-pick is treated as a stale Slack double-fire. We still attempt
+  // views.update so Slack acks cleanly (its hash check resolves the UI
+  // race). Skipping the loadEntityById call here also means we avoid an
+  // extra DB roundtrip on a no-op path.
+  const candidatesRaw = (args as { candidates?: unknown }).candidates;
+  const candidatesPresent =
+    Array.isArray(candidatesRaw) && candidatesRaw.length > 0;
+  if (!candidatesPresent) {
+    // Stale double-pick: rebuild the prefilled edit view from whatever args
+    // already carry (the first pick stripped candidates and may also have
+    // filled in fields). No DB write, no row load.
+    const newView = buildViewForOpen({
+      kind,
+      mode: "edit",
+      proposalId,
+      args,
+      retainerMode: meta.retainerMode === true,
+      currentValues: args,
+      baselineHint: kind === "team-member" ? undefined : BASELINE_PARENT_PICKER_HINT,
+    });
+    if (newView) {
+      try {
+        await getSlackClient().views.update({
+          view_id: view.id,
+          hash: resolveViewHash(view, proposalId),
+          view: newView as never,
+        } as Parameters<ReturnType<typeof getSlackClient>["views"]["update"]>[0]);
+      } catch (updateErr) {
+        console.error(
+          "[slack-interactivity] multi_match_candidate_select stale-pick views.update failed",
+          updateErr,
+        );
+      }
+    }
+    return new Response("OK", { status: 200 });
+  }
+
+  let row: Record<string, unknown> | null = null;
+  try {
+    row = await loadEntityById(kind, selected);
+  } catch (err) {
+    // DB throw (e.g., upstream OOM, transient network). Don't propagate -
+    // a 500 here would trigger Slack's 3x retry. Re-render the
+    // disambiguation phase with a Civ-voice errorBlock distinct from the
+    // row-gone copy. Proposal is intentionally NOT mutated.
+    console.error(
+      "[slack-interactivity] loadEntityById failed",
+      { err, kind, id: selected },
+    );
+
+    const candidates = Array.isArray(candidatesRaw)
+      ? (candidatesRaw as Array<{ id?: unknown; label?: unknown }>)
+          .filter(
+            (c) => typeof c?.id === "string" && typeof c?.label === "string",
+          )
+          .map((c) => ({ id: c.id as string, label: c.label as string }))
+      : [];
+
+    const newView = buildViewForOpen({
+      kind,
+      mode: "edit",
+      proposalId,
+      args,
+      retainerMode: meta.retainerMode === true,
+      multiMatchCandidates: candidates,
+      errorBlock: {
+        blockId: "load_failed_block",
+        message: LOAD_FAILED_MESSAGE,
+      },
+    });
+
+    if (newView) {
+      try {
+        await getSlackClient().views.update({
+          view_id: view.id,
+          hash: resolveViewHash(view, proposalId),
+          view: newView as never,
+        } as Parameters<ReturnType<typeof getSlackClient>["views"]["update"]>[0]);
+      } catch (updateErr) {
+        // hash_conflict and other update errors are swallowed - we still
+        // ack 200 so Slack stops retrying.
+        console.error(
+          "[slack-interactivity] multi_match_candidate_select load-failed views.update failed",
+          updateErr,
+        );
+      }
+    }
+    return new Response("OK", { status: 200 });
+  }
+
+  if (!row) {
+    // Race: the row was deleted between the fuzzy lookup and the user's pick.
+    // Keep the proposal in the disambiguation phase so the user can pick a
+    // different candidate, but surface the miss via an errorBlock. Proposal
+    // is intentionally NOT mutated.
+    const candidates = Array.isArray(candidatesRaw)
+      ? (candidatesRaw as Array<{ id?: unknown; label?: unknown }>)
+          .filter(
+            (c) => typeof c?.id === "string" && typeof c?.label === "string",
+          )
+          .map((c) => ({ id: c.id as string, label: c.label as string }))
+      : [];
+
+    const newView = buildViewForOpen({
+      kind,
+      mode: "edit",
+      proposalId,
+      args,
+      retainerMode: meta.retainerMode === true,
+      multiMatchCandidates: candidates,
+      errorBlock: { blockId: "row_gone_block", message: ROW_GONE_MESSAGE },
+    });
+
+    if (newView) {
+      try {
+        await getSlackClient().views.update({
+          view_id: view.id,
+          hash: resolveViewHash(view, proposalId),
+          view: newView as never,
+        } as Parameters<ReturnType<typeof getSlackClient>["views"]["update"]>[0]);
+      } catch (err) {
+        // hash_conflict and other update errors are swallowed - we still ack
+        // 200 so Slack stops retrying.
+        console.error(
+          "[slack-interactivity] multi_match_candidate_select row-gone views.update failed",
+          err,
+        );
+      }
+    }
+    return new Response("OK", { status: 200 });
+  }
+
+  // Happy path: persist the pick on the proposal row. Drop `candidates` from
+  // args so a downstream re-open does not re-render the picker.
+  const argsWithoutCandidates: Record<string, unknown> = { ...args };
+  delete (argsWithoutCandidates as { candidates?: unknown }).candidates;
+  delete (argsWithoutCandidates as { multiMatchQuery?: unknown }).multiMatchQuery;
+
+  // Validate targetEntityType against the schema-truth enum before INSERT
+  // (Wave 6 / Fix 6.12 runtime guard - schema migration to add a CHECK is
+  // out of scope for this fixup). The enum is fixed at the toolKind ->
+  // targetType mapping above; this assertion catches any drift at the only
+  // write site.
+  if (
+    targetType !== "week_item" &&
+    targetType !== "project" &&
+    targetType !== "team_member"
+  ) {
+    console.error(
+      "[slack-interactivity] refusing to write unrecognized targetEntityType",
+      { proposalId, targetType },
+    );
+    return new Response("OK", { status: 200 });
+  }
+
+  await getRunwayDb()
+    .update(botModalProposals)
+    .set({
+      targetEntityId: selected,
+      targetEntityType: targetType,
+      args: JSON.stringify(argsWithoutCandidates),
+    })
+    .where(eq(botModalProposals.id, proposalId));
+
+  // Mirror the slash-command single-match path: currentValues is the row spread.
+  const currentValues: Record<string, unknown> = { ...row };
+
+  // Wave 6 / Fix 6.3: team-member fullName/name fallback. Legacy team_member
+  // rows carry the picked label in `name` while the modal builder reads
+  // `fullName`. Normalize here so the picker prefill matches the slash-
+  // command single-match path (commands/route.ts uses the same fallback).
+  if (kind === "team-member") {
+    const fullName = currentValues.fullName;
+    const legacyName = currentValues.name;
+    if (
+      (typeof fullName !== "string" || fullName.length === 0) &&
+      typeof legacyName === "string" &&
+      legacyName.length > 0
+    ) {
+      currentValues.fullName = legacyName;
+    }
+  }
+
+  const newView = buildViewForOpen({
+    kind,
+    mode: "edit",
+    proposalId,
+    args: argsWithoutCandidates,
+    retainerMode: meta.retainerMode === true,
+    currentValues,
+    baselineHint: kind === "team-member" ? undefined : BASELINE_PARENT_PICKER_HINT,
+    // No multiMatchCandidates and no errorBlock: the modal exits the
+    // disambiguation phase and renders the prefilled edit form.
+  });
+
+  if (newView) {
+    try {
+      await getSlackClient().views.update({
+        view_id: view.id,
+        hash: resolveViewHash(view, proposalId),
+        view: newView as never,
+      } as Parameters<ReturnType<typeof getSlackClient>["views"]["update"]>[0]);
+    } catch (err) {
+      // hash_conflict races are acceptable - Slack will sync on the next
+      // interaction. Log for visibility but don't fail the handler.
+      console.error(
+        "[slack-interactivity] multi_match_candidate_select views.update failed",
+        err,
+      );
+    }
+  }
   return new Response("OK", { status: 200 });
 }
 
@@ -1083,6 +1356,10 @@ interface BuildOpenInput {
   baselineHint?: string;
   multiMatchHint?: string;
   currentValues?: Record<string, unknown>;
+  /** Optional candidate list for the disambiguation picker. Omit once the user has picked. */
+  multiMatchCandidates?: { id: string; label: string }[];
+  /** Optional validator/race error to surface above the form. */
+  errorBlock?: { blockId: string; message: string };
 }
 
 function buildViewForOpen(
@@ -1096,6 +1373,8 @@ function buildViewForOpen(
       currentValues: input.currentValues,
       baselineHint: input.baselineHint,
       multiMatchHint: input.multiMatchHint,
+      multiMatchCandidates: input.multiMatchCandidates,
+      errorBlock: input.errorBlock,
     }) as unknown as Record<string, unknown>;
   }
   if (input.kind === "project") {
@@ -1107,6 +1386,8 @@ function buildViewForOpen(
       currentValues: input.currentValues,
       baselineHint: input.baselineHint,
       multiMatchHint: input.multiMatchHint,
+      multiMatchCandidates: input.multiMatchCandidates,
+      errorBlock: input.errorBlock,
     }) as unknown as Record<string, unknown>;
   }
   return buildTeamMemberModal({
@@ -1114,6 +1395,8 @@ function buildViewForOpen(
     proposalId: input.proposalId,
     mode: input.mode,
     currentValues: input.currentValues,
+    multiMatchCandidates: input.multiMatchCandidates,
+    errorBlock: input.errorBlock,
   }) as unknown as Record<string, unknown>;
 }
 

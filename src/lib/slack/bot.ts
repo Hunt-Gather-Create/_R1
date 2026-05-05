@@ -237,7 +237,7 @@ export async function handleDirectMessage(
       // tools return `{modalOpened: true, ...}` from execute(); the predicate
       // halts the loop after step 0 so we don't burn an extra Anthropic
       // roundtrip just to have the LLM acknowledge the form opened.
-      stopWhen: [stepCountIs(MAX_STEPS), stopOnModalOpened],
+      stopWhen: [stepCountIs(MAX_STEPS), stopOnModalOpened as never],
       // Track step number into convoState so the intercept's step-aware
       // flag can allow N parallel calls in step 0 but reject any call in a
       // subsequent step.

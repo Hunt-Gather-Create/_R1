@@ -178,7 +178,7 @@ export async function reEmitButtonsAfterParentSave(
   const parentRows = (await db
     .select()
     .from(botModalProposals)
-    .where(eq(botModalProposals.id, parentProposalId))) as ProposalRow[];
+    .where(eq(botModalProposals.id, parentProposalId))) as unknown as ProposalRow[];
   const parent = parentRows[0];
   if (!parent) return;
 
@@ -192,7 +192,7 @@ export async function reEmitButtonsAfterParentSave(
   const siblings = (await db
     .select()
     .from(botModalProposals)
-    .where(eq(botModalProposals.intentGroupId, intentGroupId))) as ProposalRow[];
+    .where(eq(botModalProposals.intentGroupId, intentGroupId))) as unknown as ProposalRow[];
 
   // 3. Mark eligible siblings resolved. Eligibility: pendingProjectName
   //    matches the just-saved project name (case-insensitive trim) AND the
@@ -247,7 +247,7 @@ export async function reEmitButtonsAfterParentSave(
       channel: parent.postedMessageChannel,
       ts: parent.postedMessageTs,
       text,
-      blocks,
+      blocks: blocks as never,
     });
   } catch (err) {
     if (!isFallbackError(err)) throw err;
@@ -255,7 +255,7 @@ export async function reEmitButtonsAfterParentSave(
       channel: parent.postedMessageChannel,
       thread_ts: parent.postedMessageTs,
       text,
-      blocks,
+      blocks: blocks as never,
     });
   }
 }

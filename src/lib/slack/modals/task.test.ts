@@ -348,6 +348,253 @@ describe("buildTaskModal — parent-picker hint render order", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Multi-match candidate picker (slash-command /runway-edit-task disambiguation)
+// ---------------------------------------------------------------------------
+//
+// When fuzzy match returns multiple candidates, the modal must surface them
+// as a static_select picker so the user can pick the row to edit. Picking
+// fires a block_actions event (handler is wired separately) which rebuilds
+// the modal in post-pick state with currentValues populated from the picked
+// entity. Once currentValues is set, the picker block disappears.
+
+describe("buildTaskModal - multi-match candidate picker", () => {
+  const candidates = [
+    { id: "task_001", label: "Draft homepage hero" },
+    { id: "task_002", label: "Draft homepage subhead" },
+    { id: "task_003", label: "Draft homepage CTA" },
+  ];
+
+  it("renders the multi_match_candidate_block when candidates are set and currentValues is undefined", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_mm_pick_001",
+      mode: "edit",
+      multiMatchHint: "We found 3 tasks matching 'Draft' - pick one below.",
+      multiMatchCandidates: candidates,
+    });
+    const block = findBlock(view, "multi_match_candidate_block");
+    expect(block).toBeDefined();
+  });
+
+  it("uses static_select with action_id 'multi_match_candidate_select' and dispatch_action: true", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_mm_pick_002",
+      mode: "edit",
+      multiMatchCandidates: candidates,
+    });
+    const block = findBlock(view, "multi_match_candidate_block") as Block & {
+      dispatch_action?: boolean;
+    };
+    expect(block.dispatch_action).toBe(true);
+    const element = block.element as { type: string; action_id: string };
+    expect(element.type).toBe("static_select");
+    expect(element.action_id).toBe("multi_match_candidate_select");
+  });
+
+  it("renders one option per candidate with value=id and text.text=label", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_mm_pick_003",
+      mode: "edit",
+      multiMatchCandidates: candidates,
+    });
+    const block = findBlock(view, "multi_match_candidate_block") as Block;
+    const element = block.element as {
+      options: Array<{ text: { text: string }; value: string }>;
+    };
+    expect(element.options).toHaveLength(3);
+    expect(element.options[0].value).toBe("task_001");
+    expect(element.options[0].text.text).toBe("Draft homepage hero");
+    expect(element.options[1].value).toBe("task_002");
+    expect(element.options[1].text.text).toBe("Draft homepage subhead");
+    expect(element.options[2].value).toBe("task_003");
+    expect(element.options[2].text.text).toBe("Draft homepage CTA");
+  });
+
+  it("positions the picker AFTER multi_match_hint_block and BEFORE client_block", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_mm_pick_004",
+      mode: "edit",
+      multiMatchHint: "We found 3 tasks matching 'Draft' - pick one below.",
+      multiMatchCandidates: candidates,
+    });
+    const hintIdx = indexOfBlock(view, "multi_match_hint_block");
+    const pickerIdx = indexOfBlock(view, "multi_match_candidate_block");
+    const clientIdx = indexOfBlock(view, "client_block");
+    expect(hintIdx).toBeGreaterThan(-1);
+    expect(pickerIdx).toBeGreaterThan(-1);
+    expect(clientIdx).toBeGreaterThan(-1);
+    expect(hintIdx).toBeLessThan(pickerIdx);
+    expect(pickerIdx).toBeLessThan(clientIdx);
+  });
+
+  it("does NOT render the picker when currentValues is set (post-pick state)", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_mm_pick_005",
+      mode: "edit",
+      multiMatchCandidates: candidates,
+      currentValues: { title: "Draft homepage hero" },
+    });
+    expect(findBlock(view, "multi_match_candidate_block")).toBeUndefined();
+  });
+
+  it("does NOT render the picker when candidates is empty", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_mm_pick_006",
+      mode: "edit",
+      multiMatchCandidates: [],
+    });
+    expect(findBlock(view, "multi_match_candidate_block")).toBeUndefined();
+  });
+
+  it("does NOT render the picker when candidates is undefined", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_mm_pick_007",
+      mode: "edit",
+    });
+    expect(findBlock(view, "multi_match_candidate_block")).toBeUndefined();
+  });
+
+  it("caps options at the first 100 candidates when more are passed in", () => {
+    const tooMany = Array.from({ length: 150 }, (_, i) => ({
+      id: `task_${i.toString().padStart(3, "0")}`,
+      label: `Candidate ${i}`,
+    }));
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_mm_pick_008",
+      mode: "edit",
+      multiMatchCandidates: tooMany,
+    });
+    const block = findBlock(view, "multi_match_candidate_block") as Block;
+    const element = block.element as { options: Array<{ value: string }> };
+    expect(element.options).toHaveLength(100);
+    expect(element.options[0].value).toBe("task_000");
+    expect(element.options[99].value).toBe("task_099");
+  });
+
+  it("truncates option labels longer than 75 chars to 72 chars + '...'", () => {
+    const longLabel = "X".repeat(100);
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_mm_pick_009",
+      mode: "edit",
+      multiMatchCandidates: [{ id: "task_long", label: longLabel }],
+    });
+    const block = findBlock(view, "multi_match_candidate_block") as Block;
+    const element = block.element as {
+      options: Array<{ text: { text: string } }>;
+    };
+    const optionText = element.options[0].text.text;
+    expect(optionText.length).toBe(75);
+    expect(optionText.endsWith("...")).toBe(true);
+    expect(optionText.slice(0, 72)).toBe("X".repeat(72));
+  });
+
+  it("does NOT truncate option labels exactly 75 chars long", () => {
+    const exact = "Y".repeat(75);
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_mm_pick_010",
+      mode: "edit",
+      multiMatchCandidates: [{ id: "task_exact", label: exact }],
+    });
+    const block = findBlock(view, "multi_match_candidate_block") as Block;
+    const element = block.element as {
+      options: Array<{ text: { text: string } }>;
+    };
+    expect(element.options[0].text.text).toBe(exact);
+  });
+
+  // Wave 6 / Fix 6.6: each option ships with a `description` carrying the
+  // last 8 chars of the entity id so two candidates with a 72-char shared
+  // prefix don't render identically.
+  it("Fix 6.6: each option carries a description with the last 8 chars of the id", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_mm_desc_001",
+      mode: "edit",
+      multiMatchCandidates: [
+        { id: "2a75b39dfeea4bc1a94a245e0", label: "Same Prefix Long Title" },
+        { id: "9zfe8c12bc99a3deedb71a2c0", label: "Same Prefix Other Title" },
+      ],
+    });
+    const block = findBlock(view, "multi_match_candidate_block") as Block;
+    const element = block.element as {
+      options: Array<{
+        value: string;
+        description?: { type: string; text: string };
+      }>;
+    };
+    expect(element.options[0].description).toBeDefined();
+    expect(element.options[0].description?.type).toBe("plain_text");
+    expect(element.options[0].description?.text).toBe("...94a245e0");
+    expect(element.options[1].description?.text).toBe("...db71a2c0");
+  });
+
+  it("Fix 6.6: option description handles ids 8 chars or shorter", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_mm_desc_002",
+      mode: "edit",
+      multiMatchCandidates: [{ id: "abc", label: "Short" }],
+    });
+    const block = findBlock(view, "multi_match_candidate_block") as Block;
+    const element = block.element as {
+      options: Array<{ description?: { text: string } }>;
+    };
+    // The recipe's "...{last 8 chars}" rule degrades to "...{full id}" when
+    // the id is 8 chars or shorter. Slack option description max is 75 chars
+    // so any short id fits with room to spare.
+    expect(element.options[0].description?.text).toBe("...abc");
+  });
+});
+
+// Wave 6 / Fix 6.5: disambiguation-phase header. When the modal opens for an
+// edit flow with multi-match candidates and the user has not picked yet, the
+// title says "Pick a task to edit" rather than "Edit task - " (empty name).
+describe("buildTaskModal - Fix 6.5 disambiguation header", () => {
+  it("renders 'Pick a task to edit' in disambiguation phase (edit mode, candidates set, no title picked)", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_disambig_title",
+      mode: "edit",
+      multiMatchCandidates: [
+        { id: "wi_a", label: "Task A" },
+        { id: "wi_b", label: "Task B" },
+      ],
+    });
+    expect(view.title.text).toBe("Pick a task to edit");
+  });
+
+  it("falls back to the entity-name header once the user has picked (truncated to 24 chars)", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_picked_title",
+      mode: "edit",
+      multiMatchCandidates: [{ id: "wi_a", label: "Task A" }],
+      currentValues: { title: "Short" },
+    });
+    expect(view.title.text).toBe("Edit task - Short");
+  });
+
+  it("create mode is unaffected by the disambiguation header (always 'New task')", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_create_title",
+      mode: "create",
+      multiMatchCandidates: [{ id: "wi_a", label: "Task A" }],
+    });
+    expect(view.title.text).toBe("New task");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Field types and conditional render
 // ---------------------------------------------------------------------------
 

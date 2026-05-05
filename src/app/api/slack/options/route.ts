@@ -75,6 +75,7 @@ interface BlockSuggestionPayload {
   value?: string;
   view?: {
     state?: { values?: Record<string, Record<string, unknown>> };
+    private_metadata?: string;
   };
 }
 

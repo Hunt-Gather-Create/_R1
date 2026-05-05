@@ -17,7 +17,9 @@
  *     team-member; multi-match hint matrix; expired/submitted ephemeral)
  *   - block_actions/is_retainer_checkbox -> response_action: update
  *   - block_actions/task_button_disabled -> ephemeral when not yet resolved
- *   - block_actions/target_entity_picker -> views.update with currentValues
+ *   - block_actions/multi_match_candidate_select -> views.update + persist
+ *     targetEntityId/Type (Wave 2 / Wave 6); replaced legacy
+ *     target_entity_picker handler removed in Fix 6.4
  *   - view_submission -> inngest.send dispatched with locked schema, HTTP 200
  *
  * Wave 11 still owns view_closed; the original Phase 1 NotImplementedError
@@ -108,6 +110,7 @@ interface RouteMockHandles {
   getProjectsFiltered: ReturnType<typeof vi.fn>;
   checkConcurrentProposal: ReturnType<typeof vi.fn>;
   recordProposalLifecycleTransition: ReturnType<typeof vi.fn>;
+  loadEntityById: ReturnType<typeof vi.fn>;
 }
 
 function setupRouteMocks(opts?: {
@@ -116,6 +119,12 @@ function setupRouteMocks(opts?: {
   concurrentResult?:
     | { hasConcurrent: false }
     | { hasConcurrent: true; otherUser: string; otherTitle: string; createdAt: Date };
+  /**
+   * Map of entity id -> row for the loadEntityById shared module mock. Used
+   * by the multi_match_candidate_select tests; other tests don't touch the
+   * helper so the default empty map is fine.
+   */
+  entitiesById?: Record<string, Record<string, unknown> | null>;
 }): RouteMockHandles {
   const proposals = new Map<string, MockProposal>();
   for (const p of opts?.proposals ?? []) proposals.set(p.id, p);
@@ -152,6 +161,14 @@ function setupRouteMocks(opts?: {
   }));
   const reEmitButtons = vi.fn().mockResolvedValue(undefined);
   const getProjectsFiltered = vi.fn().mockResolvedValue(opts?.projects ?? []);
+
+  const entitiesById = opts?.entitiesById ?? {};
+  const loadEntityById = vi.fn(async (_kind: string, id: string) => {
+    if (Object.prototype.hasOwnProperty.call(entitiesById, id)) {
+      return entitiesById[id];
+    }
+    return null;
+  });
 
   // Drizzle-orm: stub `eq(col, val)` -> sentinel { _idMatch: val } so the db
   // mock can dispatch by id without parsing column refs.
@@ -239,6 +256,8 @@ function setupRouteMocks(opts?: {
     recordProposalLifecycleTransition,
   }));
 
+  vi.doMock("@/lib/slack/load-entity-by-id", () => ({ loadEntityById }));
+
   vi.doMock("@/lib/slack/modals/task", () => ({ buildTaskModal }));
   vi.doMock("@/lib/slack/modals/project", () => ({
     buildProjectModal,
@@ -273,6 +292,7 @@ function setupRouteMocks(opts?: {
     getProjectsFiltered,
     checkConcurrentProposal,
     recordProposalLifecycleTransition,
+    loadEntityById,
   };
 }
 
@@ -1073,55 +1093,12 @@ describe("POST /api/slack/interactivity — task_button_disabled (Builder 8)", (
   });
 });
 
-describe("POST /api/slack/interactivity — target_entity_picker (Builder 8)", () => {
-  beforeEach(() => {
-    process.env.SLACK_SIGNING_SECRET = SIGNING_SECRET;
-  });
-
-  it("calls views.update and persists targetEntityId/Type on the proposal row", async () => {
-    const handles = setupRouteMocks({
-      proposals: [
-        makeProposal({
-          id: "prop_disambig",
-          kind: "edit",
-          toolName: "update_project",
-          targetEntityId: null,
-          targetEntityType: null,
-        }),
-      ],
-    });
-    const { POST } = await import("./route");
-
-    const fx = loadFixture<Record<string, unknown>>("block-actions-button-click");
-    const mutated = mutateFixture(fx, {
-      actions: [
-        {
-          ...(fx as { actions: unknown[] }).actions[0] as object,
-          action_id: "target_entity_picker",
-          // selected_option carries the chosen entity id.
-          selected_option: { value: "proj_picked_one" },
-        },
-      ],
-      view: {
-        id: "V_TEST_001",
-        hash: "hash_abc",
-        callback_id: "runway_edit_project",
-        private_metadata: JSON.stringify({ proposalId: "prop_disambig" }),
-      },
-    } as Partial<Record<string, unknown>>);
-
-    const body = encodePayload(mutated);
-    const req = makeRequest(body);
-    const res = await POST(req as never);
-    expect(res.status).toBe(200);
-
-    expect(handles.viewsUpdate).toHaveBeenCalledTimes(1);
-    expect(handles.proposalUpdates).toHaveLength(1);
-    expect(handles.proposalUpdates[0].id).toBe("prop_disambig");
-    expect(handles.proposalUpdates[0].patch.targetEntityId).toBe("proj_picked_one");
-    expect(handles.proposalUpdates[0].patch.targetEntityType).toBe("project");
-  });
-});
+// Wave 6 / Fix 6.4: legacy target_entity_picker action_id was unreachable.
+// Edit-flow disambiguation is owned by multi_match_candidate_select (Wave 2)
+// across the whole stack. The dispatcher case + handler + this test were
+// dead code and have been removed. The defensive guards (terminal-state,
+// ownership, idempotency, try/catch on row load) live in the surviving
+// handler tested below.
 
 describe("POST /api/slack/interactivity — date_type_radio (Issue 3)", () => {
   beforeEach(() => {
@@ -1748,6 +1725,410 @@ describe("POST /api/slack/interactivity — client_select cascade (Issue 1)", ()
   });
 });
 
+// ----------------------------------------------------------------------------
+// Wave 2 - multi_match_candidate_select handler. Wave 1 added the picker block
+// in all three edit modals; this dispatcher transitions the modal from the
+// disambiguation phase to the prefilled-edit phase when the user picks a
+// candidate.
+// ----------------------------------------------------------------------------
+
+describe("POST /api/slack/interactivity - multi_match_candidate_select (Wave 2)", () => {
+  beforeEach(() => {
+    process.env.SLACK_SIGNING_SECRET = SIGNING_SECRET;
+  });
+
+  function buildPickerPayload(opts: {
+    selectedId: string;
+    callbackId?: string;
+    proposalId?: string;
+    viewId?: string;
+    viewHash?: string;
+  }) {
+    const proposalId = opts.proposalId ?? "prop_mm_001";
+    return {
+      type: "block_actions",
+      team: { id: "T_TEST_TEAM" },
+      // Default matches makeProposal's default userSlackId so the
+      // ownership guard passes. Cross-user assertions live in the
+      // holdout describe.
+      user: { id: "U_TEST_001", team_id: "T_TEST_TEAM" },
+      trigger_id: "trigger_mm",
+      response_url: null,
+      channel: { id: "C_TEST_001" },
+      view: {
+        id: opts.viewId ?? "V_TEST_MM_001",
+        hash: opts.viewHash ?? "hash_mm_v1",
+        callback_id: opts.callbackId ?? "runway_edit_task",
+        private_metadata: JSON.stringify({ proposalId }),
+        state: { values: {} },
+      },
+      actions: [
+        {
+          action_id: "multi_match_candidate_select",
+          block_id: "multi_match_candidate_block",
+          type: "static_select",
+          selected_option: { value: opts.selectedId },
+        },
+      ],
+    };
+  }
+
+  it("Task happy path: loads the week_item row, persists targetEntityId, rebuilds prefilled view", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_mm_task",
+          kind: "edit",
+          toolName: "update_week_item",
+          targetEntityId: null,
+          targetEntityType: null,
+          args: JSON.stringify({
+            multiMatchQuery: "Concept",
+            candidates: [
+              { id: "wi_one", label: "Concept Writeup" },
+              { id: "wi_two", label: "Concept Refresh" },
+            ],
+          }),
+        }),
+      ],
+      entitiesById: {
+        wi_one: {
+          id: "wi_one",
+          title: "Concept Writeup",
+          clientId: "client_ag1",
+          projectId: "proj_q3",
+          category: "delivery",
+        },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildPickerPayload({
+      selectedId: "wi_one",
+      callbackId: "runway_edit_task",
+      proposalId: "prop_mm_task",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.loadEntityById).toHaveBeenCalledWith("task", "wi_one");
+
+    expect(handles.proposalUpdates).toHaveLength(1);
+    expect(handles.proposalUpdates[0].id).toBe("prop_mm_task");
+    expect(handles.proposalUpdates[0].patch.targetEntityId).toBe("wi_one");
+    expect(handles.proposalUpdates[0].patch.targetEntityType).toBe("week_item");
+
+    expect(handles.viewsUpdate).toHaveBeenCalledTimes(1);
+    expect(handles.buildTaskModal).toHaveBeenCalledTimes(1);
+    const call = handles.buildTaskModal.mock.calls[0][0] as {
+      mode?: string;
+      proposalId?: string;
+      currentValues?: Record<string, unknown>;
+      multiMatchCandidates?: unknown;
+      errorBlock?: unknown;
+    };
+    expect(call.mode).toBe("edit");
+    expect(call.proposalId).toBe("prop_mm_task");
+    expect(call.currentValues?.title).toBe("Concept Writeup");
+    expect(call.currentValues?.clientId).toBe("client_ag1");
+    expect(call.currentValues?.projectId).toBe("proj_q3");
+    expect(call.multiMatchCandidates).toBeUndefined();
+    expect(call.errorBlock).toBeUndefined();
+  });
+
+  it("Project happy path: loads the project row, persists targetEntityType=project", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_mm_proj",
+          kind: "edit",
+          toolName: "update_project",
+          targetEntityId: null,
+          targetEntityType: null,
+          args: JSON.stringify({
+            multiMatchQuery: "Brand",
+            candidates: [
+              { id: "proj_brand_a", label: "Brand Refresh" },
+              { id: "proj_brand_b", label: "Brand Strategy" },
+            ],
+          }),
+        }),
+      ],
+      entitiesById: {
+        proj_brand_a: {
+          id: "proj_brand_a",
+          name: "Brand Refresh",
+          clientId: "client_xyz",
+          status: "in-production",
+        },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildPickerPayload({
+      selectedId: "proj_brand_a",
+      callbackId: "runway_edit_project",
+      proposalId: "prop_mm_proj",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.loadEntityById).toHaveBeenCalledWith("project", "proj_brand_a");
+
+    expect(handles.proposalUpdates).toHaveLength(1);
+    expect(handles.proposalUpdates[0].patch.targetEntityId).toBe("proj_brand_a");
+    expect(handles.proposalUpdates[0].patch.targetEntityType).toBe("project");
+
+    expect(handles.viewsUpdate).toHaveBeenCalledTimes(1);
+    expect(handles.buildProjectModal).toHaveBeenCalledTimes(1);
+    const call = handles.buildProjectModal.mock.calls[0][0] as {
+      mode?: string;
+      currentValues?: Record<string, unknown>;
+      multiMatchCandidates?: unknown;
+    };
+    expect(call.mode).toBe("edit");
+    expect(call.currentValues?.name).toBe("Brand Refresh");
+    expect(call.currentValues?.clientId).toBe("client_xyz");
+    expect(call.multiMatchCandidates).toBeUndefined();
+  });
+
+  it("Team-member happy path: loads the team_member row, persists targetEntityType=team_member", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_mm_tm",
+          kind: "edit",
+          toolName: "update_team_member",
+          targetEntityId: null,
+          targetEntityType: null,
+          args: JSON.stringify({
+            multiMatchQuery: "Lane",
+            candidates: [
+              { id: "tm_lane_one", label: "Lane Carter" },
+              { id: "tm_lane_two", label: "Lane Lopez" },
+            ],
+          }),
+        }),
+      ],
+      entitiesById: {
+        tm_lane_one: {
+          id: "tm_lane_one",
+          fullName: "Lane Carter",
+          clientId: "client_ag1",
+          roleCategory: "creative",
+        },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildPickerPayload({
+      selectedId: "tm_lane_one",
+      callbackId: "runway_edit_team_member",
+      proposalId: "prop_mm_tm",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.loadEntityById).toHaveBeenCalledWith("team-member", "tm_lane_one");
+
+    expect(handles.proposalUpdates).toHaveLength(1);
+    expect(handles.proposalUpdates[0].patch.targetEntityId).toBe("tm_lane_one");
+    expect(handles.proposalUpdates[0].patch.targetEntityType).toBe("team_member");
+
+    expect(handles.viewsUpdate).toHaveBeenCalledTimes(1);
+    expect(handles.buildTeamMemberModal).toHaveBeenCalledTimes(1);
+    const call = handles.buildTeamMemberModal.mock.calls[0][0] as {
+      mode?: string;
+      currentValues?: Record<string, unknown>;
+      multiMatchCandidates?: unknown;
+    };
+    expect(call.mode).toBe("edit");
+    expect(call.currentValues?.fullName).toBe("Lane Carter");
+    expect(call.multiMatchCandidates).toBeUndefined();
+  });
+
+  it("Race: loadEntityById returns null, modal stays in disambiguation phase with errorBlock", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_mm_race",
+          kind: "edit",
+          toolName: "update_week_item",
+          args: JSON.stringify({
+            multiMatchQuery: "Gone",
+            candidates: [
+              { id: "wi_gone", label: "Gone Task" },
+              { id: "wi_still_here", label: "Still Here" },
+            ],
+          }),
+        }),
+      ],
+      entitiesById: {
+        // No entry for "wi_gone" -> mock returns null.
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildPickerPayload({
+      selectedId: "wi_gone",
+      callbackId: "runway_edit_task",
+      proposalId: "prop_mm_race",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    // Proposal NOT mutated when the row is gone.
+    expect(handles.proposalUpdates).toHaveLength(0);
+
+    // views.update was called to surface the error, BUT the rebuild kept the
+    // disambiguation phase (currentValues unset, candidates carried through,
+    // errorBlock present).
+    expect(handles.viewsUpdate).toHaveBeenCalledTimes(1);
+    expect(handles.buildTaskModal).toHaveBeenCalledTimes(1);
+    const call = handles.buildTaskModal.mock.calls[0][0] as {
+      currentValues?: unknown;
+      multiMatchCandidates?: Array<{ id: string }>;
+      errorBlock?: { blockId: string; message: string };
+    };
+    expect(call.currentValues).toBeUndefined();
+    expect(Array.isArray(call.multiMatchCandidates)).toBe(true);
+    expect(call.multiMatchCandidates?.length).toBeGreaterThan(0);
+    expect(call.errorBlock).toBeDefined();
+    expect(call.errorBlock?.message).toMatch(/gone/i);
+    // Civ voice: ASCII hyphens only, no em-dashes.
+    expect(call.errorBlock?.message).not.toMatch(/\u2014/);
+  });
+
+  it("Terminal-state proposal (submitted): no-op return 200, no mutation, no views.update", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_mm_done",
+          kind: "edit",
+          toolName: "update_week_item",
+          status: "submitted",
+        }),
+      ],
+      entitiesById: {
+        wi_anything: { id: "wi_anything", title: "Anything" },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildPickerPayload({
+      selectedId: "wi_anything",
+      proposalId: "prop_mm_done",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.proposalUpdates).toHaveLength(0);
+    expect(handles.viewsUpdate).not.toHaveBeenCalled();
+    expect(handles.buildTaskModal).not.toHaveBeenCalled();
+    expect(handles.loadEntityById).not.toHaveBeenCalled();
+  });
+
+  it.each(["cancelled", "expired", "failed"] as const)(
+    "Terminal-state proposal (%s): no-op return 200",
+    async (status) => {
+      const handles = setupRouteMocks({
+        proposals: [
+          makeProposal({
+            id: "prop_mm_term",
+            kind: "edit",
+            toolName: "update_week_item",
+            status,
+          }),
+        ],
+      });
+      const { POST } = await import("./route");
+
+      const payload = buildPickerPayload({
+        selectedId: "wi_x",
+        proposalId: "prop_mm_term",
+      });
+      const res = await POST(makeRequest(encodePayload(payload)) as never);
+      expect(res.status).toBe(200);
+
+      expect(handles.proposalUpdates).toHaveLength(0);
+      expect(handles.viewsUpdate).not.toHaveBeenCalled();
+      expect(handles.buildTaskModal).not.toHaveBeenCalled();
+    },
+  );
+
+  it("Missing proposal: no-op return 200, no mutation, no views.update", async () => {
+    const handles = setupRouteMocks({ proposals: [] });
+    const { POST } = await import("./route");
+
+    const payload = buildPickerPayload({
+      selectedId: "wi_x",
+      proposalId: "prop_does_not_exist",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.proposalUpdates).toHaveLength(0);
+    expect(handles.viewsUpdate).not.toHaveBeenCalled();
+    expect(handles.buildTaskModal).not.toHaveBeenCalled();
+    expect(handles.loadEntityById).not.toHaveBeenCalled();
+  });
+
+  it("swallows views.update hash_conflict errors gracefully", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_mm_hash",
+          kind: "edit",
+          toolName: "update_week_item",
+        }),
+      ],
+      entitiesById: {
+        wi_pick: { id: "wi_pick", title: "Pick Me" },
+      },
+    });
+    handles.viewsUpdate.mockRejectedValueOnce(new Error("hash_conflict"));
+    const { POST } = await import("./route");
+
+    const payload = buildPickerPayload({
+      selectedId: "wi_pick",
+      proposalId: "prop_mm_hash",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    // Even though Slack rejects the update, the handler still acks 200.
+    expect(res.status).toBe(200);
+  });
+
+  it("Wrong toolName (create flow): no-op return 200, no mutation, no views.update", async () => {
+    // The picker should never render in create flows; if a stale block_actions
+    // event still reaches the handler with a create-flow proposal, we ignore
+    // it defensively rather than crashing or partially mutating state.
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_mm_create",
+          kind: "create",
+          toolName: "create_week_item",
+        }),
+      ],
+      entitiesById: {
+        wi_pick: { id: "wi_pick", title: "Pick Me" },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildPickerPayload({
+      selectedId: "wi_pick",
+      proposalId: "prop_mm_create",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.proposalUpdates).toHaveLength(0);
+    expect(handles.viewsUpdate).not.toHaveBeenCalled();
+    expect(handles.buildTaskModal).not.toHaveBeenCalled();
+  });
+});
+
 describe("POST /api/slack/interactivity — view_submission dispatch (Builder 8)", () => {
   beforeEach(() => {
     process.env.SLACK_SIGNING_SECRET = SIGNING_SECRET;
@@ -1810,5 +2191,955 @@ describe("POST /api/slack/interactivity — view_submission dispatch (Builder 8)
     const res = await POST(req as never);
     expect(res.status).toBe(400);
     expect(handles.inngestSend).not.toHaveBeenCalled();
+  });
+});
+
+// ----------------------------------------------------------------------------
+// HOLDOUT QA — multi-match candidate picker edge cases
+//
+// Independently-written failing tests probing concurrency, failure injection,
+// boundary values, state transitions, and missing-data scenarios for the Wave
+// 2 multi_match_candidate_select handler. The dev tests above cover the happy
+// paths and a handful of misuse cases; this block hunts for what those tests
+// did not cover.
+//
+// These tests intentionally do NOT modify any production code. If a test
+// fails, the operator decides whether the production code or the test is
+// wrong before any fixes ship.
+// ----------------------------------------------------------------------------
+
+describe("holdout: multi-match candidate picker edge cases", () => {
+  beforeEach(() => {
+    process.env.SLACK_SIGNING_SECRET = SIGNING_SECRET;
+  });
+
+  function buildHoldoutPickerPayload(opts: {
+    selectedId?: string;
+    callbackId?: string;
+    proposalId?: string;
+    viewId?: string;
+    viewHash?: string;
+    privateMetadata?: string | null;
+    /** Override user.id on the payload. Defaults to the makeProposal default
+     *  userSlackId so the ownership guard passes. Set to a different value
+     *  to assert the cross-user defense-in-depth path. */
+    userSlackId?: string;
+  }) {
+    const proposalId = opts.proposalId ?? "prop_holdout_001";
+    const meta =
+      opts.privateMetadata !== undefined
+        ? opts.privateMetadata
+        : JSON.stringify({ proposalId });
+    const view: Record<string, unknown> = {
+      id: opts.viewId ?? "V_HOLDOUT_001",
+      hash: opts.viewHash ?? "hash_holdout_v1",
+      callback_id: opts.callbackId ?? "runway_edit_task",
+      state: { values: {} },
+    };
+    if (meta !== null) view.private_metadata = meta;
+    const action: Record<string, unknown> = {
+      action_id: "multi_match_candidate_select",
+      block_id: "multi_match_candidate_block",
+      type: "static_select",
+    };
+    if (opts.selectedId !== undefined) {
+      action.selected_option = { value: opts.selectedId };
+    }
+    return {
+      type: "block_actions",
+      team: { id: "T_HOLDOUT" },
+      user: { id: opts.userSlackId ?? "U_TEST_001", team_id: "T_HOLDOUT" },
+      trigger_id: "trigger_holdout",
+      response_url: null,
+      channel: { id: "C_HOLDOUT" },
+      view,
+      actions: [action],
+    };
+  }
+
+  // ---------------------------------------------------------------
+  // Double-trigger / concurrency
+  // ---------------------------------------------------------------
+
+  it("rapid double-pick on different values: last write wins, both ack 200", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_concurrent_diff",
+          kind: "edit",
+          toolName: "update_week_item",
+          args: JSON.stringify({
+            multiMatchQuery: "Concept",
+            candidates: [
+              { id: "wi_a", label: "Concept A" },
+              { id: "wi_b", label: "Concept B" },
+            ],
+          }),
+        }),
+      ],
+      entitiesById: {
+        wi_a: { id: "wi_a", title: "Concept A" },
+        wi_b: { id: "wi_b", title: "Concept B" },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payloadA = buildHoldoutPickerPayload({
+      selectedId: "wi_a",
+      proposalId: "prop_h_concurrent_diff",
+    });
+    const payloadB = buildHoldoutPickerPayload({
+      selectedId: "wi_b",
+      proposalId: "prop_h_concurrent_diff",
+    });
+
+    const [resA, resB] = await Promise.all([
+      POST(makeRequest(encodePayload(payloadA)) as never),
+      POST(makeRequest(encodePayload(payloadB)) as never),
+    ]);
+
+    expect(resA.status).toBe(200);
+    expect(resB.status).toBe(200);
+
+    // Both writes happened.
+    expect(handles.proposalUpdates.length).toBeGreaterThanOrEqual(2);
+    // Last patch on the row is one of the two pick ids; current state reflects one of them.
+    const finalRow = handles.proposals.get("prop_h_concurrent_diff");
+    expect(["wi_a", "wi_b"]).toContain(finalRow?.targetEntityId);
+  });
+
+  it("rapid double-pick on same value: idempotent, both ack 200", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_concurrent_same",
+          kind: "edit",
+          toolName: "update_week_item",
+          args: JSON.stringify({
+            candidates: [{ id: "wi_dup", label: "Dup" }],
+          }),
+        }),
+      ],
+      entitiesById: {
+        wi_dup: { id: "wi_dup", title: "Dup" },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_dup",
+      proposalId: "prop_h_concurrent_same",
+    });
+
+    const [r1, r2] = await Promise.all([
+      POST(makeRequest(encodePayload(payload)) as never),
+      POST(makeRequest(encodePayload(payload)) as never),
+    ]);
+
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
+    // Final state is consistent regardless of how many writes fired.
+    const finalRow = handles.proposals.get("prop_h_concurrent_same");
+    expect(finalRow?.targetEntityId).toBe("wi_dup");
+    expect(finalRow?.targetEntityType).toBe("week_item");
+  });
+
+  // ---------------------------------------------------------------
+  // Failure injection
+  // ---------------------------------------------------------------
+
+  it("views.update throws non-hash_conflict (e.g., ECONNRESET): handler still acks 200", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_econn",
+          kind: "edit",
+          toolName: "update_week_item",
+        }),
+      ],
+      entitiesById: {
+        wi_econn: { id: "wi_econn", title: "ECONN" },
+      },
+    });
+    handles.viewsUpdate.mockRejectedValueOnce(new Error("ECONNRESET"));
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_econn",
+      proposalId: "prop_h_econn",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+  });
+
+  it("loadEntityById throws (not just returns null): handler acks 200, no proposal mutation", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_load_throw",
+          kind: "edit",
+          toolName: "update_week_item",
+        }),
+      ],
+    });
+    handles.loadEntityById.mockRejectedValueOnce(new Error("upstream db oom"));
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_anything",
+      proposalId: "prop_h_load_throw",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    // Proposal must not be partially mutated when the row load failed.
+    expect(handles.proposalUpdates).toHaveLength(0);
+  });
+
+  // ---------------------------------------------------------------
+  // Boundary values
+  // ---------------------------------------------------------------
+
+  it("selected_option.value is empty string: no-op, ack 200", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_empty_val",
+          kind: "edit",
+          toolName: "update_week_item",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "",
+      proposalId: "prop_h_empty_val",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.loadEntityById).not.toHaveBeenCalled();
+    expect(handles.proposalUpdates).toHaveLength(0);
+    expect(handles.viewsUpdate).not.toHaveBeenCalled();
+  });
+
+  it("picked id is wrong-kind (project id but proposal is task): treated as row-not-found", async () => {
+    // proposal.toolName=update_week_item -> loadEntityById called with kind="task".
+    // The mock only has the id under entitiesById but the production loader
+    // would scope by table; since our mock returns null when an id isn't found
+    // for the (kind, id) lookup, this simulates loading a project id from the
+    // weekItems table -> null. Handler should re-render disambiguation.
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_wrong_kind",
+          kind: "edit",
+          toolName: "update_week_item",
+          args: JSON.stringify({
+            candidates: [
+              { id: "proj_wrong_kind", label: "Some Project" },
+              { id: "wi_right", label: "Right Task" },
+            ],
+          }),
+        }),
+      ],
+      // Set up the mock so that the loader returns null for this id under "task" kind.
+      entitiesById: {
+        // Intentionally no entry: simulates the kind-scoped query returning empty.
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "proj_wrong_kind",
+      proposalId: "prop_h_wrong_kind",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    // Proposal NOT mutated.
+    expect(handles.proposalUpdates).toHaveLength(0);
+    // Disambiguation re-render with errorBlock.
+    expect(handles.buildTaskModal).toHaveBeenCalledTimes(1);
+    const call = handles.buildTaskModal.mock.calls[0][0] as {
+      errorBlock?: { message: string };
+      multiMatchCandidates?: unknown[];
+    };
+    expect(call.errorBlock).toBeDefined();
+  });
+
+  it("private_metadata is empty string: no-op, ack 200", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_meta_empty",
+          kind: "edit",
+          toolName: "update_week_item",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_anything",
+      proposalId: "prop_h_meta_empty",
+      privateMetadata: "",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.loadEntityById).not.toHaveBeenCalled();
+    expect(handles.proposalUpdates).toHaveLength(0);
+    expect(handles.viewsUpdate).not.toHaveBeenCalled();
+  });
+
+  it("private_metadata is malformed JSON: no-op, ack 200", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_meta_bad",
+          kind: "edit",
+          toolName: "update_week_item",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_anything",
+      proposalId: "prop_h_meta_bad",
+      privateMetadata: "{not valid json",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.loadEntityById).not.toHaveBeenCalled();
+    expect(handles.proposalUpdates).toHaveLength(0);
+    expect(handles.viewsUpdate).not.toHaveBeenCalled();
+  });
+
+  it("private_metadata is JSON null: no-op, ack 200", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_meta_null",
+          kind: "edit",
+          toolName: "update_week_item",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_anything",
+      proposalId: "prop_h_meta_null",
+      privateMetadata: "null",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.loadEntityById).not.toHaveBeenCalled();
+    expect(handles.proposalUpdates).toHaveLength(0);
+  });
+
+  it("private_metadata is JSON without proposalId field: no-op, ack 200", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_meta_no_id",
+          kind: "edit",
+          toolName: "update_week_item",
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_anything",
+      proposalId: "prop_h_meta_no_id",
+      privateMetadata: JSON.stringify({ clientId: "client_x" }),
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.loadEntityById).not.toHaveBeenCalled();
+    expect(handles.proposalUpdates).toHaveLength(0);
+  });
+
+  it("100+ candidates: handler resolves an id past position 100 cleanly", async () => {
+    // Wave 1 truncates to 100 in the picker UI, but the handler should still
+    // resolve any id the user managed to send (via stale Slack state).
+    const candidates = Array.from({ length: 120 }).map((_, i) => ({
+      id: `wi_${i.toString().padStart(3, "0")}`,
+      label: `Candidate ${i}`,
+    }));
+    const pickedId = "wi_117"; // position 117, beyond the 100 cap
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_big_list",
+          kind: "edit",
+          toolName: "update_week_item",
+          args: JSON.stringify({ candidates }),
+        }),
+      ],
+      entitiesById: {
+        [pickedId]: { id: pickedId, title: "Way past 100" },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: pickedId,
+      proposalId: "prop_h_big_list",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.proposalUpdates).toHaveLength(1);
+    expect(handles.proposalUpdates[0].patch.targetEntityId).toBe(pickedId);
+  });
+
+  it("proposal.toolName empty string: no-op, ack 200, no DB writes", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_tool_empty",
+          kind: "edit",
+          toolName: "",
+        }),
+      ],
+      entitiesById: {
+        wi_anything: { id: "wi_anything", title: "Anything" },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_anything",
+      proposalId: "prop_h_tool_empty",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.proposalUpdates).toHaveLength(0);
+    expect(handles.viewsUpdate).not.toHaveBeenCalled();
+  });
+
+  it("proposal.toolName unrecognized: no-op, ack 200, no DB writes", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_tool_weird",
+          kind: "edit",
+          toolName: "frobnicate_widget",
+        }),
+      ],
+      entitiesById: {
+        wi_anything: { id: "wi_anything", title: "Anything" },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_anything",
+      proposalId: "prop_h_tool_weird",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.proposalUpdates).toHaveLength(0);
+    expect(handles.viewsUpdate).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------
+  // State transition
+  // ---------------------------------------------------------------
+
+  it("post-pick re-fire on already-edit proposal (candidates cleared): defensive 200", async () => {
+    // Simulate: user picked once, proposal mutated to (targetEntityId set,
+    // args.candidates removed), then the same picker fires again from a stale
+    // Slack client. Handler should not crash; treat as best-effort no-op or
+    // re-write the same target.
+    setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_post_pick",
+          kind: "edit",
+          toolName: "update_week_item",
+          targetEntityId: "wi_first",
+          targetEntityType: "week_item",
+          args: JSON.stringify({}), // candidates already stripped
+        }),
+      ],
+      entitiesById: {
+        wi_second: { id: "wi_second", title: "Second" },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_second",
+      proposalId: "prop_h_post_pick",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+  });
+
+  // ---------------------------------------------------------------
+  // Missing data
+  // ---------------------------------------------------------------
+
+  it("picked entity row exists but with NULL/empty fields: view rebuild does not crash", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_null_fields",
+          kind: "edit",
+          toolName: "update_week_item",
+          args: JSON.stringify({
+            candidates: [{ id: "wi_null", label: "Null Title Row" }],
+          }),
+        }),
+      ],
+      entitiesById: {
+        wi_null: {
+          id: "wi_null",
+          title: null,
+          clientId: null,
+          projectId: null,
+          category: null,
+        },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_null",
+      proposalId: "prop_h_null_fields",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.proposalUpdates).toHaveLength(1);
+    expect(handles.buildTaskModal).toHaveBeenCalledTimes(1);
+    const call = handles.buildTaskModal.mock.calls[0][0] as {
+      currentValues?: Record<string, unknown>;
+    };
+    expect(call.currentValues).toBeDefined();
+    // The currentValues spread retains the null fields rather than crashing.
+    expect(call.currentValues?.title).toBeNull();
+  });
+
+  it("proposal.args is corrupt JSON: idempotency guard treats as stale, no DB write, no row load", async () => {
+    // Wave 6 / Fix 6.1: corrupt args parse to {}, so args.candidates is
+    // missing - the handler treats this as a stale double-pick (the first
+    // pick already cleared candidates) and skips the DB write + row load.
+    // It still attempts views.update so Slack acks cleanly.
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_args_corrupt",
+          kind: "edit",
+          toolName: "update_week_item",
+          args: "{not valid json",
+        }),
+      ],
+      entitiesById: {
+        wi_pick: { id: "wi_pick", title: "Pick Me" },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_pick",
+      proposalId: "prop_h_args_corrupt",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.proposalUpdates).toHaveLength(0);
+    expect(handles.loadEntityById).not.toHaveBeenCalled();
+  });
+
+  it("proposal.args has no candidates field: idempotency guard fires (stale double-pick)", async () => {
+    // Wave 6 / Fix 6.1: missing candidates means the first pick already
+    // cleared them. Treat the second event as a no-op DB-wise.
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_no_cands",
+          kind: "edit",
+          toolName: "update_week_item",
+          args: JSON.stringify({ multiMatchQuery: "lonely" }),
+        }),
+      ],
+      entitiesById: {
+        wi_pick: { id: "wi_pick", title: "Pick Me" },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_pick",
+      proposalId: "prop_h_no_cands",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.proposalUpdates).toHaveLength(0);
+    expect(handles.loadEntityById).not.toHaveBeenCalled();
+  });
+
+  it("row-gone race + corrupt args: idempotency guard fires before row load", async () => {
+    // Wave 6 / Fix 6.1: corrupt-args + missing candidates collapses into the
+    // stale double-pick path before the row-gone race can be hit. Proposal
+    // is intentionally NOT mutated, no row load is attempted, views.update
+    // still fires so Slack acks the click.
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_corrupt_race",
+          kind: "edit",
+          toolName: "update_week_item",
+          args: "definitely not json {{{",
+        }),
+      ],
+      entitiesById: {},
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_gone",
+      proposalId: "prop_h_corrupt_race",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.proposalUpdates).toHaveLength(0);
+    expect(handles.loadEntityById).not.toHaveBeenCalled();
+  });
+
+  it("project flow: row with NULL name field still re-renders without crash", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_proj_null",
+          kind: "edit",
+          toolName: "update_project",
+          args: JSON.stringify({
+            candidates: [{ id: "proj_null", label: "Null Name Project" }],
+          }),
+        }),
+      ],
+      entitiesById: {
+        proj_null: { id: "proj_null", name: null, clientId: null },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "proj_null",
+      proposalId: "prop_h_proj_null",
+      callbackId: "runway_edit_project",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.buildProjectModal).toHaveBeenCalledTimes(1);
+  });
+
+  it("team-member flow: row with NULL fullName field still re-renders without crash", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_tm_null",
+          kind: "edit",
+          toolName: "update_team_member",
+          args: JSON.stringify({
+            candidates: [{ id: "tm_null", label: "Null Name TM" }],
+          }),
+        }),
+      ],
+      entitiesById: {
+        tm_null: { id: "tm_null", fullName: null },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "tm_null",
+      proposalId: "prop_h_tm_null",
+      callbackId: "runway_edit_team_member",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.buildTeamMemberModal).toHaveBeenCalledTimes(1);
+  });
+
+  // ---------------------------------------------------------------
+  // Ownership guard (defense-in-depth)
+  // ---------------------------------------------------------------
+
+  it("payload.user.id !== proposal.userSlackId: ack 200, no mutation, no views.update, no row load", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_owner_mismatch",
+          kind: "edit",
+          toolName: "update_week_item",
+          userSlackId: "U_OWNER",
+          args: JSON.stringify({
+            candidates: [{ id: "wi_target", label: "Target" }],
+          }),
+        }),
+      ],
+      entitiesById: {
+        wi_target: { id: "wi_target", title: "Target" },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_target",
+      proposalId: "prop_h_owner_mismatch",
+      userSlackId: "U_INTRUDER",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    // Proposal must not be mutated by a non-owner click.
+    expect(handles.proposalUpdates).toHaveLength(0);
+    // No views.update fired.
+    expect(handles.viewsUpdate).not.toHaveBeenCalled();
+    // Row load short-circuited before the lookup.
+    expect(handles.loadEntityById).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------
+  // Wave 6 fixes
+  // ---------------------------------------------------------------
+
+  it("Fix 6.1: candidates already cleared (stale double-pick): no DB write, no row load, ack 200", async () => {
+    // The first pick clears args.candidates. A second block_actions firing
+    // with the same proposal observes empty candidates and bails before the
+    // DB write and the row load.
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_idempotent",
+          kind: "edit",
+          toolName: "update_week_item",
+          targetEntityId: "wi_already_picked",
+          targetEntityType: "week_item",
+          args: JSON.stringify({ multiMatchQuery: "x" }), // candidates already cleared
+        }),
+      ],
+      entitiesById: {
+        wi_double_click: { id: "wi_double_click", title: "Double Click" },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_double_click",
+      proposalId: "prop_h_idempotent",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.proposalUpdates).toHaveLength(0);
+    expect(handles.loadEntityById).not.toHaveBeenCalled();
+  });
+
+  it("Fix 6.3: team-member with only legacy `name` set, fullName falls back to name on rebuild", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_tm_fb",
+          kind: "edit",
+          toolName: "update_team_member",
+          args: JSON.stringify({
+            candidates: [{ id: "tm_riley", label: "Riley" }],
+          }),
+        }),
+      ],
+      entitiesById: {
+        tm_riley: {
+          id: "tm_riley",
+          fullName: null,
+          name: "Riley",
+          roleCategory: "creative",
+        },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "tm_riley",
+      proposalId: "prop_h_tm_fb",
+      callbackId: "runway_edit_team_member",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.buildTeamMemberModal).toHaveBeenCalledTimes(1);
+    const call = handles.buildTeamMemberModal.mock.calls[0][0] as {
+      currentValues?: Record<string, unknown>;
+    };
+    expect(call.currentValues?.fullName).toBe("Riley");
+  });
+
+  it("Fix 6.7: row-gone path uses ROW_GONE_MESSAGE; load-failed path uses LOAD_FAILED_MESSAGE", async () => {
+    // Row-gone case
+    const handlesGone = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_msg_gone",
+          kind: "edit",
+          toolName: "update_week_item",
+          args: JSON.stringify({
+            candidates: [{ id: "wi_gone", label: "Gone" }],
+          }),
+        }),
+      ],
+      entitiesById: {},
+    });
+    const route1 = await import("./route");
+
+    const goneRes = await route1.POST(
+      makeRequest(
+        encodePayload(
+          buildHoldoutPickerPayload({
+            selectedId: "wi_gone",
+            proposalId: "prop_h_msg_gone",
+          }),
+        ),
+      ) as never,
+    );
+    expect(goneRes.status).toBe(200);
+    const goneCall = handlesGone.buildTaskModal.mock.calls[0][0] as {
+      errorBlock?: { blockId: string; message: string };
+    };
+    expect(goneCall.errorBlock?.blockId).toBe("row_gone_block");
+    expect(goneCall.errorBlock?.message).toMatch(/gone/i);
+
+    // Load-failed case (loadEntityById throws)
+    const handlesFail = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_msg_fail",
+          kind: "edit",
+          toolName: "update_week_item",
+          args: JSON.stringify({
+            candidates: [{ id: "wi_fail", label: "Fail" }],
+          }),
+        }),
+      ],
+    });
+    handlesFail.loadEntityById.mockRejectedValueOnce(new Error("upstream oom"));
+    const route2 = await import("./route");
+
+    const failRes = await route2.POST(
+      makeRequest(
+        encodePayload(
+          buildHoldoutPickerPayload({
+            selectedId: "wi_fail",
+            proposalId: "prop_h_msg_fail",
+          }),
+        ),
+      ) as never,
+    );
+    expect(failRes.status).toBe(200);
+    const failCall = handlesFail.buildTaskModal.mock.calls[0][0] as {
+      errorBlock?: { blockId: string; message: string };
+    };
+    expect(failCall.errorBlock?.blockId).toBe("load_failed_block");
+    // Distinct copy from the row-gone message; no overlap on "gone".
+    expect(failCall.errorBlock?.message).not.toBe(goneCall.errorBlock?.message);
+    expect(failCall.errorBlock?.message).toMatch(/load/i);
+  });
+
+  it("Fix 6.9: missing view.hash logs a warn but still calls views.update", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_no_hash",
+          kind: "edit",
+          toolName: "update_week_item",
+          args: JSON.stringify({
+            candidates: [{ id: "wi_x", label: "X" }],
+          }),
+        }),
+      ],
+      entitiesById: {
+        wi_x: { id: "wi_x", title: "X" },
+      },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "wi_x",
+      proposalId: "prop_h_no_hash",
+    });
+    // Strip hash off the view.
+    (payload.view as Record<string, unknown>).hash = undefined;
+
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.viewsUpdate).toHaveBeenCalledTimes(1);
+    const call = handles.viewsUpdate.mock.calls[0][0] as { hash?: string };
+    expect(call.hash).toBeUndefined();
+    // Warn fired with race-detection message.
+    const warned = warnSpy.mock.calls.some((c) =>
+      typeof c[0] === "string" &&
+      c[0].includes("views.update without hash"),
+    );
+    expect(warned).toBe(true);
+    warnSpy.mockRestore();
+  });
+
+  it("Fix 6.10: oversized selected_option.value (>100 chars): no-op, ack 200, warn", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_oversize",
+          kind: "edit",
+          toolName: "update_week_item",
+          args: JSON.stringify({
+            candidates: [{ id: "wi_y", label: "Y" }],
+          }),
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const oversized = "x".repeat(150);
+    const payload = buildHoldoutPickerPayload({
+      selectedId: oversized,
+      proposalId: "prop_h_oversize",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.loadEntityById).not.toHaveBeenCalled();
+    expect(handles.proposalUpdates).toHaveLength(0);
+    expect(handles.viewsUpdate).not.toHaveBeenCalled();
+    const warned = warnSpy.mock.calls.some((c) =>
+      typeof c[0] === "string" &&
+      c[0].includes("oversized selected_option.value"),
+    );
+    expect(warned).toBe(true);
+    warnSpy.mockRestore();
+  });
+
+  it("Fix 6.10: whitespace-only selected_option.value: no-op, ack 200", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_h_ws",
+          kind: "edit",
+          toolName: "update_week_item",
+          args: JSON.stringify({
+            candidates: [{ id: "wi_z", label: "Z" }],
+          }),
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildHoldoutPickerPayload({
+      selectedId: "   ",
+      proposalId: "prop_h_ws",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    expect(handles.loadEntityById).not.toHaveBeenCalled();
+    expect(handles.proposalUpdates).toHaveLength(0);
   });
 });
