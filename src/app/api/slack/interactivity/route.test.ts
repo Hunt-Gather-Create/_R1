@@ -2483,6 +2483,16 @@ describe("POST /api/slack/interactivity — view_submission dispatch (Builder 8)
     expect(event.data.threadTs).toBeNull();
     expect(typeof event.data.submittedAt).toBe("string");
     expect(event.data.stateValues).toBeDefined();
+
+    expect(handles.postEphemeral).toHaveBeenCalledTimes(1);
+    const ephemeralArgs = handles.postEphemeral.mock.calls[0][0] as {
+      channel: string;
+      user: string;
+      text: string;
+    };
+    expect(ephemeralArgs.channel).toBe("C_TEST_001");
+    expect(ephemeralArgs.user).toBe("U_TEST_001");
+    expect(ephemeralArgs.text).toMatch(/Saving your changes/i);
   });
 
   it("returns 400 + does not dispatch when private_metadata is missing proposalId", async () => {

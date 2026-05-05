@@ -40,6 +40,7 @@ import {
   BASELINE_PARENT_PICKER_HINT,
   CONCURRENT_PROPOSAL_SOFT_WARN,
   MODAL_CANCELLED_THREAD_REPLY,
+  MODAL_SAVE_IN_FLIGHT,
   formatEditMultiMatchHint,
   formatMultiMatchHint,
   PARENT_PROJECT_NOT_FOUND,
@@ -1339,6 +1340,12 @@ async function handleViewSubmission(
       submittedAt: new Date().toISOString(),
     },
   });
+
+  // The Inngest consumer takes 30-60s to write through Turso and post the
+  // success/failure DM. Fire an ephemeral now so the user has an in-flight
+  // signal between modal close and final DM. The ephemeral lingers after the
+  // success DM arrives - that's acceptable; the DM is the authoritative signal.
+  await tryPostEphemeral(channelId, payload.user?.id, MODAL_SAVE_IN_FLIGHT);
 
   // Empty body = "submit succeeded, close the modal". Builder 10's consumer
   // takes it from here.

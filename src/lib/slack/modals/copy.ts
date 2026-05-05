@@ -127,6 +127,15 @@ export const MODAL_CANCELLED_THREAD_REPLY =
   "Got it - dismissed without saving. Run the slash command again or ping me to start over.";
 
 /**
+ * Ephemeral posted on view_submission ack to acknowledge that the save is in
+ * flight. The Inngest consumer takes 30 to 60 seconds to write through Turso
+ * and post the success or failure DM, so without this signal the user sees a
+ * closed modal and assumes nothing is happening. Civ voice, no em-dash.
+ */
+export const MODAL_SAVE_IN_FLIGHT =
+  "Saving your changes - I'll DM you when it's done (usually under a minute).";
+
+/**
  * Wave 11 concurrency soft-warn rendered as a context block above the parent
  * picker (or top of modal for non-parent modals) when caller-side lookup
  * detects another user opening a similar form in the same channel within the
