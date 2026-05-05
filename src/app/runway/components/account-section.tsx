@@ -20,13 +20,39 @@
  */
 
 import type { Account } from "../types";
-import type { ClientRundownData } from "@/lib/runway/gantt/types";
+import type {
+  ClientRundownData,
+  SeverityCounts,
+} from "@/lib/runway/gantt/types";
 import { AccountTier, type AccountForTier } from "./account-tier/AccountTier";
 
 type AccountWithWiring = Account & {
   rundown?: ClientRundownData | null;
   readyToCloseIds?: ReadonlySet<string>;
+  /**
+   * Track 3 Wave 4: page.tsx attaches the client's overall severity rollup
+   * (counts of critical / warn / info issues across the active-filtered
+   * Gantt rundown). The Track 4 audit fix threads this through into the
+   * tier's `severity` prop so the client header chips render correctly.
+   */
+  ganttSeverity?: SeverityCounts;
 };
+
+/**
+ * Track 4 audit fix (2026-05-05): collapse the per-account severity rollup
+ * (critical/warn/info counts) into the discriminator the client header
+ * SeverityBadge expects. Critical wins over warning; both must be > 0 to
+ * fire the badge. Info-only and zero-counts return null so the header
+ * stays clean.
+ */
+export function deriveSeverity(
+  counts: SeverityCounts | undefined,
+): "critical" | "warning" | null {
+  if (!counts) return null;
+  if (counts.critical > 0) return "critical";
+  if (counts.warn > 0) return "warning";
+  return null;
+}
 
 interface AccountSectionProps {
   /**
@@ -45,21 +71,21 @@ interface AccountSectionProps {
 
 /**
  * Map the board's `Account` shape onto the `AccountForTier` shape the
- * tier consumes. Several fields don't exist on `Account` today
- * (`severity`, `contractStart`, `contractEnd`); we leave them null so
- * the tier renders a clean header without the badges/dates that the
- * data layer doesn't surface yet. `sowSigned` derives from
- * `contractStatus === "signed"`.
+ * tier consumes. Track 4 audit fix (2026-05-05): `severity` now derives
+ * from the per-account `ganttSeverity` rollup (page.tsx attaches it via
+ * the active-filtered rundown), and `contractStart`/`contractEnd` thread
+ * through from the retainer wrapper L1. `sowSigned` continues to derive
+ * from `contractStatus === "signed"`.
  */
 function toAccountForTier(account: AccountWithWiring): AccountForTier {
   return {
     name: account.name,
     slug: account.slug,
     team: account.team ?? null,
-    severity: null,
+    severity: deriveSeverity(account.ganttSeverity),
     sowSigned: account.contractStatus === "signed",
-    contractStart: null,
-    contractEnd: null,
+    contractStart: account.contractStart ?? null,
+    contractEnd: account.contractEnd ?? null,
   };
 }
 

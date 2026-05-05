@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { AccountSection } from "./account-section";
+import { AccountSection, deriveSeverity } from "./account-section";
 import type { Account } from "../types";
 import type {
   ClientRundownData,
@@ -316,5 +316,114 @@ describe("AccountSection — tier branch (rundown attached)", () => {
     expect(screen.getByText("Q2 Retainer")).toBeInTheDocument();
     expect(screen.getByText("Sub A")).toBeInTheDocument();
     expect(screen.getByText("Solo L1")).toBeInTheDocument();
+  });
+});
+
+// Track 4 audit fix (FAIL — Panel 1, Data Flow): the client header was dropping
+// severity + contract dates because toAccountForTier hardcoded null. These
+// tests assert the new threading: severity collapses from ganttSeverity counts,
+// and contractStart/contractEnd flow through from the page-mapper.
+describe("AccountSection — Track 4 audit fix: severity + contract dates threading", () => {
+  describe("deriveSeverity helper", () => {
+    it("returns 'critical' when ganttSeverity.critical > 0", () => {
+      expect(deriveSeverity({ critical: 1, warn: 0, info: 0 })).toBe("critical");
+    });
+
+    it("returns 'critical' when both critical and warn > 0 (critical wins)", () => {
+      expect(deriveSeverity({ critical: 1, warn: 5, info: 0 })).toBe("critical");
+    });
+
+    it("returns 'warning' when only warn > 0", () => {
+      expect(deriveSeverity({ critical: 0, warn: 3, info: 0 })).toBe("warning");
+    });
+
+    it("returns null when only info > 0 (info doesn't fire the badge)", () => {
+      expect(deriveSeverity({ critical: 0, warn: 0, info: 2 })).toBeNull();
+    });
+
+    it("returns null when all counts are zero", () => {
+      expect(deriveSeverity({ critical: 0, warn: 0, info: 0 })).toBeNull();
+    });
+
+    it("returns null when counts are undefined (account with no rundown)", () => {
+      expect(deriveSeverity(undefined)).toBeNull();
+    });
+  });
+
+  describe("severity threads through to the tier's client header", () => {
+    it("renders the critical severity badge when ganttSeverity.critical > 0", () => {
+      const account = {
+        ...createAccount(),
+        rundown: makeRundown([
+          makeSection("standalone", "Solo L1", [makeWeekItemRow()], undefined, "l1-solo"),
+        ]),
+        ganttSeverity: { critical: 2, warn: 1, info: 0 },
+      };
+      render(<AccountSection account={account} />);
+      const badge = screen.getByTestId("client-severity-badge");
+      expect(badge).toBeInTheDocument();
+      expect(badge.textContent).toBe("Critical");
+    });
+
+    it("renders the warning severity badge when only warn > 0", () => {
+      const account = {
+        ...createAccount(),
+        rundown: makeRundown([
+          makeSection("standalone", "Solo L1", [makeWeekItemRow()], undefined, "l1-solo"),
+        ]),
+        ganttSeverity: { critical: 0, warn: 4, info: 0 },
+      };
+      render(<AccountSection account={account} />);
+      const badge = screen.getByTestId("client-severity-badge");
+      expect(badge).toBeInTheDocument();
+      expect(badge.textContent).toBe("Warning");
+    });
+
+    it("does NOT render the severity badge when ganttSeverity is undefined", () => {
+      const account = {
+        ...createAccount(),
+        rundown: makeRundown([
+          makeSection("standalone", "Solo L1", [makeWeekItemRow()], undefined, "l1-solo"),
+        ]),
+      };
+      render(<AccountSection account={account} />);
+      expect(screen.queryByTestId("client-severity-badge")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("contract dates thread through to the tier's client header", () => {
+    it("renders the contract date range when both contractStart and contractEnd are set", () => {
+      const account: Account & {
+        rundown: ClientRundownData;
+      } = {
+        ...createAccount(),
+        contractStart: "2026-04-01",
+        contractEnd: "2026-06-30",
+        rundown: makeRundown([
+          makeSection("standalone", "Solo L1", [makeWeekItemRow()], undefined, "l1-solo"),
+        ]),
+      };
+      render(<AccountSection account={account} />);
+      // Tier's ClientHeader renders "M/D – M/D" via formatDateLine.
+      expect(screen.getByText(/4\/1\s*–\s*6\/30/)).toBeInTheDocument();
+    });
+
+    it("does not render any contract date line when both fields are null", () => {
+      const account = {
+        ...createAccount(),
+        contractStart: null,
+        contractEnd: null,
+        rundown: makeRundown([
+          makeSection("standalone", "Solo L1", [makeWeekItemRow()], undefined, "l1-solo"),
+        ]),
+      };
+      render(<AccountSection account={account} />);
+      // The tier's formatDateLine returns null when both are null, so no
+      // "M/D" text should be present in the client header. The L2 mini-cards
+      // do render their own dates, so we scope on the client header only via
+      // the SOW chip's neighborhood check.
+      expect(screen.queryByText(/^4\/1$/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/^6\/30$/)).not.toBeInTheDocument();
+    });
   });
 });

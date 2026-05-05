@@ -111,40 +111,61 @@ export default async function RunwayPage() {
   }
 
   // Map DB shape to component props
-  const accounts = clientsWithProjects.map((client) => ({
-    name: client.name,
-    slug: client.slug,
-    contractValue: client.contractValue ?? undefined,
-    contractTerm: client.contractTerm ?? undefined,
-    contractStatus: (client.contractStatus ?? "signed") as
-      | "signed"
-      | "unsigned"
-      | "expired",
-    team: client.team ?? undefined,
-    items: client.items.map((p) => ({
-      id: p.id,
-      title: p.name,
-      status: (p.status ?? "not-started") as ItemStatus,
-      category: (p.category ?? "active") as ItemCategory,
-      owner: p.owner ?? undefined,
-      resources: p.resources ?? undefined,
-      waitingOn: p.waitingOn ?? undefined,
-      notes: p.notes ?? undefined,
-      staleDays: p.staleDays ?? undefined,
-      // v4 timing + retainer metadata (chunk 3 #4, #5)
-      startDate: p.startDate ?? null,
-      endDate: p.endDate ?? null,
-      engagementType: (p.engagementType ?? null) as
-        | "project"
-        | "retainer"
-        | "break-fix"
-        | null,
-      contractEnd: p.contractEnd ?? null,
-      updatedAt: p.updatedAt?.toISOString() ?? null,
-      // v4 (PR #88 Chunk F): retainer wrapper linkage.
-      parentProjectId: p.parentProjectId ?? null,
-    })),
-  }));
+  //
+  // Track 4 audit fix (2026-05-05): surface client-level contract dates on the
+  // By Account header. Contract dates live on the retainer wrapper L1
+  // (`projects.contract_start` / `projects.contract_end`) per the v4 retainer
+  // convention. We pluck them from the wrapper project — the L1 in the
+  // account's items whose id is referenced by another L1's `parentProjectId`
+  // AND whose own `engagementType === "retainer"`. Standalone L1s and
+  // project-only accounts carry no canonical contract dates → both fields
+  // remain null.
+  const accounts = clientsWithProjects.map((client) => {
+    const referencedAsParent = new Set(
+      client.items
+        .map((p) => p.parentProjectId)
+        .filter((pid): pid is string => Boolean(pid)),
+    );
+    const wrapper = client.items.find(
+      (p) => p.engagementType === "retainer" && referencedAsParent.has(p.id),
+    );
+    return {
+      name: client.name,
+      slug: client.slug,
+      contractValue: client.contractValue ?? undefined,
+      contractTerm: client.contractTerm ?? undefined,
+      contractStatus: (client.contractStatus ?? "signed") as
+        | "signed"
+        | "unsigned"
+        | "expired",
+      contractStart: wrapper?.contractStart ?? null,
+      contractEnd: wrapper?.contractEnd ?? null,
+      team: client.team ?? undefined,
+      items: client.items.map((p) => ({
+        id: p.id,
+        title: p.name,
+        status: (p.status ?? "not-started") as ItemStatus,
+        category: (p.category ?? "active") as ItemCategory,
+        owner: p.owner ?? undefined,
+        resources: p.resources ?? undefined,
+        waitingOn: p.waitingOn ?? undefined,
+        notes: p.notes ?? undefined,
+        staleDays: p.staleDays ?? undefined,
+        // v4 timing + retainer metadata (chunk 3 #4, #5)
+        startDate: p.startDate ?? null,
+        endDate: p.endDate ?? null,
+        engagementType: (p.engagementType ?? null) as
+          | "project"
+          | "retainer"
+          | "break-fix"
+          | null,
+        contractEnd: p.contractEnd ?? null,
+        updatedAt: p.updatedAt?.toISOString() ?? null,
+        // v4 (PR #88 Chunk F): retainer wrapper linkage.
+        parentProjectId: p.parentProjectId ?? null,
+      })),
+    };
+  });
 
   const pipelineProps = pipelineData.map((p) => ({
     account: p.accountName ?? "",

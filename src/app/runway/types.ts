@@ -93,6 +93,15 @@ export interface Account {
   contractValue?: string;
   contractTerm?: string;
   contractStatus: "signed" | "unsigned" | "expired";
+  /**
+   * Track 4 audit fix (2026-05-05): contract start/end dates surfaced on the
+   * By Account client header. Sourced from the retainer wrapper L1's
+   * `contractStart`/`contractEnd` fields when one exists; null otherwise.
+   * Optional because non-retainer accounts (project-only or pipeline-only)
+   * carry no canonical contract dates at the client level.
+   */
+  contractStart?: string | null;
+  contractEnd?: string | null;
   team?: string;
   items: TriageItem[];
 }

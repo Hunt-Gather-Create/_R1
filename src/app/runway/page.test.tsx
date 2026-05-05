@@ -534,6 +534,95 @@ describe("RunwayPage", () => {
     expect(props.accounts[0].name).toBe("Convergix");
   });
 
+  // Track 4 audit fix (2026-05-05) — page.tsx mapper now sources client-level
+  // contractStart/contractEnd from the retainer wrapper L1's project row. The
+  // Account interface gained the two fields and the By Account header reads
+  // them via toAccountForTier in account-section.tsx. These tests lock the
+  // mapper logic: wrapper's contract dates flow through to the Account, and
+  // accounts with no wrapper carry null on both fields.
+  describe("Track 4 audit fix: contract dates threading", () => {
+    const wrapperProject = {
+      id: "p-wrap", clientId: "c1", name: "Q2 Retainer",
+      status: "in-production", category: "active", owner: "Lane",
+      waitingOn: null, dueDate: null, notes: null, staleDays: null, sortOrder: 0,
+      // Wrapper carries contract dates per v4 retainer convention.
+      contractStart: "2026-04-01",
+      contractEnd: "2026-06-30",
+      engagementType: "retainer",
+      parentProjectId: null,
+      createdAt: new Date(), updatedAt: new Date(),
+    };
+    const childProject = {
+      id: "p-child", clientId: "c1", name: "Sub A",
+      status: "in-production", category: "active", owner: "Kathy",
+      waitingOn: null, dueDate: null, notes: null, staleDays: null, sortOrder: 1,
+      contractStart: null,
+      contractEnd: null,
+      engagementType: "project",
+      // Pointing at the wrapper makes the wrapper a true wrapper.
+      parentProjectId: "p-wrap",
+      createdAt: new Date(), updatedAt: new Date(),
+    };
+
+    it("populates Account.contractStart/contractEnd from the retainer wrapper L1", async () => {
+      mockGetClientsWithProjects.mockResolvedValue([
+        { ...client, items: [wrapperProject, childProject] },
+      ]);
+      mockGetWeekItems.mockResolvedValue([]);
+      mockGetPipeline.mockResolvedValue([]);
+
+      const el = await RunwayPage();
+      render(el);
+
+      const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+      const account = props.accounts[0];
+      expect(account.contractStart).toBe("2026-04-01");
+      expect(account.contractEnd).toBe("2026-06-30");
+    });
+
+    it("leaves Account.contractStart/contractEnd null when no retainer wrapper exists (project-only account)", async () => {
+      // Single L1 with no parentProjectId — no other L1 references it as parent
+      // → not a true wrapper even if engagementType is retainer.
+      const standaloneRetainer = {
+        ...wrapperProject,
+        id: "p-solo",
+        contractStart: "2026-04-01",
+        contractEnd: "2026-06-30",
+      };
+      mockGetClientsWithProjects.mockResolvedValue([
+        { ...client, items: [standaloneRetainer] },
+      ]);
+      mockGetWeekItems.mockResolvedValue([]);
+      mockGetPipeline.mockResolvedValue([]);
+
+      const el = await RunwayPage();
+      render(el);
+
+      const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+      const account = props.accounts[0];
+      // Standalone retainer (no children referencing it as parent) is NOT a
+      // true wrapper, so client-level contract dates remain null.
+      expect(account.contractStart).toBeNull();
+      expect(account.contractEnd).toBeNull();
+    });
+
+    it("leaves Account.contractStart/contractEnd null when client has no projects", async () => {
+      mockGetClientsWithProjects.mockResolvedValue([
+        { ...client, items: [] },
+      ]);
+      mockGetWeekItems.mockResolvedValue([]);
+      mockGetPipeline.mockResolvedValue([]);
+
+      const el = await RunwayPage();
+      render(el);
+
+      const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+      const account = props.accounts[0];
+      expect(account.contractStart).toBeNull();
+      expect(account.contractEnd).toBeNull();
+    });
+  });
+
   it("passes staleItems from getStaleWeekItems to RunwayBoard", async () => {
     const staleDay = {
       date: "2026-04-05", label: "Sun 4/5",
