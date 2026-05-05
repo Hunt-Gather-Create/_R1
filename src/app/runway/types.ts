@@ -134,6 +134,12 @@ export type PipelineRow = typeof pipelineItems.$inferSelect & {
 // on a separate "Gantt Charts" tab in Wave 4. The rundown types below are
 // retained because the legacy `/api/runway/gantt-embed` route + helpers
 // still reference them.
+//
+// Track 4 Wave 4.3: AccountSection re-consumes a `rundown` (raw filtered
+// `ClientRundownData`) so it can render the new tiered swimlane via
+// `<AccountTier ...>`. The Gantt Charts tab continues to consume the
+// pre-rendered `ganttContent` ReactNode in parallel — the two views read
+// the same upstream filter result through different shapes.
 
 /**
  * A RundownSection descriptor (metadata only — no rendered content).

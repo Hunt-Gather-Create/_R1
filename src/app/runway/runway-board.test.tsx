@@ -109,7 +109,12 @@ describe("RunwayBoard", () => {
     render(<RunwayBoard {...defaultProps} />);
     fireEvent.click(screen.getByText("By Account"));
     expect(screen.getByText("Convergix")).toBeInTheDocument();
-    expect(screen.getByText("CDS Messaging")).toBeInTheDocument();
+    // Track 4 Wave 4.3 — AccountSection now renders the new tier when a
+    // rundown is attached, or an empty-state when it isn't. The shared
+    // board fixture doesn't supply a rundown so we assert the empty-state
+    // line. End-to-end "renders project content" lives in
+    // account-section.test.tsx + AccountTier.test.tsx.
+    expect(screen.getByText("No active rundowns.")).toBeInTheDocument();
   });
 
   it("switches to pipeline view when tab is clicked", () => {

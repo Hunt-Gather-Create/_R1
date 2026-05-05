@@ -216,8 +216,13 @@ export default async function RunwayPage() {
         )
         : undefined;
       const ganttSeverity = filtered?.overallSeverity;
+      // Track 4 Wave 4.3: also carry the raw filtered rundown so the new
+      // By Account tier (`<AccountTier ...>`) can iterate it directly. The
+      // Gantt Charts tab continues to read `ganttContent` (a ReactNode);
+      // both views are driven by the same upstream filter result.
       return {
         ...account,
+        rundown: filtered,
         ganttContent,
         ganttSeverity,
         readyToCloseIds,

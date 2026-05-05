@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import type { DayItem, Account, PipelineItem } from "./types";
 import type { UnifiedAccount } from "./unified-view";
 import type { RunwayFlag } from "@/lib/runway/flags";
-import type { SeverityCounts } from "@/lib/runway/gantt/types";
+import type { SeverityCounts, ClientRundownData } from "@/lib/runway/gantt/types";
 import { parseISODate } from "./date-utils";
 import { mergeWeekendDays, groupByWeek } from "./runway-board-utils";
 import { DayColumn } from "./components/day-column";
@@ -43,9 +43,15 @@ interface RunwayBoardProps {
    * "Ready to close?" chip in BOTH AccountSection (info-card) and
    * RundownContentRSC (dark Gantt embed) so the same signal lives in
    * both views.
+   *
+   * Track 4 Wave 4.3: each account additionally carries the raw filtered
+   * `rundown` (`ClientRundownData | null`) so the new By Account tiered
+   * swimlane can iterate sections directly via `<AccountTier ...>`. Null
+   * when the client has no rundown row (data-integrity nudge).
    */
   accounts: Array<
     (Account | UnifiedAccount) & {
+      rundown?: ClientRundownData | null;
       ganttContent?: ReactNode;
       ganttSeverity?: SeverityCounts;
       readyToCloseIds?: ReadonlySet<string>;

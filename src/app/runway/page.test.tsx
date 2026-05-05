@@ -273,7 +273,11 @@ describe("RunwayPage", () => {
     expect(props.accounts).toHaveLength(1);
     for (const account of props.accounts) {
       expect(account.ganttContent).toBeUndefined();
-      expect(account.rundown).toBeUndefined();
+      // Track 4 Wave 4.3 — when there's no rundown row at all (data-integrity
+      // nudge keeping the account visible), `rundown` is null on the
+      // account passed to the board. AccountSection renders the empty-state
+      // branch ("No active rundowns.") for both null and undefined.
+      expect(account.rundown).toBeNull();
     }
   });
 
@@ -461,6 +465,13 @@ describe("RunwayPage", () => {
     // truthy on the serialized props blob.
     expect(account.ganttContent).toBeTruthy();
     expect(account.ganttSeverity).toEqual({ critical: 1, warn: 2, info: 0 });
+    // Track 4 Wave 4.3 — page.tsx ALSO attaches the raw filtered rundown
+    // alongside ganttContent so the new By Account tier can iterate
+    // sections directly. JSON-roundtrip flattens the rundown object; we
+    // assert presence + the section count carried through.
+    expect(account.rundown).toBeTruthy();
+    expect(account.rundown.sections).toHaveLength(1);
+    expect(account.rundown.sections[0].title).toBe("CDS Messaging");
   });
 
   // Track 3 Wave 3 — accounts whose Gantt rundown filters down to zero
