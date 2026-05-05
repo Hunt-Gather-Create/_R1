@@ -26,6 +26,7 @@ import type {
   RundownSection,
   AnnotatedRow,
 } from "@/lib/runway/gantt/types";
+import { groupSections } from "@/lib/runway/gantt/group-sections";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { L2MiniCard } from "./L2MiniCard";
 
@@ -98,37 +99,11 @@ function weekItemsForSection(section: RundownSection): AnnotatedRow[] {
   return section.data.rows.filter((r) => r.kind === "weekitem");
 }
 
-/**
- * Group flat sections list into wrapper-blocks and standalone-blocks,
- * mirroring the convention used by RundownContentRSC (rsc-side dark
- * embed). Wrapper-children that appear before any wrapper are demoted
- * to standalone.
- */
-type SectionBlock =
-  | { kind: "wrapper"; wrapper: RundownSection; children: RundownSection[] }
-  | { kind: "standalone"; section: RundownSection };
-
-function groupSections(sections: readonly RundownSection[]): SectionBlock[] {
-  const blocks: SectionBlock[] = [];
-  let cur: { wrapper: RundownSection; children: RundownSection[] } | null = null;
-  for (const s of sections) {
-    if (s.kind === "wrapper") {
-      if (cur) blocks.push({ kind: "wrapper", ...cur });
-      cur = { wrapper: s, children: [] };
-    } else if (s.kind === "wrapper-child") {
-      if (cur) cur.children.push(s);
-      else blocks.push({ kind: "standalone", section: s });
-    } else {
-      if (cur) {
-        blocks.push({ kind: "wrapper", ...cur });
-        cur = null;
-      }
-      blocks.push({ kind: "standalone", section: s });
-    }
-  }
-  if (cur) blocks.push({ kind: "wrapper", ...cur });
-  return blocks;
-}
+// Track 4 audit fix (2026-05-05, WARN — Panel 3): the inline `groupSections`
+// + `SectionBlock` definitions were extracted to
+// `@/lib/runway/gantt/group-sections.ts` so AccountTier and RundownContentRSC
+// share the algorithm. Drift risk between the two consumers is removed —
+// any rule change to wrapper-child grouping lands in one place.
 
 // ─── Sub-components ───────────────────────────────────────────────────────
 

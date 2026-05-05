@@ -12,10 +12,7 @@
 import * as React from "react";
 import { GanttSectionDark } from "@/lib/runway/gantt/gantt-section-dark";
 import type { RundownSection } from "@/lib/runway/gantt/types";
-
-type SectionBlock =
-  | { kind: "wrapper"; wrapper: RundownSection; children: RundownSection[] }
-  | { kind: "standalone"; section: RundownSection };
+import { groupSections } from "@/lib/runway/gantt/group-sections";
 
 /**
  * Track 3 Wave 5: small "Ready to close?" chip rendered in the dark Gantt
@@ -45,31 +42,12 @@ function l1IdForSection(section: RundownSection): string | null {
   return raw.entity.id;
 }
 
-/** Mirror of groupTocSections / groupSectionsForAccount for RSC context. */
-function groupSections(sections: RundownSection[]): SectionBlock[] {
-  const blocks: SectionBlock[] = [];
-  let currentWrapper: { wrapper: RundownSection; children: RundownSection[] } | null = null;
-  for (const s of sections) {
-    if (s.kind === "wrapper") {
-      if (currentWrapper) blocks.push({ kind: "wrapper", ...currentWrapper });
-      currentWrapper = { wrapper: s, children: [] };
-    } else if (s.kind === "wrapper-child") {
-      if (currentWrapper) {
-        currentWrapper.children.push(s);
-      } else {
-        blocks.push({ kind: "standalone", section: s });
-      }
-    } else {
-      if (currentWrapper) {
-        blocks.push({ kind: "wrapper", ...currentWrapper });
-        currentWrapper = null;
-      }
-      blocks.push({ kind: "standalone", section: s });
-    }
-  }
-  if (currentWrapper) blocks.push({ kind: "wrapper", ...currentWrapper });
-  return blocks;
-}
+// Track 4 audit fix (2026-05-05, WARN — Panel 3): the inline `groupSections`
+// + `SectionBlock` definitions were extracted to
+// `@/lib/runway/gantt/group-sections.ts` so this RSC consumer shares the
+// algorithm with `account-tier/AccountTier.tsx`. Drift risk between the
+// two consumers is removed — any rule change to wrapper-child grouping
+// lands in one place.
 
 /**
  * Track 4 Wave 4.4 — chevron-rotation polish for the dark Gantt embed.
