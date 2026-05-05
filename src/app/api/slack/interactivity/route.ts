@@ -53,6 +53,10 @@ import {
 } from "@/lib/slack/modals/project";
 import { buildTeamMemberModal } from "@/lib/slack/modals/team-member";
 import { getProjectsFiltered } from "@/lib/runway/operations-reads-clients";
+import {
+  getClientNameById,
+  getProjectsForClient,
+} from "@/lib/runway/operations-utils";
 import { inngest } from "@/lib/inngest/client";
 import { checkConcurrentProposal } from "@/lib/slack/modals/concurrency-check";
 import { recordProposalLifecycleTransition } from "@/lib/slack/modals/observability";
@@ -980,17 +984,106 @@ async function handleMultiMatchCandidateSelect(
     return new Response("OK", { status: 200 });
   }
 
+  // Bug B/C enrichment: the DB row's resources land as a CSV string
+  // ("Role: Name, Role: Name"); buildResourcesBlocks expects a string[].
+  // Convert here so the rebuild AND any subsequent cascade rebuild (which
+  // reads from persisted args) get the right shape. Empty/missing -> []
+  // so callers can rely on Array.isArray().
+  const rawResources = (row as { resources?: unknown }).resources;
+  let resourcesArray: string[] = [];
+  if (typeof rawResources === "string") {
+    resourcesArray = rawResources
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  } else if (Array.isArray(rawResources)) {
+    resourcesArray = rawResources.filter(
+      (x): x is string => typeof x === "string" && x.length > 0,
+    );
+  }
+
+  // Bug A enrichment: resolve clientId -> clientName and (for task/project
+  // rows) resolve the parent project FK -> projectName so picker labels
+  // render the human-readable name, not the ulid.
+  let resolvedClientName: string | undefined;
+  let resolvedProjectName: string | undefined;
+  const rowClientId = (row as { clientId?: unknown }).clientId;
+  if (typeof rowClientId === "string" && rowClientId.length > 0) {
+    try {
+      resolvedClientName = await getClientNameById(rowClientId);
+    } catch (lookupErr) {
+      console.error(
+        "[slack-interactivity] getClientNameById failed during pick enrichment",
+        { proposalId, clientId: rowClientId, lookupErr },
+      );
+    }
+  }
+  // Task: row.projectId is the parent project FK.
+  // Project: row.parentProjectId is the parent retainer FK.
+  // Team-member: no parent FK to resolve (kind === 'team-member').
+  const parentFk =
+    kind === "task"
+      ? (row as { projectId?: unknown }).projectId
+      : kind === "project"
+        ? (row as { parentProjectId?: unknown }).parentProjectId
+        : undefined;
+  if (
+    typeof parentFk === "string" &&
+    parentFk.length > 0 &&
+    typeof rowClientId === "string" &&
+    rowClientId.length > 0
+  ) {
+    try {
+      const projectsForClient = await getProjectsForClient(rowClientId);
+      const match = projectsForClient.find((p) => p.id === parentFk);
+      if (match) resolvedProjectName = match.name;
+    } catch (lookupErr) {
+      console.error(
+        "[slack-interactivity] getProjectsForClient failed during pick enrichment",
+        { proposalId, clientId: rowClientId, lookupErr },
+      );
+    }
+  }
+
+  // Bug C: persist enriched row data into proposal.args so subsequent
+  // cascade rebuilds (date_type toggle, client switch) inherit prefill
+  // defaults from args. Slack's view.state.values only contains
+  // user-touched blocks, so without this persistence the cascade rebuilds
+  // would wipe Owner / Notes / Resources / etc. The merge order is
+  // {...originalArgs, ...row, <enriched>}: row wins over original args
+  // (the picked candidate is the source of truth for fields like title,
+  // owner, notes), and enriched fields win over both (clientName,
+  // projectName, resources-as-array).
+  const enrichedArgs: Record<string, unknown> = {
+    ...argsWithoutCandidates,
+    ...row,
+    resources: resourcesArray,
+  };
+  if (resolvedClientName) enrichedArgs.clientName = resolvedClientName;
+  if (resolvedProjectName) enrichedArgs.projectName = resolvedProjectName;
+
+  // Defensive: spreading row may have re-introduced legacy or stale fields.
+  // candidates / multiMatchQuery were already cleared above and shouldn't
+  // appear on the row, but keep the deletes so we never resurrect the
+  // disambiguation phase by accident.
+  delete (enrichedArgs as { candidates?: unknown }).candidates;
+  delete (enrichedArgs as { multiMatchQuery?: unknown }).multiMatchQuery;
+
   await getRunwayDb()
     .update(botModalProposals)
     .set({
       targetEntityId: selected,
       targetEntityType: targetType,
-      args: JSON.stringify(argsWithoutCandidates),
+      args: JSON.stringify(enrichedArgs),
     })
     .where(eq(botModalProposals.id, proposalId));
 
-  // Mirror the slash-command single-match path: currentValues is the row spread.
-  const currentValues: Record<string, unknown> = { ...row };
+  // Mirror the slash-command single-match path: currentValues is the
+  // enriched args (row data + resolved labels + resources array). Using
+  // enrichedArgs instead of a separate `{ ...row }` snapshot means a
+  // subsequent rebuild reads the same data the cascade handlers will see
+  // when they re-load proposal.args.
+  const currentValues: Record<string, unknown> = { ...enrichedArgs };
 
   // Wave 6 / Fix 6.3: team-member fullName/name fallback. Legacy team_member
   // rows carry the picked label in `name` while the modal builder reads
@@ -1012,7 +1105,7 @@ async function handleMultiMatchCandidateSelect(
     kind,
     mode: "edit",
     proposalId,
-    args: argsWithoutCandidates,
+    args: enrichedArgs,
     retainerMode: meta.retainerMode === true,
     currentValues,
     baselineHint: kind === "team-member" ? undefined : BASELINE_PARENT_PICKER_HINT,

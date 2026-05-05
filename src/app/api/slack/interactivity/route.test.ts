@@ -111,6 +111,8 @@ interface RouteMockHandles {
   checkConcurrentProposal: ReturnType<typeof vi.fn>;
   recordProposalLifecycleTransition: ReturnType<typeof vi.fn>;
   loadEntityById: ReturnType<typeof vi.fn>;
+  getClientNameById: ReturnType<typeof vi.fn>;
+  getProjectsForClient: ReturnType<typeof vi.fn>;
 }
 
 function setupRouteMocks(opts?: {
@@ -125,6 +127,17 @@ function setupRouteMocks(opts?: {
    * helper so the default empty map is fine.
    */
   entitiesById?: Record<string, Record<string, unknown> | null>;
+  /**
+   * Map of clientId -> client name for the getClientNameById mock used by
+   * handleMultiMatchCandidateSelect to resolve picker labels.
+   */
+  clientNamesById?: Record<string, string>;
+  /**
+   * Map of clientId -> projects-for-client list. Used by the
+   * getProjectsForClient mock in handleMultiMatchCandidateSelect to look up
+   * projectName for the parent picker label.
+   */
+  projectsByClient?: Record<string, Array<{ id: string; name: string }>>;
 }): RouteMockHandles {
   const proposals = new Map<string, MockProposal>();
   for (const p of opts?.proposals ?? []) proposals.set(p.id, p);
@@ -168,6 +181,17 @@ function setupRouteMocks(opts?: {
       return entitiesById[id];
     }
     return null;
+  });
+
+  const clientNamesById = opts?.clientNamesById ?? {};
+  const getClientNameById = vi.fn(async (clientId: string | null) => {
+    if (!clientId) return undefined;
+    return clientNamesById[clientId];
+  });
+
+  const projectsByClient = opts?.projectsByClient ?? {};
+  const getProjectsForClient = vi.fn(async (clientId: string) => {
+    return projectsByClient[clientId] ?? [];
   });
 
   // Drizzle-orm: stub `eq(col, val)` -> sentinel { _idMatch: val } so the db
@@ -272,6 +296,11 @@ function setupRouteMocks(opts?: {
     getProjectsFiltered,
   }));
 
+  vi.doMock("@/lib/runway/operations-utils", () => ({
+    getClientNameById,
+    getProjectsForClient,
+  }));
+
   vi.doMock("@/lib/inngest/client", () => ({
     inngest: { send: inngestSend },
   }));
@@ -293,6 +322,8 @@ function setupRouteMocks(opts?: {
     checkConcurrentProposal,
     recordProposalLifecycleTransition,
     loadEntityById,
+    getClientNameById,
+    getProjectsForClient,
   };
 }
 
@@ -1800,6 +1831,10 @@ describe("POST /api/slack/interactivity - multi_match_candidate_select (Wave 2)"
           category: "delivery",
         },
       },
+      clientNamesById: { client_ag1: "AG1" },
+      projectsByClient: {
+        client_ag1: [{ id: "proj_q3", name: "Q3 Brand Refresh" }],
+      },
     });
     const { POST } = await import("./route");
 
@@ -1832,6 +1867,9 @@ describe("POST /api/slack/interactivity - multi_match_candidate_select (Wave 2)"
     expect(call.currentValues?.title).toBe("Concept Writeup");
     expect(call.currentValues?.clientId).toBe("client_ag1");
     expect(call.currentValues?.projectId).toBe("proj_q3");
+    // Bug A: resolved names for picker labels (clientId/projectId stay as raw FKs).
+    expect(call.currentValues?.clientName).toBe("AG1");
+    expect(call.currentValues?.projectName).toBe("Q3 Brand Refresh");
     expect(call.multiMatchCandidates).toBeUndefined();
     expect(call.errorBlock).toBeUndefined();
   });
@@ -1859,8 +1897,16 @@ describe("POST /api/slack/interactivity - multi_match_candidate_select (Wave 2)"
           id: "proj_brand_a",
           name: "Brand Refresh",
           clientId: "client_xyz",
+          parentProjectId: "proj_retainer_xyz",
           status: "in-production",
         },
+      },
+      clientNamesById: { client_xyz: "XYZ Co" },
+      projectsByClient: {
+        client_xyz: [
+          { id: "proj_retainer_xyz", name: "TEST Retainer Verify" },
+          { id: "proj_brand_a", name: "Brand Refresh" },
+        ],
       },
     });
     const { POST } = await import("./route");
@@ -1889,6 +1935,10 @@ describe("POST /api/slack/interactivity - multi_match_candidate_select (Wave 2)"
     expect(call.mode).toBe("edit");
     expect(call.currentValues?.name).toBe("Brand Refresh");
     expect(call.currentValues?.clientId).toBe("client_xyz");
+    // Bug A: resolved names for picker labels (FK columns stay raw).
+    expect(call.currentValues?.clientName).toBe("XYZ Co");
+    expect(call.currentValues?.parentProjectId).toBe("proj_retainer_xyz");
+    expect(call.currentValues?.projectName).toBe("TEST Retainer Verify");
     expect(call.multiMatchCandidates).toBeUndefined();
   });
 
@@ -2126,6 +2176,263 @@ describe("POST /api/slack/interactivity - multi_match_candidate_select (Wave 2)"
     expect(handles.proposalUpdates).toHaveLength(0);
     expect(handles.viewsUpdate).not.toHaveBeenCalled();
     expect(handles.buildTaskModal).not.toHaveBeenCalled();
+  });
+
+  // Bug B: row.resources lands as a CSV string from the DB. The view-builder
+  // expects a string[] ("Role: Name" entries). The handler must convert.
+  it("Bug B: converts row.resources CSV string into a string array for the rebuild", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_mm_resources",
+          kind: "edit",
+          toolName: "update_week_item",
+          targetEntityId: null,
+          targetEntityType: null,
+          args: JSON.stringify({
+            multiMatchQuery: "Concept",
+            candidates: [
+              { id: "wi_resources", label: "Concept Writeup" },
+              { id: "wi_other", label: "Other" },
+            ],
+          }),
+        }),
+      ],
+      entitiesById: {
+        wi_resources: {
+          id: "wi_resources",
+          title: "Concept Writeup",
+          clientId: "client_ag1",
+          projectId: "proj_q3",
+          resources: "AM: Lane Jordan, CD: Lane Carter",
+        },
+      },
+      clientNamesById: { client_ag1: "AG1" },
+      projectsByClient: { client_ag1: [{ id: "proj_q3", name: "Q3" }] },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildPickerPayload({
+      selectedId: "wi_resources",
+      callbackId: "runway_edit_task",
+      proposalId: "prop_mm_resources",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.buildTaskModal).toHaveBeenCalledTimes(1);
+    const call = handles.buildTaskModal.mock.calls[0][0] as {
+      currentValues?: Record<string, unknown>;
+    };
+    expect(Array.isArray(call.currentValues?.resources)).toBe(true);
+    expect(call.currentValues?.resources).toEqual([
+      "AM: Lane Jordan",
+      "CD: Lane Carter",
+    ]);
+  });
+
+  it("Bug B: resources empty/missing on the row stays empty (no array, no crash)", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_mm_no_resources",
+          kind: "edit",
+          toolName: "update_week_item",
+          args: JSON.stringify({
+            multiMatchQuery: "Concept",
+            candidates: [
+              { id: "wi_no_res", label: "Concept Writeup" },
+              { id: "wi_other_2", label: "Other" },
+            ],
+          }),
+        }),
+      ],
+      entitiesById: {
+        wi_no_res: {
+          id: "wi_no_res",
+          title: "Concept Writeup",
+          clientId: "client_ag1",
+          // resources omitted (or null)
+        },
+      },
+      clientNamesById: { client_ag1: "AG1" },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildPickerPayload({
+      selectedId: "wi_no_res",
+      callbackId: "runway_edit_task",
+      proposalId: "prop_mm_no_resources",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+    // No throw; resources is either undefined or an empty array (handler may
+    // omit it; the view-builder treats both equivalently).
+    const call = handles.buildTaskModal.mock.calls[0][0] as {
+      currentValues?: Record<string, unknown>;
+    };
+    const resources = call.currentValues?.resources;
+    expect(resources === undefined || (Array.isArray(resources) && resources.length === 0)).toBe(
+      true,
+    );
+  });
+
+  // Bug C: after pick, args is persisted with enriched fields so subsequent
+  // cascade rebuilds (date_type toggle, client switch) preserve fields the
+  // user did not touch. The pick must write the enriched data into proposal.args.
+  it("Bug C: persists enriched row data into proposal.args so cascade rebuilds preserve untouched prefills", async () => {
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_mm_persist",
+          kind: "edit",
+          toolName: "update_week_item",
+          targetEntityId: null,
+          targetEntityType: null,
+          args: JSON.stringify({
+            multiMatchQuery: "Concept",
+            candidates: [
+              { id: "wi_persist", label: "Concept Writeup" },
+              { id: "wi_other_3", label: "Other" },
+            ],
+          }),
+        }),
+      ],
+      entitiesById: {
+        wi_persist: {
+          id: "wi_persist",
+          title: "Concept Writeup",
+          clientId: "client_ag1",
+          projectId: "proj_q3",
+          owner: "Jason Burks",
+          notes: "Hero card draft.",
+          category: "delivery",
+          resources: "AM: Lane Jordan",
+          dateType: "single",
+          date: "2026-05-08",
+        },
+      },
+      clientNamesById: { client_ag1: "AG1" },
+      projectsByClient: { client_ag1: [{ id: "proj_q3", name: "Q3 Refresh" }] },
+    });
+    const { POST } = await import("./route");
+
+    const payload = buildPickerPayload({
+      selectedId: "wi_persist",
+      callbackId: "runway_edit_task",
+      proposalId: "prop_mm_persist",
+    });
+    const res = await POST(makeRequest(encodePayload(payload)) as never);
+    expect(res.status).toBe(200);
+
+    // Persisted args MUST include the enriched fields, NOT just the FK
+    // values, so subsequent cascades inherit prefill defaults.
+    expect(handles.proposalUpdates).toHaveLength(1);
+    const patch = handles.proposalUpdates[0].patch as { args?: string };
+    expect(typeof patch.args).toBe("string");
+    const persistedArgs = JSON.parse(patch.args ?? "{}") as Record<string, unknown>;
+
+    // Cleared discriminator fields.
+    expect(persistedArgs.candidates).toBeUndefined();
+    expect(persistedArgs.multiMatchQuery).toBeUndefined();
+
+    // Enriched + raw FK + label fields all present.
+    expect(persistedArgs.title).toBe("Concept Writeup");
+    expect(persistedArgs.clientId).toBe("client_ag1");
+    expect(persistedArgs.clientName).toBe("AG1");
+    expect(persistedArgs.projectId).toBe("proj_q3");
+    expect(persistedArgs.projectName).toBe("Q3 Refresh");
+    expect(persistedArgs.owner).toBe("Jason Burks");
+    expect(persistedArgs.notes).toBe("Hero card draft.");
+    expect(persistedArgs.category).toBe("delivery");
+    expect(Array.isArray(persistedArgs.resources)).toBe(true);
+    expect(persistedArgs.resources).toEqual(["AM: Lane Jordan"]);
+  });
+
+  it("Bug C: a subsequent date_type toggle after pick preserves owner/notes/resources from persisted args", async () => {
+    // Seed the proposal with the SHAPE that handleMultiMatchCandidateSelect
+    // would have written: enriched args including labels and resources array,
+    // candidates/multiMatchQuery cleared. This simulates the user toggling
+    // date_type after a successful pick. state.values only carries the
+    // dateType radio (the user only touched that block).
+    const enrichedArgs = {
+      title: "Concept Writeup",
+      clientId: "client_ag1",
+      clientName: "AG1",
+      projectId: "proj_q3",
+      projectName: "Q3 Refresh",
+      owner: "Jason Burks",
+      notes: "Hero card draft.",
+      category: "delivery",
+      resources: ["AM: Lane Jordan"],
+      dateType: "single",
+      date: "2026-05-08",
+    };
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_dt_after_pick",
+          kind: "edit",
+          toolName: "update_week_item",
+          targetEntityId: "wi_persist",
+          targetEntityType: "week_item",
+          args: JSON.stringify(enrichedArgs),
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    // Build a date_type_radio block_actions payload. state.values only
+    // carries the radio - mirroring Slack's behavior of only including
+    // user-touched blocks.
+    const dateTogglePayload = {
+      type: "block_actions",
+      team: { id: "T_TEST_TEAM" },
+      user: { id: "U_TEST_001", team_id: "T_TEST_TEAM" },
+      trigger_id: "trigger_dt_after_pick",
+      response_url: null,
+      channel: { id: "C_TEST_001" },
+      view: {
+        id: "V_TEST_DT_AFTER",
+        hash: "hash_dt_after_v1",
+        callback_id: "runway_edit_task",
+        private_metadata: JSON.stringify({ proposalId: "prop_dt_after_pick" }),
+        state: {
+          values: {
+            date_type_block: {
+              date_type_radio: { selected_option: { value: "range" } },
+            },
+          },
+        },
+      },
+      actions: [
+        {
+          action_id: "date_type_radio",
+          block_id: "date_type_block",
+          type: "radio_buttons",
+          selected_option: { value: "range" },
+        },
+      ],
+    };
+
+    const res = await POST(makeRequest(encodePayload(dateTogglePayload)) as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.buildTaskModal).toHaveBeenCalledTimes(1);
+    const call = handles.buildTaskModal.mock.calls[0][0] as {
+      currentValues?: Record<string, unknown>;
+    };
+    // Untouched-but-prefilled fields must still be present (loaded from args).
+    expect(call.currentValues?.owner).toBe("Jason Burks");
+    expect(call.currentValues?.notes).toBe("Hero card draft.");
+    expect(call.currentValues?.title).toBe("Concept Writeup");
+    expect(call.currentValues?.clientId).toBe("client_ag1");
+    expect(call.currentValues?.clientName).toBe("AG1");
+    expect(call.currentValues?.projectId).toBe("proj_q3");
+    expect(call.currentValues?.projectName).toBe("Q3 Refresh");
+    expect(call.currentValues?.resources).toEqual(["AM: Lane Jordan"]);
+    // dateType reflects the toggle.
+    expect(call.currentValues?.dateType).toBe("range");
   });
 });
 

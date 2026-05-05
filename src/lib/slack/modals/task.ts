@@ -199,6 +199,11 @@ function staticOption(o: { value: string; label: string }) {
 
 function buildClientBlock(currentValues?: Record<string, unknown>) {
   const initialClient = asString(currentValues?.clientId);
+  // Bug A: when the multi-match candidate handler (or any caller) supplies
+  // a resolved clientName, use it as the visible label. clientId stays as
+  // the option value so submit can read state.values cleanly. Pre-fix, the
+  // id was used for both fields and users saw the raw ulid in the picker.
+  const initialClientLabel = asString(currentValues?.clientName) ?? initialClient;
   const element: Record<string, unknown> = {
     type: "external_select",
     action_id: "client_select",
@@ -206,12 +211,10 @@ function buildClientBlock(currentValues?: Record<string, unknown>) {
     min_query_length: 0,
   };
   if (initialClient) {
-    // Caller's options-provider returns the resolved label for this id; we
-    // surface the id-only so submit can read state.values cleanly. Slack
-    // requires the full {text, value} shape on initial_option, so we
-    // round-trip the id as the visible text - the live picker re-fetches
-    // the label via the options-provider on first interaction.
-    element.initial_option = staticOption({ value: initialClient, label: initialClient });
+    element.initial_option = staticOption({
+      value: initialClient,
+      label: initialClientLabel ?? initialClient,
+    });
   }
   return {
     type: "input",
@@ -228,6 +231,10 @@ function buildClientBlock(currentValues?: Record<string, unknown>) {
 
 function buildParentProjectBlock(currentValues?: Record<string, unknown>) {
   const initialProject = asString(currentValues?.projectId);
+  // Bug A: callers that pre-fill from a row supply projectName as the visible
+  // label. projectId is the option value (FK column). Pre-fix, the id was
+  // used for both and users saw the raw ulid in the parent picker.
+  const initialProjectLabel = asString(currentValues?.projectName) ?? initialProject;
   const element: Record<string, unknown> = {
     type: "external_select",
     action_id: "parent_project_select",
@@ -237,7 +244,7 @@ function buildParentProjectBlock(currentValues?: Record<string, unknown>) {
   if (initialProject) {
     element.initial_option = staticOption({
       value: initialProject,
-      label: initialProject,
+      label: initialProjectLabel ?? initialProject,
     });
   }
   return {

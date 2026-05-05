@@ -1003,3 +1003,88 @@ describe("source-level grep guard on task.ts", () => {
     expect(noBlockComments.match(/\bL[12]\b/)).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bug A: Client and Parent project picker initial_option labels.
+//
+// initial_option.value carries the FK column id (clientId / projectId).
+// initial_option.text MUST carry the human-readable name when currentValues
+// supplies clientName / projectName. Pre-fix, both fields used the id which
+// caused users to see "f0d5a9b9..." instead of "AG1" after a multi-match pick.
+// ---------------------------------------------------------------------------
+
+describe("buildTaskModal — Bug A: picker initial_option labels", () => {
+  it("client_block initial_option uses clientName for the label when provided", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_bug_a_client_001",
+      mode: "edit",
+      currentValues: {
+        title: "Edit me",
+        clientId: "f0d5a9b931404d90bd6e84346",
+        clientName: "AG1",
+      },
+    });
+    const block = findBlock(view, "client_block") as Block;
+    const element = block.element as {
+      initial_option?: { value?: string; text?: { text?: string } };
+    };
+    expect(element.initial_option?.value).toBe("f0d5a9b931404d90bd6e84346");
+    expect(element.initial_option?.text?.text).toBe("AG1");
+  });
+
+  it("client_block falls back to clientId for label when clientName missing (legacy edit shape)", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_bug_a_client_002",
+      mode: "edit",
+      currentValues: {
+        title: "Edit me",
+        clientId: "client_legacy_id",
+      },
+    });
+    const block = findBlock(view, "client_block") as Block;
+    const element = block.element as {
+      initial_option?: { value?: string; text?: { text?: string } };
+    };
+    expect(element.initial_option?.value).toBe("client_legacy_id");
+    expect(element.initial_option?.text?.text).toBe("client_legacy_id");
+  });
+
+  it("parent_project_block initial_option uses projectName for the label when provided", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_bug_a_proj_001",
+      mode: "edit",
+      currentValues: {
+        title: "Edit me",
+        projectId: "affaaf0be5d94dcfb66dd7654",
+        projectName: "TEST Retainer Verify",
+      },
+    });
+    const block = findBlock(view, "parent_project_block") as Block;
+    const element = block.element as {
+      initial_option?: { value?: string; text?: { text?: string } };
+    };
+    expect(element.initial_option?.value).toBe("affaaf0be5d94dcfb66dd7654");
+    expect(element.initial_option?.text?.text).toBe("TEST Retainer Verify");
+  });
+
+  it("parent_project_block falls back to projectId for label when projectName missing", () => {
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_bug_a_proj_002",
+      mode: "edit",
+      currentValues: {
+        title: "Edit me",
+        projectId: "proj_legacy_id",
+      },
+    });
+    const block = findBlock(view, "parent_project_block") as Block;
+    const element = block.element as {
+      initial_option?: { value?: string; text?: { text?: string } };
+    };
+    expect(element.initial_option?.value).toBe("proj_legacy_id");
+    expect(element.initial_option?.text?.text).toBe("proj_legacy_id");
+  });
+});

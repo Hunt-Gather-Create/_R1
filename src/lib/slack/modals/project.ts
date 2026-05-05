@@ -239,6 +239,11 @@ function staticOption(o: { value: string; label: string }) {
 
 function buildClientBlock(currentValues?: Record<string, unknown>) {
   const initialClient = asString(currentValues?.clientId);
+  // Bug A: when the multi-match candidate handler supplies a resolved
+  // clientName, use it as the visible label. clientId stays as the option
+  // value (FK column). Pre-fix, the id was used for both fields and users
+  // saw the raw ulid in the picker.
+  const initialClientLabel = asString(currentValues?.clientName) ?? initialClient;
   const element: Record<string, unknown> = {
     type: "external_select",
     action_id: "client_select",
@@ -246,7 +251,10 @@ function buildClientBlock(currentValues?: Record<string, unknown>) {
     min_query_length: 0,
   };
   if (initialClient) {
-    element.initial_option = staticOption({ value: initialClient, label: initialClient });
+    element.initial_option = staticOption({
+      value: initialClient,
+      label: initialClientLabel ?? initialClient,
+    });
   }
   return {
     type: "input",
@@ -329,6 +337,9 @@ function buildEngagementTypeLockedBlock() {
 
 function buildParentRetainerBlock(currentValues?: Record<string, unknown>) {
   const initial = asString(currentValues?.parentProjectId);
+  // Bug A: callers that pre-fill from a row supply projectName for the
+  // resolved parent retainer label. parentProjectId is the option value.
+  const initialLabel = asString(currentValues?.projectName) ?? initial;
   const element: Record<string, unknown> = {
     type: "external_select",
     action_id: "parent_retainer_picker",
@@ -336,7 +347,10 @@ function buildParentRetainerBlock(currentValues?: Record<string, unknown>) {
     min_query_length: 0,
   };
   if (initial) {
-    element.initial_option = staticOption({ value: initial, label: initial });
+    element.initial_option = staticOption({
+      value: initial,
+      label: initialLabel ?? initial,
+    });
   }
   return {
     type: "input",
