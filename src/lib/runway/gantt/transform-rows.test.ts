@@ -261,6 +261,22 @@ describe("formatDateRange", () => {
     expect(formatDateRange("2026-05-11", "2026-05-11")).toBe("5/11");
   });
 
+  // Regression lock for the 2026-05-04 visual QA pass: a stale render of the
+  // Convergix rundown showed `4/23 – 4/23`, `9/1 – 9/1`, `4/29 – 4/29` for
+  // single-day rows. The fix shipped in Phase 1A Wave 3 — `start === end`
+  // collapses to `M/D` — these tests pin that contract for representative
+  // rows so a future regression that re-introduces `M/D – M/D` is caught.
+  it.each([
+    ["2026-04-23", "4/23"],
+    ["2026-09-01", "9/1"],
+    ["2026-04-29", "4/29"],
+    ["2026-01-07", "1/7"],
+  ])("collapses %s twice to '%s' with no en-dash", (iso, expected) => {
+    const result = formatDateRange(iso, iso);
+    expect(result).toBe(expected);
+    expect(result).not.toContain("–"); // U+2013 must not appear
+  });
+
   it("renders normal range with en-dash separator", () => {
     expect(formatDateRange("2026-04-17", "2026-05-11")).toBe("4/17 – 5/11");
   });

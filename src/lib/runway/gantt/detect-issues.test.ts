@@ -976,6 +976,93 @@ describe("detectAllIssues", () => {
     expect(codes(out.rows[0].subRow)).toContain("wi-active-null-owner");
   });
 
+  // Regression lock for the 2026-05-04 visual QA pass:
+  //   - Issue B: a stale render showed `ru-null-dates` (drifted prefix).
+  //     Canonical Phase 1A taxonomy is `l1-null-dates` for chart-level on L1
+  //     subjects. This test pins that contract: when an L1 entity has a null
+  //     date, the chart-level code is `l1-null-dates` and the `ru-` prefix
+  //     never appears in the emitted set.
+  //   - Issue C: a stale render showed `row-dates-both-null` as a chart-level
+  //     issue. Canonical taxonomy: project rows with both dates null emit
+  //     `row-both-dates-null` as an INLINE row issue (red `null – null`),
+  //     and weekItem rows emit `wi-both-dates-null` inline. Neither lives in
+  //     `chartIssues`. This test pins both placement (inline vs chart) and
+  //     code spelling.
+  it("locks chart-level on L1 with null dates as 'l1-null-dates' (no 'ru-' prefix drift)", () => {
+    const project = makeProject({
+      id: "p-l1-nulldates",
+      startDate: null,
+      endDate: null,
+      engagementType: "project",
+      category: "active",
+      status: "in-production",
+      owner: "Lane",
+      dueDate: null,
+    });
+    const w = makeWeekItem({
+      id: "w-1",
+      projectId: "p-l1-nulldates",
+      startDate: null,
+      endDate: null,
+      status: "scheduled",
+      owner: "Lane",
+    });
+    const raw: RawData = { kind: "l1", entity: project, client, children: [w] };
+    const rows = transformRows(raw);
+    const out = detectAllIssues(raw, rows, NOW);
+    const chartCodes = codes(out.chartIssues);
+    // Canonical chart code is l1-null-dates — NOT ru-null-dates.
+    expect(chartCodes).toContain("l1-null-dates");
+    expect(chartCodes.some((c) => (c as string).startsWith("ru-"))).toBe(false);
+    // Row-level both-nulls fires inline as wi-both-dates-null (NOT chart, NOT
+    // 'row-dates-both-null').
+    expect(codes(out.rows[0].inline)).toContain("wi-both-dates-null");
+    expect(chartCodes).not.toContain("wi-both-dates-null" as never);
+  });
+
+  it("locks wrapper-view rows with null dates: row-both-dates-null is INLINE, never chart-level", () => {
+    const wrapper = makeProject({
+      id: "p-wrap",
+      engagementType: "retainer",
+      startDate: "2026-04-01",
+      endDate: "2026-06-30",
+      contractStart: "2026-04-01",
+      contractEnd: "2026-06-30",
+    });
+    const childA = makeProject({
+      id: "p-a",
+      name: "Child A",
+      parentProjectId: "p-wrap",
+      startDate: null,
+      endDate: null,
+    });
+    const childB = makeProject({
+      id: "p-b",
+      name: "Child B",
+      parentProjectId: "p-wrap",
+      startDate: null,
+      endDate: null,
+    });
+    const raw: RawData = {
+      kind: "wrapper",
+      entity: wrapper,
+      client,
+      children: [childA, childB],
+      orphanWeekItems: [],
+    };
+    const rows = transformRows(raw);
+    const out = detectAllIssues(raw, rows, NOW);
+    const chartCodes = codes(out.chartIssues);
+    // 'row-both-dates-null' is inline-only; must NEVER appear at chart level.
+    expect(chartCodes).not.toContain("row-both-dates-null" as never);
+    // Hypothetical drifted spelling 'row-dates-both-null' must not exist.
+    expect(chartCodes.some((c) => (c as string) === "row-dates-both-null")).toBe(false);
+    // Each row carries the inline issue.
+    for (const row of out.rows) {
+      expect(codes(row.inline)).toContain("row-both-dates-null");
+    }
+  });
+
   it("populates empty issue arrays on rows even when nothing fires", () => {
     const project = makeProject({
       id: "p-l1",
