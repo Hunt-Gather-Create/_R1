@@ -563,12 +563,49 @@ const FALLBACK_FIELD_SKIP = new Set([
   // when we discover an actual hazard.
 ]);
 
+/**
+ * Task-only date fields. When the user toggles the dateType radio between
+ * Single and Range mid-edit, the args persisted at multi-match-pick time
+ * still reflect the prior mode's mirroring (Single: date == startDate ==
+ * endDate). Falling back from those args after a toggle silently restores
+ * stale dates that contradict the user's explicit toggle. This set is added
+ * to the per-call skip when args.dateType disagrees with the submitted
+ * dateType so the toggle invalidates carried-forward dates.
+ */
+const TASK_DATE_FIELDS_SKIP: ReadonlySet<string> = new Set([
+  "date",
+  "startDate",
+  "endDate",
+]);
+
+/**
+ * Infer the dateType ("single" | "range") an args bag represents. Prefers an
+ * explicit `dateType` key; otherwise reads the start/end/date shape. Single-
+ * mode rows mirror date into both startDate and endDate, so when all three
+ * agree we treat the bag as single-mode.
+ */
+function inferDateTypeFromArgs(
+  args: Record<string, unknown>,
+): "single" | "range" | undefined {
+  const explicit = args.dateType;
+  if (explicit === "single" || explicit === "range") return explicit;
+  const start = typeof args.startDate === "string" ? args.startDate : "";
+  const end = typeof args.endDate === "string" ? args.endDate : "";
+  const date = typeof args.date === "string" ? args.date : "";
+  if (date && start === date && end === date) return "single";
+  if (start || end) return "range";
+  if (date) return "single";
+  return undefined;
+}
+
 function applyArgsFallback(
   canonical: Record<string, unknown>,
   args: Record<string, unknown>,
+  extraSkip?: ReadonlySet<string>,
 ): void {
   for (const key of Object.keys(canonical)) {
     if (FALLBACK_FIELD_SKIP.has(key)) continue;
+    if (extraSkip && extraSkip.has(key)) continue;
     const current = canonical[key];
     if (current !== null && current !== undefined) continue;
     const argVal = args[key];
@@ -955,7 +992,37 @@ async function validateTaskModal(ctx: PerModalCtx): Promise<ValidationResult> {
     // multi-match-pick time) so we don't diff a null against the target's
     // real value and mistakenly flag the field as a change-to-null.
     const argsObj = parseProposalArgs(ctx.proposal.args);
-    applyArgsFallback(canonical, argsObj);
+    // dateType toggle invalidates the prior mode's date fallback. If args
+    // came from Single mode (date == startDate == endDate) and the user
+    // toggled to Range, falling back endDate from args silently restores
+    // the mirrored Single-day end while the user already moved startDate
+    // forward, producing a startDate > endDate write-time rejection. Skip
+    // the date trio whenever the inferred args dateType disagrees with the
+    // submitted dateType - the user must explicitly pick the new mode's
+    // dates.
+    const argsDateType = inferDateTypeFromArgs(argsObj);
+    const dateTypeChanged =
+      argsDateType !== undefined &&
+      fields.dateType !== undefined &&
+      argsDateType !== fields.dateType;
+    const extraSkip = dateTypeChanged ? TASK_DATE_FIELDS_SKIP : undefined;
+    applyArgsFallback(canonical, argsObj, extraSkip);
+    // When dateType toggled, require the new mode's date fields up front
+    // so the user gets a clear "Start/End/Date is required" error instead
+    // of a downstream write-time rejection.
+    if (dateTypeChanged) {
+      if (fields.dateType === "range") {
+        if (!fields.startDate)
+          ctx.errors["start_date_block"] = "Start date is required.";
+        if (!fields.endDate)
+          ctx.errors["end_date_block"] = "End date is required.";
+      } else {
+        if (!fields.date) ctx.errors["date_block"] = "Date is required.";
+      }
+      if (Object.keys(ctx.errors).length > 0) {
+        return { ok: false, errors: ctx.errors };
+      }
+    }
     // For tasks, the target row uses `projectId` not `parentProjectId`.
     changedFields = computeChangedFields(canonical, ctx.targetEntity);
     if (changedFields.length === 0) {

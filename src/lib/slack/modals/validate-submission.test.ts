@@ -1591,4 +1591,192 @@ describe("validateModalSubmission - edit flow args-fallback", () => {
   });
 });
 
+// ────────────────────────────────────────────────────────────────────────────
+// Edit-flow dateType-toggle tests — guard against the args-fallback over-
+// aggression bug where toggling Single->Range (or Range->Single) mid-edit
+// silently restored stale dates from the prior mode's mirroring, producing
+// a startDate > endDate write-time rejection. The fix: when args.dateType
+// disagrees with submitted dateType, the date trio is skipped from the
+// fallback and the new mode's required fields must be supplied explicitly.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("validateModalSubmission - edit flow dateType toggle", () => {
+  let state: MockState;
+  let db: MockDb;
+  beforeEach(() => {
+    state = {
+      projects: [
+        {
+          id: "proj_p1",
+          name: "Existing Project",
+          clientId: "client_xyz",
+          engagementType: "project",
+          status: "in-production",
+          category: "active",
+          parentProjectId: null,
+        },
+      ],
+      weekItems: [
+        {
+          id: "wi_target_xyz",
+          title: "TEST Single Verify",
+          clientId: "client_xyz",
+          projectId: "proj_p1",
+          category: "delivery",
+          date: "2026-05-06",
+          startDate: "2026-05-06",
+          endDate: "2026-05-06",
+          owner: "Jason Burks",
+          resources: "AM: Lane Jordan",
+          notes: "Single fix verify",
+        },
+      ],
+      teamMembers: [],
+    };
+    db = makeDb(state);
+  });
+
+  it("Single -> Range toggle, only startDate touched: rejects with 'End date is required' (no stale args.endDate fallback)", async () => {
+    // Repro: opens Single-mode row whose date == startDate == endDate ==
+    // 2026-05-06, toggles to Range, picks startDate=2026-05-07, hits Save
+    // without picking endDate. Pre-fix: args.endDate=2026-05-06 fell back
+    // into canonical, validator passed (one side null), consumer wrote
+    // start=2026-05-07/end=2026-05-06 and writeUpdateWeekItem rejected
+    // 'startDate > endDate'. Post-fix: dateType differs between args
+    // (single) and fields (range), so the date trio is dropped from
+    // fallback and the explicit-required check fires up front.
+    const proposal = makeProposal({
+      toolName: "update_week_item",
+      kind: "edit",
+      targetEntityId: "wi_target_xyz",
+      targetEntityType: "week_item",
+      args: JSON.stringify({
+        title: "TEST Single Verify",
+        clientId: "client_xyz",
+        projectId: "proj_p1",
+        category: "delivery",
+        date: "2026-05-06",
+        startDate: "2026-05-06",
+        endDate: "2026-05-06",
+        owner: "Jason Burks",
+        resources: ["AM: Lane Jordan"],
+        notes: "Single fix verify",
+      }),
+    });
+    const stateValues: StateValues = {
+      client_block: { client_select: externalSelectV("client_xyz") },
+      parent_project_block: {
+        parent_project_select: externalSelectV("proj_p1"),
+      },
+      date_type_block: { date_type_radio: radioV("range") },
+      start_date_block: { start_date_picker: dateV("2026-05-07") },
+      // end_date_picker intentionally omitted - user did not touch it.
+    };
+    const result = await validateModalSubmission({
+      proposal,
+      stateValues,
+      db,
+    } as unknown as ValidateModalSubmissionParams);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors["end_date_block"]).toBe("End date is required.");
+    }
+  });
+
+  it("Range -> Single toggle, no date touched: rejects with 'Date is required'", async () => {
+    // Sibling case: row was Range, args carries startDate/endDate. User
+    // toggles to Single without picking a date. Pre-fix: fallback would
+    // restore args.startDate into canonical.startDate / endDate, validator
+    // passed, consumer wrote a Single row with no date column. Post-fix:
+    // the date trio is dropped, explicit-required check demands fields.date.
+    state.weekItems[0] = {
+      ...state.weekItems[0],
+      date: null,
+      startDate: "2026-05-04",
+      endDate: "2026-05-08",
+    };
+    const proposal = makeProposal({
+      toolName: "update_week_item",
+      kind: "edit",
+      targetEntityId: "wi_target_xyz",
+      targetEntityType: "week_item",
+      args: JSON.stringify({
+        title: "TEST Single Verify",
+        clientId: "client_xyz",
+        projectId: "proj_p1",
+        category: "delivery",
+        startDate: "2026-05-04",
+        endDate: "2026-05-08",
+        owner: "Jason Burks",
+        resources: ["AM: Lane Jordan"],
+        notes: "Single fix verify",
+      }),
+    });
+    const stateValues: StateValues = {
+      client_block: { client_select: externalSelectV("client_xyz") },
+      parent_project_block: {
+        parent_project_select: externalSelectV("proj_p1"),
+      },
+      date_type_block: { date_type_radio: radioV("single") },
+      // date_picker intentionally omitted - user toggled but did not pick.
+    };
+    const result = await validateModalSubmission({
+      proposal,
+      stateValues,
+      db,
+    } as unknown as ValidateModalSubmissionParams);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors["date_block"]).toBe("Date is required.");
+    }
+  });
+
+  it("Single -> Range toggle, both startDate and endDate provided: save succeeds with new dates (no stale fallback)", async () => {
+    // Same setup as the failing case but the user picks BOTH dates.
+    // Confirms the toggle path doesn't over-reject when the user supplies
+    // the new mode's full required set.
+    const proposal = makeProposal({
+      toolName: "update_week_item",
+      kind: "edit",
+      targetEntityId: "wi_target_xyz",
+      targetEntityType: "week_item",
+      args: JSON.stringify({
+        title: "TEST Single Verify",
+        clientId: "client_xyz",
+        projectId: "proj_p1",
+        category: "delivery",
+        date: "2026-05-06",
+        startDate: "2026-05-06",
+        endDate: "2026-05-06",
+        owner: "Jason Burks",
+        resources: ["AM: Lane Jordan"],
+        notes: "Single fix verify",
+      }),
+    });
+    const stateValues: StateValues = {
+      client_block: { client_select: externalSelectV("client_xyz") },
+      parent_project_block: {
+        parent_project_select: externalSelectV("proj_p1"),
+      },
+      date_type_block: { date_type_radio: radioV("range") },
+      start_date_block: { start_date_picker: dateV("2026-05-07") },
+      end_date_block: { end_date_picker: dateV("2026-05-11") },
+    };
+    const result = await validateModalSubmission({
+      proposal,
+      stateValues,
+      db,
+    } as unknown as ValidateModalSubmissionParams);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.normalized.startDate).toBe("2026-05-07");
+      expect(result.normalized.endDate).toBe("2026-05-11");
+      // Title/owner/notes/category fall back from args (Slack omitted those
+      // blocks); date trio does NOT fall back because the toggle skipped it.
+      expect(result.normalized.title).toBe("TEST Single Verify");
+      expect(result.normalized.owner).toBe("Jason Burks");
+    }
+  });
+});
+
 
