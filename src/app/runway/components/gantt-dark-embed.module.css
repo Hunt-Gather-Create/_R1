@@ -66,6 +66,32 @@
   color: transparent;
 }
 
+/* ── Month-band header (operator-locked 2026-05-05) ──── */
+/* Top axis row carrying calendar month names spanning their columns. The
+   month band reads as a section header above the tick row. Slightly
+   brighter slate than the tick row so the visual hierarchy reads top→bottom:
+   month band (heavier) → tick labels (lighter). Numeric font is suppressed
+   here since labels are calendar names, not dates. */
+
+.darkEmbed :global(.axis-row.month-band) {
+  height: 18px;
+  padding: 2px 0 0;
+  border-bottom: none;
+}
+
+.darkEmbed :global(.axis-row.month-band .axis-cells) {
+  height: 18px;
+}
+
+.darkEmbed :global(.axis-cell.month-band-cell) {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: normal;
+  padding-left: 6px;
+  border-left: 1px solid;
+  @apply border-slate-700 text-slate-300;
+}
+
 .darkEmbed :global(.row) {
   display: grid;
   grid-template-columns: 240px 160px 130px 1fr;
@@ -265,23 +291,19 @@
 }
 
 /* ── Container queries: axis density ────────────────── */
-/* Decision 1 data-day attr is required for these selectors to fire.
-   Daily ticks (>1300px) deferred to fast-follow. */
-
-@container (max-width: 1300px) {
-  .darkEmbed :global(.axis-cell[data-day="thursday"]) {
-    display: none;
-  }
-}
-
-@container (max-width: 900px) {
-  .darkEmbed :global(.axis-cell:not([data-day="monday"])) {
-    display: none;
-  }
-}
+/* Post-2026-05-05 axis rework: density is now adaptive at the source —
+   computeAxis emits tier-correct counts (≤14d daily / 15-56d weekly /
+   >56d sparse monthly with 6-10 ticks). The old CQ rules that hid
+   non-Monday cells assumed weekly Mon-Fri density and would over-hide
+   the new monthly tier (where ticks may land on any weekday). The
+   only narrow-width fallback that still makes sense is hiding ALL
+   tick cells at <600px while keeping the month-band row visible.
+*/
 
 @container (max-width: 600px) {
-  .darkEmbed :global(.axis-cell) {
+  /* Hide tick row cells (those carry data-day) — keep the month-band row
+     visible since at narrow widths a month name still reads. */
+  .darkEmbed :global(.axis-cell[data-day]) {
     display: none;
   }
 

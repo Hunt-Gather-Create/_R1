@@ -183,34 +183,44 @@ describe("computeAxis", () => {
     expect(axis.today).toBe("2026-04-28");
   });
 
-  it("uses weekly columns when span is under 16 weeks", () => {
+  // ── 2026-05-05 axis rework ───────────────────────────────
+  // Three adaptive density tiers + always-on month-band header:
+  //   ≤ 14 days       → kind: "daily"   (one column per day, M/D every day)
+  //   15-56 days      → kind: "weekly"  (one column per Monday, M/D)
+  //   > 56 days (8wk) → kind: "monthly" (6-10 sparse ticks chosen to fit)
+  // No more Mon-Fri 5-cell weeks. Numeric M/D labels are wider than the
+  // single-letter abbreviations they replaced and crashed at long spans.
+
+  it("daily mode (≤14-day span): one column per day, M/D label every day", () => {
+    // 4/13 (Mon) to 4/22 (Wed) = 9 days span (10 columns when end is inclusive).
     const raw = l1Raw([
-      makeWeekItem({ id: "w1", startDate: "2026-04-15", endDate: "2026-04-15" }), // a Wednesday
-      makeWeekItem({ id: "w2", startDate: "2026-05-20", endDate: "2026-05-22" }), // 5 weeks later
+      makeWeekItem({ id: "w1", startDate: "2026-04-13", endDate: "2026-04-13" }),
+      makeWeekItem({ id: "w2", startDate: "2026-04-22", endDate: "2026-04-22" }),
     ]);
     const rows = transformRows(raw);
     const axis = computeAxis(raw, rows, today);
-    expect(axis.kind).toBe("weekly");
-    if (axis.kind === "weekly") {
-      // Min=4/15 (Wed), Monday-of-week = 4/13. Max=5/22, end = next Monday after 5/22 = 5/25.
-      expect(axis.start).toBe("2026-04-13");
-      expect(axis.end).toBe("2026-05-25");
-      // Daily mode emits one column per weekday (Mon-Fri), skipping weekends.
-      // 4/13 (Mon) to 5/25 (Mon, exclusive) = 6 weeks × 5 weekdays = 30 ticks.
-      // (operator 2026-04-30): daily ticks pulled forward from fast-follow.
-      expect(axis.columns).toHaveLength(30);
-      expect(axis.columns[0].date).toBe("2026-04-13"); // Monday
-      expect(axis.columns[0].label).toBe("4/13");      // Monday gets full M/D label
-      expect(axis.columns[1].date).toBe("2026-04-14"); // Tuesday
-      expect(axis.columns[1].label).toBe("4/14");      // Operator 2026-05-04: all weekdays carry M/D
-      expect(axis.columns[axis.columns.length - 1].date).toBe("2026-05-22"); // last Friday
+    expect(axis.kind).toBe("daily");
+    if (axis.kind === "daily") {
+      // Every column in this small window has an M/D label.
+      const numericRe = /^\d+\/\d+$/;
+      expect(axis.columns.every((c) => numericRe.test(c.label))).toBe(true);
+      // 10 inclusive days = 10 columns at minimum. The axis aligns to the
+      // containing Monday (4/13) and ends after the last day, so we get
+      // every day of that range with no gaps.
+      expect(axis.columns.length).toBeGreaterThanOrEqual(10);
+      expect(axis.columns[0].label).toBe("4/13");
+      // Consecutive columns must be one day apart.
+      for (let i = 1; i < axis.columns.length; i++) {
+        const prev = new Date(`${axis.columns[i - 1].date}T00:00:00Z`);
+        const cur = new Date(`${axis.columns[i].date}T00:00:00Z`);
+        const diffDays = (cur.getTime() - prev.getTime()) / (24 * 60 * 60 * 1000);
+        expect(diffDays).toBe(1);
+      }
     }
   });
 
-  // Operator-locked 2026-05-04: every daily-mode column must label M/D.
-  // No alphabetic weekday abbreviations (T, W, Th, F) inline. The brain
-  // reads numeric dates faster than alternating letter glyphs.
-  it("daily-mode columns all carry numeric M/D labels (no weekday letters)", () => {
+  it("weekly mode (15-56-day span): one column per Monday, no Tue-Fri", () => {
+    // 4/15 to 5/22 = 37-day span → weekly tier.
     const raw = l1Raw([
       makeWeekItem({ id: "w1", startDate: "2026-04-15", endDate: "2026-04-15" }),
       makeWeekItem({ id: "w2", startDate: "2026-05-20", endDate: "2026-05-22" }),
@@ -219,42 +229,137 @@ describe("computeAxis", () => {
     const axis = computeAxis(raw, rows, today);
     expect(axis.kind).toBe("weekly");
     if (axis.kind === "weekly") {
-      // Every label must match \d+/\d+ — no T/W/Th/F letters.
-      const numericRe = /^\d+\/\d+$/;
-      const nonNumeric = axis.columns.filter((c) => !numericRe.test(c.label));
-      expect(nonNumeric).toEqual([]);
-      // Spot checks: weekday letters from the prior implementation must be gone.
-      const labels = axis.columns.map((c) => c.label);
-      expect(labels).not.toContain("T");
-      expect(labels).not.toContain("W");
-      expect(labels).not.toContain("Th");
-      expect(labels).not.toContain("F");
+      // Min=4/15 (Wed), Monday-of-week = 4/13. Max=5/22, end = next Monday = 5/25.
+      expect(axis.start).toBe("2026-04-13");
+      expect(axis.end).toBe("2026-05-25");
+      // Mondays only: 4/13, 4/20, 4/27, 5/4, 5/11, 5/18 → 6 columns.
+      expect(axis.columns).toHaveLength(6);
+      expect(axis.columns.map((c) => c.label)).toEqual([
+        "4/13",
+        "4/20",
+        "4/27",
+        "5/4",
+        "5/11",
+        "5/18",
+      ]);
+      // Every column is a Monday.
+      for (const col of axis.columns) {
+        const d = new Date(`${col.date}T00:00:00Z`);
+        expect(d.getUTCDay()).toBe(1);
+      }
     }
   });
 
-  it("treats span of exactly 16 weeks as monthly (strict <)", () => {
-    // 4/13 to 8/3 is exactly 16 weeks (112 days)
-    const raw = l1Raw([], {
-      startDate: "2026-04-13",
-      endDate: "2026-08-03",
-    });
-    const rows = transformRows(raw);
-    const axis = computeAxis(raw, rows, today);
-    expect(axis.kind).toBe("monthly");
-  });
-
-  it("uses monthly columns when span is over 16 weeks", () => {
+  it("monthly mode (>8-week span): sparse 6-10 ticks, no daily/weekly crashing", () => {
+    // 4/15 to 9/15 = ~153 days (~22 weeks) — the long-span case that
+    // crashed with daily Mon-Fri ticks at narrow widths.
     const raw = l1Raw([], {
       startDate: "2026-04-15",
-      endDate: "2026-09-15", // ~22 weeks
+      endDate: "2026-09-15",
     });
     const rows = transformRows(raw);
     const axis = computeAxis(raw, rows, today);
     expect(axis.kind).toBe("monthly");
     if (axis.kind === "monthly") {
-      expect(axis.start).toBe("2026-04-01");
-      expect(axis.end).toBe("2026-10-01");
-      expect(axis.columns.map((c) => c.label)).toEqual(["Apr", "May", "Jun", "Jul", "Aug", "Sep"]);
+      // Sparse ticks — between 6 and 10 total — chosen by the implementation
+      // (every-other Monday or 1st-of-month) to minimize collision.
+      expect(axis.columns.length).toBeGreaterThanOrEqual(6);
+      expect(axis.columns.length).toBeLessThanOrEqual(10);
+      // Every label is M/D — no weekday letters, no month abbreviations.
+      const numericRe = /^\d+\/\d+$/;
+      expect(axis.columns.every((c) => numericRe.test(c.label))).toBe(true);
+    }
+  });
+
+  it("very long span gets sparse-month ticks, not 22 weekly columns", () => {
+    // 4/15/2026 → 12/31/2026 = ~37 weeks. Weekly mode would emit 37
+    // columns and crash visually; monthly tier should emit ≤10.
+    const raw = l1Raw([], {
+      startDate: "2026-04-15",
+      endDate: "2026-12-31",
+    });
+    const rows = transformRows(raw);
+    const axis = computeAxis(raw, rows, today);
+    expect(axis.kind).toBe("monthly");
+    if (axis.kind === "monthly") {
+      expect(axis.columns.length).toBeLessThanOrEqual(10);
+    }
+  });
+
+  it("emits month-band header data spanning multiple months", () => {
+    // 4/15 to 6/2 — should produce 3 month bands (April, May, June).
+    const raw = l1Raw([
+      makeWeekItem({ id: "w1", startDate: "2026-04-15", endDate: "2026-04-15" }),
+      makeWeekItem({ id: "w2", startDate: "2026-06-02", endDate: "2026-06-02" }),
+    ]);
+    const rows = transformRows(raw);
+    const axis = computeAxis(raw, rows, today);
+    expect(axis.kind).not.toBe("no-axis");
+    if (axis.kind !== "no-axis") {
+      const labels = axis.monthBands.map((b) => b.label);
+      expect(labels).toEqual(["April", "May", "June"]);
+      // No band label contains a year — operator-locked 2026-05-05.
+      for (const b of axis.monthBands) {
+        expect(b.label).not.toMatch(/\d{4}/);
+        expect(b.label).not.toMatch(/'\d{2}/);
+      }
+      // Every band's [startCol, endCol] is in range and ordered.
+      for (const b of axis.monthBands) {
+        expect(b.startCol).toBeGreaterThanOrEqual(0);
+        expect(b.endCol).toBeLessThan(axis.columns.length);
+        expect(b.startCol).toBeLessThanOrEqual(b.endCol);
+      }
+      // Bands are contiguous, non-overlapping, and cover all columns.
+      let cursor = 0;
+      for (const b of axis.monthBands) {
+        expect(b.startCol).toBe(cursor);
+        cursor = b.endCol + 1;
+      }
+      expect(cursor).toBe(axis.columns.length);
+    }
+  });
+
+  it("emits a single month band when span fits within one month", () => {
+    // 4/15 to 4/22 — entirely in April.
+    const raw = l1Raw([
+      makeWeekItem({ id: "w1", startDate: "2026-04-15", endDate: "2026-04-15" }),
+      makeWeekItem({ id: "w2", startDate: "2026-04-22", endDate: "2026-04-22" }),
+    ]);
+    const rows = transformRows(raw);
+    const axis = computeAxis(raw, rows, today);
+    expect(axis.kind).not.toBe("no-axis");
+    if (axis.kind !== "no-axis") {
+      expect(axis.monthBands).toHaveLength(1);
+      expect(axis.monthBands[0].label).toBe("April");
+      expect(axis.monthBands[0].startCol).toBe(0);
+      expect(axis.monthBands[0].endCol).toBe(axis.columns.length - 1);
+    }
+  });
+
+  it("regression-lock: no tick label contains weekday letters (T/W/Th/F/M-alone)", () => {
+    // Run all three tiers and confirm none of them ever emit alphabetic
+    // weekday letters. Regression-locks the all-numeric M/D contract.
+    const fixtures: RawData[] = [
+      // daily
+      l1Raw([
+        makeWeekItem({ id: "a1", startDate: "2026-04-13", endDate: "2026-04-20" }),
+      ]),
+      // weekly
+      l1Raw([
+        makeWeekItem({ id: "b1", startDate: "2026-04-15", endDate: "2026-05-22" }),
+      ]),
+      // monthly
+      l1Raw([], { startDate: "2026-04-15", endDate: "2026-09-15" }),
+    ];
+    const numericRe = /^\d+\/\d+$/;
+    for (const raw of fixtures) {
+      const rows = transformRows(raw);
+      const axis = computeAxis(raw, rows, today);
+      if (axis.kind === "no-axis") continue;
+      for (const c of axis.columns) {
+        // Not "T", "W", "Th", "F", or "M" alone — strict numeric.
+        expect(c.label).toMatch(numericRe);
+      }
     }
   });
 
@@ -265,7 +370,8 @@ describe("computeAxis", () => {
     );
     const rows = transformRows(raw);
     const axis = computeAxis(raw, rows, today);
-    expect(axis.kind).toBe("weekly");
+    // 4/15 to 4/25 = 10-day span → daily tier.
+    expect(axis.kind).toBe("daily");
   });
 });
 

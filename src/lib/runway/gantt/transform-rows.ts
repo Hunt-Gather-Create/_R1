@@ -12,14 +12,26 @@ import type {
   AxisColumn,
   AxisParams,
   GanttRow,
+  MonthBand,
   ProjectRow,
   RawData,
   WeekItemRow,
 } from "./types";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const MS_PER_WEEK = 7 * MS_PER_DAY;
-const WEEK_THRESHOLD = 16; // span < 16 weeks → daily columns; else monthly
+
+// Operator-locked 2026-05-05 axis rework: three adaptive density tiers.
+// Pre-rework: weekly mode emitted Mon-Fri 5-cells-per-week which crashed
+// at 4+ month spans (Hopkins Research, Know Your Neighbor, HDL Website).
+// Post-rework: density adapts to span so labels never collide.
+const DAILY_MAX_DAYS = 14;       // ≤ 14 days → one column per day, M/D every day
+const WEEKLY_MAX_DAYS = 56;      // 15-56 days (~2-8 weeks) → one column per Monday
+                                 // > 56 days → monthly tier (sparse 6-10 ticks)
+
+// Sparse-tick targets for the monthly tier — calibrated to keep labels
+// readable at the chart widths that crashed in operator screenshots.
+const MONTHLY_TARGET_TICKS_MIN = 6;
+const MONTHLY_TARGET_TICKS_MAX = 10;
 
 // ── Row mapping + sort ────────────────────────────────────
 
@@ -105,19 +117,27 @@ function addMonths(d: Date, n: number): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, 1));
 }
 
-function formatWeekLabel(d: Date): string {
+function formatNumericMD(d: Date): string {
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
 }
 
-// All daily ticks render as numeric "M/D". Operator (2026-05-04): drop
-// inline weekday letters — the brain reads dates faster than alternating
-// letter glyphs, and the strict numeric grid (Teamwork-style) reads cleaner.
-function formatDailyLabel(d: Date): string {
-  return formatWeekLabel(d);
-}
+const FULL_MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
 
-function formatMonthLabel(d: Date): string {
-  return d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+function fullMonthName(d: Date): string {
+  return FULL_MONTH_NAMES[d.getUTCMonth()];
 }
 
 // ── Axis computation ──────────────────────────────────────
@@ -131,6 +151,117 @@ function collectNonNullDates(raw: RawData, rows: GanttRow[]): string[] {
     if (row.endDate) out.push(row.endDate);
   }
   return out;
+}
+
+/**
+ * Group columns into contiguous month bands. Operator-locked 2026-05-05:
+ * each band is the calendar month name (no year) — `April`, `May`, etc.
+ * Bands are exhaustive and non-overlapping over the columns array.
+ */
+function buildMonthBands(columns: AxisColumn[]): MonthBand[] {
+  if (columns.length === 0) return [];
+  const bands: MonthBand[] = [];
+  let curStart = 0;
+  let curLabel = fullMonthName(parseISO(columns[0].date));
+  for (let i = 1; i < columns.length; i++) {
+    const label = fullMonthName(parseISO(columns[i].date));
+    if (label !== curLabel) {
+      bands.push({ startCol: curStart, endCol: i - 1, label: curLabel });
+      curStart = i;
+      curLabel = label;
+    }
+  }
+  bands.push({
+    startCol: curStart,
+    endCol: columns.length - 1,
+    label: curLabel,
+  });
+  return bands;
+}
+
+/**
+ * Daily tier: every day from start through end (exclusive).
+ */
+function buildDailyColumns(start: Date, end: Date): AxisColumn[] {
+  const out: AxisColumn[] = [];
+  for (
+    let cur = new Date(start);
+    cur < end;
+    cur = new Date(cur.getTime() + MS_PER_DAY)
+  ) {
+    out.push({ date: toISO(cur), label: formatNumericMD(cur) });
+  }
+  return out;
+}
+
+/**
+ * Weekly tier: one column per Monday from start through end (exclusive).
+ */
+function buildWeeklyColumns(start: Date, end: Date): AxisColumn[] {
+  const out: AxisColumn[] = [];
+  for (let cur = new Date(start); cur < end; cur = addWeeks(cur, 1)) {
+    out.push({ date: toISO(cur), label: formatNumericMD(cur) });
+  }
+  return out;
+}
+
+/**
+ * Monthly tier: pick whichever of {every-other Monday, 1st-of-month} gives
+ * a tick count in the [MIN, MAX] window. Falls back to every-Nth-Monday at
+ * progressively wider strides if both candidates miss the window. The goal
+ * is to keep labels visually readable at chart widths that crashed when
+ * weekly Mon-Fri ticks ran for ~4 months.
+ */
+function buildMonthlyColumns(start: Date, end: Date): AxisColumn[] {
+  // Candidate A: every-other Monday from `start`.
+  const everyOtherMonday: AxisColumn[] = [];
+  for (let cur = new Date(start); cur < end; cur = addWeeks(cur, 2)) {
+    everyOtherMonday.push({ date: toISO(cur), label: formatNumericMD(cur) });
+  }
+
+  // Candidate B: first-of-month from `start` through `end`.
+  const firstOfMonth: AxisColumn[] = [];
+  for (
+    let cur = startOfMonth(start);
+    cur < end;
+    cur = addMonths(cur, 1)
+  ) {
+    if (cur >= start) {
+      firstOfMonth.push({ date: toISO(cur), label: formatNumericMD(cur) });
+    }
+  }
+
+  // Pick the candidate that lands in the [MIN, MAX] window. If both
+  // qualify, prefer every-other-Monday (slightly denser, matches Teamwork
+  // aesthetic the operator referenced). If neither qualifies, walk wider
+  // strides of Mondays until we land in the window.
+  const inWindow = (n: number): boolean =>
+    n >= MONTHLY_TARGET_TICKS_MIN && n <= MONTHLY_TARGET_TICKS_MAX;
+
+  if (inWindow(everyOtherMonday.length)) return everyOtherMonday;
+  if (inWindow(firstOfMonth.length)) return firstOfMonth;
+
+  // Both candidates outside the window. Pick whichever overshoots less,
+  // then thin to taste. If everyOtherMonday is too dense (long span),
+  // try every-3rd, every-4th… Mondays.
+  if (everyOtherMonday.length > MONTHLY_TARGET_TICKS_MAX) {
+    for (let stride = 3; stride <= 12; stride++) {
+      const thinned: AxisColumn[] = [];
+      for (let cur = new Date(start); cur < end; cur = addWeeks(cur, stride)) {
+        thinned.push({ date: toISO(cur), label: formatNumericMD(cur) });
+      }
+      if (inWindow(thinned.length) || thinned.length <= MONTHLY_TARGET_TICKS_MAX) {
+        return thinned;
+      }
+    }
+  }
+
+  // Fallback: pick whichever candidate is closest to the [MIN, MAX] window.
+  // Prefer firstOfMonth here (calendar-aligned reads cleaner for very long
+  // spans). For very short windows where both are sparse, fall through to
+  // everyOtherMonday so something renders.
+  if (firstOfMonth.length >= MONTHLY_TARGET_TICKS_MIN) return firstOfMonth;
+  return everyOtherMonday.length > 0 ? everyOtherMonday : firstOfMonth;
 }
 
 export function computeAxis(
@@ -147,37 +278,58 @@ export function computeAxis(
   const max = dates.reduce((a, b) => (a > b ? a : b));
   const minDate = parseISO(min);
   const maxDate = parseISO(max);
-  const spanWeeks = (maxDate.getTime() - minDate.getTime()) / MS_PER_WEEK;
+  const spanDays = Math.round(
+    (maxDate.getTime() - minDate.getTime()) / MS_PER_DAY,
+  );
 
-  if (spanWeeks < WEEK_THRESHOLD) {
+  // Tier 1 — daily (≤ 14 days). One column per day across the full span,
+  // aligned to the containing Monday so the start of week reads cleanly.
+  if (spanDays <= DAILY_MAX_DAYS) {
     const start = startOfWeekMonday(minDate);
     const end = addWeeks(startOfWeekMonday(maxDate), 1);
-    const columns: AxisColumn[] = [];
-    // Emit one column PER DAY (excluding weekends) across the span.
-    // Operator (2026-04-30): daily ticks pulled forward from fast-follow.
-    // Operator (2026-05-04): every weekday tick now carries a numeric "M/D"
-    // label — no inline weekday letters. Saturdays and Sundays are omitted.
-    // At narrow container widths, CSS container queries hide non-Monday ticks
-    // (data-day attr drives the selectors) — the existing rules still fire.
-    for (
-      let cur = new Date(start);
-      cur < end;
-      cur = new Date(cur.getTime() + MS_PER_DAY)
-    ) {
-      const dow = cur.getUTCDay();
-      if (dow === 0 || dow === 6) continue; // skip weekends
-      columns.push({ date: toISO(cur), label: formatDailyLabel(cur) });
-    }
-    return { kind: "weekly", start: toISO(start), end: toISO(end), today: todayISO, columns };
+    const columns = buildDailyColumns(start, end);
+    const monthBands = buildMonthBands(columns);
+    return {
+      kind: "daily",
+      start: toISO(start),
+      end: toISO(end),
+      today: todayISO,
+      columns,
+      monthBands,
+    };
   }
 
+  // Tier 2 — weekly (15-56 days). One column per Monday only — drops the
+  // pre-rework Mon-Fri 5-cells-per-week pattern.
+  if (spanDays <= WEEKLY_MAX_DAYS) {
+    const start = startOfWeekMonday(minDate);
+    const end = addWeeks(startOfWeekMonday(maxDate), 1);
+    const columns = buildWeeklyColumns(start, end);
+    const monthBands = buildMonthBands(columns);
+    return {
+      kind: "weekly",
+      start: toISO(start),
+      end: toISO(end),
+      today: todayISO,
+      columns,
+      monthBands,
+    };
+  }
+
+  // Tier 3 — monthly (> 56 days). Sparse 6-10 ticks chosen by buildMonthlyColumns.
+  // Range is month-aligned for clean band labels.
   const start = startOfMonth(minDate);
   const end = addMonths(startOfMonth(maxDate), 1);
-  const columns: AxisColumn[] = [];
-  for (let cur = new Date(start); cur < end; cur = addMonths(cur, 1)) {
-    columns.push({ date: toISO(cur), label: formatMonthLabel(cur) });
-  }
-  return { kind: "monthly", start: toISO(start), end: toISO(end), today: todayISO, columns };
+  const columns = buildMonthlyColumns(start, end);
+  const monthBands = buildMonthBands(columns);
+  return {
+    kind: "monthly",
+    start: toISO(start),
+    end: toISO(end),
+    today: todayISO,
+    columns,
+    monthBands,
+  };
 }
 
 // ── Date display ──────────────────────────────────────────

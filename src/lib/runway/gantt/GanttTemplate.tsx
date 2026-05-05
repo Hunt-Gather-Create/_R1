@@ -169,6 +169,12 @@ const STYLES = `
   .axis-cells { position: relative; height: 18px; }
   .axis-cell { position: absolute; top: 0; bottom: 0; padding-left: 4px; border-left: 1px solid #d1d5db; font-size: 10px; color: #555; }
   .axis-cell.minor { border-left-color: #f1f5f9; color: transparent; }
+  /* Month-band header (operator-locked 2026-05-05) — top axis row carrying
+     calendar month names spanning their columns. Subtle contrast + slightly
+     larger glyph to read as "section header" above the tick row. */
+  .axis-row.month-band { font-size: 11px; color: #475569; padding: 2px 0 1px; border-bottom: none; align-items: end; }
+  .axis-row.month-band .axis-cells { height: 14px; }
+  .axis-cell.month-band-cell { border-left: 1px solid #e2e8f0; padding-left: 6px; font-weight: 600; color: #475569; }
   .row { display: grid; grid-template-columns: 340px 200px 130px 1fr; align-items: center; padding: 6px 0; border-bottom: 1px solid #f3f3f3; min-height: 28px; }
   .row .title { font-size: 13px; font-weight: 500; padding-right: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row .meta { font-size: 11px; color: #666; padding-right: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -289,6 +295,11 @@ const STYLES_BRANDED = `
   .axis-cells { position: relative; height: 18px; }
   .axis-cell { position: absolute; top: 0; bottom: 0; padding-left: 4px; border-left: 1px solid #E5E7EB; font-size: 10px; color: #333333; }
   .axis-cell.minor { border-left-color: #F9FAFB; color: transparent; }
+  /* Month-band header (operator-locked 2026-05-05) — branded variant: brand
+     primary color + bold calendar month names spanning their columns. */
+  .axis-row.month-band { font-size: 11px; color: #0E5DFF; padding: 2px 0 1px; border-bottom: none; align-items: end; }
+  .axis-row.month-band .axis-cells { height: 14px; }
+  .axis-cell.month-band-cell { border-left: 1px solid #E5E7EB; padding-left: 6px; font-weight: 700; color: #0E5DFF; }
   .row { display: grid; grid-template-columns: 340px 200px 130px 1fr; align-items: center; padding: 6px 0; border-bottom: 1px solid #E5E7EB; min-height: 28px; }
   .row .title { font-size: 13px; font-weight: 600; padding-right: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #000000; }
   .row .meta { font-size: 11px; color: #333333; padding-right: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -662,7 +673,10 @@ function eachDayBetween(startISO: string, endISO: string): string[] {
 }
 
 function GridLines({ axis }: { axis: AxisParams }): React.JSX.Element | null {
-  if (axis.kind !== "weekly") return null; // monthly = too noisy with daily lines
+  // Daily + weekly tiers paint per-day vertical lines (Mondays slightly
+  // darker for week-distinguishing). Monthly tier skips them — at >8wk
+  // spans the daily lines crash visually. Operator-locked 2026-05-05.
+  if (axis.kind !== "daily" && axis.kind !== "weekly") return null;
   const totalDays = dayDiff(axis.start, axis.end);
   if (totalDays <= 0) return null;
   const days = eachDayBetween(axis.start, axis.end);
@@ -704,28 +718,73 @@ function getDayName(dateStr: string): string {
   return WEEKDAY_NAMES[parseISO(dateStr).getUTCDay()];
 }
 
-function AxisRow({ axis }: { axis: AxisParams }): React.JSX.Element | null {
+/**
+ * Two-row axis: month-band header (top) + tick labels (bottom). Operator-
+ * locked 2026-05-05 — replaces the old single-row dense daily-Mon-Fri ticks
+ * that crashed at multi-month spans. Both rows align to the same column
+ * grid as the chart body. Bands are calendar-month-only (no year).
+ */
+function MonthBandRow({ axis }: { axis: AxisParams }): React.JSX.Element | null {
   if (axis.kind === "no-axis") return null;
+  if (axis.monthBands.length === 0) return null;
   const totalDays = dayDiff(axis.start, axis.end);
+  if (totalDays <= 0) return null;
   return (
-    <div className="axis-row">
+    <div className="axis-row month-band">
       <div className="axis-spacer" />
       <div className="axis-cells">
-        {axis.columns.map((col) => {
-          const colLeft = clampPct((dayDiff(axis.start, col.date) / totalDays) * 100);
+        {axis.monthBands.map((band) => {
+          const startCol = axis.columns[band.startCol];
+          const endCol = axis.columns[band.endCol];
+          if (!startCol || !endCol) return null;
+          const left = clampPct((dayDiff(axis.start, startCol.date) / totalDays) * 100);
+          // Right edge of band: next column boundary (or end of axis).
+          const nextCol = axis.columns[band.endCol + 1];
+          const right = nextCol
+            ? clampPct((dayDiff(axis.start, nextCol.date) / totalDays) * 100)
+            : 100;
+          const width = Math.max(0, right - left);
           return (
             <div
-              key={col.date}
-              className="axis-cell"
-              data-day={getDayName(col.date)}
-              style={{ left: `${colLeft}%` }}
+              key={`${band.label}-${band.startCol}`}
+              className="axis-cell month-band-cell"
+              data-cols={`${band.startCol},${band.endCol}`}
+              style={{ left: `${left}%`, width: `${width}%` }}
             >
-              {col.label}
+              {band.label}
             </div>
           );
         })}
       </div>
     </div>
+  );
+}
+
+function AxisRow({ axis }: { axis: AxisParams }): React.JSX.Element | null {
+  if (axis.kind === "no-axis") return null;
+  const totalDays = dayDiff(axis.start, axis.end);
+  return (
+    <>
+      <MonthBandRow axis={axis} />
+      <div className="axis-row">
+        <div className="axis-spacer" />
+        <div className="axis-cells">
+          {axis.columns.map((col) => {
+            const colLeft = clampPct((dayDiff(axis.start, col.date) / totalDays) * 100);
+            return (
+              <div
+                key={col.date}
+                className="axis-cell"
+                data-day={getDayName(col.date)}
+                style={{ left: `${colLeft}%` }}
+              >
+                {col.label}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
   );
 }
 

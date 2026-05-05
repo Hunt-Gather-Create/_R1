@@ -157,7 +157,10 @@ function eachDayBetween(startISO: string, endISO: string): string[] {
 }
 
 function GridLines({ axis }: { axis: AxisParams }): React.JSX.Element | null {
-  if (axis.kind !== "weekly") return null;
+  // Daily + weekly tiers paint per-day vertical lines (Mondays slightly
+  // darker for week-distinguishing). Monthly tier skips them — at >8wk
+  // spans the daily lines crash visually. Operator-locked 2026-05-05.
+  if (axis.kind !== "daily" && axis.kind !== "weekly") return null;
   const totalDays = dayDiff(axis.start, axis.end);
   if (totalDays <= 0) return null;
   const days = eachDayBetween(axis.start, axis.end);
@@ -181,28 +184,72 @@ function GridLines({ axis }: { axis: AxisParams }): React.JSX.Element | null {
 
 // ── Axis row ───────────────────────────────��──────────────
 
-function AxisRow({ axis }: { axis: AxisParams }): React.JSX.Element | null {
+/**
+ * Two-row axis (operator-locked 2026-05-05): month-band header above tick
+ * row. Mirrors GanttTemplate.tsx AxisRow + MonthBandRow. Bands are calendar
+ * month names (no year). CSS in gantt-dark-embed.module.css paints the
+ * `.axis-row.month-band` and `.axis-cell.month-band-cell` selectors.
+ */
+function MonthBandRow({ axis }: { axis: AxisParams }): React.JSX.Element | null {
   if (axis.kind === "no-axis") return null;
+  if (axis.monthBands.length === 0) return null;
   const totalDays = dayDiff(axis.start, axis.end);
+  if (totalDays <= 0) return null;
   return (
-    <div className="axis-row">
+    <div className="axis-row month-band">
       <div className="axis-spacer" />
       <div className="axis-cells">
-        {axis.columns.map((col) => {
-          const colLeft = clampPct((dayDiff(axis.start, col.date) / totalDays) * 100);
+        {axis.monthBands.map((band) => {
+          const startCol = axis.columns[band.startCol];
+          const endCol = axis.columns[band.endCol];
+          if (!startCol || !endCol) return null;
+          const left = clampPct((dayDiff(axis.start, startCol.date) / totalDays) * 100);
+          const nextCol = axis.columns[band.endCol + 1];
+          const right = nextCol
+            ? clampPct((dayDiff(axis.start, nextCol.date) / totalDays) * 100)
+            : 100;
+          const width = Math.max(0, right - left);
           return (
             <div
-              key={col.date}
-              className="axis-cell"
-              data-day={getDayName(col.date)}
-              style={{ left: `${colLeft}%` }}
+              key={`${band.label}-${band.startCol}`}
+              className="axis-cell month-band-cell"
+              data-cols={`${band.startCol},${band.endCol}`}
+              style={{ left: `${left}%`, width: `${width}%` }}
             >
-              {col.label}
+              {band.label}
             </div>
           );
         })}
       </div>
     </div>
+  );
+}
+
+function AxisRow({ axis }: { axis: AxisParams }): React.JSX.Element | null {
+  if (axis.kind === "no-axis") return null;
+  const totalDays = dayDiff(axis.start, axis.end);
+  return (
+    <>
+      <MonthBandRow axis={axis} />
+      <div className="axis-row">
+        <div className="axis-spacer" />
+        <div className="axis-cells">
+          {axis.columns.map((col) => {
+            const colLeft = clampPct((dayDiff(axis.start, col.date) / totalDays) * 100);
+            return (
+              <div
+                key={col.date}
+                className="axis-cell"
+                data-day={getDayName(col.date)}
+                style={{ left: `${colLeft}%` }}
+              >
+                {col.label}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
   );
 }
 

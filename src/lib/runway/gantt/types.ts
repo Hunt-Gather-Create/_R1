@@ -82,14 +82,41 @@ export type GanttRow =
 
 export type AxisColumn = { date: string; label: string };
 
+/**
+ * A contiguous run of axis columns belonging to the same calendar month.
+ * Operator-locked 2026-05-05: axis renders TWO rows — month names spanning
+ * the columns within each month (top), tick labels (bottom). `startCol` and
+ * `endCol` are inclusive 0-based indexes into the `columns` array.
+ *
+ * `label` is the calendar month name only (no year) — e.g. "April", "May".
+ */
+export type MonthBand = {
+  startCol: number; // inclusive index into columns
+  endCol: number; // inclusive index into columns
+  label: string; // calendar month name, no year (e.g. "April")
+};
+
+/**
+ * Discriminator semantics post-2026-05-05 axis rework:
+ *  - "daily"   = ≤ 14-day span: one column per day, M/D label every day
+ *  - "weekly"  = 15–56-day span: one column per Monday, M/D label
+ *  - "monthly" = > 56-day span (8+ weeks): adaptive sparse ticks (every-other
+ *                Monday or 1st-of-month) chosen to keep total tick count in
+ *                the 6–10 range so labels don't collide
+ *  - "no-axis" = no usable dates anywhere in the dataset
+ *
+ * Both light themes and the dark-account-view embed use this same shape and
+ * render two rows: month bands above the columns, tick labels at the columns.
+ */
 export type AxisParams =
   | { kind: "no-axis"; today: string }
   | {
-      kind: "weekly" | "monthly";
+      kind: "daily" | "weekly" | "monthly";
       start: string; // ISO date (column-aligned)
       end: string; // ISO date (exclusive — first date past the last column)
       today: string;
       columns: AxisColumn[];
+      monthBands: MonthBand[];
     };
 
 // ── Issues ───────────────────────────────────────────────

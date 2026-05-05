@@ -113,6 +113,12 @@ const weeklyAxis: AxisParams = {
     { date: "2026-05-11", label: "5/11" },
     { date: "2026-05-18", label: "5/18" },
   ],
+  // 2026-05-05 axis rework: month-band header above ticks. April spans the
+  // first 3 columns (4/13, 4/20, 4/27); May spans the last 3 (5/4, 5/11, 5/18).
+  monthBands: [
+    { startCol: 0, endCol: 2, label: "April" },
+    { startCol: 3, endCol: 5, label: "May" },
+  ],
 };
 
 // ── Geometry ─────────────────────────────────────────────
@@ -704,6 +710,48 @@ describe("legend + axis dedup — once per top-level subject", () => {
     const html = renderClientRundown(rundown);
     expect(html).toContain('class="legend legend-in-section"');
     expect(html).toContain('class="axis-row"');
+  });
+});
+
+// ── 2026-05-05 axis rework: two-row axis (month band header + ticks) ─
+
+describe("AxisRow: two-row month-band header + tick row", () => {
+  it("renders a month-band row above the tick row with month name labels", () => {
+    // The default fixture's weeklyAxis spans April → May with two bands.
+    const html = renderGantt(makeGanttData());
+    // The new month-band row carries class="axis-row month-band". The tick
+    // row keeps class="axis-row" so existing dedup tests still hold.
+    expect(html).toContain('class="axis-row month-band"');
+    // Both month labels render (full month name, no year — operator-locked).
+    expect(html).toContain("April");
+    expect(html).toContain("May");
+    // No year suffix — bands are calendar-month-only.
+    expect(html).not.toMatch(/April[^<]*\d{4}/);
+    expect(html).not.toMatch(/May[^<]*\d{4}/);
+  });
+
+  it("month bands span the columns within their calendar month", () => {
+    // weeklyAxis fixture: April band covers cols 0-2 (3 cols), May band
+    // covers cols 3-5 (3 cols). Both bands carry the data-cols attribute
+    // so visual diffing + assertions can confirm spans.
+    const html = renderGantt(makeGanttData());
+    // Each month-band-cell includes a data-cols attribute with the inclusive
+    // [startCol, endCol] range it covers.
+    expect(html).toMatch(/data-cols="0,2"[^>]*>[^<]*April/);
+    expect(html).toMatch(/data-cols="3,5"[^>]*>[^<]*May/);
+  });
+
+  it("month-band row is suppressed for wrapper-children (same dedup as tick row)", () => {
+    // Wrapper-child sub-projects already inherit the wrapper's date scale —
+    // they should not paint their own month-band row either.
+    const wrapper = makeRundownSection({ id: "w", kind: "wrapper" });
+    const child = makeRundownSection({ id: "c", kind: "wrapper-child" });
+    const rundown = makeClientRundownData([wrapper, child]);
+    const html = renderClientRundown(rundown);
+    // 1 wrapper paints 1 month-band row (rows array empty so no bottom repeat).
+    // The child paints 0. Total: 1.
+    const monthBandCount = (html.match(/class="axis-row month-band"/g) ?? []).length;
+    expect(monthBandCount).toBe(1);
   });
 });
 
