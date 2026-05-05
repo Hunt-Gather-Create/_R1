@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { getClientsWithProjects, getWeekItems, getPipeline, getStaleWeekItems } from "./queries";
 import type { ItemStatus, ItemCategory } from "./types";
 import { RunwayBoard } from "./runway-board";
@@ -10,6 +11,7 @@ import { getRunwayDb } from "@/lib/db/runway";
 import { clients as clientsTable, projects as projectsTable } from "@/lib/db/runway-schema";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { filterActiveRundown } from "@/lib/runway/gantt/filter-active";
+import { RundownContentRSC } from "./components/rundown-content-rsc";
 import type { ClientRundownData } from "@/lib/runway/gantt/types";
 
 /**
@@ -149,17 +151,33 @@ export default async function RunwayPage() {
   // Track 3 Wave 3: drop accounts whose Gantt rundown has zero active
   // sections after applying the active-status filter (completed/canceled
   // L1s + their wrappers are hidden). Accounts without a rundown row in
-  // the map (data-integrity nudge) stay visible. The rundown itself is
-  // not passed to AccountSection — Wave 4 surfaces it on a separate
-  // Gantt Charts tab.
-  const unifiedAccounts = unifiedBase.filter((account) => {
-    const clientEntry = clientsWithProjects.find((c) => c.slug === account.slug);
-    if (!clientEntry) return true;
-    const rundown = clientRundowns.get(clientEntry.id);
-    if (!rundown) return true;
-    const filtered = filterActiveRundown(rundown);
-    return filtered.sections.length > 0;
-  });
+  // the map (data-integrity nudge) stay visible.
+  //
+  // Track 3 Wave 4: for surviving accounts that DO have a rundown, also
+  // pre-render the dark Gantt embed via RundownContentRSC and attach it
+  // as `ganttContent`. This ReactNode is consumed by GanttChartsSection
+  // on the Gantt Charts tab. AccountSection (By Account tab) ignores
+  // it — same data, two affordances.
+  const unifiedAccounts = unifiedBase
+    .map((account) => {
+      const clientEntry = clientsWithProjects.find((c) => c.slug === account.slug);
+      if (!clientEntry) return { account, filtered: null as ClientRundownData | null };
+      const rundown = clientRundowns.get(clientEntry.id);
+      if (!rundown) return { account, filtered: null as ClientRundownData | null };
+      const filtered = filterActiveRundown(rundown);
+      return { account, filtered };
+    })
+    .filter(({ filtered }) => {
+      if (filtered === null) return true; // no rundown row → keep visible
+      return filtered.sections.length > 0;
+    })
+    .map(({ account, filtered }) => {
+      const ganttContent: ReactNode | undefined = filtered
+        ? <RundownContentRSC sections={filtered.sections} />
+        : undefined;
+      const ganttSeverity = filtered?.overallSeverity;
+      return { ...account, ganttContent, ganttSeverity };
+    });
 
   // In Flight regression fix: page-level bucketing for thisWeek/upcoming
   // drops past-Monday day buckets entirely. Multi-week in-progress items

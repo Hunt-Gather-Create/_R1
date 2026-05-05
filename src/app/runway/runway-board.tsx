@@ -1,15 +1,18 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { DayItem, Account, PipelineItem } from "./types";
 import type { UnifiedAccount } from "./unified-view";
 import type { RunwayFlag } from "@/lib/runway/flags";
+import type { SeverityCounts } from "@/lib/runway/gantt/types";
 import { parseISODate } from "./date-utils";
 import { mergeWeekendDays, groupByWeek } from "./runway-board-utils";
 import { DayColumn } from "./components/day-column";
 import { TodaySection } from "./components/today-section";
 import { AccountSection } from "./components/account-section";
+import { GanttChartsSection } from "./components/gantt-charts-section";
 import { PipelineRow } from "./components/pipeline-row";
 import { FlagsPanel } from "./components/flags-panel";
 import { NeedsUpdateSection } from "./components/needs-update-section";
@@ -18,7 +21,7 @@ import { InFlightToggle } from "./components/in-flight-toggle";
 import { toggleInFlightAction } from "./actions";
 import { useVersionPoll } from "./use-version-poll";
 
-type View = "triage" | "accounts" | "pipeline";
+type View = "triage" | "accounts" | "gantt-charts" | "pipeline";
 
 interface RunwayBoardProps {
   thisWeek: DayItem[];
@@ -28,11 +31,18 @@ interface RunwayBoardProps {
    * with inline L2 milestones (chunk 3 #1). AccountSection renders both
    * shapes without branching.
    *
-   * When `accountSections` is provided, this prop is used only for slug
-   * keys and is otherwise ignored for rendering (Track 2: pre-rendered
-   * server sections are passed via `accountSections`).
+   * Track 3 Wave 4: each account may carry an optional `ganttContent`
+   * ReactNode (the pre-rendered RSC dark Gantt embed) consumed by the
+   * Gantt Charts tab, plus an optional `ganttSeverity` rollup used to
+   * paint the AuditBadge above each card. AccountSection ignores both
+   * fields; GanttChartsSection slots them inside each account card.
    */
-  accounts: Account[] | UnifiedAccount[];
+  accounts: Array<
+    (Account | UnifiedAccount) & {
+      ganttContent?: ReactNode;
+      ganttSeverity?: SeverityCounts;
+    }
+  >;
   pipeline: PipelineItem[];
   flags?: RunwayFlag[];
   staleItems?: DayItem[];
@@ -50,6 +60,7 @@ interface RunwayBoardProps {
 const TABS = [
   { key: "triage", label: "This Week" },
   { key: "accounts", label: "By Account" },
+  { key: "gantt-charts", label: "Gantt Charts" },
   { key: "pipeline", label: "Pipeline" },
 ] as const;
 
@@ -207,6 +218,10 @@ export function RunwayBoard({
               </div>
             ) : null}
 
+            {view === "gantt-charts" ? (
+              <GanttChartsSection accounts={accounts} />
+            ) : null}
+
             {view === "pipeline" ? (
               <div className="space-y-6">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -232,7 +247,7 @@ export function RunwayBoard({
             ) : null}
           </div>
 
-          {view !== "accounts" && <FlagsPanel flags={flags} />}
+          {view !== "accounts" && view !== "gantt-charts" && <FlagsPanel flags={flags} />}
         </div>
       </main>
     </div>

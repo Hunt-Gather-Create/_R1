@@ -37,6 +37,19 @@ vi.mock("./components/flags-panel", () => ({
   FlagsPanel: () => <div data-testid="flags-panel-stub" />,
 }));
 
+// Stub GanttChartsSection (Track 3 Wave 4) so the runway-board tab-switch
+// tests don't need the full dark-embed render path. The stub mirrors the
+// real component's empty-state vs cards split closely enough for the
+// rendering-branch assertions below.
+vi.mock("./components/gantt-charts-section", () => ({
+  GanttChartsSection: ({ accounts }: { accounts: { slug: string }[] }) => (
+    <div
+      data-testid="gantt-charts-section-stub"
+      data-account-count={accounts.length}
+    />
+  ),
+}));
+
 const inFlightSource: DayItem[] = [
   ...thisWeek,
   ...upcoming,
@@ -112,13 +125,56 @@ describe("RunwayBoard", () => {
     expect(screen.getByText("Future Item")).toBeInTheDocument();
   });
 
-  it("renders all three tab buttons", () => {
+  it("renders all four tab buttons", () => {
     render(<RunwayBoard {...defaultProps} />);
     const buttons = screen.getAllByRole("button");
     const buttonLabels = buttons.map((b) => b.textContent);
     expect(buttonLabels).toContain("This Week");
     expect(buttonLabels).toContain("By Account");
+    expect(buttonLabels).toContain("Gantt Charts");
     expect(buttonLabels).toContain("Pipeline");
+  });
+
+  // Track 3 Wave 4 — tab order is locked: This Week → By Account → Gantt
+  // Charts → Pipeline. The Gantt Charts tab must sit BETWEEN accounts
+  // and pipeline (per operator decision), not at either end of the row.
+  it("renders Gantt Charts tab between By Account and Pipeline (operator-locked order)", () => {
+    render(<RunwayBoard {...defaultProps} />);
+    const buttons = screen.getAllByRole("button");
+    const labels = buttons.map((b) => b.textContent ?? "");
+    const accountsIdx = labels.indexOf("By Account");
+    const ganttIdx = labels.indexOf("Gantt Charts");
+    const pipelineIdx = labels.indexOf("Pipeline");
+    expect(accountsIdx).toBeGreaterThanOrEqual(0);
+    expect(ganttIdx).toBeGreaterThan(accountsIdx);
+    expect(pipelineIdx).toBeGreaterThan(ganttIdx);
+  });
+
+  // Track 3 Wave 4 — clicking the Gantt Charts tab renders the new
+  // section component and NOT the AccountSection, TriageView, or
+  // PipelineView. This is the render-branch lock for the tab switch.
+  it("switches to Gantt Charts view when tab is clicked and renders only that section", () => {
+    render(<RunwayBoard {...defaultProps} />);
+    fireEvent.click(screen.getByText("Gantt Charts"));
+    expect(screen.getByTestId("gantt-charts-section-stub")).toBeInTheDocument();
+    // Other tab content is absent.
+    expect(screen.queryByText("Today")).not.toBeInTheDocument();
+    expect(screen.queryByText("Convergix")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Unsigned SOWs & New Business")
+    ).not.toBeInTheDocument();
+  });
+
+  // Track 3 Wave 4 — accounts (the same array used by By Account) are
+  // forwarded into GanttChartsSection unchanged. The forward is verified
+  // via the stub's data-account-count attribute.
+  it("forwards accounts into GanttChartsSection unchanged", () => {
+    render(<RunwayBoard {...defaultProps} />);
+    fireEvent.click(screen.getByText("Gantt Charts"));
+    const stub = screen.getByTestId("gantt-charts-section-stub");
+    expect(stub.getAttribute("data-account-count")).toBe(
+      String(defaultProps.accounts.length)
+    );
   });
 
   it("switches back to triage view from another tab", () => {
@@ -771,6 +827,20 @@ describe("FlagsPanel tab visibility", () => {
     render(<RunwayBoard {...defaultProps} />);
     fireEvent.click(screen.getByText("By Account"));
     expect(screen.queryByTestId("flags-panel-stub")).not.toBeInTheDocument();
+  });
+
+  // Track 3 Wave 4 — FlagsPanel is also hidden on the Gantt Charts tab
+  // (operator-locked, parallel to the By Account regression-lock above).
+  it("hides FlagsPanel on Gantt Charts tab", () => {
+    render(<RunwayBoard {...defaultProps} />);
+    fireEvent.click(screen.getByText("Gantt Charts"));
+    expect(screen.queryByTestId("flags-panel-stub")).not.toBeInTheDocument();
+  });
+
+  it("renders FlagsPanel on Pipeline tab (regression-lock for Gantt Charts addition)", () => {
+    render(<RunwayBoard {...defaultProps} />);
+    fireEvent.click(screen.getByText("Pipeline"));
+    expect(screen.getByTestId("flags-panel-stub")).toBeInTheDocument();
   });
 });
 

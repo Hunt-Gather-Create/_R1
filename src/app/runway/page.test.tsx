@@ -25,6 +25,21 @@ vi.mock("@/lib/runway/gantt/server", () => ({
   }),
 }));
 
+// Track 3 Wave 4: page.tsx pre-renders the dark Gantt embed via
+// RundownContentRSC and attaches the resulting ReactNode as
+// `ganttContent` to each surviving account. Stub it so page tests don't
+// pull in the real component's downstream chain (themes, GanttSection,
+// etc.). The stub returns a serializable marker so the JSON-stringified
+// data-props blob can prove ganttContent is present.
+vi.mock("./components/rundown-content-rsc", () => ({
+  RundownContentRSC: ({ sections }: { sections: { anchor: string }[] }) => (
+    <div
+      data-testid="rundown-content-rsc-stub"
+      data-section-count={sections.length}
+    />
+  ),
+}));
+
 // Mock DB + schema so page tests don't open a DB connection
 vi.mock("@/lib/db/runway", () => {
   // Chainable thenable: each chained call returns the same object;
@@ -238,12 +253,15 @@ describe("RunwayPage", () => {
     );
   });
 
-  // Track 3 Wave 3 — page.tsx no longer attaches a Gantt embed (ganttContent)
-  // onto accounts. The dark Gantt embed has been removed from the By Account
-  // tab and will be reintroduced on a separate "Gantt Charts" tab in Wave 4.
-  // The rundown is still extracted for the active-status filter (and Wave 4)
-  // but is not passed to AccountSection.
-  it("does NOT attach ganttContent to accounts (By Account tab is info-card-only)", async () => {
+  // Track 3 Wave 4 — surviving accounts that DO have a rundown carry
+  // a pre-rendered `ganttContent` ReactNode (consumed by the new Gantt
+  // Charts tab) and an optional `ganttSeverity` rollup. Accounts whose
+  // client has no rundown row (data-integrity nudge) do NOT carry
+  // ganttContent. AccountSection (By Account tab) ignores both fields;
+  // GanttChartsSection reads them.
+  it("does NOT attach ganttContent when there is no rundown row for the account (data-integrity nudge)", async () => {
+    // Default DB chain mock returns [] for the clients fetch inside
+    // getClientRundowns → rundowns map is empty → no ganttContent.
     mockGetClientsWithProjects.mockResolvedValue([client]);
     mockGetWeekItems.mockResolvedValue([]);
     mockGetPipeline.mockResolvedValue([]);
@@ -252,10 +270,74 @@ describe("RunwayPage", () => {
     render(el);
 
     const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+    expect(props.accounts).toHaveLength(1);
     for (const account of props.accounts) {
       expect(account.ganttContent).toBeUndefined();
       expect(account.rundown).toBeUndefined();
     }
+  });
+
+  // Track 3 Wave 4 — when a rundown exists AND survives the active-status
+  // filter, page.tsx attaches ganttContent (a serialized ReactNode) and
+  // ganttSeverity onto the account so GanttChartsSection can render it.
+  it("attaches ganttContent and ganttSeverity onto surviving accounts whose rundown has sections", async () => {
+    // Seed the DB chain to return our one client so getClientRundowns
+    // produces a rundown for it; extractClientRundown returns a non-empty
+    // sections array so the active-status filter keeps the account in.
+    const { getRunwayDb } = await import("@/lib/db/runway");
+    const dbMock = vi.mocked(getRunwayDb);
+    type Chain = Record<string, unknown> & {
+      then: (resolve: (v: unknown[]) => unknown) => Promise<unknown>;
+    };
+    const chain: Chain = {
+      then: (resolve) =>
+        Promise.resolve([{ id: client.id, name: client.name, slug: client.slug }]).then(resolve),
+    };
+    chain.select = vi.fn(() => chain);
+    chain.from = vi.fn(() => chain);
+    chain.where = vi.fn(() => chain);
+    chain.orderBy = vi.fn(() => chain);
+    dbMock.mockReturnValueOnce(chain as unknown as ReturnType<typeof getRunwayDb>);
+
+    const { extractClientRundown } = await import("@/lib/runway/gantt/server");
+    (extractClientRundown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      client: { id: client.id, name: client.name, slug: client.slug },
+      generatedAt: "2026-04-30",
+      overallSeverity: { critical: 1, warn: 2, info: 0 },
+      // Minimal section that passes the active-status filter — kind
+      // standalone with raw kind l1 and a non-terminal status.
+      sections: [
+        {
+          anchor: "convergix-cds",
+          kind: "standalone",
+          title: "CDS Messaging",
+          data: {
+            raw: {
+              kind: "l1",
+              entity: { id: "p1", status: "in-production", parentProjectId: null },
+              client: { id: client.id, name: client.name, slug: client.slug },
+              children: [],
+            },
+          },
+        },
+      ],
+    });
+
+    mockGetClientsWithProjects.mockResolvedValue([client]);
+    mockGetWeekItems.mockResolvedValue([]);
+    mockGetPipeline.mockResolvedValue([]);
+
+    const el = await RunwayPage();
+    render(el);
+
+    const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+    expect(props.accounts).toHaveLength(1);
+    const account = props.accounts[0];
+    // ganttContent is a ReactNode — JSON.stringify drops $$typeof (Symbol)
+    // but keeps the rest of the element shape, so the field is present and
+    // truthy on the serialized props blob.
+    expect(account.ganttContent).toBeTruthy();
+    expect(account.ganttSeverity).toEqual({ critical: 1, warn: 2, info: 0 });
   });
 
   // Track 3 Wave 3 — accounts whose Gantt rundown filters down to zero
