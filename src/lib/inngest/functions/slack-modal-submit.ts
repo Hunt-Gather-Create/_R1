@@ -658,6 +658,8 @@ async function writeUpdateWeekItem(
 ): Promise<WriteResult> {
   // Resolve the existing week item by id so we can pull its weekOf/title for
   // the operations-layer signature (which uses weekOf + title for fuzzy match).
+  // Also pull current startDate / endDate so we can pick a safe write order
+  // when both date columns change in the same submission.
   const db = getRunwayDb();
   const { weekItems } = await import("@/lib/db/runway-schema");
   const rows = (await db
@@ -667,6 +669,8 @@ async function writeUpdateWeekItem(
     id: string;
     title: string;
     weekOf: string;
+    startDate: string | null;
+    endDate: string | null;
   }>;
   const row = rows[0];
   if (!row) {
@@ -690,7 +694,17 @@ async function writeUpdateWeekItem(
     "blockedBy",
   ]);
 
-  for (const field of changedFields) {
+  // updateWeekItemField enforces a per-field startDate <= endDate guard by
+  // reading the row's CURRENT other side. When BOTH dates change in one
+  // submission (typical of a Single->Range toggle), naive iteration order
+  // can fail the guard on intermediate state even though validate-submission
+  // already proved the final state is consistent. Write the side that's
+  // compatible with the row's current other side first - that keeps the row
+  // valid through the intermediate, then the second write completes the
+  // transition.
+  const orderedFields = orderFieldsForDateGuard(changedFields, row, normalized);
+
+  for (const field of orderedFields) {
     if (!ALLOW.has(field)) continue;
     const newValue = normalized[field];
     const value =
@@ -707,6 +721,67 @@ async function writeUpdateWeekItem(
   }
 
   return { entityName: row.title };
+}
+
+/**
+ * Reorder changedFields to keep updateWeekItemField's per-field
+ * startDate <= endDate guard happy on intermediate state.
+ *
+ * Rule: when both dates are changing, write the side that is compatible with
+ * the row's CURRENT other side first. Specifically:
+ *   - If newStartDate <= currentEndDate, writing startDate first is safe.
+ *   - Else if newEndDate >= currentStartDate, writing endDate first is safe.
+ *   - Else (the new range is fully outside the old), the per-field guard
+ *     can't be satisfied without an atomic two-column write. Fall back to
+ *     the original order; the caller will surface the rejection. This case
+ *     is rare in practice because the row's prior dateType being toggled
+ *     usually implies the new range overlaps with at least one boundary of
+ *     the prior single-day mirror.
+ */
+function orderFieldsForDateGuard(
+  changedFields: string[],
+  row: { startDate: string | null; endDate: string | null },
+  normalized: Record<string, unknown>,
+): string[] {
+  const startInChanged = changedFields.includes("startDate");
+  const endInChanged = changedFields.includes("endDate");
+  if (!startInChanged || !endInChanged) return changedFields;
+
+  const newStart =
+    typeof normalized.startDate === "string" ? normalized.startDate : null;
+  const newEnd =
+    typeof normalized.endDate === "string" ? normalized.endDate : null;
+  const curStart = row.startDate;
+  const curEnd = row.endDate;
+
+  // If either new value is null we let the per-field write run in its
+  // existing order; the guard short-circuits on null.
+  if (!newStart || !newEnd || !curStart || !curEnd) return changedFields;
+
+  const startSafeFirst = newStart <= curEnd;
+  const endSafeFirst = newEnd >= curStart;
+
+  if (startSafeFirst && !endSafeFirst) {
+    return reorderDatesFirst(changedFields, "startDate", "endDate");
+  }
+  if (endSafeFirst && !startSafeFirst) {
+    return reorderDatesFirst(changedFields, "endDate", "startDate");
+  }
+  // Both safe (overlap exists either way) or neither safe (disjoint range).
+  // Default to endDate-first because the common toggle case (Single -> Range
+  // shifting forward) is satisfied by that ordering.
+  return reorderDatesFirst(changedFields, "endDate", "startDate");
+}
+
+function reorderDatesFirst(
+  changedFields: string[],
+  first: "startDate" | "endDate",
+  second: "startDate" | "endDate",
+): string[] {
+  const rest = changedFields.filter(
+    (f) => f !== "startDate" && f !== "endDate",
+  );
+  return [first, second, ...rest];
 }
 
 // ── Confirmation copy picker ───────────────────────────

@@ -642,6 +642,114 @@ describe("slackModalSubmit (Inngest function)", () => {
     expect(fields.sort()).toEqual(["date", "owner"]);
   });
 
+  it("task edit Single->Range: writes endDate before startDate when forward shift would violate per-field guard", async () => {
+    // Repro from the operator's live-fire on TEST Task Single A:
+    // row was Single mode (date == startDate == endDate == 2026-05-12),
+    // user toggled to Range and picked startDate=2026-05-13, endDate=2026-05-16.
+    // updateWeekItemField has a per-field startDate <= endDate guard that
+    // reads the row's CURRENT other side. Naive iteration would write
+    // startDate=2026-05-13 against currentEnd=2026-05-12 and the guard would
+    // reject. The consumer must reorder so the side compatible with the
+    // current other is written first; here that's endDate (=2026-05-16 >=
+    // currentStart=2026-05-12).
+    seedProposal({
+      toolName: "update_week_item",
+      kind: "edit",
+      targetEntityId: "wi-toggle-single-to-range",
+      targetEntityType: "week_item",
+      args: JSON.stringify({}),
+    });
+    weekItemRows.set("wi-toggle-single-to-range", {
+      id: "wi-toggle-single-to-range",
+      title: "TEST Task Single A",
+      weekOf: "2026-05-11",
+      startDate: "2026-05-12",
+      endDate: "2026-05-12",
+    });
+    mockValidate.mockResolvedValue({
+      ok: true,
+      normalized: {
+        title: "TEST Task Single A",
+        date: null,
+        startDate: "2026-05-13",
+        endDate: "2026-05-16",
+      },
+      changedFields: ["date", "startDate", "endDate"],
+    });
+    mockUpdateWeekItemField.mockResolvedValue({
+      ok: true,
+      message: "Updated.",
+      data: {},
+    });
+
+    await handler({
+      event: buildEvent({ modalCallbackId: "runway_edit_task" }),
+      step: { run: mockStepRun },
+      logger: { info: vi.fn(), error: vi.fn() },
+    });
+
+    expect(mockUpdateWeekItemField).toHaveBeenCalledTimes(3);
+    const callOrder = mockUpdateWeekItemField.mock.calls.map(
+      (c) => c[0].field,
+    );
+    // endDate must precede startDate so the per-field guard sees a row
+    // whose endDate is already >= the new startDate.
+    const endIdx = callOrder.indexOf("endDate");
+    const startIdx = callOrder.indexOf("startDate");
+    expect(endIdx).toBeGreaterThanOrEqual(0);
+    expect(startIdx).toBeGreaterThanOrEqual(0);
+    expect(endIdx).toBeLessThan(startIdx);
+  });
+
+  it("task edit Range->Single backward shift: writes startDate before endDate when shrinking the window backward", async () => {
+    // Sibling case: row was [2026-05-12, 2026-05-20], user picks
+    // startDate=2026-05-08, endDate=2026-05-10. Writing endDate=2026-05-10
+    // first against currentStart=2026-05-12 would fail the guard
+    // (12 > 10). The safe order is startDate first (=2026-05-08 <=
+    // currentEnd=2026-05-20).
+    seedProposal({
+      toolName: "update_week_item",
+      kind: "edit",
+      targetEntityId: "wi-shrink-back",
+      targetEntityType: "week_item",
+      args: JSON.stringify({}),
+    });
+    weekItemRows.set("wi-shrink-back", {
+      id: "wi-shrink-back",
+      title: "Shrinking Window",
+      weekOf: "2026-05-11",
+      startDate: "2026-05-12",
+      endDate: "2026-05-20",
+    });
+    mockValidate.mockResolvedValue({
+      ok: true,
+      normalized: {
+        startDate: "2026-05-08",
+        endDate: "2026-05-10",
+      },
+      changedFields: ["startDate", "endDate"],
+    });
+    mockUpdateWeekItemField.mockResolvedValue({
+      ok: true,
+      message: "Updated.",
+      data: {},
+    });
+
+    await handler({
+      event: buildEvent({ modalCallbackId: "runway_edit_task" }),
+      step: { run: mockStepRun },
+      logger: { info: vi.fn(), error: vi.fn() },
+    });
+
+    expect(mockUpdateWeekItemField).toHaveBeenCalledTimes(2);
+    const callOrder = mockUpdateWeekItemField.mock.calls.map(
+      (c) => c[0].field,
+    );
+    const startIdx = callOrder.indexOf("startDate");
+    const endIdx = callOrder.indexOf("endDate");
+    expect(startIdx).toBeLessThan(endIdx);
+  });
+
   // ── Validator-fail path ──────────────────────────────────
 
   it("validation failure marks failed, posts ephemeral, records rejections", async () => {
