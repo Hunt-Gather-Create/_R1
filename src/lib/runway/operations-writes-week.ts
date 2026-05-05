@@ -262,8 +262,13 @@ export async function createWeekItem(
     if (!n.ok) return { ok: false, error: n.error };
   }
 
-  // Auto-calculate weekOf from date if not provided
-  const weekOf = rawWeekOf ?? (date ? getMonday(date) : undefined);
+  // Auto-calculate weekOf from date or, for Range submissions that pass only
+  // startDate, from startDate. Slack modal Range mode only supplies start/end
+  // dates without a single anchor `date`, so this fallback prevents silent
+  // write failure.
+  const weekOf =
+    rawWeekOf ??
+    (date ? getMonday(date) : (startDate ? getMonday(startDate) : undefined));
   if (!weekOf) {
     return { ok: false, error: "Provide weekOf or date to determine which week this item belongs to." };
   }

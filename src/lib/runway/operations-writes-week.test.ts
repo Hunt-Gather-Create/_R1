@@ -219,6 +219,36 @@ describe("createWeekItem", () => {
     expect(insertCall.weekOf).toBe("2026-04-13");
   });
 
+  it("derives weekOf from startDate when no date or rawWeekOf is provided", async () => {
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      startDate: "2026-05-05", // Tuesday → Monday is 2026-05-04
+      endDate: "2026-05-09",
+      title: "Range Anchor Test",
+      updatedBy: "jason",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.weekOf).toBe("2026-05-04");
+    expect(insertCall.startDate).toBe("2026-05-05");
+    expect(insertCall.endDate).toBe("2026-05-09");
+  });
+
+  it("prefers date over startDate when both are provided and weekOf is absent", async () => {
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      date: "2026-04-15", // Wednesday → Monday is 2026-04-13
+      startDate: "2026-05-05", // Tuesday → Monday is 2026-05-04 (should NOT win)
+      title: "Date Beats StartDate Test",
+      updatedBy: "jason",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.weekOf).toBe("2026-04-13");
+  });
+
   it("uses explicit weekOf when both weekOf and date provided", async () => {
     const { createWeekItem } = await import("./operations-writes-week");
     const result = await createWeekItem({
