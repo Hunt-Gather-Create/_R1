@@ -249,6 +249,26 @@ describe("createWeekItem", () => {
     expect(insertCall.weekOf).toBe("2026-04-13");
   });
 
+  it("accepts Single-mode shape where date equals startDate and endDate", async () => {
+    // The Slack modal canonical mirrors `date` into both startDate and
+    // endDate for Single-day items so every row carries both columns
+    // populated. validateStartEndDateOrder must allow that equality.
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      date: "2026-05-06",
+      startDate: "2026-05-06",
+      endDate: "2026-05-06",
+      title: "Single Mode Shape Test",
+      updatedBy: "jason",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.startDate).toBe("2026-05-06");
+    expect(insertCall.endDate).toBe("2026-05-06");
+    expect(insertCall.weekOf).toBe("2026-05-04"); // Monday before Wednesday
+  });
+
   it("uses explicit weekOf when both weekOf and date provided", async () => {
     const { createWeekItem } = await import("./operations-writes-week");
     const result = await createWeekItem({
@@ -970,7 +990,7 @@ describe("updateWeekItemField", () => {
       expect(result.ok).toBe(true);
     });
 
-    it("rejects startDate >= endDate", async () => {
+    it("rejects startDate > endDate", async () => {
       const { createWeekItem } = await import("./operations-writes-week");
       const result = await createWeekItem({
         weekOf: "2026-04-06",
@@ -980,7 +1000,7 @@ describe("updateWeekItemField", () => {
         updatedBy: "modal",
       });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error).toMatch(/must be < endDate/);
+      if (!result.ok) expect(result.error).toMatch(/must be <= endDate/);
     });
 
     it("rejects notes exceeding L2 max length (280)", async () => {
@@ -1058,7 +1078,7 @@ describe("updateWeekItemField", () => {
         updatedBy: "modal",
       });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error).toMatch(/must be < endDate/);
+      if (!result.ok) expect(result.error).toMatch(/must be <= endDate/);
     });
 
     it("rejects notes update exceeding L2 max length", async () => {

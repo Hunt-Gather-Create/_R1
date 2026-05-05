@@ -1159,10 +1159,14 @@ export function validateStartEndDateOrder(
   const s = normalizeEmptyToNull(startDate ?? null);
   const e = normalizeEmptyToNull(endDate ?? null);
   if (s === null || e === null) return { ok: true };
-  if (s >= e) {
+  // Equality is valid. Single-mode week_items mirror `date` into both
+  // startDate and endDate columns so every row carries both populated,
+  // and a single-day range is a legitimate span anywhere this rule fires.
+  // Only reject when start strictly exceeds end.
+  if (s > e) {
     return {
       ok: false,
-      error: `startDate '${s}' must be < endDate '${e}'.`,
+      error: `startDate '${s}' must be <= endDate '${e}'.`,
     };
   }
   return { ok: true };

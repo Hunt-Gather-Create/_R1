@@ -257,7 +257,7 @@ describe("addProject", () => {
       updatedBy: "modal",
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/startDate.*must be < endDate/);
+    if (!result.ok) expect(result.error).toMatch(/startDate.*must be <= endDate/);
   });
 
   it("Wave 0b: rejects notes exceeding L1 max length", async () => {

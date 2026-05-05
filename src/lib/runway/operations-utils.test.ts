@@ -1160,17 +1160,17 @@ describe("validateStartEndDateOrder", () => {
     expect(validateStartEndDateOrder("2026-04-01", "2026-04-30").ok).toBe(true);
   });
 
-  it("rejects equal dates", async () => {
+  it("accepts equal dates (single-day span)", async () => {
     const { validateStartEndDateOrder } = await import("./operations-utils");
     const r = validateStartEndDateOrder("2026-04-15", "2026-04-15");
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toMatch(/must be < endDate/);
+    expect(r.ok).toBe(true);
   });
 
   it("rejects start > end", async () => {
     const { validateStartEndDateOrder } = await import("./operations-utils");
     const r = validateStartEndDateOrder("2026-05-01", "2026-04-15");
     expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/must be <= endDate/);
   });
 
   it("skips when startDate is null", async () => {
