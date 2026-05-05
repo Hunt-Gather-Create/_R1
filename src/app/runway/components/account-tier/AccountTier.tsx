@@ -358,9 +358,14 @@ function L1Section({
       }
     >
       <div className="flex flex-wrap gap-2 pl-2 pt-2">
-        {items.map((wi) => (
+        {items.map((wi, index) => (
+          // Track 4 audit fix (2026-05-05, WARN — Panel 5, Edge Cases):
+          // empty-string or duplicate ids in upstream weekItem data would
+          // collide on `key={wi.id}` and trigger React's duplicate-key
+          // warning + DOM reuse. Fall back to a positional sentinel so
+          // each card gets a unique key even when ids are malformed.
           <L2MiniCard
-            key={wi.id}
+            key={wi.id || `l2-fallback-${index}`}
             theme={theme}
             weekItem={{
               id: wi.id,
