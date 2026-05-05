@@ -51,6 +51,24 @@ function formatContractTerm(term?: string): string | undefined {
 }
 
 /**
+ * Track 3 Wave 5: small "Ready to close?" chip rendered next to an L1
+ * title when every weekItem under the L1 has `status === "completed"`
+ * but the L1 itself is not yet in {completed, canceled}. Operator-locked:
+ * the chip nudges close-out without auto-marking. Same signal renders in
+ * the dark Gantt embed via RundownContentRSC's ReadyToCloseChipDark.
+ */
+function ReadyToCloseChip() {
+  return (
+    <span
+      data-testid="ready-to-close-chip"
+      className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-400"
+    >
+      Ready to close?
+    </span>
+  );
+}
+
+/**
  * Inner body of a project card -- the identity line, metadata row,
  * notes, and inline L2 milestone list. Extracted so a retainer wrapper
  * card can reuse the same rendering for both the wrapper header and
@@ -59,9 +77,16 @@ function formatContractTerm(term?: string): string | undefined {
 function ProjectCardBody({
   item,
   outsideRetainer = false,
+  readyToClose = false,
 }: {
   item: TriageItemWithMilestones;
   outsideRetainer?: boolean;
+  /**
+   * Track 3 Wave 5: when true, surfaces a small amber "Ready to close?"
+   * chip next to the title. The decision is made upstream — see
+   * `computeReadyToCloseIds` in page.tsx.
+   */
+  readyToClose?: boolean;
 }) {
   const { showOwnerSeparately, displayResources } = getOwnerResourcesDisplay(item);
 
@@ -75,6 +100,7 @@ function ProjectCardBody({
         <p className="text-sm font-medium text-foreground">{item.title}</p>
         <StatusBadge status={item.status} />
         {item.staleDays ? <StaleBadge days={item.staleDays} /> : null}
+        {readyToClose ? <ReadyToCloseChip /> : null}
         {outsideRetainer ? (
           <span
             data-testid="outside-retainer-marker"
@@ -126,9 +152,18 @@ function ProjectCardBody({
 function ProjectCard({
   item,
   outsideRetainer = false,
+  readyToCloseIds,
 }: {
   item: TriageItemWithMilestones;
   outsideRetainer?: boolean;
+  /**
+   * Track 3 Wave 5: precomputed L1 ids that are ready-to-close. Each
+   * card consults this set by id rather than recomputing locally so the
+   * data path stays consistent with the Gantt Charts embed (both views
+   * read from the same upstream `computeReadyToCloseIds` in page.tsx).
+   * Optional — when undefined, no chips render (back-compat).
+   */
+  readyToCloseIds?: ReadonlySet<string>;
 }) {
   const children = item.children ?? [];
   const hasChildren = children.length > 0;
@@ -139,10 +174,16 @@ function ProjectCard({
     hasChildren ? children.length < WRAPPER_AUTO_COLLAPSE_THRESHOLD : true,
   );
 
+  const itemReady = readyToCloseIds?.has(item.id) === true;
+
   if (!hasChildren) {
     return (
       <div className="border-t border-border/30 py-3 first:border-t-0 first:pt-0">
-        <ProjectCardBody item={item} outsideRetainer={outsideRetainer} />
+        <ProjectCardBody
+          item={item}
+          outsideRetainer={outsideRetainer}
+          readyToClose={itemReady}
+        />
       </div>
     );
   }
@@ -153,7 +194,7 @@ function ProjectCard({
       className="border-t border-border/30 py-3 first:border-t-0 first:pt-0"
     >
       <div className="flex items-start justify-between gap-2">
-        <ProjectCardBody item={item} />
+        <ProjectCardBody item={item} readyToClose={itemReady} />
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
@@ -171,7 +212,10 @@ function ProjectCard({
         >
           {children.map((child) => (
             <li key={child.id} className="py-2 first:pt-0 last:pb-0">
-              <ProjectCardBody item={child} />
+              <ProjectCardBody
+                item={child}
+                readyToClose={readyToCloseIds?.has(child.id) === true}
+              />
             </li>
           ))}
         </ul>
@@ -187,9 +231,28 @@ interface AccountSectionProps {
    * renders them inline without any additional prop plumbing.
    */
   account: Account | (Omit<Account, "items"> & { items: TriageItemWithMilestones[] });
+  /**
+   * Track 3 Wave 5: optional set of L1 ids that are "ready to close"
+   * (every weekItem completed but the L1 itself not yet completed/canceled).
+   * Computed upstream in page.tsx from the active-filtered Gantt rundown
+   * so the same signal renders here AND in the Gantt Charts embed.
+   *
+   * Threaded straight to each ProjectCard. The `account` prop carries
+   * `readyToCloseIds` too via the page.tsx mapping; either source works
+   * — the explicit prop is the canonical wire, the in-account variant
+   * is a back-compat fallback.
+   */
+  readyToCloseIds?: ReadonlySet<string>;
 }
 
-export function AccountSection({ account }: AccountSectionProps) {
+export function AccountSection({ account, readyToCloseIds }: AccountSectionProps) {
+  // Page.tsx attaches `readyToCloseIds` to each account in the unified
+  // accounts mapping. Accept either the explicit prop OR the field on
+  // `account` so callers in tests / runway-board can pass it without a
+  // duplicate plumbing change. Explicit prop wins when both are present.
+  const accountReadyIds: ReadonlySet<string> | undefined =
+    readyToCloseIds ??
+    (account as { readyToCloseIds?: ReadonlySet<string> }).readyToCloseIds;
   const activeItems = useMemo(
     () =>
       account.items
@@ -259,6 +322,7 @@ export function AccountSection({ account }: AccountSectionProps) {
                 !item.parentProjectId &&
                 item.engagementType !== "retainer"
               }
+              readyToCloseIds={accountReadyIds}
             />
           ))}
         </div>

@@ -1,8 +1,24 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { GanttChartsSection } from "./gantt-charts-section";
+import { RundownContentRSC } from "./rundown-content-rsc";
 import type { Account } from "../types";
-import type { SeverityCounts } from "@/lib/runway/gantt/types";
+import type {
+  ClientRow,
+  GanttData,
+  ProjectRow,
+  RundownSection,
+  SeverityCounts,
+  WeekItemRow,
+} from "@/lib/runway/gantt/types";
+
+// GanttSectionDark renders a complex DOM and is exercised by its own unit
+// suite + the live page. Stub it here so the chip-in-dark-embed tests
+// stay focused on RundownContentRSC's chip placement, not the section
+// chrome.
+vi.mock("@/lib/runway/gantt/gantt-section-dark", () => ({
+  GanttSectionDark: () => <div data-testid="gantt-section-dark-stub" />,
+}));
 
 // CSS module is auto-stubbed by vitest's css handler; nothing to mock here.
 
@@ -124,5 +140,195 @@ describe("GanttChartsSection", () => {
     const cards = screen.getAllByTestId("gantt-charts-card");
     expect(cards[0].getAttribute("data-account-slug")).toBe("convergix");
     expect(cards[1].getAttribute("data-account-slug")).toBe("bonterra");
+  });
+});
+
+// ── Track 3 Wave 5 — RundownContentRSC dark "Ready to close?" chip ──
+//
+// The chip travels with the slotted ganttContent that page.tsx hands to
+// each account card. Because RundownContentRSC is what actually renders
+// the chip in the dark embed, exercise it directly with handcrafted
+// fixtures here (the GanttChartsSection slot test above proves the slot
+// wires through; these tests prove the slot CONTENT renders the chip in
+// the right spots).
+describe("RundownContentRSC ready-to-close chip (dark embed)", () => {
+  const NOW = new Date("2026-05-04T00:00:00Z");
+
+  function makeClient(): ClientRow {
+    return {
+      id: "c1",
+      name: "Acme",
+      slug: "acme",
+      nicknames: null,
+      contractValue: null,
+      contractTerm: null,
+      contractStatus: null,
+      team: null,
+      clientContacts: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+  }
+
+  function makeProject(overrides: Partial<ProjectRow> = {}): ProjectRow {
+    return {
+      id: "p1",
+      clientId: "c1",
+      name: "P1",
+      status: null,
+      category: null,
+      owner: null,
+      resources: null,
+      waitingOn: null,
+      dueDate: null,
+      startDate: null,
+      endDate: null,
+      contractStart: null,
+      contractEnd: null,
+      engagementType: null,
+      parentProjectId: null,
+      notes: null,
+      staleDays: null,
+      sortOrder: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      ...overrides,
+    };
+  }
+
+  /** Minimal GanttData stub — the actual GanttSectionDark is mocked above. */
+  function makeData(l1: ProjectRow, weekItems: WeekItemRow[]): GanttData {
+    return {
+      raw: { kind: "l1", entity: l1, client: makeClient(), children: weekItems },
+      rows: [],
+      chartIssues: [],
+      axis: { kind: "no-axis", today: "2026-05-04" },
+      headerRange: "null – null",
+      generatedAt: "2026-05-04",
+      summary: {
+        rowsWithGaps: 0,
+        totalRows: 0,
+        chartIssueCount: 0,
+        byCode: {},
+        codeSeverity: {},
+        severity: { critical: 0, warn: 0, info: 0 },
+        chartIssues: [],
+      },
+    };
+  }
+
+  function makeStandaloneSection(l1: ProjectRow): RundownSection {
+    return {
+      anchor: `s-${l1.id}`,
+      kind: "standalone",
+      title: l1.name,
+      data: makeData(l1, []),
+    };
+  }
+
+  function makeWrapperChildSection(l1: ProjectRow, parentTitle = "Wrapper"): RundownSection {
+    return {
+      anchor: `wc-${l1.id}`,
+      kind: "wrapper-child",
+      title: l1.name,
+      parentTitle,
+      data: makeData(l1, []),
+    };
+  }
+
+  function makeWrapperSection(wrapperId: string, title = "Wrapper"): RundownSection {
+    const wrapper = makeProject({ id: wrapperId, name: title, engagementType: "retainer" });
+    return {
+      anchor: `w-${wrapperId}`,
+      kind: "wrapper",
+      title,
+      data: {
+        raw: {
+          kind: "wrapper",
+          entity: wrapper,
+          client: makeClient(),
+          children: [],
+          orphanWeekItems: [],
+        },
+        rows: [],
+        chartIssues: [],
+        axis: { kind: "no-axis", today: "2026-05-04" },
+        headerRange: "null – null",
+        generatedAt: "2026-05-04",
+        summary: {
+          rowsWithGaps: 0,
+          totalRows: 0,
+          chartIssueCount: 0,
+          byCode: {},
+          codeSeverity: {},
+          severity: { critical: 0, warn: 0, info: 0 },
+          chartIssues: [],
+        },
+      },
+    };
+  }
+
+  it("renders the chip on a standalone section whose L1 id is in readyToCloseIds", () => {
+    const l1 = makeProject({ id: "p-ready", name: "Ready Project" });
+    render(
+      <RundownContentRSC
+        sections={[makeStandaloneSection(l1)]}
+        readyToCloseIds={new Set(["p-ready"])}
+      />
+    );
+    const chip = screen.getByTestId("ready-to-close-chip");
+    // Chip lives inside the section's <summary>.
+    expect(chip.closest("summary")).not.toBeNull();
+    expect(chip).toHaveTextContent("Ready to close?");
+  });
+
+  it("does NOT render the chip on a standalone section whose L1 id is NOT in the set", () => {
+    const l1 = makeProject({ id: "p-cold", name: "Cold Project" });
+    render(
+      <RundownContentRSC
+        sections={[makeStandaloneSection(l1)]}
+        readyToCloseIds={new Set(["other-id"])}
+      />
+    );
+    expect(screen.queryByTestId("ready-to-close-chip")).not.toBeInTheDocument();
+  });
+
+  it("renders the chip on a wrapper-child whose L1 id is in the set", () => {
+    const wrapper = makeWrapperSection("wrap1");
+    const childReady = makeProject({ id: "child-ready", name: "Child Ready", parentProjectId: "wrap1" });
+    const childCold = makeProject({ id: "child-cold", name: "Child Cold", parentProjectId: "wrap1" });
+    render(
+      <RundownContentRSC
+        sections={[
+          wrapper,
+          makeWrapperChildSection(childReady),
+          makeWrapperChildSection(childCold),
+        ]}
+        readyToCloseIds={new Set(["child-ready"])}
+      />
+    );
+    const chips = screen.getAllByTestId("ready-to-close-chip");
+    expect(chips).toHaveLength(1);
+    // Chip's <summary> contains the child's title.
+    expect(chips[0].closest("summary")).toHaveTextContent("Child Ready");
+  });
+
+  it("does NOT render chips when readyToCloseIds is undefined (back-compat)", () => {
+    const l1 = makeProject({ id: "p1", name: "P1" });
+    render(<RundownContentRSC sections={[makeStandaloneSection(l1)]} />);
+    expect(screen.queryByTestId("ready-to-close-chip")).not.toBeInTheDocument();
+  });
+
+  it("does NOT render the chip on a wrapper section (wrapper raw kind has no L1 entity)", () => {
+    // Even if the wrapper's id happens to be in the set, the chip
+    // shouldn't fire — the chip rule only applies to L1 entities.
+    const wrapper = makeWrapperSection("wrap1");
+    render(
+      <RundownContentRSC
+        sections={[wrapper]}
+        readyToCloseIds={new Set(["wrap1"])}
+      />
+    );
+    expect(screen.queryByTestId("ready-to-close-chip")).not.toBeInTheDocument();
   });
 });

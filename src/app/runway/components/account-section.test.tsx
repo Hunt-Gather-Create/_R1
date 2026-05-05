@@ -572,4 +572,159 @@ describe("AccountSection", () => {
       expect(screen.queryByTestId("audit-badge")).not.toBeInTheDocument();
     });
   });
+
+  // ── Track 3 Wave 5 — "Ready to close?" chip ──────────────────────
+  //
+  // Operator-locked rule: surface a small amber chip next to any L1
+  // whose weekItems are all completed but the L1 itself is not yet in
+  // {completed, canceled}. The decision is precomputed upstream in
+  // page.tsx (`computeReadyToCloseIds`) and passed in as a Set<string>
+  // of L1 project ids — the chip appears for items whose id is in the
+  // set, regardless of which list level they sit at (top-level cards,
+  // wrapper headers, or wrapper children).
+  describe("Track 3 Wave 5 — ready-to-close chip", () => {
+    it("renders the chip on a top-level L1 whose id is in readyToCloseIds", () => {
+      render(
+        <AccountSection
+          account={createAccount({
+            items: [
+              { id: "p-ready", title: "Ready Project", status: "in-production", category: "active" },
+              { id: "p-other", title: "Other Project", status: "in-production", category: "active" },
+            ],
+          })}
+          readyToCloseIds={new Set(["p-ready"])}
+        />
+      );
+      const chips = screen.getAllByTestId("ready-to-close-chip");
+      expect(chips).toHaveLength(1);
+      // The chip lives next to "Ready Project", not "Other Project".
+      const readyTitle = screen.getByText("Ready Project");
+      const card = readyTitle.parentElement!;
+      expect(card).toContainElement(chips[0]);
+    });
+
+    it("renders the chip text 'Ready to close?' verbatim (operator copy)", () => {
+      render(
+        <AccountSection
+          account={createAccount({
+            items: [
+              { id: "p1", title: "P", status: "in-production", category: "active" },
+            ],
+          })}
+          readyToCloseIds={new Set(["p1"])}
+        />
+      );
+      expect(screen.getByText("Ready to close?")).toBeInTheDocument();
+    });
+
+    it("does NOT render the chip when readyToCloseIds is undefined (back-compat)", () => {
+      render(
+        <AccountSection
+          account={createAccount({
+            items: [
+              { id: "p1", title: "P", status: "in-production", category: "active" },
+            ],
+          })}
+        />
+      );
+      expect(screen.queryByTestId("ready-to-close-chip")).not.toBeInTheDocument();
+    });
+
+    it("does NOT render the chip when readyToCloseIds is an empty set", () => {
+      render(
+        <AccountSection
+          account={createAccount({
+            items: [
+              { id: "p1", title: "P", status: "in-production", category: "active" },
+            ],
+          })}
+          readyToCloseIds={new Set<string>()}
+        />
+      );
+      expect(screen.queryByTestId("ready-to-close-chip")).not.toBeInTheDocument();
+    });
+
+    it("renders the chip on a wrapper-child whose id is in readyToCloseIds", () => {
+      render(
+        <AccountSection
+          account={createAccount({
+            items: [
+              {
+                id: "wrap",
+                title: "Wrapper",
+                status: "in-production",
+                category: "active",
+                children: [
+                  { id: "child-ready", title: "Child Ready", status: "in-production", category: "active" },
+                  { id: "child-active", title: "Child Active", status: "in-production", category: "active" },
+                ],
+              } as TriageItem,
+            ],
+          })}
+          readyToCloseIds={new Set(["child-ready"])}
+        />
+      );
+      const chips = screen.getAllByTestId("ready-to-close-chip");
+      expect(chips).toHaveLength(1);
+      // Chip belongs to "Child Ready", not the wrapper or sibling.
+      expect(screen.getByText("Child Ready").parentElement!).toContainElement(chips[0]);
+    });
+
+    it("renders the chip on the wrapper itself when its id is in readyToCloseIds", () => {
+      render(
+        <AccountSection
+          account={createAccount({
+            items: [
+              {
+                id: "wrap-ready",
+                title: "Wrapper Ready",
+                status: "in-production",
+                category: "active",
+                children: [
+                  { id: "c1", title: "Child A", status: "in-production", category: "active" },
+                ],
+              } as TriageItem,
+            ],
+          })}
+          readyToCloseIds={new Set(["wrap-ready"])}
+        />
+      );
+      // Wrapper's chip surfaces; the child does not get one.
+      const chips = screen.getAllByTestId("ready-to-close-chip");
+      expect(chips).toHaveLength(1);
+      expect(screen.getByText("Wrapper Ready").parentElement!).toContainElement(chips[0]);
+    });
+
+    it("falls back to account.readyToCloseIds when the explicit prop is omitted (page.tsx wire)", () => {
+      // page.tsx attaches readyToCloseIds onto each unifiedAccount; runway-board
+      // forwards `account` to AccountSection without re-pulling the field as
+      // a separate prop. AccountSection picks it up off the account.
+      const account = {
+        ...createAccount({
+          items: [
+            { id: "p1", title: "P", status: "in-production", category: "active" },
+          ],
+        }),
+        readyToCloseIds: new Set(["p1"]),
+      };
+      render(<AccountSection account={account} />);
+      expect(screen.getByTestId("ready-to-close-chip")).toBeInTheDocument();
+    });
+
+    it("explicit readyToCloseIds prop wins over account.readyToCloseIds when both are present", () => {
+      const account = {
+        ...createAccount({
+          items: [
+            { id: "p1", title: "P", status: "in-production", category: "active" },
+          ],
+        }),
+        readyToCloseIds: new Set(["p1"]),
+      };
+      render(
+        <AccountSection account={account} readyToCloseIds={new Set<string>()} />
+      );
+      // Explicit empty set overrides the account-level set.
+      expect(screen.queryByTestId("ready-to-close-chip")).not.toBeInTheDocument();
+    });
+  });
 });

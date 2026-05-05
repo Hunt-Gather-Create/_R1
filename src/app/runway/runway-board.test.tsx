@@ -816,6 +816,109 @@ describe("RunwayBoard version polling", () => {
   });
 });
 
+// ── Track 3 Wave 5 — cross-tab integration ─────────────────────────
+//
+// FlagsPanel + GanttChartsSection visibility is unit-locked above. These
+// integration tests cover the cross-cutting interactions: rapid tab
+// switching, state preservation across switches, and the FlagsPanel
+// regression-lock applied across all four tab keys (positive + negative
+// sweep instead of one assertion per tab).
+describe("RunwayBoard — cross-tab integration (Track 3 Wave 5)", () => {
+  it("preserves the same accounts data across tab switches (no fork or re-fetch on tab change)", () => {
+    // RunwayBoard receives accounts as a prop and never re-fetches per tab.
+    // Both By Account and Gantt Charts must read from the same array so
+    // operator-locked data parity holds (active-filtered accounts in →
+    // identical out, regardless of which tab renders them).
+    render(<RunwayBoard {...defaultProps} />);
+
+    fireEvent.click(screen.getByText("By Account"));
+    // By Account renders one account name per account — count surfaces.
+    const accountsCountByAccount = screen.getAllByText("Convergix").length;
+
+    fireEvent.click(screen.getByText("Gantt Charts"));
+    const stub = screen.getByTestId("gantt-charts-section-stub");
+    const accountsCountByGantt = Number(stub.getAttribute("data-account-count"));
+
+    // Both tabs see the same number of accounts (1+ in fixture).
+    expect(accountsCountByAccount).toBeGreaterThanOrEqual(1);
+    expect(accountsCountByGantt).toBe(defaultProps.accounts.length);
+
+    // Round-trip: back to By Account renders the same account again.
+    fireEvent.click(screen.getByText("By Account"));
+    expect(screen.getAllByText("Convergix").length).toBe(accountsCountByAccount);
+  });
+
+  it("renders the right view branch after rapid sequential tab switches", () => {
+    render(<RunwayBoard {...defaultProps} />);
+
+    // Tap each tab in rapid succession; the LAST click must win.
+    fireEvent.click(screen.getByText("By Account"));
+    fireEvent.click(screen.getByText("Gantt Charts"));
+    fireEvent.click(screen.getByText("Pipeline"));
+    fireEvent.click(screen.getByText("Gantt Charts"));
+
+    // After the final click, only the Gantt Charts section renders.
+    expect(screen.getByTestId("gantt-charts-section-stub")).toBeInTheDocument();
+    expect(screen.queryByText("Today")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Unsigned SOWs & New Business")
+    ).not.toBeInTheDocument();
+  });
+
+  it("FlagsPanel visibility matrix: visible on triage + pipeline; hidden on accounts + gantt-charts", () => {
+    render(<RunwayBoard {...defaultProps} />);
+
+    // Default tab (triage).
+    expect(screen.getByTestId("flags-panel-stub")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("By Account"));
+    expect(screen.queryByTestId("flags-panel-stub")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Gantt Charts"));
+    expect(screen.queryByTestId("flags-panel-stub")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Pipeline"));
+    expect(screen.getByTestId("flags-panel-stub")).toBeInTheDocument();
+
+    // Loop back to triage and confirm the panel re-appears (full cycle lock).
+    fireEvent.click(screen.getByText("This Week"));
+    expect(screen.getByTestId("flags-panel-stub")).toBeInTheDocument();
+  });
+
+  it("forwards the same accounts array to AccountSection AND GanttChartsSection (no fork)", () => {
+    render(<RunwayBoard {...defaultProps} />);
+
+    // By Account: at least one account name surfaces.
+    fireEvent.click(screen.getByText("By Account"));
+    const accountsTabAccountCount = screen.getAllByText("Convergix").length;
+    expect(accountsTabAccountCount).toBeGreaterThanOrEqual(1);
+
+    // Gantt Charts: stub records the accounts.length on a data attribute.
+    fireEvent.click(screen.getByText("Gantt Charts"));
+    const stub = screen.getByTestId("gantt-charts-section-stub");
+    expect(stub.getAttribute("data-account-count")).toBe(
+      String(defaultProps.accounts.length)
+    );
+  });
+
+  it("does NOT render the Gantt Charts section while another tab is active (mount/unmount lock)", () => {
+    render(<RunwayBoard {...defaultProps} />);
+
+    // Default = triage. Gantt Charts not mounted.
+    expect(screen.queryByTestId("gantt-charts-section-stub")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("By Account"));
+    expect(screen.queryByTestId("gantt-charts-section-stub")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Pipeline"));
+    expect(screen.queryByTestId("gantt-charts-section-stub")).not.toBeInTheDocument();
+
+    // Now open it.
+    fireEvent.click(screen.getByText("Gantt Charts"));
+    expect(screen.getByTestId("gantt-charts-section-stub")).toBeInTheDocument();
+  });
+});
+
 describe("FlagsPanel tab visibility", () => {
   it("renders FlagsPanel on This Week (triage) tab", () => {
     render(<RunwayBoard {...defaultProps} />);

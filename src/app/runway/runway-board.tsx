@@ -36,11 +36,19 @@ interface RunwayBoardProps {
    * Gantt Charts tab, plus an optional `ganttSeverity` rollup used to
    * paint the AuditBadge above each card. AccountSection ignores both
    * fields; GanttChartsSection slots them inside each account card.
+   *
+   * Track 3 Wave 5: each account also carries an optional
+   * `readyToCloseIds` Set<string> of L1 project ids whose weekItems are
+   * all completed but the L1 itself isn't yet — surfaced as a small
+   * "Ready to close?" chip in BOTH AccountSection (info-card) and
+   * RundownContentRSC (dark Gantt embed) so the same signal lives in
+   * both views.
    */
   accounts: Array<
     (Account | UnifiedAccount) & {
       ganttContent?: ReactNode;
       ganttSeverity?: SeverityCounts;
+      readyToCloseIds?: ReadonlySet<string>;
     }
   >;
   pipeline: PipelineItem[];

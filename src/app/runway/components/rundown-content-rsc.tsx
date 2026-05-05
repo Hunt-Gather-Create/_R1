@@ -9,12 +9,41 @@
  * (client component). Native HTML <details> provides open/close without JS.
  */
 
+import * as React from "react";
 import { GanttSectionDark } from "@/lib/runway/gantt/gantt-section-dark";
 import type { RundownSection } from "@/lib/runway/gantt/types";
 
 type SectionBlock =
   | { kind: "wrapper"; wrapper: RundownSection; children: RundownSection[] }
   | { kind: "standalone"; section: RundownSection };
+
+/**
+ * Track 3 Wave 5: small "Ready to close?" chip rendered in the dark Gantt
+ * embed when an L1 has every weekItem completed but the L1 itself is not
+ * yet in {completed, canceled}. Mirrors the AccountSection chip on the By
+ * Account tab — same operator-locked signal in both views. Amber tint
+ * matches the awaiting-client status dark palette.
+ */
+function ReadyToCloseChipDark(): React.JSX.Element {
+  return (
+    <span
+      data-testid="ready-to-close-chip"
+      className="ml-2 inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-300"
+    >
+      Ready to close?
+    </span>
+  );
+}
+
+/**
+ * Returns the L1 id for a section that has L1 raw data, or null for
+ * wrappers / non-l1 raw shapes. Mirror logic in section-builders.ts.
+ */
+function l1IdForSection(section: RundownSection): string | null {
+  const raw = section.data.raw;
+  if (raw.kind !== "l1") return null;
+  return raw.entity.id;
+}
 
 /** Mirror of groupTocSections / groupSectionsForAccount for RSC context. */
 function groupSections(sections: RundownSection[]): SectionBlock[] {
@@ -42,7 +71,20 @@ function groupSections(sections: RundownSection[]): SectionBlock[] {
   return blocks;
 }
 
-export function RundownContentRSC({ sections }: { sections: RundownSection[] }) {
+export function RundownContentRSC({
+  sections,
+  readyToCloseIds,
+}: {
+  sections: RundownSection[];
+  /**
+   * Track 3 Wave 5: precomputed set of L1 ids that are "ready to close"
+   * (every weekItem completed, L1 itself not yet completed/canceled).
+   * Each matching section's <summary> renders the chip next to the
+   * title. Optional — when undefined, no chip renders (back-compat for
+   * any caller that hasn't been threaded through page.tsx yet).
+   */
+  readyToCloseIds?: ReadonlySet<string>;
+}) {
   if (sections.length === 0) return null;
   const blocks = groupSections(sections);
 
@@ -70,23 +112,32 @@ export function RundownContentRSC({ sections }: { sections: RundownSection[] }) 
                   from `border-l-2 border-slate-600` on each child's own
                   `<details>` — borders are per-element so they cannot
                   span two L1s. */}
-              {block.children.map((child) => (
-                <details
-                  key={child.anchor}
-                  open
-                  className="ml-4 mt-6 rounded border-l-2 border-slate-600 bg-slate-900/30 pl-3 pr-2 py-2"
-                >
-                  <summary className="cursor-pointer list-none text-xs font-medium text-slate-300">
-                    {child.title}
-                  </summary>
-                  <div className="mt-2">
-                    <GanttSectionDark data={child.data} sectionKind={child.kind} />
-                  </div>
-                </details>
-              ))}
+              {block.children.map((child) => {
+                const childL1Id = l1IdForSection(child);
+                const childReady =
+                  childL1Id !== null && readyToCloseIds?.has(childL1Id) === true;
+                return (
+                  <details
+                    key={child.anchor}
+                    open
+                    className="ml-4 mt-6 rounded border-l-2 border-slate-600 bg-slate-900/30 pl-3 pr-2 py-2"
+                  >
+                    <summary className="cursor-pointer list-none text-xs font-medium text-slate-300">
+                      {child.title}
+                      {childReady ? <ReadyToCloseChipDark /> : null}
+                    </summary>
+                    <div className="mt-2">
+                      <GanttSectionDark data={child.data} sectionKind={child.kind} />
+                    </div>
+                  </details>
+                );
+              })}
             </details>
           );
         }
+        const standaloneL1Id = l1IdForSection(block.section);
+        const standaloneReady =
+          standaloneL1Id !== null && readyToCloseIds?.has(standaloneL1Id) === true;
         return (
           <details
             key={block.section.anchor}
@@ -95,6 +146,7 @@ export function RundownContentRSC({ sections }: { sections: RundownSection[] }) 
           >
             <summary className="cursor-pointer list-none text-sm font-medium text-slate-300">
               {block.section.title}
+              {standaloneReady ? <ReadyToCloseChipDark /> : null}
             </summary>
             <div className="mt-3">
               <GanttSectionDark data={block.section.data} sectionKind={block.section.kind} />

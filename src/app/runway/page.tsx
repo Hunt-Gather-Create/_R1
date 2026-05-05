@@ -10,9 +10,36 @@ import { extractClientRundown } from "@/lib/runway/gantt/server";
 import { getRunwayDb } from "@/lib/db/runway";
 import { clients as clientsTable, projects as projectsTable } from "@/lib/db/runway-schema";
 import { and, asc, eq, isNull } from "drizzle-orm";
-import { filterActiveRundown } from "@/lib/runway/gantt/filter-active";
+import { filterActiveRundown, isReadyToClose } from "@/lib/runway/gantt/filter-active";
 import { RundownContentRSC } from "./components/rundown-content-rsc";
-import type { ClientRundownData } from "@/lib/runway/gantt/types";
+import type { ClientRundownData, RundownSection } from "@/lib/runway/gantt/types";
+
+/**
+ * Track 3 Wave 5: precompute the set of L1 ids that are "ready to close"
+ * for a given filtered rundown. An L1 is ready-to-close when every
+ * weekItem under it is `status === "completed"` AND the L1 itself is not
+ * yet in {completed, canceled}. Operator-locked rule (2026-05-04):
+ * surface this in BOTH By Account info-cards AND Gantt Charts embeds.
+ *
+ * Wrapper-children and standalone L1s both expose `raw.kind === "l1"`
+ * with `entity` (the L1 ProjectRow) and `children` (its weekItems). We
+ * iterate every section once and collect ids whose isReadyToClose() is
+ * true. The wrapper itself (`raw.kind === "wrapper"`) does NOT carry
+ * weekItem statuses at the rundown layer — it surfaces a chip only if
+ * every CHILD L1 under it is itself ready-to-close, which the per-row
+ * chip already conveys. So wrapper rows are excluded from the set.
+ */
+function computeReadyToCloseIds(sections: readonly RundownSection[]): Set<string> {
+  const ids = new Set<string>();
+  for (const section of sections) {
+    const raw = section.data.raw;
+    if (raw.kind !== "l1") continue;
+    if (isReadyToClose(raw.entity, raw.children)) {
+      ids.add(raw.entity.id);
+    }
+  }
+  return ids;
+}
 
 /**
  * Track 2: build a Map<clientId, ClientRundownData> for all clients.
@@ -172,11 +199,29 @@ export default async function RunwayPage() {
       return filtered.sections.length > 0;
     })
     .map(({ account, filtered }) => {
+      // Track 3 Wave 5: compute the per-account "ready to close?" L1 id
+      // set ONCE here, then thread it through to both the By Account
+      // info-card (via account.readyToCloseIds) AND the Gantt Charts
+      // embed (via RundownContentRSC's prop). Operator-locked: same
+      // signal must appear in both views.
+      const readyToCloseIds = filtered
+        ? computeReadyToCloseIds(filtered.sections)
+        : new Set<string>();
       const ganttContent: ReactNode | undefined = filtered
-        ? <RundownContentRSC sections={filtered.sections} />
+        ? (
+          <RundownContentRSC
+            sections={filtered.sections}
+            readyToCloseIds={readyToCloseIds}
+          />
+        )
         : undefined;
       const ganttSeverity = filtered?.overallSeverity;
-      return { ...account, ganttContent, ganttSeverity };
+      return {
+        ...account,
+        ganttContent,
+        ganttSeverity,
+        readyToCloseIds,
+      };
     });
 
   // In Flight regression fix: page-level bucketing for thisWeek/upcoming
