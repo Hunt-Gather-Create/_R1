@@ -14,54 +14,27 @@ const baseItem = {
 };
 
 describe("L2MiniCard", () => {
-  it("renders title, owner, resources, and date range in light theme", () => {
+  it("renders title, owner, resources, and date range", () => {
     render(<L2MiniCard weekItem={baseItem} />);
     expect(screen.getByText("Kickoff deck draft")).toBeTruthy();
-    expect(screen.getByTestId("owner-line").textContent).toContain("Lane");
-    expect(screen.getByTestId("resources-line").textContent).toBe(
-      "CD: Lane, Dev: Leslie",
-    );
-    // 2026-05-04 -> 5/4, 2026-05-08 -> 5/8
-    expect(screen.getByText(/5\/4\s*[–-]\s*5\/8/)).toBeTruthy();
+    // Owner uses "Owner: " prefix (mirrors By Week card vocabulary).
+    expect(screen.getByText(/Owner:\s*Lane/)).toBeTruthy();
+    // Resources uses "Resources: " prefix via MetadataLabel.
+    expect(screen.getByText(/Resources:\s*CD:\s*Lane,\s*Dev:\s*Leslie/)).toBeTruthy();
+    // 2026-05-04 -> 5/4, 2026-05-08 -> 5/8 — DatesLine renders "Dates: M/D – M/D"
+    expect(screen.getByText(/Dates:\s*5\/4\s*[–-]\s*5\/8/)).toBeTruthy();
   });
 
-  it("applies blue status color bar for in-progress (light)", () => {
-    const { container } = render(
-      <L2MiniCard
-        weekItem={{ ...baseItem, status: "in-progress" }}
-        theme="light"
-      />,
-    );
-    const bar = container.querySelector('[data-testid="status-bar"]');
-    expect(bar).not.toBeNull();
-    expect(bar!.className).toContain("bg-blue-500");
+  it("renders the account name when accountName prop is supplied", () => {
+    render(<L2MiniCard weekItem={baseItem} accountName="Acme Corp" />);
+    expect(screen.getByText("Acme Corp")).toBeTruthy();
   });
 
-  it("applies amber status color bar for at-risk (light)", () => {
-    const { container } = render(
-      <L2MiniCard
-        weekItem={{ ...baseItem, status: "at-risk" }}
-        theme="light"
-      />,
-    );
-    const bar = container.querySelector('[data-testid="status-bar"]');
-    expect(bar!.className).toContain("bg-amber-400");
-  });
-
-  it("renders completed card with opacity-50 outer + line-through title", () => {
-    const { container } = render(
-      <L2MiniCard weekItem={{ ...baseItem, status: "completed" }} />,
-    );
-    const outer = container.firstElementChild as HTMLElement;
-    expect(outer.className).toContain("opacity-50");
-    const title = screen.getByText("Kickoff deck draft");
-    expect(title.className).toContain("line-through");
-  });
-
-  it("renders canceled card with line-through title", () => {
-    render(<L2MiniCard weekItem={{ ...baseItem, status: "canceled" }} />);
-    const title = screen.getByText("Kickoff deck draft");
-    expect(title.className).toContain("line-through");
+  it("hides the account name when accountName prop is omitted", () => {
+    const { container } = render(<L2MiniCard weekItem={baseItem} />);
+    // The account span uses ACCOUNT_CLASS — a small uppercase muted-foreground.
+    // Without an accountName prop, no element with that class renders.
+    expect(container.textContent).not.toContain("ACME");
   });
 
   it("renders single date as M/D when startDate === endDate", () => {
@@ -74,8 +47,8 @@ describe("L2MiniCard", () => {
         }}
       />,
     );
-    // Should render exactly "5/4", not "5/4 – 5/4"
-    expect(screen.getByText("5/4")).toBeTruthy();
+    // DatesLine renders "Dates: 5/4" (single-day case)
+    expect(screen.getByText(/Dates:\s*5\/4$/)).toBeTruthy();
   });
 
   it("hides resources line when resources is null", () => {
@@ -84,7 +57,7 @@ describe("L2MiniCard", () => {
         weekItem={{ ...baseItem, resources: null }}
       />,
     );
-    expect(screen.queryByText(/CD:/)).toBeNull();
+    expect(screen.queryByText(/Resources:/)).toBeNull();
   });
 
   it("hides category chip when category is null", () => {
@@ -92,6 +65,16 @@ describe("L2MiniCard", () => {
       <L2MiniCard weekItem={{ ...baseItem, category: null }} />,
     );
     expect(container.querySelector('[data-testid="category-chip"]')).toBeNull();
+  });
+
+  it("renders the category chip with TYPE_INDICATORS color when category is set", () => {
+    const { container } = render(
+      <L2MiniCard weekItem={{ ...baseItem, category: "delivery" }} />,
+    );
+    const chip = container.querySelector('[data-testid="category-chip"]');
+    expect(chip).not.toBeNull();
+    // TYPE_INDICATORS["delivery"] === "text-emerald-400"
+    expect(chip!.className).toContain("emerald");
   });
 
   it("renders warning and critical badges when counts > 0", () => {
@@ -102,17 +85,36 @@ describe("L2MiniCard", () => {
     expect(screen.getByText(/1 critical/)).toBeTruthy();
   });
 
-  it("hides date line when both startDate and endDate are null", () => {
+  it("hides date line entirely when both startDate and endDate are null", () => {
     const { container } = render(
       <L2MiniCard
         weekItem={{ ...baseItem, startDate: null, endDate: null }}
       />,
     );
-    expect(container.querySelector('[data-testid="date-line"]')).toBeNull();
+    // No DatesLine should render (no "Dates:" text anywhere).
+    expect(container.querySelector('[data-testid="dates-line"]')).toBeNull();
+    expect(container.textContent).not.toContain("Dates:");
   });
 
   it("hides owner line when owner is null", () => {
     render(<L2MiniCard weekItem={{ ...baseItem, owner: null }} />);
-    expect(screen.queryByText(/^O:/)).toBeNull();
+    expect(screen.queryByText(/Owner:/)).toBeNull();
+  });
+
+  it("uses the design-token foreground class for the title (no explicit slate)", () => {
+    render(<L2MiniCard weekItem={baseItem} />);
+    const title = screen.getByText("Kickoff deck draft");
+    expect(title.className).toContain("text-foreground");
+    expect(title.className).not.toContain("slate-100");
+    expect(title.className).not.toContain("slate-900");
+  });
+
+  it("uses the rounded-xl + sky border chrome (mirrors By Week card)", () => {
+    const { container } = render(<L2MiniCard weekItem={baseItem} />);
+    const card = container.querySelector('[data-testid="l2-mini-card"]');
+    expect(card).not.toBeNull();
+    expect(card!.className).toContain("rounded-xl");
+    expect(card!.className).toContain("border-sky-500/30");
+    expect(card!.className).toContain("bg-sky-500/5");
   });
 });

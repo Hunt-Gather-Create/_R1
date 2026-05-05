@@ -1,20 +1,33 @@
 /**
- * Track 4 Wave 4.1 — compressed mini-card for an L2 weekItem.
+ * Track 4 Wave 4.6 — L2 mini-card mirrors the By Week task card.
  *
- * Lays out the fields operator signed off on (status color bar, category
- * chip, warning/critical badges, title, dates, owner, resources). Width is
- * fixed at 220px so cards line up left-to-right under an L1 row and wrap
- * at the viewport edge.
+ * Operator feedback: "On the cards themselves just mirror the week of cards."
+ * The visual format follows `day-item-card.tsx` (the `lg` size variant):
  *
- * Status drives the color bar and visual states:
- * - completed → entire card opacity-50, title line-through
- * - canceled  → title line-through (no opacity dim)
+ *   - Account name (uppercase, semibold, dim, small) at the top
+ *   - Title below (foreground, font-medium, leading-snug)
+ *   - "Dates: M/D" or "Dates: M/D – M/D" (hidden when both null)
+ *   - "Resources: <value>" (hidden when null)
+ *   - "Owner: <value>" (hidden when null)
+ *   - Category indicator at top-right (uppercase, color-coded via TYPE_INDICATORS)
+ *   - Warning / critical alert badges near the category indicator
  *
- * Date formatting uses UTC to match the rest of the Gantt pipeline (see
- * `src/lib/runway/gantt/transform-rows.ts`). Single-day or
- * `endDate === startDate` collapses to "M/D"; otherwise renders
- * "M/D – M/D". Both null → date line hidden.
+ * Design tokens replace explicit slate scales — `text-foreground`,
+ * `text-muted-foreground`, `border-border`. The `theme` prop stays on the
+ * signature for downstream API stability but no longer drives colors.
+ *
+ * Status filtering: completed/canceled L2s never reach this card — they
+ * are filtered upstream in `AccountTier.tsx` (correction #1). The opacity
+ * dim and strikethrough states are gone. Defensive: render normally.
+ *
+ * Card chrome: `rounded-xl border border-sky-500/30 bg-sky-500/5` mirrors
+ * the high-priority By Week card. Width is flexible (`w-full sm:w-[260px]
+ * sm:flex-shrink-0`) so cards lay out left-to-right via flex-wrap and
+ * adapt to viewport.
  */
+
+import { TYPE_INDICATORS, MetadataLabel } from "../status-badge";
+import { DatesLine } from "../dates-line";
 
 type Theme = "light" | "dark";
 
@@ -29,152 +42,97 @@ type WeekItemForCard = {
   category: string | null;
 };
 
-const STATUS_BAR_LIGHT: Record<string, string> = {
-  "in-progress": "bg-blue-500",
-  scheduled: "bg-slate-300",
-  "at-risk": "bg-amber-400",
-  blocked: "bg-red-500",
-  completed: "bg-emerald-500",
-  canceled: "bg-gray-400",
-};
-
-const STATUS_BAR_DARK: Record<string, string> = {
-  "in-progress": "bg-blue-500/70",
-  scheduled: "bg-slate-500/60",
-  "at-risk": "bg-amber-400/70",
-  blocked: "bg-red-500/70",
-  completed: "bg-emerald-500/70",
-  canceled: "bg-gray-500/60",
-};
-
-function statusBarClass(status: string | null, theme: Theme): string {
-  const map = theme === "dark" ? STATUS_BAR_DARK : STATUS_BAR_LIGHT;
-  // null/scheduled both fall through to the slate "scheduled" bar
-  const key = status ?? "scheduled";
-  return map[key] ?? map.scheduled;
-}
-
-function fmt(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
-}
-
-function formatDateLine(
-  startDate: string | null,
-  endDate: string | null,
-): string | null {
-  if (!startDate && !endDate) return null;
-  if (startDate && (!endDate || startDate === endDate)) {
-    return fmt(startDate);
-  }
-  if (!startDate && endDate) {
-    return fmt(endDate);
-  }
-  // both present and distinct
-  return `${fmt(startDate as string)} – ${fmt(endDate as string)}`;
-}
+const ACCOUNT_CLASS =
+  "text-xs font-semibold uppercase tracking-wide text-muted-foreground";
+const META_TEXT_CLASS = "text-sm text-muted-foreground";
 
 export function L2MiniCard({
   weekItem,
-  theme = "light",
+  accountName,
   warningCount = 0,
   criticalCount = 0,
 }: {
   weekItem: WeekItemForCard;
+  accountName?: string;
+  /**
+   * Kept on the signature for API stability — downstream consumers may
+   * still pass it. Color decisions now flow through design tokens, so
+   * this value is unused in render output.
+   */
   theme?: Theme;
   warningCount?: number;
   criticalCount?: number;
 }) {
-  const { title, owner, resources, startDate, endDate, status, category } =
-    weekItem;
+  const { title, owner, resources, startDate, endDate, category } = weekItem;
 
-  const isCompleted = status === "completed";
-  const isCanceled = status === "canceled";
-  const struck = isCompleted || isCanceled;
-
-  const dateLine = formatDateLine(startDate, endDate);
-
-  const outerBase =
-    "relative w-[220px] min-h-[150px] overflow-hidden rounded-md p-2 pt-3";
-  const outerTheme =
-    theme === "dark"
-      ? "bg-slate-900/60 border border-slate-800 hover:bg-slate-800/80"
-      : "bg-white border border-slate-200 hover:shadow-md";
-  const outerCompletedDim = isCompleted ? "opacity-50" : "";
-  const outerClass = [outerBase, outerTheme, outerCompletedDim]
-    .filter(Boolean)
-    .join(" ");
-
-  const titleClass = [
-    "text-[13px] font-semibold leading-snug line-clamp-2",
-    theme === "dark" ? "text-slate-100" : "text-slate-900",
-    struck ? "line-through" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  const metaClass =
-    theme === "dark" ? "text-xs text-slate-400" : "text-xs text-slate-500";
-
-  const chipClass = [
-    "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-    theme === "dark"
-      ? "bg-slate-800 text-slate-300"
-      : "bg-slate-100 text-slate-600",
-  ].join(" ");
+  const categoryClass =
+    category && TYPE_INDICATORS[category]
+      ? TYPE_INDICATORS[category]
+      : "text-muted-foreground";
 
   return (
-    <div className={outerClass} data-testid="l2-mini-card">
-      <div
-        data-testid="status-bar"
-        className={`absolute left-0 right-0 top-0 h-[3px] ${statusBarClass(
-          status,
-          theme,
-        )}`}
-      />
-      {(category || warningCount > 0 || criticalCount > 0) && (
-        <div className="mb-1 flex items-center justify-between gap-1">
+    <div
+      data-testid="l2-mini-card"
+      className="w-full sm:w-[260px] sm:flex-shrink-0 rounded-xl border border-sky-500/30 bg-sky-500/5 p-4"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          {accountName ? <p className={ACCOUNT_CLASS}>{accountName}</p> : null}
+          <p className="mt-0.5 text-base font-medium leading-snug text-foreground">
+            {title}
+          </p>
+          {(startDate || endDate) ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <DatesLine
+                startDate={startDate}
+                endDate={endDate}
+                className={META_TEXT_CLASS}
+              />
+            </div>
+          ) : null}
+          {resources ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <MetadataLabel
+                label="Resources"
+                value={resources}
+                className={META_TEXT_CLASS}
+              />
+            </div>
+          ) : null}
+          {owner ? (
+            <div className="mt-1">
+              <MetadataLabel
+                label="Owner"
+                value={owner}
+                className="text-sm text-muted-foreground/70"
+              />
+            </div>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
           {category ? (
-            <span data-testid="category-chip" className={chipClass}>
+            <span
+              data-testid="category-chip"
+              className={`text-xs font-medium uppercase tracking-wider ${categoryClass}`}
+            >
               {category}
             </span>
-          ) : (
-            <span />
-          )}
-          {(warningCount > 0 || criticalCount > 0) && (
+          ) : null}
+          {warningCount > 0 || criticalCount > 0 ? (
             <span
               data-testid="alert-badge"
               className="flex items-center gap-1 text-[10px] font-medium"
             >
               {warningCount > 0 ? (
-                <span className="text-amber-500">🟡 {warningCount} warn</span>
+                <span className="text-amber-500">{warningCount} warn</span>
               ) : null}
               {criticalCount > 0 ? (
-                <span className="text-red-500">🔴 {criticalCount} critical</span>
+                <span className="text-red-500">{criticalCount} critical</span>
               ) : null}
             </span>
-          )}
+          ) : null}
         </div>
-      )}
-      <p className={titleClass}>{title}</p>
-      {dateLine ? (
-        <p data-testid="date-line" className={`mt-1 ${metaClass}`}>
-          {dateLine}
-        </p>
-      ) : null}
-      {owner ? (
-        <p data-testid="owner-line" className={`mt-0.5 ${metaClass}`}>
-          O: {owner}
-        </p>
-      ) : null}
-      {resources ? (
-        <p
-          data-testid="resources-line"
-          className={`mt-0.5 break-words ${metaClass}`}
-        >
-          {resources}
-        </p>
-      ) : null}
+      </div>
     </div>
   );
 }
