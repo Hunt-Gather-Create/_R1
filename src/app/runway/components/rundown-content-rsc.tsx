@@ -60,7 +60,7 @@ export function RundownContentRSC({ sections }: { sections: RundownSection[] }) 
                 {block.wrapper.title}
               </summary>
               <div className="mt-3">
-                <GanttSectionDark data={block.wrapper.data} />
+                <GanttSectionDark data={block.wrapper.data} sectionKind={block.wrapper.kind} />
               </div>
               {block.children.map((child) => (
                 <details
@@ -72,7 +72,7 @@ export function RundownContentRSC({ sections }: { sections: RundownSection[] }) 
                     {child.title}
                   </summary>
                   <div className="mt-2">
-                    <GanttSectionDark data={child.data} />
+                    <GanttSectionDark data={child.data} sectionKind={child.kind} />
                   </div>
                 </details>
               ))}
@@ -89,7 +89,7 @@ export function RundownContentRSC({ sections }: { sections: RundownSection[] }) 
               {block.section.title}
             </summary>
             <div className="mt-3">
-              <GanttSectionDark data={block.section.data} />
+              <GanttSectionDark data={block.section.data} sectionKind={block.section.kind} />
             </div>
           </details>
         );

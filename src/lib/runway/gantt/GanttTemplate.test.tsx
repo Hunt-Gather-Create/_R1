@@ -569,6 +569,144 @@ describe("renderGantt", () => {
   });
 });
 
+// ── Issue 5 (operator 2026-05-04): diamond status colors ─
+
+describe("diamond / milestone status-driven color class", () => {
+  // Operator bug: every single-day milestone rendered the same blue
+  // regardless of status. The bar renderer reads status correctly, so the
+  // diamond renderer's class output must mirror that contract — for each
+  // status value, the milestone element must carry a status-derived class
+  // (or a row-level class that drives a CSS cascade) — never a single
+  // hardcoded color path.
+  it.each<[string, RegExp]>([
+    ["scheduled", /class="milestone scheduled"/],
+    ["at-risk", /class="milestone at-risk"/],
+    ["blocked", /class="milestone blocked"/],
+    ["in-progress", /class="milestone active"/],
+  ])(
+    "single-day row with status=%s emits a status-tagged milestone class",
+    (status, re) => {
+      const data = makeGanttData({
+        rows: [
+          makeRow({
+            id: "m",
+            title: "Diamond",
+            startDate: "2026-05-04",
+            endDate: "2026-05-04",
+            status,
+          }),
+        ],
+      });
+      const html = renderGantt(data);
+      expect(html).toMatch(re);
+    },
+  );
+
+  it("status=completed single-day row emits a completed row + milestone class chain", () => {
+    // Light theme cascades color via .row.completed .milestone — the row
+    // class must be present so the cascade can fire.
+    const data = makeGanttData({
+      rows: [
+        makeRow({
+          id: "m",
+          title: "Done diamond",
+          startDate: "2026-05-04",
+          endDate: "2026-05-04",
+          status: "completed",
+        }),
+      ],
+    });
+    const html = renderGantt(data);
+    expect(html).toContain("row completed");
+    expect(html).toMatch(/class="milestone /);
+  });
+
+  it("status=canceled single-day row emits a canceled row + milestone class chain", () => {
+    const data = makeGanttData({
+      rows: [
+        makeRow({
+          id: "m",
+          title: "Killed diamond",
+          startDate: "2026-05-04",
+          endDate: "2026-05-04",
+          status: "canceled",
+        }),
+      ],
+    });
+    const html = renderGantt(data);
+    expect(html).toContain("row canceled");
+    expect(html).toMatch(/class="milestone /);
+  });
+
+  it("multiple diamonds with different statuses do NOT all get the same class", () => {
+    // Regression-lock the bug repro: at least two distinct status classes
+    // appear on rendered milestones in a section that mixes them.
+    const data = makeGanttData({
+      rows: [
+        makeRow({
+          id: "a",
+          title: "Sched diamond",
+          startDate: "2026-05-04",
+          endDate: "2026-05-04",
+          status: "scheduled",
+        }),
+        makeRow({
+          id: "b",
+          title: "Blocked diamond",
+          startDate: "2026-05-05",
+          endDate: "2026-05-05",
+          status: "blocked",
+        }),
+      ],
+    });
+    const html = renderGantt(data);
+    expect(html).toMatch(/class="milestone scheduled"/);
+    expect(html).toMatch(/class="milestone blocked"/);
+  });
+});
+
+// ── Issue 2 + Issue 3 (operator 2026-05-04): legend + axis dedup ─
+
+describe("legend + axis dedup — once per top-level subject", () => {
+  it("wrapper-child SectionBlock does NOT render its own SectionLegend", () => {
+    // Wrap fixture: a single wrapper-child rundown emits no legend element
+    // (just confirms the gating in GanttSection).
+    const child = makeRundownSection({ id: "c", kind: "wrapper-child" });
+    // Render via a wrapper context so the rundown structure is realistic.
+    const wrapper = makeRundownSection({ id: "w", kind: "wrapper" });
+    const rundown = makeClientRundownData([wrapper, child]);
+    const html = renderClientRundown(rundown);
+    // 1 wrapper with legend, 0 children → exactly 1 legend.
+    const legendCount = (html.match(/class="legend legend-in-section"/g) ?? []).length;
+    expect(legendCount).toBe(1);
+  });
+
+  it("wrapper-child SectionBlock does NOT render its own AxisRow", () => {
+    // Operator-locked 2026-05-04: sub-project axis rows are suppressed so
+    // they align under the wrapper's date scale (and reduce repetition).
+    const wrapper = makeRundownSection({ id: "w", kind: "wrapper" });
+    const child = makeRundownSection({ id: "c", kind: "wrapper-child" });
+    const rundown = makeClientRundownData([wrapper, child]);
+    const html = renderClientRundown(rundown);
+    // Each non-wrapper-child section emits a top + bottom axis-row when
+    // there are rows; with empty rows arrays the bottom row is suppressed
+    // anyway. So count axis-row classes:
+    //   wrapper: 1 (top, no rows so no bottom)
+    //   child:   0 (suppressed entirely under new rule)
+    //   total:   1
+    const axisRowCount = (html.match(/class="axis-row"/g) ?? []).length;
+    expect(axisRowCount).toBe(1);
+  });
+
+  it("standalone SectionBlock still renders its own legend + axis", () => {
+    const standalone = makeRundownSection({ id: "alone", kind: "standalone" });
+    const rundown = makeClientRundownData([standalone]);
+    const html = renderClientRundown(rundown);
+    expect(html).toContain('class="legend legend-in-section"');
+    expect(html).toContain('class="axis-row"');
+  });
+});
+
 // ── Phase B tests ─────────────────────────────────────────
 
 // ── Rundown fixture helpers ───────────────────────────────
@@ -681,9 +819,17 @@ describe("G3: dark-account-view structural", () => {
     expect(html).not.toContain("<style");
   });
 
-  it("dark-account-view emits Tailwind classes on legend swatches", () => {
+  it("dark-account-view emits Tailwind classes on legend swatches that match bar palette", () => {
+    // Operator-flagged 2026-05-04: legend swatches must match bar colors
+    // byte-for-byte. Bar default = bg-blue-500/70; legend in-progress
+    // swatch must use the same. The data-status attribute also drives the
+    // CSS-module .legend-swatch[data-status] selectors at runtime in the
+    // dark embed.
     const html = renderGantt(makeGanttData(), "dark-account-view");
-    expect(html).toContain("bg-sky-400");
+    expect(html).toContain("bg-blue-500/70");
+    expect(html).toContain('data-status="in-progress"');
+    expect(html).toContain('data-status="scheduled"');
+    expect(html).toContain('data-status="completed"');
   });
 
   it("dark-account-view omits DataIntegrityPanel and per-row alerts", () => {
@@ -709,16 +855,34 @@ describe("G3: dark-account-view structural", () => {
 // ── G4: Section legend cross-theme ───────────────────────
 
 describe("G4: SectionLegend cross-theme", () => {
-  it("SectionLegend appears once per section in a wrapper rundown (N+1 rule)", () => {
-    // Wrapper + 2 children = 3 sections = 3 legends
+  // Operator-locked 2026-05-04 (reverses Phase B): legend renders ONCE per
+  // top-level subject. Wrapper-children inherit the wrapper's legend
+  // visually — repeating it for every sub-project read as clutter when
+  // wrappers have 5+ children. So:
+  //   wrapper: 1 legend
+  //   wrapper-child: 0 legends (inherits)
+  //   standalone: 1 legend
+  it("SectionLegend renders once per top-level subject — wrappers anchor, children inherit", () => {
+    // Wrapper + 2 children = 1 legend (wrapper only); children inherit.
     const wrapper = makeRundownSection({ id: "wrap", kind: "wrapper" });
     const child1 = makeRundownSection({ id: "c1", kind: "wrapper-child" });
     const child2 = makeRundownSection({ id: "c2", kind: "wrapper-child" });
     const rundown = makeClientRundownData([wrapper, child1, child2]);
     const html = renderClientRundown(rundown);
-    // Count rendered elements with the class, not occurrences in CSS text.
     const legendCount = (html.match(/class="legend legend-in-section"/g) ?? []).length;
-    expect(legendCount).toBe(3);
+    expect(legendCount).toBe(1);
+  });
+
+  it("SectionLegend renders for each top-level subject across wrappers + standalones", () => {
+    // 1 wrapper (with 2 children) + 1 standalone = 2 legends.
+    const wrapper = makeRundownSection({ id: "wrap", kind: "wrapper" });
+    const child1 = makeRundownSection({ id: "c1", kind: "wrapper-child" });
+    const child2 = makeRundownSection({ id: "c2", kind: "wrapper-child" });
+    const standalone = makeRundownSection({ id: "alone", kind: "standalone" });
+    const rundown = makeClientRundownData([wrapper, child1, child2, standalone]);
+    const html = renderClientRundown(rundown);
+    const legendCount = (html.match(/class="legend legend-in-section"/g) ?? []).length;
+    expect(legendCount).toBe(2);
   });
 
   it("SectionLegend appears once in a standalone L1 rundown section", () => {
@@ -740,8 +904,9 @@ describe("G4: SectionLegend cross-theme", () => {
     expect(lightBranded).toContain("#0E5DFF");
     expect(lightBranded).not.toContain("#3b82f6"); // internal color must not bleed in
 
-    // dark: Tailwind classes
+    // dark: Tailwind classes — operator-locked 2026-05-04, swatch must
+    // match bar palette (bg-blue-500/70), not the prior bg-sky-400.
     const dark = renderGantt(makeGanttData(), "dark-account-view");
-    expect(dark).toContain("bg-sky-400");
+    expect(dark).toContain("bg-blue-500/70");
   });
 });

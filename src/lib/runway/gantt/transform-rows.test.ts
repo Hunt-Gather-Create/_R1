@@ -202,8 +202,33 @@ describe("computeAxis", () => {
       expect(axis.columns[0].date).toBe("2026-04-13"); // Monday
       expect(axis.columns[0].label).toBe("4/13");      // Monday gets full M/D label
       expect(axis.columns[1].date).toBe("2026-04-14"); // Tuesday
-      expect(axis.columns[1].label).toBe("T");         // abbreviated weekday
+      expect(axis.columns[1].label).toBe("4/14");      // Operator 2026-05-04: all weekdays carry M/D
       expect(axis.columns[axis.columns.length - 1].date).toBe("2026-05-22"); // last Friday
+    }
+  });
+
+  // Operator-locked 2026-05-04: every daily-mode column must label M/D.
+  // No alphabetic weekday abbreviations (T, W, Th, F) inline. The brain
+  // reads numeric dates faster than alternating letter glyphs.
+  it("daily-mode columns all carry numeric M/D labels (no weekday letters)", () => {
+    const raw = l1Raw([
+      makeWeekItem({ id: "w1", startDate: "2026-04-15", endDate: "2026-04-15" }),
+      makeWeekItem({ id: "w2", startDate: "2026-05-20", endDate: "2026-05-22" }),
+    ]);
+    const rows = transformRows(raw);
+    const axis = computeAxis(raw, rows, today);
+    expect(axis.kind).toBe("weekly");
+    if (axis.kind === "weekly") {
+      // Every label must match \d+/\d+ — no T/W/Th/F letters.
+      const numericRe = /^\d+\/\d+$/;
+      const nonNumeric = axis.columns.filter((c) => !numericRe.test(c.label));
+      expect(nonNumeric).toEqual([]);
+      // Spot checks: weekday letters from the prior implementation must be gone.
+      const labels = axis.columns.map((c) => c.label);
+      expect(labels).not.toContain("T");
+      expect(labels).not.toContain("W");
+      expect(labels).not.toContain("Th");
+      expect(labels).not.toContain("F");
     }
   });
 

@@ -109,16 +109,11 @@ function formatWeekLabel(d: Date): string {
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
 }
 
-// Short weekday labels for non-Monday daily axis ticks
-const WEEKDAY_SHORT = ["Su", "M", "T", "W", "Th", "F", "Sa"] as const;
-
+// All daily ticks render as numeric "M/D". Operator (2026-05-04): drop
+// inline weekday letters — the brain reads dates faster than alternating
+// letter glyphs, and the strict numeric grid (Teamwork-style) reads cleaner.
 function formatDailyLabel(d: Date): string {
-  const dow = d.getUTCDay(); // 0=Sun
-  if (dow === 1) {
-    // Monday: full numeric date "M/D"
-    return formatWeekLabel(d);
-  }
-  return WEEKDAY_SHORT[dow];
+  return formatWeekLabel(d);
 }
 
 function formatMonthLabel(d: Date): string {
@@ -160,8 +155,8 @@ export function computeAxis(
     const columns: AxisColumn[] = [];
     // Emit one column PER DAY (excluding weekends) across the span.
     // Operator (2026-04-30): daily ticks pulled forward from fast-follow.
-    // Monday ticks get a full "M/D" label; other weekdays get an abbreviated
-    // letter label (T, W, Th, F). Saturdays and Sundays are omitted.
+    // Operator (2026-05-04): every weekday tick now carries a numeric "M/D"
+    // label — no inline weekday letters. Saturdays and Sundays are omitted.
     // At narrow container widths, CSS container queries hide non-Monday ticks
     // (data-day attr drives the selectors) — the existing rules still fire.
     for (

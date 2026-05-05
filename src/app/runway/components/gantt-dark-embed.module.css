@@ -147,13 +147,48 @@
   @apply border-slate-400/40;
 }
 
+/* ── Milestone (diamond) — status-driven color ──────────────
+   Operator-flagged 2026-05-04: every diamond rendered the same blue
+   regardless of status because there were no status overrides on
+   .milestone in the dark CSS module. Bar palette is the source of
+   truth — keep these rules byte-aligned with .bar.* and .legend-swatch
+   above. The default .milestone matches .bar (in-progress / no status).
+*/
 .darkEmbed :global(.milestone) {
   position: absolute;
   top: 3px;
   width: 14px;
   height: 14px;
   transform: rotate(45deg) translateX(-50%);
-  @apply bg-blue-400;
+  border-radius: 1px;
+  @apply bg-blue-500/70;
+}
+
+.darkEmbed :global(.milestone.scheduled) {
+  @apply bg-slate-500/40;
+  border: 1px dashed;
+  @apply border-slate-500;
+}
+
+.darkEmbed :global(.milestone.at-risk) {
+  @apply bg-amber-500/60;
+}
+
+.darkEmbed :global(.milestone.blocked) {
+  @apply bg-red-500/60;
+}
+
+.darkEmbed :global(.milestone.completed) {
+  @apply bg-emerald-500/40;
+  border: 1px solid;
+  @apply border-emerald-400;
+  opacity: 0.7;
+}
+
+.darkEmbed :global(.milestone.canceled) {
+  @apply bg-slate-600/30;
+  border: 1px solid;
+  @apply border-slate-400/40;
 }
 
 .darkEmbed :global(.today-line) {

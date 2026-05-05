@@ -583,28 +583,36 @@ function SectionLegendLight(): React.JSX.Element {
 }
 
 /**
- * Dark-account-view legend using Tailwind classes for swatches.
+ * Dark-account-view legend. Swatches emit `data-status` attributes so the
+ * gantt-dark-embed.module.css `.legend-swatch[data-status]` selectors paint
+ * byte-identical values to the `.bar.*` rules (operator-flagged 2026-05-04
+ * — legend swatches must match bar colors exactly). This light copy is also
+ * exercised by the CLI/test render path where no <style> block is emitted;
+ * the inline Tailwind classes provide a sensible fallback in that path.
  */
 function SectionLegendDark(): React.JSX.Element {
   return (
-    <div className="flex flex-wrap gap-3 items-center text-xs text-slate-400 mb-3">
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block w-7 h-3 rounded-sm bg-sky-400" /> in-progress
+    <div className="section-legend flex flex-wrap gap-3 items-center text-xs text-slate-400 mb-3">
+      <span className="legend-item inline-flex items-center gap-1.5">
+        <span className="legend-swatch inline-block w-7 h-3 rounded-md bg-blue-500/70" data-status="in-progress" /> in-progress
       </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block w-7 h-3 rounded-sm border border-slate-500/40 bg-slate-500/10" /> scheduled
+      <span className="legend-item inline-flex items-center gap-1.5">
+        <span className="legend-swatch inline-block w-7 h-3 rounded-md border border-dashed border-slate-500 bg-slate-500/40" data-status="scheduled" /> scheduled
       </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block w-7 h-3 rounded-sm bg-amber-400" /> at-risk
+      <span className="legend-item inline-flex items-center gap-1.5">
+        <span className="legend-swatch inline-block w-7 h-3 rounded-md bg-amber-500/60" data-status="at-risk" /> at-risk
       </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block w-7 h-3 rounded-sm bg-red-400" /> blocked
+      <span className="legend-item inline-flex items-center gap-1.5">
+        <span className="legend-swatch inline-block w-7 h-3 rounded-md bg-red-500/60" data-status="blocked" /> blocked
       </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block w-7 h-3 rounded-sm bg-emerald-400" /> completed
+      <span className="legend-item inline-flex items-center gap-1.5">
+        <span className="legend-swatch inline-block w-7 h-3 rounded-md border border-emerald-400 bg-emerald-500/40 opacity-70" data-status="completed" /> completed
       </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block w-7 h-3 rounded-sm bg-slate-400" /> <span className="line-through opacity-60">canceled</span>
+      <span className="legend-item inline-flex items-center gap-1.5">
+        <span className="legend-swatch inline-block w-7 h-3 rounded-md border border-slate-400/40 bg-slate-600/30" data-status="canceled" /> <span className="line-through opacity-60">canceled</span>
+      </span>
+      <span className="legend-item inline-flex items-center gap-1.5">
+        <span className="inline-block w-3 h-3 bg-blue-500/70" style={{ transform: "rotate(45deg)" }} aria-hidden="true" /> milestone
       </span>
     </div>
   );
@@ -731,14 +739,31 @@ function AxisRow({ axis }: { axis: AxisParams }): React.JSX.Element | null {
  *
  * Band order: SectionLegend → DataIntegrityPanel (if enabled) → AxisRow →
  * rows → AxisRow (repeat at bottom).
+ *
+ * `sectionKind` (operator-locked 2026-05-04, reverses Phase B):
+ *   - undefined / "wrapper" / "standalone" → render legend + axis (top-level
+ *     subjects each anchor their own legend/axis row).
+ *   - "wrapper-child" → suppress legend + axis row(s); the parent wrapper
+ *     already paints them and sub-projects visually inherit. Cuts the legend
+ *     repetition from ~13× to once-per-top-level-subject and aligns sub-rows
+ *     under the wrapper's date scale.
  */
-export function GanttSection({ data, theme }: { data: GanttData; theme: Theme }): React.JSX.Element {
+export function GanttSection({
+  data,
+  theme,
+  sectionKind,
+}: {
+  data: GanttData;
+  theme: Theme;
+  sectionKind?: RundownSection["kind"];
+}): React.JSX.Element {
   const { raw, rows, axis, summary } = data;
   const todayPct = computeTodayPosition(axis);
   const tokens = getThemeTokens(theme);
+  const isWrapperChild = sectionKind === "wrapper-child";
   return (
     <>
-      <SectionLegend theme={theme} />
+      {!isWrapperChild && <SectionLegend theme={theme} />}
       {tokens.chrome.showDataIntegrityPanel && (
         <DataIntegrityPanel summary={summary} isWrapper={raw.kind === "wrapper"} />
       )}
@@ -748,15 +773,16 @@ export function GanttSection({ data, theme }: { data: GanttData; theme: Theme })
             No dates available — body rendered without a timeline.
           </div>
         )}
-        {axis.kind !== "no-axis" && <AxisRow axis={axis} />}
+        {axis.kind !== "no-axis" && !isWrapperChild && <AxisRow axis={axis} />}
 
         {rows.map((row) => (
           <RowBlock key={row.id} row={row} axis={axis} todayPct={todayPct} theme={theme} />
         ))}
 
         {/* Repeat axis at bottom — operator (2026-04-30) wants dates
-            visible after scrolling through long row lists. */}
-        {axis.kind !== "no-axis" && rows.length > 0 && <AxisRow axis={axis} />}
+            visible after scrolling through long row lists. Suppressed for
+            wrapper-children (2026-05-04) since the wrapper already paints it. */}
+        {axis.kind !== "no-axis" && rows.length > 0 && !isWrapperChild && <AxisRow axis={axis} />}
       </section>
     </>
   );
@@ -1023,7 +1049,7 @@ export function SectionBlock({ section, theme }: { section: RundownSection; them
           <span>{data.headerRange}</span>
         </div>
       </header>
-      <GanttSection data={data} theme={theme} />
+      <GanttSection data={data} theme={theme} sectionKind={section.kind} />
     </article>
   );
 }

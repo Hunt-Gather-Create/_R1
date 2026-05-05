@@ -34,6 +34,7 @@ import type {
   AnnotatedRow,
   AxisParams,
   GanttData,
+  RundownSection,
 } from "./types";
 
 // ── Geometry helpers ─────────────���─────────────────────────
@@ -207,27 +208,46 @@ function AxisRow({ axis }: { axis: AxisParams }): React.JSX.Element | null {
 
 // ── Legend (dark variant) ───────────────────────────────���─
 
+/**
+ * Dark-account-view legend. Swatches use the `.legend-swatch[data-status]`
+ * selectors defined in gantt-dark-embed.module.css which paint byte-identical
+ * values to the `.bar.{status}` rules — guarantees pixel parity between the
+ * legend and the chart bars (operator-flagged 2026-05-04).
+ *
+ * The `flex flex-wrap gap-3 items-center text-xs text-slate-400 mb-3`
+ * Tailwind layout duplicates `.section-legend` rules from the CSS module
+ * (which is scoped under .darkEmbed) so the legend reads consistently with
+ * the rest of the embed even before the module rules cascade.
+ */
 function SectionLegendDark(): React.JSX.Element {
   return (
-    <div className="flex flex-wrap gap-3 items-center text-xs text-slate-400 mb-3">
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block w-7 h-3 rounded-sm bg-sky-400" /> in-progress
+    <div className="section-legend flex flex-wrap gap-3 items-center text-xs text-slate-400 mb-3">
+      <span className="legend-item inline-flex items-center gap-1.5">
+        <span className="legend-swatch inline-block w-7 h-3 rounded-md" data-status="in-progress" /> in-progress
       </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block w-7 h-3 rounded-sm border border-slate-500/40 bg-slate-500/10" /> scheduled
+      <span className="legend-item inline-flex items-center gap-1.5">
+        <span className="legend-swatch inline-block w-7 h-3 rounded-md" data-status="scheduled" /> scheduled
       </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block w-7 h-3 rounded-sm bg-amber-400" /> at-risk
+      <span className="legend-item inline-flex items-center gap-1.5">
+        <span className="legend-swatch inline-block w-7 h-3 rounded-md" data-status="at-risk" /> at-risk
       </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block w-7 h-3 rounded-sm bg-red-400" /> blocked
+      <span className="legend-item inline-flex items-center gap-1.5">
+        <span className="legend-swatch inline-block w-7 h-3 rounded-md" data-status="blocked" /> blocked
       </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block w-7 h-3 rounded-sm bg-emerald-400" /> completed
+      <span className="legend-item inline-flex items-center gap-1.5">
+        <span className="legend-swatch inline-block w-7 h-3 rounded-md" data-status="completed" /> completed
       </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block w-7 h-3 rounded-sm bg-slate-400" />{" "}
+      <span className="legend-item inline-flex items-center gap-1.5">
+        <span className="legend-swatch inline-block w-7 h-3 rounded-md" data-status="canceled" />{" "}
         <span className="line-through opacity-60">canceled</span>
+      </span>
+      <span className="legend-item inline-flex items-center gap-1.5">
+        <span
+          className="inline-block w-3 h-3 bg-blue-500/70"
+          style={{ transform: "rotate(45deg)" }}
+          aria-hidden="true"
+        />{" "}
+        milestone
       </span>
     </div>
   );
@@ -285,12 +305,23 @@ function RowBlock({
 // Dark-specific GanttSection: no DataIntegrityPanel, no row alerts.
 // Mirrors GanttSection in GanttTemplate.tsx for theme="dark-account-view".
 
-export function GanttSectionDark({ data }: { data: GanttData }): React.JSX.Element {
+export function GanttSectionDark({
+  data,
+  sectionKind,
+}: {
+  data: GanttData;
+  sectionKind?: RundownSection["kind"];
+}): React.JSX.Element {
   const { rows, axis } = data;
   const todayPct = computeTodayPosition(axis);
+  // Operator-locked 2026-05-04: wrapper-child sub-projects do NOT render
+  // their own legend or axis row. Only top-level subjects (wrapper +
+  // standalone L1) anchor those. See GanttSection in GanttTemplate.tsx for
+  // the matching rule on light themes.
+  const isWrapperChild = sectionKind === "wrapper-child";
   return (
     <>
-      <SectionLegendDark />
+      {!isWrapperChild && <SectionLegendDark />}
       {/* showDataIntegrityPanel=false for dark-account-view */}
       <section className="body">
         {axis.kind === "no-axis" && (
@@ -298,7 +329,7 @@ export function GanttSectionDark({ data }: { data: GanttData }): React.JSX.Eleme
             No dates available — body rendered without a timeline.
           </div>
         )}
-        {axis.kind !== "no-axis" && <AxisRow axis={axis} />}
+        {axis.kind !== "no-axis" && !isWrapperChild && <AxisRow axis={axis} />}
 
         {rows.map((row) => (
           <RowBlock key={row.id} row={row} axis={axis} todayPct={todayPct} />

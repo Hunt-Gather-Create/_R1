@@ -11,7 +11,8 @@
  *   bg-slate-600/20 line-through opacity-60
  *   // legend swatches (match bar palette exactly):
  *   border-dashed border-slate-400/40
- *   bg-sky-400 bg-amber-400 bg-red-400 bg-emerald-400 bg-slate-400
+ *   // milestone (matches bar palette — operator-locked 2026-05-04):
+ *   bg-blue-500/70
  */
 
 import { readFileSync } from "fs";
@@ -180,7 +181,7 @@ export const DARK_ACCOUNT_VIEW_TOKENS: ThemeTokens = {
     barCompletedBorder: "border-emerald-400",
     barCanceledStripe: "bg-slate-600/20",
     barCanceledBg: "bg-slate-600/20 line-through opacity-60",
-    milestone: "bg-sky-400",
+    milestone: "bg-blue-500/70",
     todayLine: "bg-red-400",
   },
   typography: {
