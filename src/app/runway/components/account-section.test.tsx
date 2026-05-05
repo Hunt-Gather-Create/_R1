@@ -190,8 +190,9 @@ describe("AccountSection — tier branch (rundown attached)", () => {
       ]),
     };
     render(<AccountSection account={account} />);
-    // Tier's ClientHeader renders the name; presence is sufficient.
-    expect(screen.getByText("Convergix")).toBeInTheDocument();
+    // Tier's ClientHeader renders the name; Wave 4.6 also threads it into
+    // each L2 mini-card, so multiple occurrences are expected.
+    expect(screen.getAllByText("Convergix").length).toBeGreaterThanOrEqual(1);
   });
 
   it("threads readyToCloseIds (explicit prop) into the tier so the chip surfaces", () => {
@@ -289,7 +290,11 @@ describe("AccountSection — tier branch (rundown attached)", () => {
     expect(screen.getAllByTestId("l2-mini-card").length).toBe(3);
   });
 
-  it("uses the light theme — L2MiniCard renders with a light-mode container", () => {
+  it("L2MiniCard uses design-token chrome (no theme-specific slate scales)", () => {
+    // Wave 4.6 redesign: the card uses `rounded-xl border border-sky-500/30
+    // bg-sky-500/5` and design tokens (text-foreground, text-muted-foreground)
+    // — colors auto-flip via the app's color scheme rather than via the
+    // `theme` prop. No explicit slate scales should appear.
     const account = {
       ...createAccount(),
       rundown: makeRundown([
@@ -298,8 +303,9 @@ describe("AccountSection — tier branch (rundown attached)", () => {
     };
     render(<AccountSection account={account} />);
     const card = screen.getByTestId("l2-mini-card");
-    // L2MiniCard light theme uses bg-white on the card; dark uses slate-900.
-    expect(card.className).toContain("white");
+    expect(card.className).toContain("rounded-xl");
+    expect(card.className).toContain("border-sky-500/30");
+    expect(card.className).toContain("bg-sky-500/5");
     expect(card.className).not.toContain("slate-900");
   });
 
