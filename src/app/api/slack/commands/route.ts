@@ -409,7 +409,10 @@ async function handleCreate(
       channelId: ctx.channelId,
     }),
   ]);
-  return jsonResponse({ ok: true }, 200);
+  // Empty 200 ack. Slack renders nothing; the modal opened by views.open
+  // is the only user-visible artifact. A JSON body with `{ ok: true }` was
+  // being shown by some Slack clients as ephemeral text in the DM.
+  return new Response(null, { status: 200 });
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -508,7 +511,10 @@ async function handleEdit(
       channelId: ctx.channelId,
     }),
   ]);
-  return jsonResponse({ ok: true }, 200);
+  // Empty 200 ack. Slack renders nothing; the modal opened by views.open
+  // is the only user-visible artifact. A JSON body with `{ ok: true }` was
+  // being shown by some Slack clients as ephemeral text in the DM.
+  return new Response(null, { status: 200 });
 }
 
 async function openEditModalSingleMatch(
@@ -539,7 +545,10 @@ async function openEditModalSingleMatch(
       targetEntityType: targetEntityType(spec.kind),
     }),
   ]);
-  return jsonResponse({ ok: true }, 200);
+  // Empty 200 ack. Slack renders nothing; the modal opened by views.open
+  // is the only user-visible artifact. A JSON body with `{ ok: true }` was
+  // being shown by some Slack clients as ephemeral text in the DM.
+  return new Response(null, { status: 200 });
 }
 
 // ────────────────────────────────────────────────────────────────────────────
