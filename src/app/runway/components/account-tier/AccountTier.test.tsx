@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { AccountTier } from "./AccountTier";
 import type {
   ClientRundownData,
@@ -136,7 +136,11 @@ describe("AccountTier", () => {
         readyToCloseIds={new Set()}
       />,
     );
-    expect(screen.getByText("Acme Corp")).toBeTruthy();
+    // "Acme Corp" appears in both the client header AND in each L2 mini-card
+    // (Wave 4.6 correction #6 threads accountName into the cards). Both are
+    // expected — assert presence of both occurrences.
+    const occurrences = screen.getAllByText("Acme Corp");
+    expect(occurrences.length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Lane \/ Leslie/)).toBeTruthy();
     // 2026-04-01 -> 4/1 ; 2026-06-30 -> 6/30
     expect(screen.getByText(/4\/1\s*[–-]\s*6\/30/)).toBeTruthy();
@@ -172,13 +176,13 @@ describe("AccountTier", () => {
     expect(screen.getByTestId("client-sow-chip")).toBeTruthy();
   });
 
-  it("renders a wrapper section with wrapper title and WRAPPER tag", () => {
+  it("renders a wrapper section with wrapper title (no chip)", () => {
     const account = mockAccount();
     const rundown = mockRundown([
       makeSection("wrapper", "Q2 Retainer", [], undefined, "wrap-1"),
       makeSection("wrapper-child", "L1 Sub A", [makeWeekItemRow()], "Q2 Retainer", "l1-a"),
     ]);
-    render(
+    const { container } = render(
       <AccountTier
         account={account}
         rundown={rundown}
@@ -186,9 +190,8 @@ describe("AccountTier", () => {
       />,
     );
     expect(screen.getByText("Q2 Retainer")).toBeTruthy();
-    const tags = screen.getAllByTestId("wrapper-tag");
-    expect(tags.length).toBeGreaterThan(0);
-    expect(tags[0].textContent).toContain("WRAPPER");
+    // Wave 4.6 correction #2: no WRAPPER chip should render
+    expect(container.querySelector('[data-testid="wrapper-tag"]')).toBeNull();
   });
 
   it("renders all wrapper-children L1s under their parent wrapper in order", () => {
@@ -209,39 +212,23 @@ describe("AccountTier", () => {
     expect(screen.getByText("L1 Sub B")).toBeTruthy();
   });
 
-  it("tags wrapper-child L1s with WRAPPER-CHILD label", () => {
+  it("does NOT render WRAPPER-CHILD or STANDALONE L1 chips (Wave 4.6 correction #2)", () => {
     const account = mockAccount();
     const rundown = mockRundown([
       makeSection("wrapper", "Q2 Retainer", [], undefined, "wrap-1"),
       makeSection("wrapper-child", "L1 Sub A", [makeWeekItemRow()], "Q2 Retainer", "l1-a"),
-    ]);
-    render(
-      <AccountTier
-        account={account}
-        rundown={rundown}
-        readyToCloseIds={new Set()}
-      />,
-    );
-    const tags = screen.getAllByTestId("l1-tag");
-    expect(tags.some((t) => t.textContent?.includes("WRAPPER-CHILD"))).toBe(true);
-  });
-
-  it("tags standalone L1s with STANDALONE L1 label", () => {
-    const account = mockAccount();
-    const rundown = mockRundown([
       makeSection("standalone", "Solo L1", [makeWeekItemRow()], undefined, "l1-solo"),
     ]);
-    render(
+    const { container } = render(
       <AccountTier
         account={account}
         rundown={rundown}
         readyToCloseIds={new Set()}
       />,
     );
-    const tags = screen.getAllByTestId("l1-tag");
-    expect(tags.some((t) => t.textContent?.includes("STANDALONE L1"))).toBe(
-      true,
-    );
+    expect(container.querySelector('[data-testid="l1-tag"]')).toBeNull();
+    expect(container.textContent).not.toContain("WRAPPER-CHILD");
+    expect(container.textContent).not.toContain("STANDALONE L1");
   });
 
   it("renders L2 mini-cards inside an L1 section's flex-wrap container", () => {
@@ -262,6 +249,91 @@ describe("AccountTier", () => {
     );
     const cards = screen.getAllByTestId("l2-mini-card");
     expect(cards.length).toBe(2);
+  });
+
+  it("threads accountName into each L2 mini-card (Wave 4.6 correction #6)", () => {
+    const account = mockAccount({ name: "Acme Corp" });
+    const rundown = mockRundown([
+      makeSection(
+        "standalone",
+        "Solo L1",
+        [makeWeekItemRow({ id: "wi-a", title: "Card A" })],
+        undefined,
+        "l1-solo",
+      ),
+    ]);
+    render(
+      <AccountTier
+        account={account}
+        rundown={rundown}
+        readyToCloseIds={new Set()}
+      />,
+    );
+    // The account name renders both in the client header AND inside each
+    // L2 mini-card. Two occurrences total.
+    const occurrences = screen.getAllByText("Acme Corp");
+    expect(occurrences.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("filters out completed L2 cards from the By Account view (Wave 4.6 correction #1)", () => {
+    const account = mockAccount();
+    const rows = [
+      makeWeekItemRow({ id: "wi-active", title: "Active Task", status: "in-progress" }),
+      makeWeekItemRow({ id: "wi-done", title: "Done Task", status: "completed" }),
+    ];
+    const rundown = mockRundown([
+      makeSection("standalone", "Solo L1", rows, undefined, "l1-solo"),
+    ]);
+    render(
+      <AccountTier
+        account={account}
+        rundown={rundown}
+        readyToCloseIds={new Set()}
+      />,
+    );
+    expect(screen.getByText("Active Task")).toBeTruthy();
+    expect(screen.queryByText("Done Task")).toBeNull();
+  });
+
+  it("filters out canceled L2 cards from the By Account view (Wave 4.6 correction #1)", () => {
+    const account = mockAccount();
+    const rows = [
+      makeWeekItemRow({ id: "wi-active", title: "Active Task", status: "in-progress" }),
+      makeWeekItemRow({ id: "wi-canc", title: "Canceled Task", status: "canceled" }),
+    ];
+    const rundown = mockRundown([
+      makeSection("standalone", "Solo L1", rows, undefined, "l1-solo"),
+    ]);
+    render(
+      <AccountTier
+        account={account}
+        rundown={rundown}
+        readyToCloseIds={new Set()}
+      />,
+    );
+    expect(screen.getByText("Active Task")).toBeTruthy();
+    expect(screen.queryByText("Canceled Task")).toBeNull();
+  });
+
+  it("renders L1 as empty (No Scheduled Tasks chip) when all its L2s are completed", () => {
+    const account = mockAccount();
+    const rows = [
+      makeWeekItemRow({ id: "wi-1", title: "Done A", status: "completed" }),
+      makeWeekItemRow({ id: "wi-2", title: "Done B", status: "canceled" }),
+    ];
+    const rundown = mockRundown([
+      makeSection("standalone", "Solo L1", rows, undefined, "l1-solo"),
+    ]);
+    render(
+      <AccountTier
+        account={account}
+        rundown={rundown}
+        readyToCloseIds={new Set()}
+      />,
+    );
+    expect(screen.queryByText("Done A")).toBeNull();
+    expect(screen.queryByText("Done B")).toBeNull();
+    expect(screen.getByTestId("no-scheduled-tasks-chip")).toBeTruthy();
   });
 
   it("sorts L2 cards by startDate ascending with nulls last", () => {
@@ -288,7 +360,7 @@ describe("AccountTier", () => {
     expect(cards[2].textContent).toContain("Null Card");
   });
 
-  it("renders empty L1 with '(no scheduled L2s)' annotation and NO collapse details", () => {
+  it("renders empty L1 with inline 'No Scheduled Tasks' chip and NO collapse details", () => {
     const account = mockAccount();
     const rundown = mockRundown([
       makeSection("standalone", "Empty L1", [], undefined, "l1-empty"),
@@ -300,13 +372,50 @@ describe("AccountTier", () => {
         readyToCloseIds={new Set()}
       />,
     );
-    expect(screen.getByText(/no scheduled L2s/i)).toBeTruthy();
+    expect(screen.getByTestId("no-scheduled-tasks-chip")).toBeTruthy();
+    expect(container.textContent).toContain("No Scheduled Tasks");
     // The empty L1 should NOT be wrapped in its own <details>; there will
     // still be the outer client <details> but no inner collapse section
     // for the empty L1.
     const allDetails = container.querySelectorAll("details");
     // 1 outer client details only; no inner L1 details for empty L1.
     expect(allDetails.length).toBe(1);
+  });
+
+  it("does NOT render the legacy '(no scheduled L2s)' annotation (Wave 4.6 correction #4)", () => {
+    const account = mockAccount();
+    const rundown = mockRundown([
+      makeSection("standalone", "Empty L1", [], undefined, "l1-empty"),
+    ]);
+    const { container } = render(
+      <AccountTier
+        account={account}
+        rundown={rundown}
+        readyToCloseIds={new Set()}
+      />,
+    );
+    expect(container.textContent).not.toMatch(/no scheduled L2s/i);
+  });
+
+  it("hides the contract date range when both contractStart and contractEnd are null (Wave 4.6 correction #7)", () => {
+    const account = mockAccount({
+      contractStart: null,
+      contractEnd: null,
+    });
+    const rundown = mockRundown([
+      makeSection("standalone", "L1 A", [makeWeekItemRow()], undefined, "l1-a"),
+    ]);
+    const { container } = render(
+      <AccountTier
+        account={account}
+        rundown={rundown}
+        readyToCloseIds={new Set()}
+      />,
+    );
+    // No literal "null – null" or "null" string in the client header span.
+    // The L2 cards' DatesLine is unaffected because makeWeekItemRow has dates set.
+    expect(container.textContent).not.toContain("null – null");
+    expect(container.textContent).not.toContain("null");
   });
 
   it("surfaces 'Ready to close?' chip on an L1 whose id is in readyToCloseIds", () => {
@@ -360,22 +469,21 @@ describe("AccountTier", () => {
     });
   });
 
-  it("threads dark theme down to L2MiniCard", () => {
+  it("uses design tokens (text-foreground) for the L1 title (Wave 4.6 correction #5)", () => {
     const account = mockAccount();
     const rundown = mockRundown([
       makeSection("standalone", "Solo L1", [makeWeekItemRow()], undefined, "l1-solo"),
     ]);
-    render(
+    const { container } = render(
       <AccountTier
         account={account}
         rundown={rundown}
         readyToCloseIds={new Set()}
-        theme="dark"
       />,
     );
-    const card = screen.getByTestId("l2-mini-card");
-    // Dark theme uses bg-slate-900/60 on the outer card.
-    expect(card.className).toContain("slate-900");
+    // The L1 title span uses `text-foreground` — no explicit slate scale.
+    expect(container.innerHTML).toContain("text-foreground");
+    expect(container.innerHTML).not.toContain("text-slate-100");
   });
 
   it("renders multiple wrappers and standalone L1s in one rundown in correct order", () => {
@@ -407,10 +515,5 @@ describe("AccountTier", () => {
     const idxBeta = text.indexOf("Wrapper Beta");
     expect(idxAlpha).toBeLessThan(idxStandalone);
     expect(idxStandalone).toBeLessThan(idxBeta);
-
-    // Note: within() not strictly needed; using it here as a sanity smoke
-    // for one wrapper's child containment.
-    const wrapperAlphaText = within(container).getByText("Wrapper Alpha");
-    expect(wrapperAlphaText).toBeTruthy();
   });
 });

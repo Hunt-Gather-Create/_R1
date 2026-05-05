@@ -1,5 +1,5 @@
 /**
- * Track 4 Wave 4.2 — AccountTier tiered swimlane container.
+ * Track 4 Wave 4.2 + 4.6 — AccountTier tiered swimlane container.
  *
  * Composes Wave 4.1 primitives (CollapsibleSection + L2MiniCard) into a
  * three-level hierarchy per account:
@@ -7,17 +7,27 @@
  *   Client  ▶  Wrapper (optional)  ▶  L1  ▶  L2 mini-card row
  *
  * Each level above the L2 row is collapsible. All levels default expanded.
- * Empty L1s (zero weekItems after the active filter) render as a flat
- * header-only row with `(no scheduled L2s)` annotation — no collapse
- * caret since there's nothing to reveal.
+ *
+ * Wave 4.6 visual feedback round (operator-locked 2026-05-05):
+ *   1. Completed/canceled L2 cards are HIDDEN entirely from the By Account
+ *      tab. Filtered out at L1 iteration (the Gantt Charts tab still shows
+ *      them per Track 2/3 design).
+ *   2. WRAPPER, WRAPPER-CHILD, STANDALONE L1 chips are removed. Users know
+ *      L1s as Projects and L2s as Tasks.
+ *   3. User-facing copy uses Project/Task vocabulary.
+ *   4. Empty L1s render with an inline "No Scheduled Tasks" chip near the
+ *      title (replacing the floated "(no scheduled L2s)" annotation).
+ *   5. Color classes use design tokens (`text-foreground`,
+ *      `text-muted-foreground`, `border-border`) so dark/light auto-flip
+ *      via the app's color scheme. The `theme` prop is preserved on the
+ *      signature for API stability but no longer drives color.
+ *   6. L2 mini-cards now mirror the By Week task card; AccountTier threads
+ *      `accountName` through to each card.
+ *   7. Null/null date ranges are omitted entirely (no literal "null – null").
  *
  * Filtering is upstream — `rundown` arrives already passed through
- * `filterActiveRundown` in page.tsx (Wave 2). This component does NOT
- * re-filter; it only iterates and renders.
- *
- * This wave does NOT wire the container into account-section.tsx —
- * Wave 4.3 will do that. AccountTier is a free-standing primitive ready
- * to consume.
+ * `filterActiveRundown` in page.tsx (Wave 2). This component only further
+ * filters L2 cards by status (correction #1).
  */
 
 import type { ReactNode } from "react";
@@ -47,6 +57,11 @@ type AccountTierProps = {
   account: AccountForTier;
   rundown: ClientRundownData;
   readyToCloseIds: ReadonlySet<string>;
+  /**
+   * Kept on the signature for API stability — color decisions now flow
+   * through design tokens (`text-foreground`, `text-muted-foreground`)
+   * which auto-flip via the app's color scheme.
+   */
   theme?: Theme;
 };
 
@@ -57,6 +72,10 @@ function fmtDate(iso: string): string {
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
 }
 
+/**
+ * Format an inclusive date range. Null/null returns null so callers can
+ * skip rendering entirely (correction #7 — no literal "null – null").
+ */
 function formatDateLine(
   startDate: string | null,
   endDate: string | null,
@@ -94,16 +113,18 @@ function l1IdForSection(section: RundownSection): string | null {
  * Pull weekItem rows out of a section's GanttData. L1-view sections carry
  * their own weekItems as `rows`; wrappers do not (orphan weekItems aside,
  * which we do not surface here).
+ *
+ * Wave 4.6 correction #1: filter out completed/canceled L2s — those status
+ * values are hidden from the By Account view entirely.
  */
 function weekItemsForSection(section: RundownSection): AnnotatedRow[] {
-  return section.data.rows.filter((r) => r.kind === "weekitem");
+  return section.data.rows.filter(
+    (r) =>
+      r.kind === "weekitem" &&
+      r.status !== "completed" &&
+      r.status !== "canceled",
+  );
 }
-
-// Track 4 audit fix (2026-05-05, WARN — Panel 3): the inline `groupSections`
-// + `SectionBlock` definitions were extracted to
-// `@/lib/runway/gantt/group-sections.ts` so AccountTier and RundownContentRSC
-// share the algorithm. Drift risk between the two consumers is removed —
-// any rule change to wrapper-child grouping lands in one place.
 
 // ─── Sub-components ───────────────────────────────────────────────────────
 
@@ -126,33 +147,37 @@ function ChipBase({
   );
 }
 
-function ReadyToCloseChip({ theme }: { theme: Theme }) {
-  const cls =
-    theme === "dark"
-      ? "bg-amber-900/40 text-amber-300"
-      : "bg-amber-100 text-amber-800";
+function ReadyToCloseChip() {
   return (
-    <ChipBase className={`normal-case ${cls}`} testId="ready-to-close-chip">
+    <ChipBase
+      className="normal-case bg-amber-500/20 text-amber-400"
+      testId="ready-to-close-chip"
+    >
       Ready to close?
+    </ChipBase>
+  );
+}
+
+function NoScheduledTasksChip() {
+  return (
+    <ChipBase
+      className="normal-case bg-muted text-muted-foreground"
+      testId="no-scheduled-tasks-chip"
+    >
+      No Scheduled Tasks
     </ChipBase>
   );
 }
 
 function SeverityBadge({
   severity,
-  theme,
 }: {
   severity: "critical" | "warning";
-  theme: Theme;
 }) {
   const isCritical = severity === "critical";
   const cls = isCritical
-    ? theme === "dark"
-      ? "bg-red-500/20 text-red-300"
-      : "bg-red-100 text-red-700"
-    : theme === "dark"
-      ? "bg-amber-500/20 text-amber-300"
-      : "bg-amber-100 text-amber-700";
+    ? "bg-red-500/20 text-red-400"
+    : "bg-amber-500/20 text-amber-400";
   return (
     <ChipBase className={cls} testId="client-severity-badge">
       {isCritical ? "Critical" : "Warning"}
@@ -160,141 +185,92 @@ function SeverityBadge({
   );
 }
 
-function SowChip({ theme }: { theme: Theme }) {
-  const cls =
-    theme === "dark"
-      ? "bg-emerald-500/20 text-emerald-300"
-      : "bg-emerald-100 text-emerald-700";
+function SowChip() {
   return (
-    <ChipBase className={cls} testId="client-sow-chip">
+    <ChipBase
+      className="bg-emerald-500/20 text-emerald-400"
+      testId="client-sow-chip"
+    >
       SOW Signed
-    </ChipBase>
-  );
-}
-
-function WrapperTag({ theme }: { theme: Theme }) {
-  const cls =
-    theme === "dark"
-      ? "bg-slate-800 text-slate-300"
-      : "bg-slate-200 text-slate-700";
-  return (
-    <ChipBase className={cls} testId="wrapper-tag">
-      WRAPPER
-    </ChipBase>
-  );
-}
-
-function L1Tag({
-  variant,
-  theme,
-}: {
-  variant: "wrapper-child" | "standalone";
-  theme: Theme;
-}) {
-  const cls =
-    theme === "dark"
-      ? "bg-slate-800 text-slate-400"
-      : "bg-slate-100 text-slate-500";
-  return (
-    <ChipBase className={cls} testId="l1-tag">
-      {variant === "wrapper-child" ? "WRAPPER-CHILD" : "STANDALONE L1"}
     </ChipBase>
   );
 }
 
 // ─── Headers ──────────────────────────────────────────────────────────────
 
-function ClientHeader({
-  account,
-  theme,
-}: {
-  account: AccountForTier;
-  theme: Theme;
-}) {
-  const titleCls =
-    theme === "dark"
-      ? "font-semibold text-slate-100"
-      : "font-semibold text-slate-900";
-  const teamCls =
-    theme === "dark" ? "text-xs text-slate-400" : "text-xs text-slate-500";
-  const dateCls = teamCls;
+function ClientHeader({ account }: { account: AccountForTier }) {
   const dates = formatDateLine(account.contractStart, account.contractEnd);
   return (
     <div className="flex flex-1 flex-wrap items-center gap-2">
-      <span className={titleCls}>{account.name}</span>
-      {account.team ? <span className={teamCls}>{account.team}</span> : null}
-      {account.severity === "critical" || account.severity === "warning" ? (
-        <SeverityBadge severity={account.severity} theme={theme} />
+      <span className="font-semibold text-foreground">{account.name}</span>
+      {account.team ? (
+        <span className="text-xs text-muted-foreground">{account.team}</span>
       ) : null}
-      {account.sowSigned === true ? <SowChip theme={theme} /> : null}
-      {dates ? <span className={dateCls}>{dates}</span> : null}
+      {account.severity === "critical" || account.severity === "warning" ? (
+        <SeverityBadge severity={account.severity} />
+      ) : null}
+      {account.sowSigned === true ? <SowChip /> : null}
+      {dates ? (
+        <span className="text-xs text-muted-foreground">{dates}</span>
+      ) : null}
     </div>
   );
 }
 
-function WrapperHeader({
-  section,
-  theme,
-}: {
-  section: RundownSection;
-  theme: Theme;
-}) {
-  const titleCls =
-    theme === "dark"
-      ? "font-medium text-slate-100"
-      : "font-medium text-slate-900";
-  const dateCls =
-    theme === "dark" ? "text-xs text-slate-400" : "text-xs text-slate-500";
+function WrapperHeader({ section }: { section: RundownSection }) {
   return (
     <div className="flex flex-1 flex-wrap items-center gap-2">
-      <span className={titleCls}>{section.title}</span>
+      <span className="font-medium text-foreground">{section.title}</span>
       {section.data.headerRange ? (
-        <span className={dateCls}>{section.data.headerRange}</span>
+        <span className="text-xs text-muted-foreground">
+          {section.data.headerRange}
+        </span>
       ) : null}
-      <WrapperTag theme={theme} />
     </div>
   );
 }
 
 function L1Header({
   section,
-  variant,
   readyToClose,
-  theme,
+  showNoScheduledChip,
 }: {
   section: RundownSection;
-  variant: "wrapper-child" | "standalone";
   readyToClose: boolean;
-  theme: Theme;
+  showNoScheduledChip: boolean;
 }) {
-  const titleCls =
-    theme === "dark"
-      ? "font-medium text-slate-100"
-      : "font-medium text-slate-900";
-  const metaCls =
-    theme === "dark" ? "text-xs text-slate-400" : "text-xs text-slate-500";
-
   // Pull owner / resources off the L1's project row, if available. The
   // section's `raw.entity` is the project row when raw.kind === "l1";
   // typed loosely here because tests fixture the entity narrowly.
   const raw = section.data.raw;
-  const entity = raw.kind === "l1" ? (raw.entity as unknown as {
-    owner?: string | null;
-    resources?: string | null;
-  }) : null;
+  const entity =
+    raw.kind === "l1"
+      ? (raw.entity as unknown as {
+          owner?: string | null;
+          resources?: string | null;
+          startDate?: string | null;
+          endDate?: string | null;
+        })
+      : null;
   const owner = entity?.owner ?? null;
   const resources = entity?.resources ?? null;
 
   return (
     <div className="flex flex-1 flex-wrap items-center gap-2">
-      <span className={titleCls}>{section.title}</span>
-      {readyToClose ? <ReadyToCloseChip theme={theme} /> : null}
-      {owner ? <span className={metaCls}>O: {owner}</span> : null}
-      {resources ? <span className={metaCls}>{resources}</span> : null}
-      {section.data.headerRange ? (
-        <span className={metaCls}>{section.data.headerRange}</span>
+      <span className="font-medium text-foreground">{section.title}</span>
+      {readyToClose ? <ReadyToCloseChip /> : null}
+      {showNoScheduledChip ? <NoScheduledTasksChip /> : null}
+      {owner ? (
+        <span className="text-xs text-muted-foreground">O: {owner}</span>
       ) : null}
-      <L1Tag variant={variant} theme={theme} />
+      {resources ? (
+        <span className="text-xs text-muted-foreground">{resources}</span>
+      ) : null}
+      {section.data.headerRange ? (
+        <span className="text-xs text-muted-foreground">
+          {section.data.headerRange}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -303,57 +279,42 @@ function L1Header({
 
 function L1Section({
   section,
-  variant,
   readyToCloseIds,
-  theme,
+  accountName,
 }: {
   section: RundownSection;
-  variant: "wrapper-child" | "standalone";
   readyToCloseIds: ReadonlySet<string>;
-  theme: Theme;
+  accountName: string;
 }) {
   const items = weekItemsForSection(section).slice().sort(byStartDateNullsLast);
   const id = l1IdForSection(section);
   const ready = id !== null && readyToCloseIds.has(id);
 
-  // Empty L1: header-only flat row with annotation, no <details>.
+  // Empty L1 (no scheduled L2s after status filter): header-only flat row
+  // with the inline "No Scheduled Tasks" chip, no <details>.
   if (items.length === 0) {
-    const dimCls =
-      theme === "dark" ? "text-xs text-slate-500" : "text-xs text-slate-400";
-    const indentCls =
-      theme === "dark"
-        ? "pl-4 border-l border-slate-800"
-        : "pl-4 border-l border-slate-100";
     return (
       <div
         data-testid="l1-empty"
-        className={`flex flex-wrap items-center gap-2 py-1 ${indentCls}`}
+        className="flex flex-wrap items-center gap-2 py-1 pl-4 border-l border-border"
       >
         <L1Header
           section={section}
-          variant={variant}
           readyToClose={ready}
-          theme={theme}
+          showNoScheduledChip
         />
-        <span className={dimCls}>(no scheduled L2s)</span>
       </div>
     );
   }
 
-  const indentCls =
-    theme === "dark"
-      ? "pl-4 border-l border-slate-800"
-      : "pl-4 border-l border-slate-100";
-
   return (
     <CollapsibleSection
-      className={indentCls}
+      className="pl-4 border-l border-border"
       header={
         <L1Header
           section={section}
-          variant={variant}
           readyToClose={ready}
-          theme={theme}
+          showNoScheduledChip={false}
         />
       }
     >
@@ -366,7 +327,7 @@ function L1Section({
           // each card gets a unique key even when ids are malformed.
           <L2MiniCard
             key={wi.id || `l2-fallback-${index}`}
-            theme={theme}
+            accountName={accountName}
             weekItem={{
               id: wi.id,
               title: wi.title,
@@ -388,30 +349,25 @@ function WrapperBlock({
   wrapper,
   childSections,
   readyToCloseIds,
-  theme,
+  accountName,
 }: {
   wrapper: RundownSection;
   childSections: RundownSection[];
   readyToCloseIds: ReadonlySet<string>;
-  theme: Theme;
+  accountName: string;
 }) {
-  const indentCls =
-    theme === "dark"
-      ? "pl-6 border-l border-slate-700"
-      : "pl-6 border-l border-slate-200";
   return (
     <CollapsibleSection
-      className={indentCls}
-      header={<WrapperHeader section={wrapper} theme={theme} />}
+      className="pl-6 border-l border-border"
+      header={<WrapperHeader section={wrapper} />}
     >
       <div className="space-y-2 pt-2">
         {childSections.map((child) => (
           <L1Section
             key={child.anchor}
             section={child}
-            variant="wrapper-child"
             readyToCloseIds={readyToCloseIds}
-            theme={theme}
+            accountName={accountName}
           />
         ))}
       </div>
@@ -425,14 +381,11 @@ export function AccountTier({
   account,
   rundown,
   readyToCloseIds,
-  theme = "light",
 }: AccountTierProps) {
   const blocks = groupSections(rundown.sections);
 
   return (
-    <CollapsibleSection
-      header={<ClientHeader account={account} theme={theme} />}
-    >
+    <CollapsibleSection header={<ClientHeader account={account} />}>
       <div className="space-y-3 pt-2">
         {blocks.map((block) => {
           if (block.kind === "wrapper") {
@@ -442,7 +395,7 @@ export function AccountTier({
                 wrapper={block.wrapper}
                 childSections={block.children}
                 readyToCloseIds={readyToCloseIds}
-                theme={theme}
+                accountName={account.name}
               />
             );
           }
@@ -450,9 +403,8 @@ export function AccountTier({
             <L1Section
               key={block.section.anchor}
               section={block.section}
-              variant="standalone"
               readyToCloseIds={readyToCloseIds}
-              theme={theme}
+              accountName={account.name}
             />
           );
         })}
