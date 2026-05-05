@@ -509,6 +509,80 @@ function teamMemberExtractToCanonical(
 }
 
 /**
+ * Parse a proposal's `args` JSON safely. Returns an empty object on
+ * unparseable / non-object payloads so callers can iterate keys without
+ * defensive null checks.
+ */
+function parseProposalArgs(raw: string | null | undefined): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Edit-flow prefill fallback per the bug report on the multi-match candidate
+ * picker save path.
+ *
+ * Slack `view_submission` is inconsistent about which blocks appear in
+ * `view.state.values`: blocks whose `initial_value` / `initial_option` was
+ * never user-touched may be omitted entirely. For untouched plain-text inputs
+ * and external-select pickers in particular, that means our `readPlainText` /
+ * `readSelect` returns null and `computeChangedFields` flags the field as a
+ * change-to-null - the consumer then writes NULL to a column the user never
+ * touched.
+ *
+ * The fix: enrich `canonical` BEFORE the diff with values that were persisted
+ * onto `proposal.args` at multi-match-pick time (see
+ * `handleMultiMatchCandidateSelect`). args becomes the prefill source-of-
+ * truth; state.values overrides only for fields the user actually touched.
+ *
+ * Limited to STRING fields. Skips fields with known shape mismatches
+ * between args and the row (most importantly `resources`, which is a
+ * `string[]` in args but a CSV string in canonical/target).
+ *
+ * Trade-off: this masks "explicit clear" - if the user opens the modal,
+ * deletes a prefilled title, and submits with the title field empty, the
+ * fallback restores the prefill. Per the bug report we side with preserve
+ * rather than clear; an actual clear can be performed by typing a single
+ * space (or by editing the wrapper proposal flow). The cost of mis-clearing
+ * fields the user never touched is much higher than the cost of failing to
+ * clear fields the user emptied intentionally.
+ */
+const FALLBACK_FIELD_SKIP = new Set([
+  // string[] in args, CSV string on the row - shape mismatch would always
+  // flag as changed.
+  "resources",
+  // Booleans / objects / shape mismatches: keep this list narrow; only add
+  // when we discover an actual hazard.
+]);
+
+function applyArgsFallback(
+  canonical: Record<string, unknown>,
+  args: Record<string, unknown>,
+): void {
+  for (const key of Object.keys(canonical)) {
+    if (FALLBACK_FIELD_SKIP.has(key)) continue;
+    const current = canonical[key];
+    if (current !== null && current !== undefined) continue;
+    const argVal = args[key];
+    if (argVal === undefined || argVal === null || argVal === "") continue;
+    // String-only fallback: shape mismatches between args and the row are
+    // most likely on non-strings (resources -> array, dates that became
+    // Date objects, etc.). Constraining to strings keeps the fallback
+    // surgical.
+    if (typeof argVal !== "string") continue;
+    canonical[key] = argVal;
+  }
+}
+
+/**
  * Compute the changed-field diff per pre-plan §C5. Compares each canonical
  * field to its corresponding value on the target row. Slot names that don't
  * exist on the target are treated as "potentially changed" (best-effort).
@@ -633,6 +707,12 @@ async function validateProjectModal(ctx: PerModalCtx): Promise<ValidationResult>
   let changedFields: string[] | undefined;
   let fieldsToValidate: Set<string>;
   if (ctx.proposal.kind === "edit" && ctx.targetEntity) {
+    // Prefill fallback: Slack omits untouched initial_value / initial_option
+    // blocks from view.state.values. Backfill from proposal.args (persisted at
+    // multi-match-pick time) so we don't diff a null against the target's
+    // real value and mistakenly flag the field as a change-to-null.
+    const argsObj = parseProposalArgs(ctx.proposal.args);
+    applyArgsFallback(canonical, argsObj);
     changedFields = computeChangedFields(canonical, ctx.targetEntity);
     if (changedFields.length === 0) {
       ctx.errors["project_name_block"] =
@@ -870,6 +950,12 @@ async function validateTaskModal(ctx: PerModalCtx): Promise<ValidationResult> {
   let changedFields: string[] | undefined;
   let fieldsToValidate: Set<string>;
   if (ctx.proposal.kind === "edit" && ctx.targetEntity) {
+    // Prefill fallback: Slack omits untouched initial_value / initial_option
+    // blocks from view.state.values. Backfill from proposal.args (persisted at
+    // multi-match-pick time) so we don't diff a null against the target's
+    // real value and mistakenly flag the field as a change-to-null.
+    const argsObj = parseProposalArgs(ctx.proposal.args);
+    applyArgsFallback(canonical, argsObj);
     // For tasks, the target row uses `projectId` not `parentProjectId`.
     changedFields = computeChangedFields(canonical, ctx.targetEntity);
     if (changedFields.length === 0) {
@@ -989,6 +1075,12 @@ async function validateTeamMemberModal(ctx: PerModalCtx): Promise<ValidationResu
   let changedFields: string[] | undefined;
   let fieldsToValidate: Set<string>;
   if (ctx.proposal.kind === "edit" && ctx.targetEntity) {
+    // Prefill fallback: Slack omits untouched initial_value / initial_option
+    // blocks from view.state.values. Backfill from proposal.args (persisted at
+    // multi-match-pick time) so we don't diff a null against the target's
+    // real value and mistakenly flag the field as a change-to-null.
+    const argsObj = parseProposalArgs(ctx.proposal.args);
+    applyArgsFallback(canonical, argsObj);
     changedFields = computeChangedFields(canonical, ctx.targetEntity);
     if (changedFields.length === 0) {
       ctx.errors["name_block"] =
