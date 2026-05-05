@@ -195,7 +195,11 @@ async function handleOwnerSelect(payload: BlockSuggestionPayload): Promise<Respo
   const members = await getActiveTeamMembers({ excludeRoleCategory: "contractor" });
   const query = (payload.value ?? "").trim();
   const matches = filterByQuery(query, members, getMemberLabel);
-  return optionsResponse(matches.map((m) => toOption(m.id, getMemberLabel(m))));
+  // Option value MUST equal the display label so the rest of the chain
+  // (validate-submission, addProject, createWeekItem) writes the team
+  // member's name into the owner string column. The team_member id is
+  // not a foreign key on this column.
+  return optionsResponse(matches.map((m) => toOption(getMemberLabel(m), getMemberLabel(m))));
 }
 
 async function handleResourcesNamePicker(
@@ -227,7 +231,11 @@ async function handleResourcesNamePicker(
 
   const query = (payload.value ?? "").trim();
   const matches = filterByQuery(query, candidates, getMemberLabel);
-  return optionsResponse(matches.map((m) => toOption(m.id, getMemberLabel(m))));
+  // Option value MUST equal the display label. resourceRowsToString in
+  // validate-submission.ts builds the final "role: name" string from the
+  // separate role static_select and this name external_select; passing the
+  // team_member id as the value would land an id where the name belongs.
+  return optionsResponse(matches.map((m) => toOption(getMemberLabel(m), getMemberLabel(m))));
 }
 
 // ---------------------------------------------------------------------------

@@ -414,13 +414,28 @@ describe("POST /api/slack/options — owner_select", () => {
     };
     expect(res.status).toBe(200);
     const values = json.options.map((o) => o.value);
-    expect(values).toContain("t1");
-    expect(values).toContain("t2");
+    expect(values).toContain("Lane Carter"); // fullName preferred
+    expect(values).toContain("Sami"); // falls back to name when fullName null
     // Inactive member should be filtered out.
-    expect(values).not.toContain("t3");
+    expect(values).not.toContain("Jordan Reed");
     const labels = json.options.map((o) => o.text.text);
-    expect(labels).toContain("Lane Carter"); // fullName preferred
-    expect(labels).toContain("Sami"); // falls back to name when fullName null
+    expect(labels).toContain("Lane Carter");
+    expect(labels).toContain("Sami");
+  });
+
+  it("option value equals display label", async () => {
+    mockGetTeamMembersForFuzzy.mockResolvedValue([
+      { id: "t1", name: "Lane", fullName: "Lane Carter", roleCategory: "creative", isActive: 1 },
+      { id: "t2", name: "Sami", fullName: null, roleCategory: "pm", isActive: 1 },
+    ]);
+    const body = buildSuggestionPayload({ action_id: "owner_select" });
+    const res = await callRoute(buildRequest(body));
+    const json = (await res.json()) as {
+      options: Array<{ value: string; text: { text: string } }>;
+    };
+    for (const opt of json.options) {
+      expect(opt.value).toBe(opt.text.text);
+    }
   });
 
   it("fuzzy-filters by query", async () => {
@@ -431,8 +446,8 @@ describe("POST /api/slack/options — owner_select", () => {
     const body = buildSuggestionPayload({ action_id: "owner_select", value: "lane" });
     const res = await callRoute(buildRequest(body));
     const json = (await res.json()) as { options: Array<{ value: string }> };
-    expect(json.options.map((o) => o.value)).toContain("t1");
-    expect(json.options.map((o) => o.value)).not.toContain("t2");
+    expect(json.options.map((o) => o.value)).toContain("Lane Carter");
+    expect(json.options.map((o) => o.value)).not.toContain("Sami Patel");
   });
 
   it("excludes contractors from the staff-only owner picker", async () => {
@@ -453,8 +468,8 @@ describe("POST /api/slack/options — owner_select", () => {
     const res = await callRoute(buildRequest(body));
     const json = (await res.json()) as { options: Array<{ value: string }> };
     const values = json.options.map((o) => o.value);
-    expect(values).toContain("t1");
-    expect(values).not.toContain("t9");
+    expect(values).toContain("Lane Carter");
+    expect(values).not.toContain("Riley Vendor");
     // Verify the handler passed the right exclusion option through.
     expect(mockGetTeamMembersForFuzzy).toHaveBeenCalledWith({
       excludeRoleCategory: "contractor",
@@ -488,8 +503,35 @@ describe("POST /api/slack/options — resources_name_N cascade", () => {
     const res = await callRoute(buildRequest(body));
     const json = (await res.json()) as { options: Array<{ value: string }> };
     expect(res.status).toBe(200);
-    expect(json.options.map((o) => o.value)).toContain("t1"); // CD → creative
-    expect(json.options.map((o) => o.value)).not.toContain("t2");
+    expect(json.options.map((o) => o.value)).toContain("Lane Carter"); // CD → creative
+    expect(json.options.map((o) => o.value)).not.toContain("Sami Patel");
+  });
+
+  it("option value equals display label", async () => {
+    mockGetTeamMembersForFuzzy.mockResolvedValue([
+      { id: "t1", name: "Lane", fullName: "Lane Carter", roleCategory: "creative", isActive: 1 },
+      { id: "t2", name: "Sami", fullName: null, roleCategory: "creative", isActive: 1 },
+    ]);
+    const body = buildSuggestionPayload({
+      action_id: "resources_name_0",
+      block_id: "resources_name_block_0",
+      view: {
+        state: {
+          values: {
+            resources_block_0: {
+              resources_role_0: { selected_option: { value: "CD" } },
+            },
+          },
+        },
+      },
+    });
+    const res = await callRoute(buildRequest(body));
+    const json = (await res.json()) as {
+      options: Array<{ value: string; text: { text: string } }>;
+    };
+    for (const opt of json.options) {
+      expect(opt.value).toBe(opt.text.text);
+    }
   });
 
   it("maps Strat short code to strategy bucket", async () => {
@@ -512,7 +554,7 @@ describe("POST /api/slack/options — resources_name_N cascade", () => {
     });
     const res = await callRoute(buildRequest(body));
     const json = (await res.json()) as { options: Array<{ value: string }> };
-    expect(json.options.map((o) => o.value)).toEqual(["t4"]);
+    expect(json.options.map((o) => o.value)).toEqual(["Riley Kim"]);
   });
 
   it("returns all active team members when role is unselected", async () => {
@@ -527,7 +569,7 @@ describe("POST /api/slack/options — resources_name_N cascade", () => {
     });
     const res = await callRoute(buildRequest(body));
     const json = (await res.json()) as { options: Array<{ value: string }> };
-    expect(json.options.map((o) => o.value).sort()).toEqual(["t1", "t2"]);
+    expect(json.options.map((o) => o.value).sort()).toEqual(["Lane Carter", "Sami Patel"]);
   });
 
   it("falls back to all active members when role short code is unknown", async () => {
@@ -549,7 +591,7 @@ describe("POST /api/slack/options — resources_name_N cascade", () => {
     });
     const res = await callRoute(buildRequest(body));
     const json = (await res.json()) as { options: Array<{ value: string }> };
-    expect(json.options.map((o) => o.value)).toEqual(["t1"]);
+    expect(json.options.map((o) => o.value)).toEqual(["Lane Carter"]);
   });
 
   it("includes contractors (Resources picker is freelance-friendly, unlike Owner)", async () => {
@@ -571,7 +613,7 @@ describe("POST /api/slack/options — resources_name_N cascade", () => {
     });
     const res = await callRoute(buildRequest(body));
     const json = (await res.json()) as { options: Array<{ value: string }> };
-    expect(json.options.map((o) => o.value)).toEqual(["t1"]);
+    expect(json.options.map((o) => o.value)).toEqual(["Lane Carter"]);
     // Resources handler must NOT pass excludeRoleCategory.
     expect(mockGetTeamMembersForFuzzy).not.toHaveBeenCalledWith(
       expect.objectContaining({ excludeRoleCategory: expect.anything() }),
