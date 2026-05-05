@@ -135,12 +135,32 @@ export async function extractClientRundown(
     | { kind: "wrapper"; project: ProjectRow; children: ProjectRow[] }
     | { kind: "standalone"; project: ProjectRow };
 
-  const classified: ClassifiedTop[] = [];
-  for (const top of topLevelProjects) {
-    const children = await db
+  // Batch-fetch all children for top-level projects in a single query, then
+  // group by parentProjectId via a Map. Replaces a prior N+1 loop that issued
+  // one query per top-level project.
+  const childrenByParent = new Map<string, ProjectRow[]>();
+  if (topLevelProjects.length > 0) {
+    const allChildren = await db
       .select()
       .from(projectsTable)
-      .where(eq(projectsTable.parentProjectId, top.id));
+      .where(
+        inArray(
+          projectsTable.parentProjectId,
+          topLevelProjects.map((p) => p.id),
+        ),
+      );
+    for (const child of allChildren) {
+      const pid = child.parentProjectId;
+      if (!pid) continue;
+      const arr = childrenByParent.get(pid);
+      if (arr) arr.push(child);
+      else childrenByParent.set(pid, [child]);
+    }
+  }
+
+  const classified: ClassifiedTop[] = [];
+  for (const top of topLevelProjects) {
+    const children = childrenByParent.get(top.id) ?? [];
     if (
       top.parentProjectId === null &&
       top.engagementType === "retainer" &&
