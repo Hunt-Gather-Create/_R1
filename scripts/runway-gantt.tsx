@@ -26,22 +26,22 @@ import {
   computeAxis,
   formatDateRange,
   transformRows,
-} from "./lib/gantt/transform-rows";
-import { detectAllIssues } from "./lib/gantt/detect-issues";
+} from "../src/lib/runway/gantt/transform-rows";
+import { detectAllIssues } from "../src/lib/runway/gantt/detect-issues";
 import {
   formatCounterConsole,
   formatSeverityLine,
   summarize,
-} from "./lib/gantt/counter";
+} from "../src/lib/runway/gantt/counter";
 import {
   renderClientRundown,
   renderGantt,
-} from "./lib/gantt/GanttTemplate";
+} from "../src/lib/runway/gantt/GanttTemplate";
 import type {
   ClientRow,
   GanttData,
   ResolvedSubject,
-} from "./lib/gantt/types";
+} from "../src/lib/runway/gantt/types";
 
 type DrizzleDb = ReturnType<typeof createRunwayDb>["db"];
 
