@@ -366,6 +366,11 @@ export function GanttSectionDark({
   // standalone L1) anchor those. See GanttSection in GanttTemplate.tsx for
   // the matching rule on light themes.
   const isWrapperChild = sectionKind === "wrapper-child";
+  // Issue 1 (operator-locked 2026-05-05): empty top-level subjects suppress
+  // axis chrome — the section legend + title still render but the
+  // month-band + tick row do not, since there is no body to plot against
+  // them. Mirrors GanttSection in GanttTemplate.tsx.
+  const hasRows = rows.length > 0;
   return (
     <>
       {!isWrapperChild && <SectionLegendDark />}
@@ -376,7 +381,7 @@ export function GanttSectionDark({
             No dates available — body rendered without a timeline.
           </div>
         )}
-        {axis.kind !== "no-axis" && !isWrapperChild && <AxisRow axis={axis} />}
+        {axis.kind !== "no-axis" && !isWrapperChild && hasRows && <AxisRow axis={axis} />}
 
         {rows.map((row) => (
           <RowBlock key={row.id} row={row} axis={axis} todayPct={todayPct} />

@@ -62,13 +62,21 @@ export function RundownContentRSC({ sections }: { sections: RundownSection[] }) 
               <div className="mt-3">
                 <GanttSectionDark data={block.wrapper.data} sectionKind={block.wrapper.kind} />
               </div>
+              {/* Issue 3 (operator-locked 2026-05-05): each wrapper-child
+                  gets its own bracket originating at the L1 summary row,
+                  with explicit vertical separation between groups so
+                  readers can tell which L2s belong to which L1. The
+                  `mt-6` (was `mt-3`) doubles the gap; the bracket comes
+                  from `border-l-2 border-slate-600` on each child's own
+                  `<details>` — borders are per-element so they cannot
+                  span two L1s. */}
               {block.children.map((child) => (
                 <details
                   key={child.anchor}
                   open
-                  className="ml-4 mt-3 rounded border-l-2 border-slate-700 pl-3"
+                  className="ml-4 mt-6 rounded border-l-2 border-slate-600 bg-slate-900/30 pl-3 pr-2 py-2"
                 >
-                  <summary className="cursor-pointer list-none text-xs text-slate-400">
+                  <summary className="cursor-pointer list-none text-xs font-medium text-slate-300">
                     {child.title}
                   </summary>
                   <div className="mt-2">

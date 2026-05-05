@@ -690,22 +690,49 @@ describe("legend + axis dedup — once per top-level subject", () => {
   it("wrapper-child SectionBlock does NOT render its own AxisRow", () => {
     // Operator-locked 2026-05-04: sub-project axis rows are suppressed so
     // they align under the wrapper's date scale (and reduce repetition).
-    const wrapper = makeRundownSection({ id: "w", kind: "wrapper" });
+    // Operator-locked 2026-05-05 (Wave 1.7 Issue 1): empty sections
+    // suppress axis chrome entirely. Give the wrapper a row so it paints
+    // its axis; the child stays empty + is suppressed by the wrapper-child
+    // rule. Final count: wrapper=2 (top + bottom), child=0 → 2.
+    const wrapper = makeRundownSection({
+      id: "w",
+      kind: "wrapper",
+      data: makeGanttData({
+        rows: [
+          makeRow({
+            id: "wr-row",
+            title: "wrapper row",
+            startDate: "2026-04-20",
+            endDate: "2026-04-26",
+          }),
+        ],
+      }),
+    });
     const child = makeRundownSection({ id: "c", kind: "wrapper-child" });
     const rundown = makeClientRundownData([wrapper, child]);
     const html = renderClientRundown(rundown);
-    // Each non-wrapper-child section emits a top + bottom axis-row when
-    // there are rows; with empty rows arrays the bottom row is suppressed
-    // anyway. So count axis-row classes:
-    //   wrapper: 1 (top, no rows so no bottom)
-    //   child:   0 (suppressed entirely under new rule)
-    //   total:   1
+    // Wrapper paints top + bottom axis (rows.length > 0); child paints 0
+    // (wrapper-child rule suppresses it). Total: 2.
     const axisRowCount = (html.match(/class="axis-row"/g) ?? []).length;
-    expect(axisRowCount).toBe(1);
+    expect(axisRowCount).toBe(2);
   });
 
   it("standalone SectionBlock still renders its own legend + axis", () => {
-    const standalone = makeRundownSection({ id: "alone", kind: "standalone" });
+    // Wave 1.7 Issue 1: needs at least one row for the axis to render.
+    const standalone = makeRundownSection({
+      id: "alone",
+      kind: "standalone",
+      data: makeGanttData({
+        rows: [
+          makeRow({
+            id: "r1",
+            title: "row",
+            startDate: "2026-04-20",
+            endDate: "2026-04-26",
+          }),
+        ],
+      }),
+    });
     const rundown = makeClientRundownData([standalone]);
     const html = renderClientRundown(rundown);
     expect(html).toContain('class="legend legend-in-section"');
@@ -716,9 +743,23 @@ describe("legend + axis dedup — once per top-level subject", () => {
 // ── 2026-05-05 axis rework: two-row axis (month band header + ticks) ─
 
 describe("AxisRow: two-row month-band header + tick row", () => {
+  // Wave 1.7 Issue 1 (operator-locked 2026-05-05): empty sections suppress
+  // axis chrome. These tests provide at least one row so the axis paints.
+  const oneRow = () =>
+    makeGanttData({
+      rows: [
+        makeRow({
+          id: "r1",
+          title: "row",
+          startDate: "2026-04-20",
+          endDate: "2026-04-26",
+        }),
+      ],
+    });
+
   it("renders a month-band row above the tick row with month name labels", () => {
     // The default fixture's weeklyAxis spans April → May with two bands.
-    const html = renderGantt(makeGanttData());
+    const html = renderGantt(oneRow());
     // The new month-band row carries class="axis-row month-band". The tick
     // row keeps class="axis-row" so existing dedup tests still hold.
     expect(html).toContain('class="axis-row month-band"');
@@ -734,7 +775,7 @@ describe("AxisRow: two-row month-band header + tick row", () => {
     // weeklyAxis fixture: April band covers cols 0-2 (3 cols), May band
     // covers cols 3-5 (3 cols). Both bands carry the data-cols attribute
     // so visual diffing + assertions can confirm spans.
-    const html = renderGantt(makeGanttData());
+    const html = renderGantt(oneRow());
     // Each month-band-cell includes a data-cols attribute with the inclusive
     // [startCol, endCol] range it covers.
     expect(html).toMatch(/data-cols="0,2"[^>]*>[^<]*April/);
@@ -744,14 +785,152 @@ describe("AxisRow: two-row month-band header + tick row", () => {
   it("month-band row is suppressed for wrapper-children (same dedup as tick row)", () => {
     // Wrapper-child sub-projects already inherit the wrapper's date scale —
     // they should not paint their own month-band row either.
-    const wrapper = makeRundownSection({ id: "w", kind: "wrapper" });
+    const wrapper = makeRundownSection({
+      id: "w",
+      kind: "wrapper",
+      data: oneRow(),
+    });
     const child = makeRundownSection({ id: "c", kind: "wrapper-child" });
     const rundown = makeClientRundownData([wrapper, child]);
     const html = renderClientRundown(rundown);
-    // 1 wrapper paints 1 month-band row (rows array empty so no bottom repeat).
-    // The child paints 0. Total: 1.
+    // Wrapper has rows so it paints top + bottom AxisRows; each AxisRow
+    // emits its own MonthBandRow above the tick row. Total: 2 (wrapper).
+    // The child paints 0 (wrapper-child suppression). Grand total: 2.
     const monthBandCount = (html.match(/class="axis-row month-band"/g) ?? []).length;
-    expect(monthBandCount).toBe(1);
+    expect(monthBandCount).toBe(2);
+  });
+});
+
+// ── Wave 1.7 Issue 1: empty-state axis suppression ───────
+
+describe("empty top-level subjects: axis chrome suppressed when rows are empty", () => {
+  // Operator-locked 2026-05-05: a section with 0 body rows (e.g. a standalone
+  // L1 with no weekItems, or a wrapper with 0 children) suppresses the entire
+  // axis chrome — month-band row, tick row, and grid lines. The legend, title,
+  // and DataIntegrityPanel still render so the user sees "this exists, it's
+  // empty"; only the timeline scaffolding is hidden.
+  it("standalone section with rows: [] does NOT render an axis-row or month-band", () => {
+    const html = renderGantt(makeGanttData({ rows: [] }));
+    // Both axis chrome rows are absent.
+    expect(html).not.toContain('class="axis-row"');
+    expect(html).not.toContain('class="axis-row month-band"');
+  });
+
+  it("standalone section with rows: [] STILL renders its legend + Data Integrity panel + title", () => {
+    const html = renderGantt(makeGanttData({ rows: [] }));
+    // Legend stays.
+    expect(html).toContain('class="legend legend-in-section"');
+    // Panel stays (light-internal default).
+    expect(html).toContain("Data Integrity");
+    // Title stays.
+    expect(html).toContain("Sample L1");
+  });
+
+  it("standalone section with rows.length > 0 still renders the axis-row + month-band", () => {
+    const html = renderGantt(
+      makeGanttData({
+        rows: [
+          makeRow({
+            id: "r1",
+            title: "Row",
+            startDate: "2026-04-20",
+            endDate: "2026-04-26",
+          }),
+        ],
+      }),
+    );
+    expect(html).toContain('class="axis-row"');
+    expect(html).toContain('class="axis-row month-band"');
+  });
+
+  it("rundown: empty wrapper section suppresses month-band + tick row but keeps title + legend", () => {
+    // A wrapper rundown section whose data has no rows (no children + no
+    // orphan items) should not paint axis chrome. The title + legend still
+    // render so the section is acknowledged.
+    const wrapper: RundownSection = {
+      anchor: "anchor-empty-wrapper",
+      kind: "wrapper",
+      title: "Empty Wrapper",
+      data: makeGanttData({ rows: [] }),
+    };
+    const rundown = makeClientRundownData([wrapper]);
+    const html = renderClientRundown(rundown);
+    // The empty wrapper's section-block has no axis-row / month-band.
+    const axisRowCount = (html.match(/class="axis-row"/g) ?? []).length;
+    const monthBandCount = (html.match(/class="axis-row month-band"/g) ?? []).length;
+    expect(axisRowCount).toBe(0);
+    expect(monthBandCount).toBe(0);
+    // Title + legend still render.
+    expect(html).toContain("Empty Wrapper");
+    expect(html).toContain('class="legend legend-in-section"');
+  });
+});
+
+// ── Wave 1.7 Issue 3: per-L1 bracket origin (light themes) ─
+
+describe("wrapper-child SectionBlock carries the wrapper-child class for bracket styling", () => {
+  // Operator-locked 2026-05-05: each wrapper-child section's article element
+  // must carry the `wrapper-child` class so the per-group bracket CSS
+  // (border-left, indent, margin) applies. This anchors the visual bracket
+  // at the L1 sub-header and separates groups vertically. Wave 1.7 Issue 2
+  // also filters wrapper-children with 0 rows from render — give the child
+  // at least one row so it's not filtered out before the class assertion.
+  it("rundown: wrapper-child section's article gets the rundown-section wrapper-child class", () => {
+    const wrapper = makeRundownSection({ id: "wrap", kind: "wrapper" });
+    const child = makeRundownSection({
+      id: "child",
+      kind: "wrapper-child",
+      data: makeGanttData({
+        rows: [
+          makeRow({
+            id: "cw-row",
+            title: "child row",
+            startDate: "2026-04-20",
+            endDate: "2026-04-26",
+          }),
+        ],
+      }),
+    });
+    const rundown = makeClientRundownData([wrapper, child]);
+    const html = renderClientRundown(rundown);
+    expect(html).toContain('class="rundown-section wrapper-child"');
+  });
+
+  it("rundown: standalone section keeps the rundown-section standalone class", () => {
+    const standalone = makeRundownSection({ id: "alone", kind: "standalone" });
+    const rundown = makeClientRundownData([standalone]);
+    const html = renderClientRundown(rundown);
+    expect(html).toContain('class="rundown-section standalone"');
+  });
+
+  // Wave 1.7 Issue 2: defense-in-depth render-time filter.
+  it("rundown: wrapper-child with rows: [] is filtered out at render time", () => {
+    const wrapper = makeRundownSection({ id: "wrap", kind: "wrapper" });
+    const emptyChild = makeRundownSection({
+      id: "empty-child",
+      kind: "wrapper-child",
+      title: "Empty Child Should Not Render",
+      data: makeGanttData({ rows: [] }),
+    });
+    const fullChild = makeRundownSection({
+      id: "full-child",
+      kind: "wrapper-child",
+      title: "Full Child Should Render",
+      data: makeGanttData({
+        rows: [
+          makeRow({
+            id: "fc-row",
+            title: "row",
+            startDate: "2026-04-20",
+            endDate: "2026-04-26",
+          }),
+        ],
+      }),
+    });
+    const rundown = makeClientRundownData([wrapper, emptyChild, fullChild]);
+    const html = renderClientRundown(rundown);
+    expect(html).not.toContain("Empty Child Should Not Render");
+    expect(html).toContain("Full Child Should Render");
   });
 });
 

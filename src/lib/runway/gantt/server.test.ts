@@ -8,6 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Client } from "@libsql/client";
+import { randomUUID } from "crypto";
 import {
   createTestDb,
   seedTestDb,
@@ -165,5 +166,85 @@ describe("generateGanttShare", () => {
         /^https:\/\/runway\.startround1\.com\/api\/runway\/gantt-share\//,
       );
     });
+  });
+});
+
+// ── Wave 1.7 Issue 2: extractClientRundown filters empty wrapper-children ──
+
+describe("extractClientRundown — empty wrapper-children filter (Issue 2)", () => {
+  let libsqlClient: Client;
+  let dbPath: string;
+
+  beforeEach(async () => {
+    const created = await createTestDb();
+    libsqlClient = created.client;
+    testDb = created.db;
+    dbPath = created.dbPath;
+    await seedTestDb(libsqlClient);
+  });
+
+  afterEach(() => {
+    cleanupTestDb(dbPath);
+  });
+
+  it("wrapper-child with 0 weekItems does NOT appear as its own section, but DOES still appear in the wrapper's child rows", async () => {
+    // Seed a wrapper + two children: one with weekItems, one empty.
+    const NOW = Math.floor(Date.now() / 1000);
+    const wrapperId = randomUUID();
+    const childWithItemsId = randomUUID();
+    const childEmptyId = randomUUID();
+
+    await libsqlClient.executeMultiple(`
+      INSERT INTO clients (id, name, slug, created_at, updated_at) VALUES
+        ('cl-issue2', 'Issue2 Client', 'issue2-client', ${NOW}, ${NOW});
+
+      INSERT INTO projects (id, client_id, name, status, category, engagement_type, parent_project_id, sort_order, created_at, updated_at) VALUES
+        ('${wrapperId}', 'cl-issue2', '1H Wrapper', 'in-production', 'active', 'retainer', NULL, 0, ${NOW}, ${NOW}),
+        ('${childWithItemsId}', 'cl-issue2', 'Child With Items', 'in-production', 'active', NULL, '${wrapperId}', 0, ${NOW}, ${NOW}),
+        ('${childEmptyId}', 'cl-issue2', 'Child Empty L1', 'in-production', 'active', NULL, '${wrapperId}', 1, ${NOW}, ${NOW});
+
+      INSERT INTO week_items (id, project_id, client_id, week_of, date, title, status, sort_order, created_at, updated_at) VALUES
+        ('wi-issue2-1', '${childWithItemsId}', 'cl-issue2', '2026-04-13', '2026-04-15', 'Child Item', 'in-progress', 0, ${NOW}, ${NOW});
+    `);
+
+    const { extractClientRundown, resolveClient } = await import("./server");
+    const cr = await resolveClient(testDb, "issue2-client");
+    if (!cr.ok) throw new Error("resolveClient failed");
+
+    const rundown = await extractClientRundown(
+      testDb,
+      cr.client,
+      cr.topLevelProjects,
+      "2026-04-15",
+      "2026-04-15",
+    );
+
+    // The wrapper section is present.
+    const wrapperSection = rundown.sections.find(
+      (s) => s.kind === "wrapper" && s.title === "1H Wrapper",
+    );
+    expect(wrapperSection).toBeDefined();
+
+    // The child-with-items section is present as its own wrapper-child.
+    const childWithItemsSection = rundown.sections.find(
+      (s) => s.kind === "wrapper-child" && s.title === "Child With Items",
+    );
+    expect(childWithItemsSection).toBeDefined();
+
+    // The empty child is FILTERED OUT — no section block exists for it.
+    const childEmptySection = rundown.sections.find(
+      (s) => s.kind === "wrapper-child" && s.title === "Child Empty L1",
+    );
+    expect(childEmptySection).toBeUndefined();
+
+    // BUT the empty child still appears in the wrapper's child rows
+    // (the wrapper view's purpose is to show all L1 active periods,
+    // including data-gap rows). The wrapper data's `raw.children` list
+    // contains both children.
+    if (wrapperSection && wrapperSection.data.raw.kind === "wrapper") {
+      const childIds = wrapperSection.data.raw.children.map((c) => c.id);
+      expect(childIds).toContain(childWithItemsId);
+      expect(childIds).toContain(childEmptyId);
+    }
   });
 });

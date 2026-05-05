@@ -218,6 +218,14 @@ export async function extractClientRundown(
       );
       for (const child of sortedChildren) {
         const wis = wiByProject.get(child.id) ?? [];
+        // Issue 2 (operator-locked 2026-05-05, Option A HIGH confidence):
+        // wrapper-children with 0 weekItems do NOT render as their own
+        // expanded section block — the L1 still appears in the wrapper's
+        // top rows as a bar (data-gap surface), but skip the orphan
+        // empty-section that has no L2s to drill into. This filter is
+        // extract-time so both light + dark render paths pick it up
+        // uniformly without duplicated logic.
+        if (wis.length === 0) continue;
         const relationship = detectChildProjectIssues(child, c.project);
         const extraChart = [...relationship.inline, ...relationship.subRow];
         const childData = buildL1SectionData(

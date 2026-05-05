@@ -263,6 +263,13 @@ const STYLES = `
   .rundown-section .section-head .kind-tag.wrapper-child { background: #e0f2fe; color: #075985; }
   .rundown-section .section-head .kind-tag.standalone { background: #f1f5f9; color: #475569; }
   .rundown-section .section-head .meta { font-size: 11px; color: #777; margin-top: 2px; }
+  /* Issue 3 (operator-locked 2026-05-05): wrapper-child sections get an
+     indented, bracketed visual treatment so each L2 group reads as
+     "belonging to the wrapper above". The left border originates at the
+     L1 sub-header (section-head) and contains only that L1's content;
+     extra margin-bottom puts breathing room between L1 groups. */
+  .rundown-section.wrapper-child { margin: 18px 0 28px 24px; padding: 12px 0 0 14px; border-top: 1px solid #e5e7eb; border-left: 3px solid #c4b5fd; }
+  .rundown-section.wrapper-child .section-head h2 { font-size: 15px; }
 `;
 
 const STYLES_BRANDED = `
@@ -352,6 +359,11 @@ const STYLES_BRANDED = `
   .rundown-section .section-head h2 { margin: 0; font-size: 17px; font-weight: 700; color: #000000; }
   .rundown-section .section-head .kind-tag { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 6px; border-radius: 3px; margin-left: 8px; vertical-align: middle; background: #F9FAFB; color: #333333; border: 1px solid #E5E7EB; }
   .rundown-section .section-head .meta { font-size: 11px; color: #333333; margin-top: 2px; }
+  /* Issue 3 (operator-locked 2026-05-05): wrapper-child sections get an
+     indented brand-colored bracket so each L2 group reads as belonging
+     to its wrapper above. */
+  .rundown-section.wrapper-child { margin: 18px 0 28px 24px; padding: 12px 0 0 14px; border-top: 1px solid #E5E7EB; border-left: 3px solid #0E5DFF; }
+  .rundown-section.wrapper-child .section-head h2 { font-size: 15px; }
 `;
 
 function metaLine(row: AnnotatedRow): string {
@@ -820,6 +832,13 @@ export function GanttSection({
   const todayPct = computeTodayPosition(axis);
   const tokens = getThemeTokens(theme);
   const isWrapperChild = sectionKind === "wrapper-child";
+  // Issue 1 (operator-locked 2026-05-05): empty top-level subjects suppress
+  // the date-axis chrome (month-band, tick row, repeat axis at bottom). The
+  // section title + legend still render so users see "this thing exists,
+  // it's empty"; just the timeline scaffolding is gone since there's nothing
+  // to plot against it. Applies to wrappers with 0 child rows AND standalones
+  // with 0 weekItems alike — both surface as `rows.length === 0` here.
+  const hasRows = rows.length > 0;
   return (
     <>
       {!isWrapperChild && <SectionLegend theme={theme} />}
@@ -832,7 +851,7 @@ export function GanttSection({
             No dates available — body rendered without a timeline.
           </div>
         )}
-        {axis.kind !== "no-axis" && !isWrapperChild && <AxisRow axis={axis} />}
+        {axis.kind !== "no-axis" && !isWrapperChild && hasRows && <AxisRow axis={axis} />}
 
         {rows.map((row) => (
           <RowBlock key={row.id} row={row} axis={axis} todayPct={todayPct} theme={theme} />
@@ -840,8 +859,9 @@ export function GanttSection({
 
         {/* Repeat axis at bottom — operator (2026-04-30) wants dates
             visible after scrolling through long row lists. Suppressed for
-            wrapper-children (2026-05-04) since the wrapper already paints it. */}
-        {axis.kind !== "no-axis" && rows.length > 0 && !isWrapperChild && <AxisRow axis={axis} />}
+            wrapper-children (2026-05-04) since the wrapper already paints it,
+            and for empty sections (2026-05-05) since there's no body to scroll. */}
+        {axis.kind !== "no-axis" && hasRows && !isWrapperChild && <AxisRow axis={axis} />}
       </section>
     </>
   );
@@ -1096,8 +1116,11 @@ function kindTag(kind: RundownSection["kind"]): string {
 
 export function SectionBlock({ section, theme }: { section: RundownSection; theme: Theme }): React.JSX.Element {
   const { data } = section;
+  // Issue 3 (operator-locked 2026-05-05): apply the kind class on the
+  // article so wrapper-child gets its bracketed treatment via CSS.
+  const className = `rundown-section ${section.kind}`;
   return (
-    <article id={section.anchor} className="rundown-section">
+    <article id={section.anchor} className={className}>
       <header className="section-head">
         <h2>
           {section.title}
@@ -1114,9 +1137,20 @@ export function SectionBlock({ section, theme }: { section: RundownSection; them
 }
 
 export function RundownTemplate({ data, theme = "light-internal" }: { data: ClientRundownData; theme?: Theme }): React.JSX.Element {
-  const { client, sections, generatedAt, overallSeverity } = data;
+  const { client, sections: rawSections, generatedAt, overallSeverity } = data;
   const tokens = getThemeTokens(theme);
   const styles = theme === "light-branded" ? STYLES_BRANDED : STYLES;
+  // Issue 2 (operator-locked 2026-05-05): wrapper-children with 0 weekItems
+  // are filtered out at render time as defense-in-depth. The src/-side
+  // extractClientRundown applies the same filter at extract time, so both
+  // call paths (page.tsx via @/lib/runway/gantt/server + the CLI via
+  // scripts/lib/gantt/rundown) end up with the same rendered output.
+  // The L1 still appears in the wrapper section's top rows as a bar (the
+  // wrapper view's purpose is to show all child active periods); only the
+  // expanded wrapper-CHILD section block is suppressed when empty.
+  const sections = rawSections.filter(
+    (s) => !(s.kind === "wrapper-child" && s.data.rows.length === 0),
+  );
 
   return (
     <html lang="en">
