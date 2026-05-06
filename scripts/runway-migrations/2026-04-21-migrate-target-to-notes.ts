@@ -172,6 +172,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "notes",
         newValue: newNotes,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) {
         failures.push({

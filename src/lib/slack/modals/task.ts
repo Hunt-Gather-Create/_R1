@@ -1,0 +1,625 @@
+/**
+ * Task modal view builder (create + edit).
+ *
+ * Pure function that returns a Slack Block Kit `view` payload for the task
+ * modal flow. Used by:
+ *   - Wave 8 button-click handler (open_create_modal action)
+ *   - Wave 9 view_submission validation tier (re-renders with errorBlock)
+ *   - The slash-command edit flow (loads currentValues from DB, mode="edit")
+ *
+ * Spec sources (locked):
+ *   - docs/tmp/slack-modal-pre-plan.md (v7) - Modal flows + Wave 4
+ *   - docs/tmp/slack-modal-pre-plan.md (v7) - A3, hint render order
+ *   - docs/tmp/slack-modal-pre-plan.md (v7) - B5, all date inputs use datepicker
+ *   - project_slack_modal_spec.md (Modal 1, Task field design)
+ *
+ * Civ voice (LOCKED): hyphens not em-dashes, no AI-sounding language, plain
+ * copy. No tier-letter shorthand in user-facing strings (the parent project /
+ * task hierarchy is exposed via plain English labels). A source-level grep
+ * guard in task.test.ts asserts these on this file.
+ *
+ * Hint render order (per v7 A3, top to bottom, optional blocks elided):
+ *   (1) errorBlock (Phase 2/3 will pass)
+ *   (2) multiMatchHint section block (bold/emphasis)
+ *   (3) baselineHint context block (muted)
+ *   (4) parent-project external_select picker
+ *
+ * Resources repeater is capped at 10 rows.
+ */
+
+import { BLOCK_IDS } from "./constants";
+import {
+  BASELINE_PARENT_PICKER_HINT,
+  CASCADE_DEADLINE_EXPLAINER,
+  MODAL_HEADERS,
+} from "./copy";
+import {
+  asString,
+  asStringArray,
+  findOption,
+  mrkdwn,
+  plainText,
+  staticOption,
+  truncate,
+} from "./helpers";
+import { buildMultiMatchCandidatePicker } from "./picker-block";
+import { hasPickedEntity, inferDateTypeFromArgs } from "./picker-state";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/**
+ * Slack Block Kit view payload (loose typing). The runtime contract here is
+ * the JSON shape that views.open / views.update accept; we keep this loose
+ * because the @slack/web-api types pin many element shapes more tightly than
+ * we need at the boundary, and Wave 8/9 tests assert specific block_id
+ * presence rather than full schema conformance.
+ */
+export interface SlackView {
+  type: "modal";
+  callback_id: string;
+  private_metadata: string;
+  title: { type: "plain_text"; text: string; emoji?: boolean };
+  submit?: { type: "plain_text"; text: string; emoji?: boolean };
+  close?: { type: "plain_text"; text: string; emoji?: boolean };
+  blocks: Array<Record<string, unknown> & { type: string; block_id?: string }>;
+  notify_on_close: true;
+  clear_on_close?: boolean;
+}
+
+export interface BuildTaskModalParams {
+  /**
+   * The original tool args from the bot intercept (or empty for slash-command
+   * launch). Currently informational - currentValues wins on every conflict.
+   * Kept in the signature so Wave 8 callers can route inferred fields through
+   * without an extra merge step at the call site.
+   */
+  args: Record<string, unknown>;
+  /** Proposal row id; serialized into private_metadata. */
+  proposalId: string;
+  mode: "create" | "edit";
+  /**
+   * Pre-fill values, propagated to every block's `initial_value` /
+   * `initial_option` / `initial_date`. In edit mode also drives the header.
+   */
+  currentValues?: Record<string, unknown>;
+  /**
+   * Always-on parent-picker hint, rendered as a context block above the
+   * picker. Caller passes the locked `BASELINE_PARENT_PICKER_HINT` constant
+   * to enable; omit to disable.
+   */
+  baselineHint?: string;
+  /**
+   * Multi-match parent-picker hint, rendered as a section block above the
+   * baseline. Pass the formatted string from `formatMultiMatchHint(...)` when
+   * caller-side fuzzy match returned more than one candidate.
+   */
+  multiMatchHint?: string;
+  /**
+   * Multi-match candidate list for /runway-edit-task disambiguation. When set
+   * and non-empty (and `currentValues` has not yet been populated by a pick),
+   * the modal renders a static_select picker just under the multi-match hint
+   * so the user can choose the row to edit. Picking fires a block_actions
+   * event (handler wired separately) which rebuilds the modal in post-pick
+   * state with currentValues set, at which point the picker disappears.
+   *
+   * Slack caps option arrays at 100 entries and option labels at 75 chars.
+   * The builder truncates accordingly.
+   */
+  multiMatchCandidates?: { id: string; label: string }[];
+  /**
+   * Phase 2/3 validation tier passes a soft-warn or hard-reject error block
+   * here so it renders above the rest of the form.
+   */
+  errorBlock?: { blockId: string; message: string };
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const SLACK_TITLE_MAX = 24; // Slack modal title cap
+const RESOURCES_MAX_ROWS = 10;
+
+const CATEGORY_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "delivery", label: "Delivery" },
+  { value: "kickoff", label: "Kickoff" },
+  { value: "review", label: "Review" },
+  { value: "approval", label: "Approval" },
+  { value: "deadline", label: "Deadline" },
+  { value: "launch", label: "Launch" },
+];
+
+const DATE_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "single", label: "Single day" },
+  { value: "range", label: "Range" },
+];
+
+// Resource role labels per project_slack_modal_spec.md Modal 1.
+const RESOURCE_ROLE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "AM", label: "AM" },
+  { value: "CD", label: "CD" },
+  { value: "Dev", label: "Dev" },
+  { value: "CW", label: "CW" },
+  { value: "PM", label: "PM" },
+  { value: "CM", label: "CM" },
+  { value: "Strat", label: "Strat" },
+  { value: "Vendor", label: "Vendor" },
+];
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function header(
+  mode: "create" | "edit",
+  currentValues?: Record<string, unknown>,
+  inDisambiguationPhase = false,
+): string {
+  if (mode === "create") return MODAL_HEADERS.newTask;
+  // Disambiguation phase (Wave 6 / Fix 6.5): the user has not picked a
+  // candidate yet, so the entity name is empty. Use the explicit pick header
+  // instead of "Edit task - " (trailing hyphen + empty name).
+  if (inDisambiguationPhase) return MODAL_HEADERS.pickTask;
+  const titleRaw = (currentValues?.title as string | undefined) ?? "";
+  const full = MODAL_HEADERS.editTask(titleRaw);
+  return truncate(full, SLACK_TITLE_MAX);
+}
+
+// ---------------------------------------------------------------------------
+// Block builders
+// ---------------------------------------------------------------------------
+
+function buildClientBlock(currentValues?: Record<string, unknown>) {
+  const initialClient = asString(currentValues?.clientId);
+  // Bug A: when the multi-match candidate handler (or any caller) supplies
+  // a resolved clientName, use it as the visible label. clientId stays as
+  // the option value so submit can read state.values cleanly. Pre-fix, the
+  // id was used for both fields and users saw the raw ulid in the picker.
+  const initialClientLabel = asString(currentValues?.clientName) ?? initialClient;
+  const element: Record<string, unknown> = {
+    type: "external_select",
+    action_id: "client_select",
+    placeholder: plainText("Pick a client"),
+    min_query_length: 0,
+  };
+  if (initialClient) {
+    element.initial_option = staticOption({
+      value: initialClient,
+      label: initialClientLabel ?? initialClient,
+    });
+  }
+  return {
+    type: "input",
+    block_id: BLOCK_IDS.CLIENT,
+    label: plainText("Client"),
+    // dispatch_action fires block_actions on Client pick. The handler writes
+    // the chosen clientId into private_metadata so the cascading Parent
+    // picker's options-provider can read it (input-block external_select
+    // state.values does NOT propagate into block_suggestion payloads).
+    dispatch_action: true,
+    element,
+  };
+}
+
+function buildParentProjectBlock(currentValues?: Record<string, unknown>) {
+  const initialProject = asString(currentValues?.projectId);
+  // Bug A: callers that pre-fill from a row supply projectName as the visible
+  // label. projectId is the option value (FK column). Pre-fix, the id was
+  // used for both and users saw the raw ulid in the parent picker.
+  const initialProjectLabel = asString(currentValues?.projectName) ?? initialProject;
+  const element: Record<string, unknown> = {
+    type: "external_select",
+    action_id: "parent_project_select",
+    placeholder: plainText("Search projects"),
+    min_query_length: 0,
+  };
+  if (initialProject) {
+    element.initial_option = staticOption({
+      value: initialProject,
+      label: initialProjectLabel ?? initialProject,
+    });
+  }
+  return {
+    type: "input",
+    block_id: BLOCK_IDS.PARENT_PROJECT,
+    label: plainText("Parent project"),
+    element,
+  };
+}
+
+function buildTitleBlock(currentValues?: Record<string, unknown>) {
+  const initial = asString(currentValues?.title);
+  const element: Record<string, unknown> = {
+    type: "plain_text_input",
+    action_id: "title_input",
+    placeholder: plainText("Short, specific name"),
+  };
+  if (initial) element.initial_value = initial;
+  return {
+    type: "input",
+    block_id: BLOCK_IDS.TITLE,
+    label: plainText("Title"),
+    element,
+  };
+}
+
+function buildCategoryBlock(currentValues?: Record<string, unknown>) {
+  const initial = findOption(CATEGORY_OPTIONS, asString(currentValues?.category));
+  const element: Record<string, unknown> = {
+    type: "static_select",
+    action_id: "category_select",
+    placeholder: plainText("Pick a category"),
+    options: CATEGORY_OPTIONS.map(staticOption),
+  };
+  if (initial) element.initial_option = staticOption(initial);
+  return {
+    type: "input",
+    block_id: BLOCK_IDS.CATEGORY,
+    label: plainText("Category"),
+    element,
+  };
+}
+
+function buildDateTypeBlock(currentValues?: Record<string, unknown>) {
+  // Prefer an explicit dateType when prior submission state set one. Fall
+  // back to inferring from the date / startDate / endDate shape so a Range-
+  // shaped row (date null, start != end) opens with the Range radio
+  // pre-selected instead of defaulting to Single and stranding the user
+  // with an empty date_picker.
+  const explicit = asString(currentValues?.dateType);
+  const inferred = explicit ? undefined : inferDateTypeFromArgs(currentValues);
+  const resolved = explicit ?? inferred;
+  const initial =
+    findOption(DATE_TYPE_OPTIONS, resolved) ?? DATE_TYPE_OPTIONS[0];
+  return {
+    type: "input",
+    block_id: BLOCK_IDS.DATE_TYPE,
+    label: plainText("Date type"),
+    // dispatch_action fires block_actions on toggle so the interactivity
+    // handler can rebuild the view via views.update. Single mode shows
+    // one picker, Range mode shows two. Slack has no native conditional
+    // visibility; views.update is the documented in-modal pattern.
+    dispatch_action: true,
+    element: {
+      type: "radio_buttons",
+      action_id: "date_type_radio",
+      options: DATE_TYPE_OPTIONS.map(staticOption),
+      initial_option: staticOption(initial),
+    },
+  };
+}
+
+function buildDateBlock(currentValues?: Record<string, unknown>) {
+  const initial = asString(currentValues?.date);
+  const element: Record<string, unknown> = {
+    type: "datepicker",
+    action_id: "date_picker",
+    placeholder: plainText("Pick a date"),
+  };
+  if (initial) element.initial_date = initial;
+  return {
+    type: "input",
+    block_id: BLOCK_IDS.DATE,
+    label: plainText("Date"),
+    element,
+  };
+}
+
+function buildStartDateBlock(currentValues?: Record<string, unknown>) {
+  const initial = asString(currentValues?.startDate);
+  const element: Record<string, unknown> = {
+    type: "datepicker",
+    action_id: "start_date_picker",
+    placeholder: plainText("Pick a start date"),
+  };
+  if (initial) element.initial_date = initial;
+  return {
+    type: "input",
+    block_id: BLOCK_IDS.START_DATE,
+    label: plainText("Start date"),
+    element,
+  };
+}
+
+function buildEndDateBlock(currentValues?: Record<string, unknown>) {
+  const initial = asString(currentValues?.endDate);
+  const element: Record<string, unknown> = {
+    type: "datepicker",
+    action_id: "end_date_picker",
+    placeholder: plainText("Pick an end date"),
+  };
+  if (initial) element.initial_date = initial;
+  return {
+    type: "input",
+    block_id: BLOCK_IDS.END_DATE,
+    label: plainText("End date"),
+    element,
+  };
+}
+
+function buildOwnerBlock(currentValues?: Record<string, unknown>) {
+  const initial = asString(currentValues?.owner);
+  const element: Record<string, unknown> = {
+    type: "external_select",
+    action_id: "owner_select",
+    placeholder: plainText("Pick an owner"),
+    min_query_length: 0,
+  };
+  if (initial) {
+    element.initial_option = staticOption({ value: initial, label: initial });
+  }
+  return {
+    type: "input",
+    block_id: BLOCK_IDS.OWNER,
+    label: plainText("Owner"),
+    element,
+  };
+}
+
+/**
+ * Resources repeater rows. Each row is a Role static_select + a Name
+ * external_select side by side. Repeater is capped at 10 rows; the row count
+ * is driven by `currentValues.resources` length (string array). Wave 8 may
+ * add an Add Row button via block_actions; Wave 4 just renders the static
+ * row count.
+ */
+function buildResourcesBlocks(
+  currentValues?: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  const list = asStringArray(currentValues?.resources) ?? [];
+  const rowCount = Math.min(Math.max(list.length, 1), RESOURCES_MAX_ROWS);
+  const blocks: Array<Record<string, unknown>> = [];
+
+  for (let i = 0; i < rowCount; i++) {
+    const entry = list[i];
+    // Entry shape "Role: Name" (e.g. "CW: Kathy"). Split for pre-fill.
+    let initialRole: string | undefined;
+    let initialName: string | undefined;
+    if (entry) {
+      const colon = entry.indexOf(":");
+      if (colon > 0) {
+        initialRole = entry.slice(0, colon).trim();
+        initialName = entry.slice(colon + 1).trim();
+      } else {
+        initialName = entry;
+      }
+    }
+    const roleOption = findOption(RESOURCE_ROLE_OPTIONS, initialRole);
+
+    const roleElement: Record<string, unknown> = {
+      type: "static_select",
+      action_id: `resources_role_${i}`,
+      placeholder: plainText("Role"),
+      options: RESOURCE_ROLE_OPTIONS.map(staticOption),
+    };
+    if (roleOption) roleElement.initial_option = staticOption(roleOption);
+
+    // Resources Name picker is an external_select (typeahead). Slack rejects
+    // a static_select with an empty options array, and the team-member list
+    // is dynamic + workspace-scoped, so the picker fetches options from the
+    // server's options-provider endpoint. Edit-mode pre-fill round-trips the
+    // raw name as label since we don't have the team-member id here.
+    const nameElement: Record<string, unknown> = {
+      type: "external_select",
+      action_id: `resources_name_${i}`,
+      placeholder: plainText("Name"),
+      min_query_length: 0,
+    };
+    if (initialName) {
+      nameElement.initial_option = staticOption({
+        value: initialName,
+        label: initialName,
+      });
+    }
+
+    blocks.push({
+      type: "section",
+      block_id: `resources_block_${i}`,
+      text: mrkdwn(i === 0 ? "*Resources*" : " "),
+      accessory: roleElement,
+    });
+    blocks.push({
+      type: "section",
+      block_id: `resources_name_block_${i}`,
+      text: mrkdwn(" "),
+      accessory: nameElement,
+    });
+  }
+  return blocks;
+}
+
+function buildNotesBlock(currentValues?: Record<string, unknown>) {
+  const initial = asString(currentValues?.notes);
+  const element: Record<string, unknown> = {
+    type: "plain_text_input",
+    action_id: "notes_input",
+    multiline: true,
+    placeholder: plainText("One sentence. Names actor + deliverable."),
+  };
+  if (initial) element.initial_value = initial;
+  return {
+    type: "input",
+    block_id: BLOCK_IDS.NOTES,
+    label: plainText("Notes"),
+    optional: true,
+    element,
+  };
+}
+
+function buildErrorBlock(errorBlock: { blockId: string; message: string }) {
+  return {
+    type: "section",
+    block_id: errorBlock.blockId,
+    text: mrkdwn(`:warning: ${errorBlock.message}`),
+  };
+}
+
+function buildMultiMatchHintBlock(message: string) {
+  // Section block with bold/emphasis. Slack mrkdwn uses *text* for bold.
+  return {
+    type: "section",
+    block_id: BLOCK_IDS.MULTI_MATCH_HINT,
+    text: mrkdwn(`*${message}*`),
+  };
+}
+
+function buildBaselineHintBlock(message: string) {
+  // Context block renders muted, smaller text - the right surface for an
+  // always-on advisory line above the picker.
+  return {
+    type: "context",
+    block_id: BLOCK_IDS.BASELINE_HINT,
+    elements: [mrkdwn(message)],
+  };
+}
+
+function buildCascadeDeadlineBlock() {
+  return {
+    type: "context",
+    block_id: BLOCK_IDS.CASCADE_DEADLINE_EXPLAINER,
+    elements: [mrkdwn(CASCADE_DEADLINE_EXPLAINER)],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Public builder
+// ---------------------------------------------------------------------------
+
+export function buildTaskModal(params: BuildTaskModalParams): SlackView {
+  const {
+    proposalId,
+    mode,
+    currentValues,
+    baselineHint,
+    multiMatchHint,
+    multiMatchCandidates,
+    errorBlock,
+  } = params;
+
+  // Resolve dateType from explicit field or by inferring from date / start /
+  // end shape. Without inference, a freshly-picked Range row (no explicit
+  // dateType yet) would render `date_block` instead of start/end pickers
+  // until the user toggled the radio.
+  const dateType = inferDateTypeFromArgs(currentValues) ?? "single";
+  const category = asString(currentValues?.category);
+
+  // Multi-match disambiguation phase: caller-side fuzzy match returned >1
+  // candidate AND the user has not yet picked one. The shared
+  // `hasPickedEntity` predicate (Wave 6 / Fix 6.2) keeps the per-kind picked
+  // check consistent with project + team-member builders.
+  const inDisambiguationPhase =
+    Array.isArray(multiMatchCandidates) &&
+    multiMatchCandidates.length > 0 &&
+    !hasPickedEntity(currentValues, "task");
+
+  const blocks: SlackView["blocks"] = [];
+
+  // 1. Error block (validator-injected, Phase 2/3) - always at the top so the
+  //    user sees validation feedback before any input field.
+  if (errorBlock) {
+    blocks.push(buildErrorBlock(errorBlock) as SlackView["blocks"][number]);
+  }
+
+  // 2. Multi-match hint (when caller-side fuzzy match returned >1 candidate).
+  //    Renders before the candidate picker so the user understands the
+  //    disambiguation step.
+  if (multiMatchHint) {
+    blocks.push(
+      buildMultiMatchHintBlock(multiMatchHint) as SlackView["blocks"][number],
+    );
+  }
+
+  // 3. Multi-match candidate picker (only in the disambiguation phase).
+  //    Positioned after the multi_match_hint_block and before the first input
+  //    block (client_block) so the user picks a row before touching the form.
+  if (inDisambiguationPhase) {
+    blocks.push(
+      buildMultiMatchCandidatePicker(
+        "task",
+        multiMatchCandidates as { id: string; label: string }[],
+      ) as SlackView["blocks"][number],
+    );
+  }
+
+  // 4. Client picker
+  blocks.push(buildClientBlock(currentValues) as SlackView["blocks"][number]);
+
+  // 5. Baseline hint (always-on when caller passes the locked constant)
+  if (baselineHint) {
+    blocks.push(buildBaselineHintBlock(baselineHint) as SlackView["blocks"][number]);
+  }
+  // Reference the locked constant so the import is load-bearing for callers
+  // who import this module's types.
+  void BASELINE_PARENT_PICKER_HINT;
+
+  // 6. Parent project picker (typeahead)
+  blocks.push(
+    buildParentProjectBlock(currentValues) as SlackView["blocks"][number],
+  );
+
+  // 6. Title
+  blocks.push(buildTitleBlock(currentValues) as SlackView["blocks"][number]);
+
+  // 7. Category
+  blocks.push(buildCategoryBlock(currentValues) as SlackView["blocks"][number]);
+
+  // 8. Date type radio (drives picker mode via dispatch_action → views.update).
+  // Suppressed during multi-match disambiguation: Slack's radio_buttons input
+  // element caches its `initial_option` from the first render and ignores
+  // subsequent `views.update` payloads. If we render the radio with a
+  // placeholder Single default before the user picks a row, a Range-shaped
+  // row's later update is silently overridden. Skipping the block during
+  // disambiguation means the radio appears for the first time after pick,
+  // so Slack honors the correct initial_option fresh.
+  if (!inDisambiguationPhase) {
+    blocks.push(buildDateTypeBlock(currentValues) as SlackView["blocks"][number]);
+  }
+
+  // 9. Date pickers. Single shows one, Range shows two. Validator + submit
+  // handler mirror Single's date to both startDate AND endDate so every task
+  // row has both dates populated (data integrity).
+  if (dateType === "range") {
+    blocks.push(buildStartDateBlock(currentValues) as SlackView["blocks"][number]);
+    blocks.push(buildEndDateBlock(currentValues) as SlackView["blocks"][number]);
+  } else {
+    blocks.push(buildDateBlock(currentValues) as SlackView["blocks"][number]);
+  }
+
+  // 11. Owner
+  blocks.push(buildOwnerBlock(currentValues) as SlackView["blocks"][number]);
+
+  // 12. Resources rows (max 10)
+  for (const b of buildResourcesBlocks(currentValues)) {
+    blocks.push(b as SlackView["blocks"][number]);
+  }
+
+  // 13. Notes
+  blocks.push(buildNotesBlock(currentValues) as SlackView["blocks"][number]);
+
+  // 14. Cascade-deadline explainer (only when category=deadline)
+  if (category === "deadline") {
+    blocks.push(buildCascadeDeadlineBlock() as SlackView["blocks"][number]);
+  }
+
+  // private_metadata carries clientId across renders so the Parent picker's
+  // options-provider can cascade off it without relying on state.values.
+  // Edit-mode flows prefill currentValues.clientId so the cascade works on
+  // first interaction; create-mode opens with no clientId and gains it after
+  // the client_select cascade fires.
+  const meta: Record<string, unknown> = { proposalId };
+  const clientIdForMeta = asString(currentValues?.clientId);
+  if (clientIdForMeta) meta.clientId = clientIdForMeta;
+
+  return {
+    type: "modal",
+    callback_id: mode === "create" ? "runway_new_task" : "runway_edit_task",
+    private_metadata: JSON.stringify(meta),
+    title: plainText(header(mode, currentValues, inDisambiguationPhase)),
+    submit: plainText(truncate("Save", SLACK_TITLE_MAX)),
+    close: plainText(truncate("Cancel", SLACK_TITLE_MAX)),
+    blocks,
+    notify_on_close: true,
+  };
+}

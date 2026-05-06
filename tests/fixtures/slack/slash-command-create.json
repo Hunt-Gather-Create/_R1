@@ -1,0 +1,17 @@
+{
+  "_format": "form-urlencoded-parsed",
+  "_description": "Slack slash commands arrive as application/x-www-form-urlencoded. This fixture stores the parsed key/value object — tests that need the raw wire body can run new URLSearchParams(Object.entries(this)).toString() at runtime.",
+  "token": "REDACTED_TOKEN",
+  "team_id": "T_TEST_001",
+  "team_domain": "test-workspace",
+  "channel_id": "C_TEST_001",
+  "channel_name": "directmessage",
+  "user_id": "U_TEST_001",
+  "user_name": "test.user",
+  "command": "/runway-new-task",
+  "text": "",
+  "api_app_id": "A_TEST_APPID",
+  "is_enterprise_install": "false",
+  "response_url": "https://hooks.slack.com/commands/T_TEST_001/0000000000000/REDACTED_RESPONSE_URL",
+  "trigger_id": "123456789.987654321.deadbeefdeadbeef"
+}

@@ -26,6 +26,7 @@ import {
   buildConfirmationRules,
   buildToneRules,
   buildCapabilityBoundaries,
+  buildModalInteractionRules,
 } from "./bot-context-behaviors";
 
 /**
@@ -93,6 +94,7 @@ Pipeline items (unsigned SOWs / new business) use: scoping, drafting, sow-sent, 
     buildGlossary(),
     buildRoleBehavior(),
     buildProactiveBehavior(),
+    buildModalInteractionRules(),
     buildConfirmationRules(),
     buildToneRules(),
     buildCapabilityBoundaries(),

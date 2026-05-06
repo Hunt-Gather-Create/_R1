@@ -14,6 +14,7 @@ Quick reference for working with this codebase. For commands and architecture ov
 | [UI Components](./ui-components.md) | shadcn/ui primitives, styling patterns, AI components |
 | [Runway System](./runway.md) | Runway triage board: DB, operations, MCP server, Slack bot, Inngest |
 | [Runway MCP Tools](./mcp-runway-tools.md) | Tool-by-tool reference for the Runway MCP server (params, return shapes, examples) |
+| [Slack Modal CRUD](./slack-modal.md) | Slash-command modal pipeline (schema, validator, Inngest consumer, builders) |
 
 ## External Resources
 

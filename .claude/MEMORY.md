@@ -23,6 +23,7 @@ Shared learnings and context that persist across sessions for all contributors.
 - `proxy.ts` is the WorkOS auth middleware — add unauthenticated API paths there, not in next.config
 - Runway scripts need env vars exported from `.env.local` (drizzle-kit and tsx don't auto-load it)
 - MCP SDK: use `WebStandardStreamableHTTPServerTransport` in Next.js routes, not the Node.js adapter
+- Slack input-block elements (radio_buttons, checkboxes, plain_text_input inside an `input` block) cache their `initial_option` / `initial_options` / `initial_value` from the FIRST render of a given `block_id` and silently ignore subsequent `views.update` payloads that try to change the initial state. Workaround: gate the block on the disambiguation phase so it appears for the FIRST TIME after the user picks (Bug X1 fix at task.ts `date_type_block`); or rotate the `block_id` to force a fresh render. See `docs/plans/slack-modal-bug-x2-retainer-edit-fix.md` for the lead hypothesis on the open Bug X2 retainer-toggle case.
 
 ## Decisions
 

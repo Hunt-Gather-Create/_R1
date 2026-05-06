@@ -126,6 +126,12 @@ export const updates = sqliteTable("updates", {
   // v4 convention (2026-04-21): cascade audit linkage (nullable self-reference, no FK constraint)
   triggeredByUpdateId: text("triggered_by_update_id"),
   slackMessageTs: text("slack_message_ts"),
+  // Slack Modal Wave 1 (2026-04-30): audit-source taxonomy. Holds AuditSource
+  // TS-union values: "slack-modal-bot" | "slack-modal-slash" | "mcp" |
+  // "bot-direct" | "migration" | "cli" | null. Pre-modal-era rows remain
+  // NULL by convention; Wave 0d source-tagging sweep eliminates NULLs from
+  // new writes.
+  source: text("source"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),
@@ -141,12 +147,64 @@ export const teamMembers = sqliteTable("team_members", {
   nicknames: text("nicknames"), // JSON array of strings, e.g. ["Allie"]
   title: text("title"),
   slackUserId: text("slack_user_id").unique(),
-  roleCategory: text("role_category"), // creative, dev, am, pm, leadership, community, contractor
+  roleCategory: text("role_category"), // creative, dev, am, pm, leadership, community, contractor, strategy
   accountsLed: text("accounts_led"), // JSON array of client slugs
   channelPurpose: text("channel_purpose"),
   isActive: integer("is_active").notNull().default(1),
   updatedAt: text("updated_at"),
 });
+
+// ============================================================
+// Bot Modal Proposals — Slack Modal staging table (Wave 1)
+// ============================================================
+// Captures pending modal proposals from BOTH bot LLM intercept and slash
+// commands, covering CREATE and EDIT flows (per v7 §C2 — renamed from v6
+// `bot_create_proposals`). One row per intercepted tool call. Rows are
+// deleted 24h after reaching a terminal status by the Wave 12 cron.
+//
+// Lifecycle: pending -> submitted | cancelled | expired | failed.
+//
+// `kind` discriminates create vs edit. For edits, `target_entity_id` and
+// `target_entity_type` point at the row being edited. For creates these are
+// null. `intent_group_id` groups multiple proposals from one user message
+// (multi-detect chaining); `parent_proposal_id` self-references the parent
+// project proposal when child task proposals are staged before the parent
+// is saved (`pending_project_name` carries the human-readable hint until
+// `resolved_project_id` is filled at parent submit time).
+export const botModalProposals = sqliteTable("bot_modal_proposals", {
+  id: text("id").primaryKey(),
+  userSlackId: text("user_slack_id").notNull(),
+  channelId: text("channel_id").notNull(),
+  threadTs: text("thread_ts"),
+  // tool_name: create_project | create_week_item | create_team_member |
+  //            update_project | update_week_item | update_team_member
+  toolName: text("tool_name").notNull(),
+  kind: text("kind").notNull(), // 'create' | 'edit'
+  targetEntityId: text("target_entity_id"), // null for create
+  targetEntityType: text("target_entity_type"), // 'week_item' | 'project' | 'team_member' | null
+  args: text("args").notNull(), // JSON of LLM-extracted args (incl. isRetainer for create_project; currentValues for edit)
+  conversationRef: text("conversation_ref"), // pointer to chat context
+  parentProposalId: text("parent_proposal_id"), // FK to self; child task -> parent project
+  intentGroupId: text("intent_group_id"), // groups proposals from one user message
+  pendingProjectName: text("pending_project_name"), // staged parent project name; nullable
+  postedMessageTs: text("posted_message_ts"), // ts of bot's button-bearing reply (for chat.update)
+  postedMessageChannel: text("posted_message_channel"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+  // status: pending | submitted | cancelled | expired | failed
+  status: text("status").notNull(),
+  statusReason: text("status_reason"), // error detail when status = 'failed'
+  resolvedProjectId: text("resolved_project_id"), // filled at submit time when pending_project_name resolves
+}, (table) => [
+  // Cron sweeper: pending past expires_at -> expired
+  index("idx_bot_modal_proposals_status_expires_at").on(table.status, table.expiresAt),
+  // Per-user history (future rate-limit work)
+  index("idx_bot_modal_proposals_user_slack_id_created_at").on(table.userSlackId, table.createdAt),
+  // Multi-detect sibling lookup on parent submit (drives chat.update)
+  index("idx_bot_modal_proposals_intent_group_id_status").on(table.intentGroupId, table.status),
+  // Sibling task lookup post-parent-submit
+  index("idx_bot_modal_proposals_parent_proposal_id_status").on(table.parentProposalId, table.status),
+]);
 
 // ============================================================
 // View Preferences — per-scope UI state persistence

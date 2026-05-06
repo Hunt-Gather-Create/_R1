@@ -25,6 +25,14 @@ import {
   validateIsoDateShape,
   validateWeekItemStatus,
   validateWeekItemCategory,
+  validateStatusCategoryCompatibility,
+  validateRoleTagOnResources,
+  validateStartEndDateOrder,
+  validateNotesMaxLength,
+} from "./operations-utils";
+import type {
+  AuditEvent,
+  AuditSource,
 } from "./operations-utils";
 import type {
   MutationResponse,
@@ -174,6 +182,13 @@ export interface CreateWeekItemParams {
   /** JSON-serialized array of week_item ids this item is blocked by, or null. */
   blockedBy?: string;
   updatedBy: string;
+  /**
+   * Wave 0b §A4: optional callback fired on successful insert. Wave 14
+   * intercept-miss alert subscribes here. Pre-modal-era callers omit it.
+   */
+  auditObserver?: (event: AuditEvent) => void;
+  /** Wave 0b §"Wave 0b" #7: write provenance. Pre-modal-era callers pass null/omit. */
+  source?: AuditSource;
 }
 
 export async function createWeekItem(
@@ -195,6 +210,8 @@ export async function createWeekItem(
     endDate,
     blockedBy,
     updatedBy,
+    auditObserver,
+    source,
   } = params;
 
   // Helper-level value validation. batch_apply routes through here directly
@@ -220,8 +237,38 @@ export async function createWeekItem(
     }
   }
 
-  // Auto-calculate weekOf from date if not provided
-  const weekOf = rawWeekOf ?? (date ? getMonday(date) : undefined);
+  // Wave 0b validators (pre-plan §A1) — every write path hits this gate.
+  // Status / category compatibility (7-rule matrix). Empty inputs are
+  // skipped — `validateStatusCategoryCompatibility` only fires on real
+  // pairings, not on undefined defaults.
+  if (status !== undefined && category !== undefined) {
+    const sccResult = validateStatusCategoryCompatibility(status, category);
+    if (!sccResult.ok) return { ok: false, error: sccResult.error };
+  }
+
+  // Role-tag on resources. Rejects bare names like "Kathy".
+  if (resources !== undefined && resources !== null) {
+    const r = validateRoleTagOnResources(resources);
+    if (!r.ok) return { ok: false, error: r.error };
+  }
+
+  // startDate < endDate ordering (parity with addProject contract dates).
+  const sed = validateStartEndDateOrder(startDate ?? null, endDate ?? null);
+  if (!sed.ok) return { ok: false, error: sed.error };
+
+  // L2 notes max length.
+  if (notes !== undefined && notes !== null) {
+    const n = validateNotesMaxLength(notes, "L2");
+    if (!n.ok) return { ok: false, error: n.error };
+  }
+
+  // Auto-calculate weekOf from date or, for Range submissions that pass only
+  // startDate, from startDate. Slack modal Range mode only supplies start/end
+  // dates without a single anchor `date`, so this fallback prevents silent
+  // write failure.
+  const weekOf =
+    rawWeekOf ??
+    (date ? getMonday(date) : (startDate ? getMonday(startDate) : undefined));
   if (!weekOf) {
     return { ok: false, error: "Provide weekOf or date to determine which week this item belongs to." };
   }
@@ -312,7 +359,18 @@ export async function createWeekItem(
     updateType: "new-week-item",
     newValue: title,
     summary: `New week item${clientName ? ` (${clientName})` : ""}: ${title}`,
+    source: source ?? null,
   });
+
+  // Wave 0b §A4: emit AuditEvent for downstream observers.
+  if (auditObserver) {
+    auditObserver({
+      source: source ?? null,
+      entityId: itemId,
+      entityType: "week_item",
+      updatedBy,
+    });
+  }
 
   return {
     ok: true,
@@ -335,12 +393,16 @@ export interface UpdateWeekItemFieldParams {
    */
   newValue: string | null;
   updatedBy: string;
+  /** Wave 0b §A4: optional observer fired after successful update. */
+  auditObserver?: (event: AuditEvent) => void;
+  /** Wave 0b §"Wave 0b" #7: write provenance. */
+  source?: AuditSource;
 }
 
 export async function updateWeekItemField(
   params: UpdateWeekItemFieldParams
 ): Promise<MutationResponse<UpdateWeekItemFieldData>> {
-  const { weekOf, weekItemTitle, field, newValue, updatedBy } = params;
+  const { weekOf, weekItemTitle, field, newValue, updatedBy, auditObserver, source } = params;
   const db = getRunwayDb();
 
   const fieldResult = validateAndResolveField(field, WEEK_ITEM_FIELDS, WEEK_ITEM_FIELD_TO_COLUMN);
@@ -374,6 +436,44 @@ export async function updateWeekItemField(
   ) {
     const v = validateIsoDateShape(newValue, typedField);
     if (!v.ok) return { ok: false, error: v.error };
+  }
+
+  // Wave 0b validators (pre-plan §A1) — fire on relevant field updates.
+  // Status/category compatibility: re-check pairing using the new value plus
+  // the existing OTHER side from `item`. Single-field writes can violate the
+  // matrix even when individually valid (e.g. category=on-hold flipping while
+  // status=in-production stays).
+  if (typedField === "status" && newValue !== null) {
+    const otherCategory = (item as { category?: string | null }).category ?? "";
+    const sccResult = validateStatusCategoryCompatibility(newValue, otherCategory);
+    if (!sccResult.ok) return { ok: false, error: sccResult.error };
+  }
+  if (typedField === "category" && newValue !== null) {
+    const otherStatus = (item as { status?: string | null }).status ?? "";
+    const sccResult = validateStatusCategoryCompatibility(otherStatus, newValue);
+    if (!sccResult.ok) return { ok: false, error: sccResult.error };
+  }
+  // Role-tag on resources writes.
+  if (typedField === "resources" && newValue !== null) {
+    const r = validateRoleTagOnResources(newValue);
+    if (!r.ok) return { ok: false, error: r.error };
+  }
+  // startDate < endDate parity: when updating one, compare against the OTHER
+  // already on the row. Either side null skips.
+  if (typedField === "startDate" && newValue !== null) {
+    const otherEnd = (item as { endDate?: string | null }).endDate ?? null;
+    const sed = validateStartEndDateOrder(newValue, otherEnd);
+    if (!sed.ok) return { ok: false, error: sed.error };
+  }
+  if (typedField === "endDate" && newValue !== null) {
+    const otherStart = (item as { startDate?: string | null }).startDate ?? null;
+    const sed = validateStartEndDateOrder(otherStart, newValue);
+    if (!sed.ok) return { ok: false, error: sed.error };
+  }
+  // L2 notes max length.
+  if (typedField === "notes" && newValue !== null) {
+    const n = validateNotesMaxLength(newValue, "L2");
+    if (!n.ok) return { ok: false, error: n.error };
   }
 
   // v4 (Chunk 5): normalize resources on write so storage stays canonical.
@@ -484,6 +584,7 @@ export async function updateWeekItemField(
     newValue: effectiveNewValue,
     summary: `Week item '${item.title}': ${field} changed from "${previousValue}" to "${summaryNewValue}"`,
     metadata: JSON.stringify({ field }),
+    source: source ?? null,
   });
 
   // Populate reverseCascadeDetail only when the cascade fired AND we
@@ -500,6 +601,16 @@ export async function updateWeekItemField(
           auditId,
         }
       : null;
+
+  // Wave 0b §A4: emit AuditEvent for downstream observers.
+  if (auditObserver) {
+    auditObserver({
+      source: source ?? null,
+      entityId: item.id,
+      entityType: "week_item",
+      updatedBy,
+    });
+  }
 
   return {
     ok: true,

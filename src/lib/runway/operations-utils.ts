@@ -455,6 +455,10 @@ export interface AuditRecordParams {
   batchId?: string | null;
   /** v4: id of the parent update that triggered this cascade-generated record. */
   triggeredByUpdateId?: string | null;
+  /** Wave 0b §"Wave 0b" #7: write provenance tag. Persisted to updates.source
+   *  for audit lineage. Pre-modal-era callers omit this; new modal + slash
+   *  paths thread it through. NULL when omitted. */
+  source?: AuditSource | null;
 }
 
 /** Insert an audit record into the updates table. Returns the inserted row's id. */
@@ -474,6 +478,7 @@ export async function insertAuditRecord(params: AuditRecordParams): Promise<stri
     metadata: params.metadata,
     batchId: params.batchId ?? _currentBatchId ?? null,
     triggeredByUpdateId: params.triggeredByUpdateId ?? null,
+    source: params.source ?? null,
   });
   return id;
 }
@@ -981,6 +986,326 @@ export function validateWeekItemCategory(
   }
   return { ok: true, value: value as WeekItemCategory };
 }
+
+// ── Wave 0b shared validators (modal + MCP + bot + migration) ─────
+//
+// These validators harden every write path (modal Phase 1, MCP create/update,
+// bot direct-fallback, migration scripts) so empty strings, malformed dates,
+// status/category combinations that crashed Soundly's dashboard, and bare
+// resource entries without role tags can no longer slip through. Validators
+// are wired INSIDE the operations-layer write helpers per pre-plan §A1, so
+// every caller (no matter the entry surface) hits the same gate.
+
+/**
+ * Normalize empty string / null / undefined to null. Used at the write boundary
+ * to coerce blank modal inputs into proper SQL NULLs (Soundly's NaN/NaN render
+ * on 2026-04-29 traced back to `endDate=""` reaching the database).
+ */
+export function normalizeEmptyToNull(
+  value: string | null | undefined,
+): string | null {
+  if (value === undefined || value === null) return null;
+  if (value === "") return null;
+  return value;
+}
+
+/**
+ * Allowed values used to scope the status × category matrix to L1 (projects).
+ * L2 (week items) uses different status/category enums (`WEEK_ITEM_STATUSES`,
+ * `WEEK_ITEM_CATEGORIES`) — week-item categories like `review` / `delivery` /
+ * `deadline` overlap zero with project categories like `active` / `pipeline`,
+ * so the L1 matrix would over-fire if applied unconditionally to L2.
+ */
+const L1_PROJECT_STATUSES = new Set([
+  "in-production",
+  "awaiting-client",
+  "not-started",
+  "blocked",
+  "on-hold",
+  "completed",
+]);
+const L1_PROJECT_CATEGORIES = new Set([
+  "active",
+  "awaiting-client",
+  "pipeline",
+  "on-hold",
+  "completed",
+]);
+
+/**
+ * Status × category compatibility matrix (pre-plan §"Wave 0b" 7 rules) —
+ * L1 (project) scope:
+ *  - HARD REJECT: not-started + on-hold
+ *  - HARD REJECT: completed + active
+ *  - HARD REJECT: in-production + on-hold
+ *  - HARD REJECT: awaiting-client + pipeline
+ *  - HARD REJECT: on-hold + active
+ *  - HARD REJECT: completed + (any non-completed L1 category)
+ *  - SOFT WARN:   blocked + active (legitimate edge case — surface as warning,
+ *                 do NOT reject)
+ *
+ * Skips silently when either side is empty / null OR when neither value is in
+ * the L1 enum sets (L2 calls pass `review` / `delivery` etc. that should not
+ * trip the L1 matrix).
+ *
+ * Returns `{ ok: true }` when permissible, `{ ok: false, error }` for hard
+ * rejects, and `{ ok: false, error, soft: true }` for the blocked + active
+ * soft-warn case (callers may surface the error string as a non-blocking
+ * warning rather than refusing the write).
+ */
+export function validateStatusCategoryCompatibility(
+  status: string,
+  category: string,
+): { ok: true } | { ok: false; error: string; soft?: boolean } {
+  // Empty inputs always pass — nothing to compare.
+  if (!status || !category) return { ok: true };
+  // L1-scope guard: only apply when BOTH values are L1 enum members. L2
+  // (week-item) status/category pairings use a different enum and the
+  // pre-plan matrix does not address them.
+  if (!L1_PROJECT_STATUSES.has(status) || !L1_PROJECT_CATEGORIES.has(category)) {
+    return { ok: true };
+  }
+  // Hard reject pairs first. `completed + (non-completed category)` is checked
+  // after the explicit pairs so a `completed + active` write surfaces the more
+  // specific error string.
+  if (status === "not-started" && category === "on-hold") {
+    return {
+      ok: false,
+      error: `Status 'not-started' is incompatible with category 'on-hold'.`,
+    };
+  }
+  if (status === "completed" && category === "active") {
+    return {
+      ok: false,
+      error: `Status 'completed' is incompatible with category 'active'.`,
+    };
+  }
+  if (status === "in-production" && category === "on-hold") {
+    return {
+      ok: false,
+      error: `Status 'in-production' is incompatible with category 'on-hold'.`,
+    };
+  }
+  if (status === "awaiting-client" && category === "pipeline") {
+    return {
+      ok: false,
+      error: `Status 'awaiting-client' is incompatible with category 'pipeline'.`,
+    };
+  }
+  if (status === "on-hold" && category === "active") {
+    return {
+      ok: false,
+      error: `Status 'on-hold' is incompatible with category 'active'.`,
+    };
+  }
+  // `completed + non-completed-category` catch-all. Doesn't fire for
+  // `completed + completed` (terminal-on-terminal is fine).
+  if (status === "completed" && category !== "completed") {
+    return {
+      ok: false,
+      error: `Status 'completed' requires category 'completed'; got '${category}'.`,
+    };
+  }
+  // Soft-warn: blocked + active is a real edge case (work resumed but a
+  // dependency still blocks a single L2). Don't reject — surface to caller.
+  if (status === "blocked" && category === "active") {
+    return {
+      ok: false,
+      soft: true,
+      error: `Status 'blocked' on category 'active' is unusual — confirm this is intended.`,
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Role-tag-required validator on resources strings. Rejects bare names like
+ * `"Kathy"` or `"Lane, Leslie"`. Accepts proper tagged form like `"CW: Kathy"`
+ * or `"CD: Lane -> Dev: Leslie"`. Any string is split on `,` and `->` (and
+ * Unicode arrow variants); every non-empty segment must contain a `:` with a
+ * non-empty role prefix. Empty / null input passes (clears handled upstream).
+ *
+ * Reuses `parseResources` for the splitting logic so the contract for "what
+ * counts as a resource entry" stays consistent with the storage layer.
+ */
+export function validateRoleTagOnResources(
+  resources: string,
+): { ok: true } | { ok: false; error: string } {
+  if (!resources) return { ok: true };
+  const trimmed = resources.trim();
+  if (!trimmed) return { ok: true };
+  const entries = parseResources(trimmed);
+  if (entries.length === 0) return { ok: true };
+  const untagged = entries
+    .filter((e) => !e.role || e.role.trim() === "")
+    .map((e) => e.person);
+  if (untagged.length > 0) {
+    return {
+      ok: false,
+      error: `Resources must include role prefix (e.g. 'CW: Kathy'). Untagged: ${untagged.join(", ")}.`,
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * `startDate < endDate` ordering invariant. When BOTH are non-null/non-empty,
+ * requires strict less-than (single-day spans should clear endDate, not set it
+ * equal to start). Either side null (or empty) skips the check — common case
+ * is "single date set, end derived later".
+ *
+ * Mirrors the existing `contractStart < contractEnd` rule already enforced in
+ * `addProject` and `updateProjectField`.
+ */
+export function validateStartEndDateOrder(
+  startDate: string | null | undefined,
+  endDate: string | null | undefined,
+): { ok: true } | { ok: false; error: string } {
+  const s = normalizeEmptyToNull(startDate ?? null);
+  const e = normalizeEmptyToNull(endDate ?? null);
+  if (s === null || e === null) return { ok: true };
+  // Equality is valid. Single-mode week_items mirror `date` into both
+  // startDate and endDate columns so every row carries both populated,
+  // and a single-day range is a legitimate span anywhere this rule fires.
+  // Only reject when start strictly exceeds end.
+  if (s > e) {
+    return {
+      ok: false,
+      error: `startDate '${s}' must be <= endDate '${e}'.`,
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Past-date + non-terminal status soft-warn. Fires when `date < today` AND
+ * status is non-terminal (anything other than `completed` / `canceled`). This
+ * is a soft warning, not a hard reject — there are legitimate cases where an
+ * operator backfills a past task that's still in-flight (recovery, late entry,
+ * reassignment). Returns `{ ok: true, soft: <message> }` for callers to
+ * surface as a warning, or `{ ok: true }` when the date is today or future or
+ * status is terminal.
+ *
+ * `date` is required to be a valid ISO YYYY-MM-DD; callers must run
+ * `validateIsoDateShape` first or pass a known-good string. Returns `{ ok:
+ * false }` ONLY when the date string is malformed (invariant the caller
+ * usually rules out before calling this).
+ */
+export function validatePastDateNonTerminal(
+  date: string,
+  status: string,
+): { ok: true; soft?: string } | { ok: false; error: string } {
+  if (!date) return { ok: true };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return { ok: false, error: `Date '${date}' must be ISO YYYY-MM-DD.` };
+  }
+  // Compare via lexicographic ISO ordering — same property as < on Dates and
+  // doesn't require local TZ math.
+  const today = new Date().toISOString().slice(0, 10);
+  if (date >= today) return { ok: true };
+  const TERMINAL = new Set(["completed", "canceled"]);
+  if (TERMINAL.has(status)) return { ok: true };
+  return {
+    ok: true,
+    soft: `Date '${date}' is in the past and status '${status || "(none)"}' is non-terminal — confirm this is intended.`,
+  };
+}
+
+/**
+ * Notes maxLength enforcement. L2 (week_item) notes capped at NOTES_MAX_LEN_L2,
+ * L1 (project) notes capped at NOTES_MAX_LEN_L1. Slack modal description blocks
+ * have practical limits (~3000 char ceiling but UX degrades long before that),
+ * so we cap conservatively to keep narrative concise. Empty / null input is
+ * always valid.
+ */
+export const NOTES_MAX_LEN_L2 = 280;
+export const NOTES_MAX_LEN_L1 = 500;
+
+export function validateNotesMaxLength(
+  notes: string,
+  kind: "L1" | "L2",
+): { ok: true } | { ok: false; error: string } {
+  if (!notes) return { ok: true };
+  const max = kind === "L1" ? NOTES_MAX_LEN_L1 : NOTES_MAX_LEN_L2;
+  if (notes.length > max) {
+    return {
+      ok: false,
+      error: `${kind} notes max length is ${max} characters; got ${notes.length}.`,
+    };
+  }
+  return { ok: true };
+}
+
+// ── AuditSource union + AuditEvent + updatedBy formatter ──────────
+//
+// Per pre-plan §A4 + §"Wave 0b" #7-8: the `updates.source` column locks to a
+// TS union so future writers can't drift to ad-hoc strings. Pre-modal-era
+// rows pass `null` source — that's still a valid AuditSource value. The
+// `auditObserver` callback wires Wave 14's intercept-miss alert without
+// inline grep. `formatModalUpdatedBy` renders the canonical Slack-modal
+// updatedBy format `"slack:UID:modal"` (or `"slack:UID:modal-edit"`).
+
+export type AuditSource =
+  | "slack-modal-bot"
+  | "slack-modal-slash"
+  | "mcp"
+  | "bot-direct"
+  | "migration"
+  | "cli"
+  | null;
+
+export interface AuditEvent {
+  source: AuditSource;
+  toolName?: string;
+  conversationRef?: string;
+  entityId?: string;
+  entityType?: "project" | "week_item" | "team_member";
+  updatedBy: string;
+}
+
+/**
+ * Format the canonical Slack-modal updatedBy string used by every modal write
+ * path. `surface` is "bot" (Pattern A button-flow) or "slash" (Pattern B
+ * direct slash command); `mode` is "create" by default or "edit" for edit-flow
+ * writes. Emits `slack:UID:modal` or `slack:UID:modal-edit`. The `surface`
+ * arg is captured so future sweeps can disambiguate by entry path even though
+ * the user-facing format collapses both into the same string.
+ */
+export function formatModalUpdatedBy(
+  slackUserId: string,
+  surface: "bot" | "slash",
+  mode: "create" | "edit" = "create",
+): string {
+  // surface is intentionally not interpolated — pre-plan §"updatedBy format
+  // spec" pins the user-facing string at slack:UID:modal[-edit]. The arg is
+  // present so tooling that needs the surface (e.g. metrics) can pass it
+  // alongside without the formatter signature drifting later.
+  void surface;
+  const suffix = mode === "edit" ? "modal-edit" : "modal";
+  return `slack:${slackUserId}:${suffix}`;
+}
+
+// ── Modal intercept allowlist (lint guard) ────────────────────────
+//
+// Every `create_*` tool exported by `bot-tools.ts` must either be listed in
+// `INTERCEPT_ALLOWLIST` (modal-routed) or in `INTERCEPT_EXCLUDED` (deliberate
+// opt-out). The lint-guard test
+// (`src/lib/runway/intercept-allowlist.test.ts`) iterates the bot tool exports
+// and asserts coverage. This stops a future `create_foo` tool from silently
+// bypassing the modal intercept layer.
+
+export const INTERCEPT_ALLOWLIST = [
+  "create_project",
+  "create_week_item",
+  "create_team_member",
+] as const;
+
+/**
+ * Tools that are intentionally NOT modal-routed. Pipeline items live in a
+ * separate surface (Sales pipeline view) with its own UX — modal intercept
+ * doesn't apply.
+ */
+export const INTERCEPT_EXCLUDED = ["create_pipeline_item"] as const;
 
 // ── parentProjectId validators ────────────────────────────
 

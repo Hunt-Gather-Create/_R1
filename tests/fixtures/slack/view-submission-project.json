@@ -1,0 +1,132 @@
+{
+  "type": "view_submission",
+  "team": {
+    "id": "T_TEST_001",
+    "domain": "test-workspace"
+  },
+  "user": {
+    "id": "U_TEST_001",
+    "username": "test.user",
+    "name": "test.user",
+    "team_id": "T_TEST_001"
+  },
+  "api_app_id": "A_TEST_APPID",
+  "token": "REDACTED_TOKEN",
+  "trigger_id": "123456789.987654321.deadbeefdeadbeef",
+  "team_id": "T_TEST_001",
+  "user_id": "U_TEST_001",
+  "view": {
+    "id": "V_TEST_001",
+    "team_id": "T_TEST_001",
+    "type": "modal",
+    "callback_id": "runway_new_project",
+    "private_metadata": "{\"proposalId\":\"prop_01JKVQX9PROJECTPRP00ABCDEF\"}",
+    "external_id": "",
+    "app_id": "A_TEST_APPID",
+    "bot_id": "B_TEST_BOTID",
+    "title": {
+      "type": "plain_text",
+      "text": "Review and save",
+      "emoji": true
+    },
+    "submit": {
+      "type": "plain_text",
+      "text": "Save",
+      "emoji": true
+    },
+    "close": {
+      "type": "plain_text",
+      "text": "Cancel",
+      "emoji": true
+    },
+    "blocks": [],
+    "state": {
+      "values": {
+        "name_block": {
+          "name_input": {
+            "type": "plain_text_input",
+            "value": "AG1 Spring Brand Refresh"
+          }
+        },
+        "client_block": {
+          "client_select": {
+            "type": "external_select",
+            "selected_option": {
+              "text": { "type": "plain_text", "text": "AG1", "emoji": true },
+              "value": "client_01JKCLIENTAG10001ABCDEFGHJ"
+            }
+          }
+        },
+        "is_retainer_block": {
+          "is_retainer_checkbox": {
+            "type": "checkboxes",
+            "selected_options": []
+          }
+        },
+        "engagement_type_block": {
+          "engagement_type_radio": {
+            "type": "radio_buttons",
+            "selected_option": {
+              "text": { "type": "plain_text", "text": "Project", "emoji": true },
+              "value": "project"
+            }
+          }
+        },
+        "status_block": {
+          "status_select": {
+            "type": "static_select",
+            "selected_option": {
+              "text": { "type": "plain_text", "text": "Scheduled", "emoji": true },
+              "value": "scheduled"
+            }
+          }
+        },
+        "start_date_block": {
+          "start_date_picker": {
+            "type": "datepicker",
+            "selected_date": "2026-05-01"
+          }
+        },
+        "end_date_block": {
+          "end_date_picker": {
+            "type": "datepicker",
+            "selected_date": "2026-06-15"
+          }
+        },
+        "owner_block": {
+          "owner_select": {
+            "type": "external_select",
+            "selected_option": {
+              "text": { "type": "plain_text", "text": "AM: Allison", "emoji": true },
+              "value": "tm_01JKTMALLISON001ABCDEFGHJK"
+            }
+          }
+        },
+        "team_block_0": {
+          "team_select_0": {
+            "type": "external_select",
+            "selected_option": {
+              "text": { "type": "plain_text", "text": "CD: Jason", "emoji": true },
+              "value": "tm_01JKTMJASON0001ABCDEFGHJK"
+            }
+          }
+        },
+        "notes_block": {
+          "notes_input": {
+            "type": "plain_text_input",
+            "value": ""
+          }
+        }
+      }
+    },
+    "hash": "1714492810.abcdef00",
+    "clear_on_close": false,
+    "notify_on_close": true,
+    "submit_disabled": false,
+    "root_view_id": "V_TEST_001",
+    "previous_view_id": null
+  },
+  "response_urls": [],
+  "is_enterprise_install": false,
+  "enterprise": null
+}

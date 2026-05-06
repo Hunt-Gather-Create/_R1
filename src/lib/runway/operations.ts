@@ -69,6 +69,18 @@ export {
   validateIsoDateShape,
   validateWeekItemStatus,
   validateWeekItemCategory,
+  // Wave 0b validators
+  normalizeEmptyToNull,
+  validateStatusCategoryCompatibility,
+  validateRoleTagOnResources,
+  validateStartEndDateOrder,
+  validatePastDateNonTerminal,
+  validateNotesMaxLength,
+  formatModalUpdatedBy,
+  NOTES_MAX_LEN_L1,
+  NOTES_MAX_LEN_L2,
+  INTERCEPT_ALLOWLIST,
+  INTERCEPT_EXCLUDED,
 } from "./operations-utils";
 
 export type {
@@ -90,6 +102,9 @@ export type {
   WeekItemStatusValidationResult,
   WeekItemCategory,
   WeekItemCategoryValidationResult,
+  // Wave 0b types
+  AuditSource,
+  AuditEvent,
 } from "./operations-utils";
 
 // ── Structured mutation response shape (v4 / PR #86) ────

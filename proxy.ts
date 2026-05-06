@@ -6,8 +6,11 @@ export const proxy = authkitMiddleware({
     unauthenticatedPaths: [
       "/callback",
       "/login",
-      "/api/mcp/runway",    // Bearer token auth handled in route
-      "/api/slack/events",  // Slack signature verification handled in route
+      "/api/mcp/runway",                 // Bearer token auth handled in route
+      "/api/slack/events",               // Slack signature verification handled in route
+      "/api/slack/interactivity",        // Slack signature verification handled in route
+      "/api/slack/commands",             // Slack signature verification handled in route
+      "/api/slack/options",              // Slack signature verification handled in route
       "/api/runway/gantt-share/:token",  // HMAC token auth handled in route
     ],
   },

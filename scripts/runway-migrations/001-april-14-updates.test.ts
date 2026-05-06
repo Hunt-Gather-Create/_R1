@@ -100,10 +100,12 @@ describe("001-april-14-updates migration", () => {
     const abmBrand = await getProject(testDb, "pj-brand");
     expect(abmBrand?.owner).toBe("Lane");
 
-    // wi-cds-review had resources "Roz" — should now be "Lane"
+    // wi-cds-review had resources "Roz" — should now be "CD: Lane".
+    // Wave 0b: migration writes role-tagged form to satisfy
+    // validateRoleTagOnResources (now wired into updateWeekItemField).
     const allItems = await testDb.select().from(weekItems);
     const cdsReview = allItems.find((i) => i.id === "wi-cds-review");
-    expect(cdsReview?.resources).toBe("Lane");
+    expect(cdsReview?.resources).toBe("CD: Lane");
 
     // Verify no "Roz" or "Paige" remain in any project owner/resources
     const allProjects = await testDb.select().from(projects);

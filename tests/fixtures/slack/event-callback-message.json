@@ -1,0 +1,50 @@
+{
+  "token": "REDACTED_VERIFICATION_TOKEN",
+  "team_id": "T_TEST_001",
+  "context_team_id": "T_TEST_001",
+  "context_enterprise_id": null,
+  "api_app_id": "A_TEST_APPID",
+  "event": {
+    "type": "message",
+    "subtype": null,
+    "user": "U_TEST_001",
+    "text": "Add a Concept Writeup task for AG1 Pro Friday with Kathy on it",
+    "ts": "1714492800.100100",
+    "team": "T_TEST_001",
+    "channel": "C_TEST_001",
+    "channel_type": "im",
+    "event_ts": "1714492800.100100",
+    "client_msg_id": "00000000-0000-4000-8000-000000000001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "test_rich_block",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Add a Concept Writeup task for AG1 Pro Friday with Kathy on it"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "type": "event_callback",
+  "event_id": "Ev_TEST_EVID0001",
+  "event_time": 1714492800,
+  "authorizations": [
+    {
+      "enterprise_id": null,
+      "team_id": "T_TEST_001",
+      "user_id": "U_TEST_BOTUSER",
+      "is_bot": true,
+      "is_enterprise_install": false
+    }
+  ],
+  "is_ext_shared_channel": false,
+  "event_context": "1-message-T_TEST_001-C_TEST_001"
+}

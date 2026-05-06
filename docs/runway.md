@@ -282,6 +282,10 @@ UI types are in `src/app/runway/types.ts`. DB types are inferred from Drizzle sc
 
 Documented in [MCP Integration](./mcp-integration.md#standalone-mcp-servers-runway). Bearer token auth at `POST /api/mcp/runway`. 11 tools wrapping the operations layer (includes `get_person_workload` for cross-client workload queries).
 
+## Slack Modals
+
+Slash-command-driven Block Kit modals for deterministic, schema-validated CRUD on tasks, projects, retainers, and team members. Sibling surface to the LLM-intercept Slack Bot (below); shares the same operations layer, different intent surface. See [Slack Modal CRUD](./slack-modal.md) for the modal pipeline (schema additions, validator, Inngest consumer, modal builders, deferred bugs).
+
 ## Slack Bot
 
 ### Flow
@@ -470,8 +474,13 @@ Requires `pnpm dev:inngest` (or `pnpm dev:all`) running alongside the dev server
 | `src/lib/mcp/runway-tools.ts` | MCP tool registrations (11 tools) |
 | `src/app/api/mcp/runway/route.ts` | MCP HTTP endpoint |
 | `src/app/api/slack/events/route.ts` | Slack webhook handler (text + images) |
+| `src/app/api/slack/commands/route.ts` | Slash command HMAC + fuzzy match + modal dispatch |
+| `src/app/api/slack/interactivity/route.ts` | Modal block_actions + view_submission handler |
+| `src/app/api/slack/options/route.ts` | Modal external_select options provider |
 | `src/lib/slack/bot.ts` | AI bot orchestration (text + image content blocks, sanitized logging, token tracking) |
 | `src/lib/slack/bot-tools.ts` | Bot tool definitions (14 tools) |
+| `src/lib/slack/modals/` | Per-kind modal builders + shared helpers + validator (see [Slack Modal CRUD](./slack-modal.md)) |
+| `src/lib/inngest/functions/slack-modal-submit.ts` | Modal Inngest consumer (idempotent, source-tagged writes) |
 | `src/lib/slack/verify.ts` | Slack signature verification |
 | `src/lib/slack/updates-channel.ts` | Updates channel posting |
 | `src/app/runway/page.tsx` | Board page (RSC, data transformation) |
@@ -490,5 +499,6 @@ Requires `pnpm dev:inngest` (or `pnpm dev:all`) running alongside the dev server
 
 ## Related Documentation
 
+- [Slack Modal CRUD](./slack-modal.md) - Slash-command modal pipeline (sibling to the LLM-intercept Slack Bot)
 - [MCP Integration](./mcp-integration.md#standalone-mcp-servers-runway) - MCP server details
 - [AI SDK Integration](./ai-sdk.md) - How `generateText` and tools work

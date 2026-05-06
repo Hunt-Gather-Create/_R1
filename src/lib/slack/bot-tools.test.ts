@@ -486,6 +486,56 @@ describe("createBotTools", () => {
     expect((result as Record<string, string>).error).toContain("unknown");
   });
 
+  it("create_project bot-direct fallback passes auditObserver (Wave 14 carryover)", async () => {
+    mockOps.addProject.mockResolvedValue({
+      ok: true, message: "Added.",
+      data: { clientName: "Wilsonart", projectName: "Widget Design" },
+    });
+    await tools.create_project.execute(
+      { clientSlug: "wilsonart", name: "Widget Design" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockOps.addProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "bot-direct",
+        auditObserver: expect.any(Function),
+      }),
+    );
+  });
+
+  it("create_week_item bot-direct fallback passes auditObserver (Wave 14 carryover)", async () => {
+    mockOps.createWeekItem.mockResolvedValue({
+      ok: true, message: "Added.",
+      data: { clientName: "Convergix", title: "Brief" },
+    });
+    await tools.create_week_item.execute(
+      { clientSlug: "convergix", weekOf: "2026-04-27", title: "Brief", date: "2026-04-29" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockOps.createWeekItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "bot-direct",
+        auditObserver: expect.any(Function),
+      }),
+    );
+  });
+
+  it("create_team_member bot-direct fallback passes auditObserver (Wave 14 carryover)", async () => {
+    mockOps.createTeamMember.mockResolvedValue({
+      ok: true, message: "Added.", data: { memberName: "Lane" },
+    });
+    await tools.create_team_member.execute(
+      { name: "Lane" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never }
+    );
+    expect(mockOps.createTeamMember).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "bot-direct",
+        auditObserver: expect.any(Function),
+      }),
+    );
+  });
+
   it("update_project_field returns before/after in response", async () => {
     mockOps.updateProjectField.mockResolvedValue({
       ok: true, message: "Updated dueDate for Convergix / CDS.",
@@ -1185,6 +1235,118 @@ describe("createBotTools", () => {
     const desc = (tools.get_clients as { description: string }).description;
     expect(desc).toContain("includeProjects");
     expect(desc).toContain("projectCount");
+  });
+
+  // ── Slack Modal Phase 1 — retainer wrapper field extension ────────────
+
+  it("create_project forwards retainer wrapper fields to addProject", async () => {
+    mockOps.addProject.mockResolvedValue({
+      ok: true,
+      message: "Added project 'AG1 Pro 2026' to AG1.",
+      data: { clientName: "AG1", projectName: "AG1 Pro 2026" },
+    });
+    await tools.create_project.execute(
+      {
+        clientSlug: "ag1",
+        name: "AG1 Pro 2026",
+        engagementType: "retainer",
+        contractStart: "2026-01-01",
+        contractEnd: "2026-12-31",
+        startDate: "2026-01-06",
+        endDate: "2026-12-28",
+      },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.addProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientSlug: "ag1",
+        name: "AG1 Pro 2026",
+        engagementType: "retainer",
+        contractStart: "2026-01-01",
+        contractEnd: "2026-12-31",
+        startDate: "2026-01-06",
+        endDate: "2026-12-28",
+        updatedBy: "Kathy Horn",
+      }),
+    );
+  });
+
+  it("create_project forwards parentProjectId to addProject", async () => {
+    mockOps.addProject.mockResolvedValue({
+      ok: true,
+      message: "Added project 'Q1 Brief' to AG1.",
+      data: { clientName: "AG1", projectName: "Q1 Brief" },
+    });
+    await tools.create_project.execute(
+      {
+        clientSlug: "ag1",
+        name: "Q1 Brief",
+        parentProjectId: "pj-wrap-2026",
+      },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.addProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parentProjectId: "pj-wrap-2026",
+      }),
+    );
+  });
+
+  it("create_project zod schema accepts isRetainer optional flag", () => {
+    const schema = (tools.create_project as { inputSchema: { safeParse: (v: unknown) => { success: boolean } } }).inputSchema;
+    const result = schema.safeParse({
+      clientSlug: "ag1",
+      name: "AG1 Pro 2026",
+      isRetainer: true,
+      engagementType: "retainer",
+      contractStart: "2026-01-01",
+      contractEnd: "2026-12-31",
+      parentProjectId: "pj-wrap-2026",
+      startDate: "2026-01-06",
+      endDate: "2026-12-28",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("create_project zod schema accepts minimal args (no retainer fields)", () => {
+    const schema = (tools.create_project as { inputSchema: { safeParse: (v: unknown) => { success: boolean } } }).inputSchema;
+    const result = schema.safeParse({
+      clientSlug: "ag1",
+      name: "Plain Project",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("update_project_field zod schema accepts engagementType as a valid field", () => {
+    const schema = (tools.update_project_field as { inputSchema: { safeParse: (v: unknown) => { success: boolean } } }).inputSchema;
+    const result = schema.safeParse({
+      clientSlug: "ag1",
+      projectName: "AG1 Pro 2026",
+      field: "engagementType",
+      newValue: "retainer",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("update_project_field forwards engagementType field through to updateProjectField", async () => {
+    mockOps.updateProjectField.mockResolvedValue({
+      ok: true,
+      message: "Updated engagementType for AG1 / AG1 Pro 2026.",
+      data: {
+        clientName: "AG1",
+        projectName: "AG1 Pro 2026",
+        field: "engagementType",
+        previousValue: "project",
+        newValue: "retainer",
+      },
+    });
+    await tools.update_project_field.execute(
+      { clientSlug: "ag1", projectName: "AG1 Pro 2026", field: "engagementType", newValue: "retainer" },
+      { toolCallId: "", messages: [], abortSignal: undefined as never },
+    );
+    expect(mockOps.updateProjectField).toHaveBeenCalledWith(
+      expect.objectContaining({ field: "engagementType", newValue: "retainer" }),
+    );
   });
 
   describe("gantt share tools", () => {

@@ -20,7 +20,15 @@ import {
   validateParentProjectIdAssignment,
   validateEngagementType,
   validateIsoDateShape,
+  validateStatusCategoryCompatibility,
+  validateRoleTagOnResources,
+  validateStartEndDateOrder,
+  validateNotesMaxLength,
 } from "./operations";
+import type {
+  AuditEvent,
+  AuditSource,
+} from "./operations-utils";
 import type { MutationResponse } from "./mutation-response";
 
 export interface AddProjectParams {
@@ -46,6 +54,19 @@ export interface AddProjectParams {
   /** Wrapper project id (must be retainer + same client + non-cyclic) or null. */
   parentProjectId?: string | null;
   updatedBy: string;
+  /**
+   * Wave 0b §A4: optional callback fired on successful insert. Wave 14's
+   * intercept-miss alert subscribes here without inline grep across helpers.
+   * Pass undefined (or omit) for legacy callers — observer is purely additive.
+   */
+  auditObserver?: (event: AuditEvent) => void;
+  /**
+   * Wave 0b §"Wave 0b" #7: where this write originated. Pre-modal-era rows
+   * passed null; modal Phase 1 surfaces pass `slack-modal-bot` /
+   * `slack-modal-slash`. Optional — existing call sites that haven't been
+   * migrated yet pass nothing and the observer (if registered) sees `null`.
+   */
+  source?: AuditSource;
 }
 
 export interface AddUpdateParams {
@@ -75,6 +96,8 @@ export async function addProject(
     endDate,
     parentProjectId,
     updatedBy,
+    auditObserver,
+    source,
   } = params;
   const db = getRunwayDb();
 
@@ -96,6 +119,31 @@ export async function addProject(
       const v = validateIsoDateShape(value, label);
       if (!v.ok) return { ok: false, error: v.error };
     }
+  }
+
+  // Wave 0b validators (pre-plan §A1) — every write path hits this gate.
+  // Status / category compatibility (7-rule matrix). Soft-warn case
+  // (`blocked` + `active`) is surfaced as an error to the caller — modal
+  // submission may downgrade it to a warning, but direct callers (MCP /
+  // batch / migration) treat it as a reject for safety.
+  const sccResult = validateStatusCategoryCompatibility(status, category);
+  if (!sccResult.ok) return { ok: false, error: sccResult.error };
+
+  // Role-tag on resources. Rejects bare names like "Kathy".
+  if (resources !== undefined && resources !== null) {
+    const r = validateRoleTagOnResources(resources);
+    if (!r.ok) return { ok: false, error: r.error };
+  }
+
+  // startDate < endDate ordering parity rule (mirrors the existing
+  // contractStart < contractEnd check below). Either side null skips.
+  const sed = validateStartEndDateOrder(startDate ?? null, endDate ?? null);
+  if (!sed.ok) return { ok: false, error: sed.error };
+
+  // L1 notes max length. Empty / null skips.
+  if (notes !== undefined && notes !== null) {
+    const n = validateNotesMaxLength(notes, "L1");
+    if (!n.ok) return { ok: false, error: n.error };
   }
 
   const lookup = await getClientOrFail(clientSlug);
@@ -196,7 +244,20 @@ export async function addProject(
     updateType: "new-item",
     newValue: name,
     summary: `New project added to ${client.name}: ${name}`,
+    source: source ?? null,
   });
+
+  // Wave 0b §A4: emit AuditEvent for downstream observers (Wave 14
+  // intercept-miss alert). Source nullable per pre-plan §A4 — pre-modal-era
+  // callers that don't pass `source` see null.
+  if (auditObserver) {
+    auditObserver({
+      source: source ?? null,
+      entityId: projectId,
+      entityType: "project",
+      updatedBy,
+    });
+  }
 
   return {
     ok: true,

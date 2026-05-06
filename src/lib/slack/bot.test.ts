@@ -753,3 +753,129 @@ describe("toolCalls/toolResults guard", () => {
     );
   });
 });
+
+// ============================================================
+// Carryover #2 — bot.ts persists postedMessage on intercepted proposals
+// ============================================================
+describe("handleDirectMessage — intercepted proposals call updatePostedMessage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockConversationsReplies.mockResolvedValue({ messages: [] });
+    mockPostMessage.mockResolvedValue({ ok: true, ts: "1700000000.000099" });
+  });
+
+  it("calls updatePostedMessage for each intercepted proposal after a successful post", async () => {
+    // Mock generateText to surface a single modal-opened tool result. The
+    // bot's extractInterceptedProposals walks `result.steps[].toolResults[]`
+    // and pulls items with `output.modalOpened === true`.
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: "",
+      steps: [
+        {
+          toolResults: [
+            {
+              toolName: "create_project",
+              output: {
+                modalOpened: true,
+                proposalId: "prop_abc",
+                kind: "project",
+                title: "Brand Refresh",
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    // Mock updatePostedMessage so we can verify the call args. Mock both
+    // schema + db so the import side effects don't pull a real db handle.
+    const mockUpdatePostedMessage = vi.fn().mockResolvedValue(undefined);
+    vi.doMock("./modals/proposal", async () => {
+      const actual = await vi.importActual<typeof import("./modals/proposal")>(
+        "./modals/proposal",
+      );
+      return {
+        ...actual,
+        updatePostedMessage: mockUpdatePostedMessage,
+      };
+    });
+
+    // Re-import bot.ts so it picks up the proposal mock.
+    vi.resetModules();
+    const { handleDirectMessage } = await import("./bot");
+    await handleDirectMessage(
+      "U12345",
+      "D67890",
+      "new project for brand refresh",
+      "ts999",
+    );
+
+    expect(mockUpdatePostedMessage).toHaveBeenCalledTimes(1);
+    expect(mockUpdatePostedMessage).toHaveBeenCalledWith(
+      "prop_abc",
+      "1700000000.000099",
+      "D67890",
+    );
+    vi.doUnmock("./modals/proposal");
+  });
+});
+
+// ============================================================
+// Carryover #2 — bot.ts persists postedMessage on intercepted proposals
+// ============================================================
+describe("handleDirectMessage — intercepted proposals call updatePostedMessage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockConversationsReplies.mockResolvedValue({ messages: [] });
+    mockPostMessage.mockResolvedValue({ ok: true, ts: "1700000000.000099" });
+  });
+
+  it("calls updatePostedMessage for each intercepted proposal after a successful post", async () => {
+    // Mock generateText to surface a single modal-opened tool result. The
+    // bot's extractInterceptedProposals walks `result.steps[].toolResults[]`
+    // and pulls items with `output.modalOpened === true`.
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: "",
+      steps: [
+        {
+          toolResults: [
+            {
+              toolName: "create_project",
+              output: {
+                modalOpened: true,
+                proposalId: "prop_abc",
+                kind: "project",
+                title: "Brand Refresh",
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    // Mock updatePostedMessage so we can verify the call args.
+    const mockUpdatePostedMessage = vi.fn().mockResolvedValue(undefined);
+    vi.doMock("./modals/proposal", async () => {
+      const actual = await vi.importActual("./modals/proposal");
+      return {
+        ...actual,
+        updatePostedMessage: mockUpdatePostedMessage,
+      };
+    });
+
+    // Re-import bot.ts so it picks up the proposal mock.
+    vi.resetModules();
+    const { handleDirectMessage } = await import("./bot");
+    await handleDirectMessage("U12345", "D67890", "new project for brand refresh", "ts999");
+
+    expect(mockUpdatePostedMessage).toHaveBeenCalledTimes(1);
+    expect(mockUpdatePostedMessage).toHaveBeenCalledWith(
+      "prop_abc",
+      "1700000000.000099",
+      "D67890",
+    );
+    vi.doUnmock("./modals/proposal");
+  });
+});

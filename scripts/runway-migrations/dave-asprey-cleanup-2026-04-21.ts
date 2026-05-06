@@ -482,6 +482,7 @@ async function writeProjectField(
     field,
     newValue,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`Update '${projectName}'.${field} failed: ${result.error}`);
@@ -504,6 +505,7 @@ async function writeWeekItemField(
     field,
     newValue,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`Update ${prefix}.${field} failed: ${result.error}`);
@@ -531,6 +533,7 @@ async function applyCreateWeekItem(
     resources: spec.resources,
     notes: spec.notes,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`Create '${spec.title}' failed: ${result.error}`);

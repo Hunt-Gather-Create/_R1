@@ -1006,3 +1006,307 @@ describe("normalizeResourcesString", () => {
     expect(normalizeResourcesString("CD: Lane, ,")).toBe("CD: Lane");
   });
 });
+
+// ── Wave 0b validators ──────────────────────────────────────
+
+describe("normalizeEmptyToNull", () => {
+  it("returns null for empty string", async () => {
+    const { normalizeEmptyToNull } = await import("./operations-utils");
+    expect(normalizeEmptyToNull("")).toBeNull();
+  });
+
+  it("returns null for null", async () => {
+    const { normalizeEmptyToNull } = await import("./operations-utils");
+    expect(normalizeEmptyToNull(null)).toBeNull();
+  });
+
+  it("returns null for undefined", async () => {
+    const { normalizeEmptyToNull } = await import("./operations-utils");
+    expect(normalizeEmptyToNull(undefined)).toBeNull();
+  });
+
+  it("passes non-empty strings through unchanged", async () => {
+    const { normalizeEmptyToNull } = await import("./operations-utils");
+    expect(normalizeEmptyToNull("2026-04-25")).toBe("2026-04-25");
+    expect(normalizeEmptyToNull(" ")).toBe(" "); // whitespace-only is NOT normalized — caller's responsibility
+  });
+});
+
+describe("validateStatusCategoryCompatibility", () => {
+  it("rejects not-started + on-hold", async () => {
+    const { validateStatusCategoryCompatibility } = await import("./operations-utils");
+    const r = validateStatusCategoryCompatibility("not-started", "on-hold");
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/'not-started' is incompatible with category 'on-hold'/);
+      expect(r.soft).toBeUndefined();
+    }
+  });
+
+  it("rejects completed + active", async () => {
+    const { validateStatusCategoryCompatibility } = await import("./operations-utils");
+    const r = validateStatusCategoryCompatibility("completed", "active");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/'completed' is incompatible with category 'active'/);
+  });
+
+  it("rejects in-production + on-hold", async () => {
+    const { validateStatusCategoryCompatibility } = await import("./operations-utils");
+    const r = validateStatusCategoryCompatibility("in-production", "on-hold");
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects awaiting-client + pipeline", async () => {
+    const { validateStatusCategoryCompatibility } = await import("./operations-utils");
+    const r = validateStatusCategoryCompatibility("awaiting-client", "pipeline");
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects on-hold + active", async () => {
+    const { validateStatusCategoryCompatibility } = await import("./operations-utils");
+    const r = validateStatusCategoryCompatibility("on-hold", "active");
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects completed + (any non-completed L1 category)", async () => {
+    const { validateStatusCategoryCompatibility } = await import("./operations-utils");
+    expect(validateStatusCategoryCompatibility("completed", "pipeline").ok).toBe(false);
+    expect(validateStatusCategoryCompatibility("completed", "on-hold").ok).toBe(false);
+    expect(validateStatusCategoryCompatibility("completed", "awaiting-client").ok).toBe(false);
+  });
+
+  it("accepts completed + completed", async () => {
+    const { validateStatusCategoryCompatibility } = await import("./operations-utils");
+    const r = validateStatusCategoryCompatibility("completed", "completed");
+    expect(r.ok).toBe(true);
+  });
+
+  it("soft-warns blocked + active (does not hard-reject)", async () => {
+    const { validateStatusCategoryCompatibility } = await import("./operations-utils");
+    const r = validateStatusCategoryCompatibility("blocked", "active");
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.soft).toBe(true);
+      expect(r.error).toMatch(/unusual/);
+    }
+  });
+
+  it("accepts compatible pairings", async () => {
+    const { validateStatusCategoryCompatibility } = await import("./operations-utils");
+    expect(validateStatusCategoryCompatibility("in-production", "active").ok).toBe(true);
+    expect(validateStatusCategoryCompatibility("not-started", "active").ok).toBe(true);
+    expect(validateStatusCategoryCompatibility("on-hold", "on-hold").ok).toBe(true);
+  });
+
+  it("skips when either side is empty", async () => {
+    const { validateStatusCategoryCompatibility } = await import("./operations-utils");
+    expect(validateStatusCategoryCompatibility("", "active").ok).toBe(true);
+    expect(validateStatusCategoryCompatibility("completed", "").ok).toBe(true);
+  });
+
+  it("L1-scope guard: skips for L2 (week-item) values", async () => {
+    const { validateStatusCategoryCompatibility } = await import("./operations-utils");
+    // L2 statuses: scheduled, in-progress, blocked, at-risk, completed, canceled
+    // L2 categories: delivery, review, kickoff, deadline, approval, launch
+    // `completed + review` would over-fire if matrix were applied to L2.
+    expect(validateStatusCategoryCompatibility("completed", "review").ok).toBe(true);
+    expect(validateStatusCategoryCompatibility("scheduled", "delivery").ok).toBe(true);
+  });
+});
+
+describe("validateRoleTagOnResources", () => {
+  it("accepts role-tagged single resource", async () => {
+    const { validateRoleTagOnResources } = await import("./operations-utils");
+    expect(validateRoleTagOnResources("CW: Kathy").ok).toBe(true);
+  });
+
+  it("accepts role-tagged handoff chain", async () => {
+    const { validateRoleTagOnResources } = await import("./operations-utils");
+    expect(validateRoleTagOnResources("CD: Lane -> Dev: Leslie").ok).toBe(true);
+  });
+
+  it("accepts role-tagged concurrent peers", async () => {
+    const { validateRoleTagOnResources } = await import("./operations-utils");
+    expect(validateRoleTagOnResources("CD: Lane, Dev: Leslie").ok).toBe(true);
+  });
+
+  it("rejects bare single name", async () => {
+    const { validateRoleTagOnResources } = await import("./operations-utils");
+    const r = validateRoleTagOnResources("Kathy");
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/role prefix/);
+      expect(r.error).toContain("Kathy");
+    }
+  });
+
+  it("rejects when ANY entry lacks role prefix", async () => {
+    const { validateRoleTagOnResources } = await import("./operations-utils");
+    const r = validateRoleTagOnResources("CD: Lane, Leslie");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain("Leslie");
+  });
+
+  it("accepts empty / null / whitespace input", async () => {
+    const { validateRoleTagOnResources } = await import("./operations-utils");
+    expect(validateRoleTagOnResources("").ok).toBe(true);
+    expect(validateRoleTagOnResources("   ").ok).toBe(true);
+  });
+});
+
+describe("validateStartEndDateOrder", () => {
+  it("accepts strict less-than", async () => {
+    const { validateStartEndDateOrder } = await import("./operations-utils");
+    expect(validateStartEndDateOrder("2026-04-01", "2026-04-30").ok).toBe(true);
+  });
+
+  it("accepts equal dates (single-day span)", async () => {
+    const { validateStartEndDateOrder } = await import("./operations-utils");
+    const r = validateStartEndDateOrder("2026-04-15", "2026-04-15");
+    expect(r.ok).toBe(true);
+  });
+
+  it("rejects start > end", async () => {
+    const { validateStartEndDateOrder } = await import("./operations-utils");
+    const r = validateStartEndDateOrder("2026-05-01", "2026-04-15");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/must be <= endDate/);
+  });
+
+  it("skips when startDate is null", async () => {
+    const { validateStartEndDateOrder } = await import("./operations-utils");
+    expect(validateStartEndDateOrder(null, "2026-04-15").ok).toBe(true);
+  });
+
+  it("skips when endDate is null", async () => {
+    const { validateStartEndDateOrder } = await import("./operations-utils");
+    expect(validateStartEndDateOrder("2026-04-15", null).ok).toBe(true);
+  });
+
+  it("treats empty string as null and skips", async () => {
+    const { validateStartEndDateOrder } = await import("./operations-utils");
+    expect(validateStartEndDateOrder("", "2026-04-15").ok).toBe(true);
+    expect(validateStartEndDateOrder("2026-04-15", "").ok).toBe(true);
+  });
+});
+
+describe("validatePastDateNonTerminal", () => {
+  it("emits soft-warn for past date with non-terminal status", async () => {
+    const { validatePastDateNonTerminal } = await import("./operations-utils");
+    const r = validatePastDateNonTerminal("2020-01-01", "in-progress");
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.soft).toMatch(/in the past/);
+      expect(r.soft).toContain("in-progress");
+    }
+  });
+
+  it("does not warn when status is terminal (completed)", async () => {
+    const { validatePastDateNonTerminal } = await import("./operations-utils");
+    const r = validatePastDateNonTerminal("2020-01-01", "completed");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.soft).toBeUndefined();
+  });
+
+  it("does not warn when status is terminal (canceled)", async () => {
+    const { validatePastDateNonTerminal } = await import("./operations-utils");
+    const r = validatePastDateNonTerminal("2020-01-01", "canceled");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.soft).toBeUndefined();
+  });
+
+  it("does not warn when date is today or future", async () => {
+    const { validatePastDateNonTerminal } = await import("./operations-utils");
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const r = validatePastDateNonTerminal(future, "in-progress");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.soft).toBeUndefined();
+  });
+
+  it("rejects malformed date string", async () => {
+    const { validatePastDateNonTerminal } = await import("./operations-utils");
+    const r = validatePastDateNonTerminal("not-a-date", "in-progress");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/ISO YYYY-MM-DD/);
+  });
+
+  it("accepts empty date as a no-op pass", async () => {
+    const { validatePastDateNonTerminal } = await import("./operations-utils");
+    expect(validatePastDateNonTerminal("", "in-progress").ok).toBe(true);
+  });
+});
+
+describe("validateNotesMaxLength", () => {
+  it("accepts notes within L2 cap", async () => {
+    const { validateNotesMaxLength } = await import("./operations-utils");
+    expect(validateNotesMaxLength("A".repeat(280), "L2").ok).toBe(true);
+  });
+
+  it("rejects notes exceeding L2 cap", async () => {
+    const { validateNotesMaxLength } = await import("./operations-utils");
+    const r = validateNotesMaxLength("A".repeat(281), "L2");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/L2 notes max length is 280/);
+  });
+
+  it("accepts notes within L1 cap (500)", async () => {
+    const { validateNotesMaxLength } = await import("./operations-utils");
+    expect(validateNotesMaxLength("A".repeat(500), "L1").ok).toBe(true);
+  });
+
+  it("rejects notes exceeding L1 cap", async () => {
+    const { validateNotesMaxLength } = await import("./operations-utils");
+    const r = validateNotesMaxLength("A".repeat(501), "L1");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/L1 notes max length is 500/);
+  });
+
+  it("accepts empty notes", async () => {
+    const { validateNotesMaxLength } = await import("./operations-utils");
+    expect(validateNotesMaxLength("", "L1").ok).toBe(true);
+    expect(validateNotesMaxLength("", "L2").ok).toBe(true);
+  });
+});
+
+describe("formatModalUpdatedBy", () => {
+  it("emits slack:UID:modal for create surface from bot", async () => {
+    const { formatModalUpdatedBy } = await import("./operations-utils");
+    expect(formatModalUpdatedBy("U03ABCDEF", "bot")).toBe("slack:U03ABCDEF:modal");
+  });
+
+  it("emits slack:UID:modal for create surface from slash", async () => {
+    const { formatModalUpdatedBy } = await import("./operations-utils");
+    expect(formatModalUpdatedBy("U03ABCDEF", "slash")).toBe("slack:U03ABCDEF:modal");
+  });
+
+  it("emits slack:UID:modal-edit for edit mode", async () => {
+    const { formatModalUpdatedBy } = await import("./operations-utils");
+    expect(formatModalUpdatedBy("U03ABCDEF", "bot", "edit")).toBe(
+      "slack:U03ABCDEF:modal-edit",
+    );
+    expect(formatModalUpdatedBy("U03ABCDEF", "slash", "edit")).toBe(
+      "slack:U03ABCDEF:modal-edit",
+    );
+  });
+
+  it("defaults mode to 'create' when omitted", async () => {
+    const { formatModalUpdatedBy } = await import("./operations-utils");
+    expect(formatModalUpdatedBy("U99", "bot")).toBe("slack:U99:modal");
+  });
+});
+
+describe("INTERCEPT_ALLOWLIST and INTERCEPT_EXCLUDED constants", () => {
+  it("INTERCEPT_ALLOWLIST contains the three modal-routed create tools", async () => {
+    const { INTERCEPT_ALLOWLIST } = await import("./operations-utils");
+    expect(INTERCEPT_ALLOWLIST).toContain("create_project");
+    expect(INTERCEPT_ALLOWLIST).toContain("create_week_item");
+    expect(INTERCEPT_ALLOWLIST).toContain("create_team_member");
+  });
+
+  it("INTERCEPT_EXCLUDED contains create_pipeline_item", async () => {
+    const { INTERCEPT_EXCLUDED } = await import("./operations-utils");
+    expect(INTERCEPT_EXCLUDED).toContain("create_pipeline_item");
+  });
+});

@@ -133,6 +133,42 @@ describe("createTeamMember", () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.message).toContain("duplicate");
   });
+
+  // ── Wave 0b: auditObserver parity (no role-tag/status validators apply) ──
+
+  it("Wave 0b: auditObserver fires with team_member entityType + source", async () => {
+    mockFindTeamMember.mockResolvedValue(null);
+
+    const { createTeamMember } = await import("./operations-writes-team");
+    const events: unknown[] = [];
+    const result = await createTeamMember({
+      name: "Observed Member",
+      updatedBy: "slack:U222:modal",
+      auditObserver: (e) => events.push(e),
+      source: "slack-modal-slash",
+    });
+    expect(result.ok).toBe(true);
+    expect(events).toHaveLength(1);
+    const e = events[0] as Record<string, unknown>;
+    expect(e.source).toBe("slack-modal-slash");
+    expect(e.entityType).toBe("team_member");
+    expect(e.entityId).toBe("test-id-123");
+    expect(e.updatedBy).toBe("slack:U222:modal");
+  });
+
+  it("Wave 0b: auditObserver passes source=null when source omitted", async () => {
+    mockFindTeamMember.mockResolvedValue(null);
+
+    const { createTeamMember } = await import("./operations-writes-team");
+    const events: unknown[] = [];
+    await createTeamMember({
+      name: "Legacy",
+      updatedBy: "jason",
+      auditObserver: (e) => events.push(e),
+    });
+    expect(events).toHaveLength(1);
+    expect((events[0] as { source: unknown }).source).toBeNull();
+  });
 });
 
 describe("updateTeamMember", () => {

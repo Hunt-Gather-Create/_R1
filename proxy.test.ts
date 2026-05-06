@@ -30,6 +30,9 @@ describe("proxy middleware", () => {
     const paths = call.middlewareAuth.unauthenticatedPaths;
     expect(paths).toContain("/api/mcp/runway");
     expect(paths).toContain("/api/slack/events");
+    expect(paths).toContain("/api/slack/interactivity");
+    expect(paths).toContain("/api/slack/commands");
+    expect(paths).toContain("/api/slack/options");
   });
 
   it("excludes callback and login from auth", async () => {

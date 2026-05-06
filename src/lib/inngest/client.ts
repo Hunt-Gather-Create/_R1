@@ -66,6 +66,27 @@ export type Events = {
       imageFiles?: Array<{ url: string; mimetype: string; name?: string }>;
     };
   };
+  // Slack Modal Wave 10: view_submission -> Inngest async write handler.
+  // Payload locked per pre-plan v7 §"Wave 10".
+  "slack-modal/submit": {
+    data: {
+      proposalId: string;
+      modalCallbackId:
+        | "runway_new_task"
+        | "runway_new_project"
+        | "runway_new_team_member"
+        | "runway_edit_task"
+        | "runway_edit_project"
+        | "runway_edit_team_member";
+      stateValues: Record<string, Record<string, unknown>>; // raw view.state.values
+      userId: string; // body.user.id
+      teamId: string; // body.team.id
+      channelId: string; // resolved from proposal row
+      threadTs: string | null; // resolved from proposal row
+      triggerId: string; // for views.update if needed
+      submittedAt: string; // ISO timestamp
+    };
+  };
 };
 
 export const inngest = new Inngest({

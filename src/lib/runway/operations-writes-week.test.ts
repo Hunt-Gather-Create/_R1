@@ -219,6 +219,56 @@ describe("createWeekItem", () => {
     expect(insertCall.weekOf).toBe("2026-04-13");
   });
 
+  it("derives weekOf from startDate when no date or rawWeekOf is provided", async () => {
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      startDate: "2026-05-05", // Tuesday → Monday is 2026-05-04
+      endDate: "2026-05-09",
+      title: "Range Anchor Test",
+      updatedBy: "jason",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.weekOf).toBe("2026-05-04");
+    expect(insertCall.startDate).toBe("2026-05-05");
+    expect(insertCall.endDate).toBe("2026-05-09");
+  });
+
+  it("prefers date over startDate when both are provided and weekOf is absent", async () => {
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      date: "2026-04-15", // Wednesday → Monday is 2026-04-13
+      startDate: "2026-05-05", // Tuesday → Monday is 2026-05-04 (should NOT win)
+      title: "Date Beats StartDate Test",
+      updatedBy: "jason",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.weekOf).toBe("2026-04-13");
+  });
+
+  it("accepts Single-mode shape where date equals startDate and endDate", async () => {
+    // The Slack modal canonical mirrors `date` into both startDate and
+    // endDate for Single-day items so every row carries both columns
+    // populated. validateStartEndDateOrder must allow that equality.
+    const { createWeekItem } = await import("./operations-writes-week");
+    const result = await createWeekItem({
+      date: "2026-05-06",
+      startDate: "2026-05-06",
+      endDate: "2026-05-06",
+      title: "Single Mode Shape Test",
+      updatedBy: "jason",
+    });
+
+    expect(result.ok).toBe(true);
+    const insertCall = mockInsertValues.mock.calls[0][0];
+    expect(insertCall.startDate).toBe("2026-05-06");
+    expect(insertCall.endDate).toBe("2026-05-06");
+    expect(insertCall.weekOf).toBe("2026-05-04"); // Monday before Wednesday
+  });
+
   it("uses explicit weekOf when both weekOf and date provided", async () => {
     const { createWeekItem } = await import("./operations-writes-week");
     const result = await createWeekItem({
@@ -910,6 +960,161 @@ describe("updateWeekItemField", () => {
       expect(mockUpdateSet).toHaveBeenCalledWith(
         expect.objectContaining({ resources: null })
       );
+    });
+  });
+
+  // ── Wave 0b validators + auditObserver ───────────────────
+
+  describe("Wave 0b: createWeekItem validators + observer", () => {
+    it("rejects bare resource name (missing role prefix)", async () => {
+      const { createWeekItem } = await import("./operations-writes-week");
+      const result = await createWeekItem({
+        weekOf: "2026-04-06",
+        title: "Bad Resources",
+        resources: "Kathy",
+        updatedBy: "modal",
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/role prefix/);
+      expect(mockInsertValues).not.toHaveBeenCalled();
+    });
+
+    it("accepts role-tagged resources", async () => {
+      const { createWeekItem } = await import("./operations-writes-week");
+      const result = await createWeekItem({
+        weekOf: "2026-04-06",
+        title: "OK Resources",
+        resources: "CW: Kathy",
+        updatedBy: "modal",
+      });
+      expect(result.ok).toBe(true);
+    });
+
+    it("rejects startDate > endDate", async () => {
+      const { createWeekItem } = await import("./operations-writes-week");
+      const result = await createWeekItem({
+        weekOf: "2026-04-06",
+        title: "Bad Order",
+        startDate: "2026-05-01",
+        endDate: "2026-04-15",
+        updatedBy: "modal",
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/must be <= endDate/);
+    });
+
+    it("rejects notes exceeding L2 max length (280)", async () => {
+      const { createWeekItem } = await import("./operations-writes-week");
+      const result = await createWeekItem({
+        weekOf: "2026-04-06",
+        title: "Long Notes",
+        notes: "A".repeat(281),
+        updatedBy: "modal",
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/L2 notes max length is 280/);
+    });
+
+    it("auditObserver fires with week_item entityType + propagated source", async () => {
+      const { createWeekItem } = await import("./operations-writes-week");
+      const events: unknown[] = [];
+      const result = await createWeekItem({
+        weekOf: "2026-04-06",
+        title: "Observed Item",
+        updatedBy: "slack:U123:modal",
+        auditObserver: (e) => events.push(e),
+        source: "slack-modal-slash",
+      });
+      expect(result.ok).toBe(true);
+      expect(events).toHaveLength(1);
+      const e = events[0] as Record<string, unknown>;
+      expect(e.source).toBe("slack-modal-slash");
+      expect(e.entityType).toBe("week_item");
+      expect(e.entityId).toBe("mock-id-12345678901234");
+      expect(e.updatedBy).toBe("slack:U123:modal");
+    });
+
+    it("auditObserver passes source=null when omitted (legacy callers)", async () => {
+      const { createWeekItem } = await import("./operations-writes-week");
+      const events: unknown[] = [];
+      await createWeekItem({
+        weekOf: "2026-04-06",
+        title: "Legacy",
+        updatedBy: "kathy",
+        auditObserver: (e) => events.push(e),
+      });
+      expect(events).toHaveLength(1);
+      expect((events[0] as { source: unknown }).source).toBeNull();
+    });
+  });
+
+  describe("Wave 0b: updateWeekItemField validators + observer", () => {
+    it("rejects bare resource on resources update", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "resources",
+        newValue: "Kathy",
+        updatedBy: "modal",
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/role prefix/);
+    });
+
+    it("rejects startDate update that violates endDate ordering", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue({
+        ...weekItem,
+        startDate: "2026-04-01",
+        endDate: "2026-04-15",
+      });
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "startDate",
+        newValue: "2026-05-01",
+        updatedBy: "modal",
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/must be <= endDate/);
+    });
+
+    it("rejects notes update exceeding L2 max length", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "notes",
+        newValue: "A".repeat(281),
+        updatedBy: "modal",
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/L2 notes max length/);
+    });
+
+    it("auditObserver fires after successful update", async () => {
+      mockFindWeekItemByFuzzyTitle.mockResolvedValue(weekItem);
+      const { updateWeekItemField } = await import("./operations-writes-week");
+      const events: unknown[] = [];
+      const result = await updateWeekItemField({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        field: "owner",
+        newValue: "Lane",
+        updatedBy: "slack:U999:modal-edit",
+        auditObserver: (e) => events.push(e),
+        source: "slack-modal-bot",
+      });
+      expect(result.ok).toBe(true);
+      expect(events).toHaveLength(1);
+      const e = events[0] as Record<string, unknown>;
+      expect(e.source).toBe("slack-modal-bot");
+      expect(e.entityType).toBe("week_item");
+      expect(e.entityId).toBe("wi1");
+      expect(e.updatedBy).toBe("slack:U999:modal-edit");
     });
   });
 });

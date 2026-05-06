@@ -14,14 +14,16 @@ describe("inngest functions barrel export", () => {
       "generateAudienceMembers",
       "generateSoul",
       "processRunwaySlackMessage",
+      "sweepExpiredProposals",
+      "slackModalSubmit",
     ];
     for (const name of expected) {
       expect(functions).toHaveProperty(name);
     }
   });
 
-  it("exports exactly 10 functions", () => {
+  it("exports exactly 12 functions", () => {
     const exportCount = Object.keys(functions).length;
-    expect(exportCount).toBe(10);
+    expect(exportCount).toBe(12);
   });
 });

@@ -21,6 +21,10 @@ import {
   validateAndResolveField,
   getPreviousValue,
 } from "./operations-utils";
+import type {
+  AuditEvent,
+  AuditSource,
+} from "./operations-utils";
 import type { MutationResponse } from "./mutation-response";
 
 // ── Create Team Member ──────────────────────────────────
@@ -36,6 +40,16 @@ export interface CreateTeamMemberParams {
   nicknames?: string;
   channelPurpose?: string;
   updatedBy: string;
+  /**
+   * Wave 0b §A4: optional callback fired on successful insert. Wave 14
+   * intercept-miss alert subscribes here. Pre-modal-era callers omit it.
+   * Role-tag / status-category validators DO NOT apply to team members
+   * (different schema), but the auditObserver hook is wired for parity so
+   * Wave 14 can register against every create_* helper uniformly.
+   */
+  auditObserver?: (event: AuditEvent) => void;
+  /** Wave 0b §"Wave 0b" #7: write provenance. */
+  source?: AuditSource;
 }
 
 export async function createTeamMember(
@@ -52,6 +66,8 @@ export async function createTeamMember(
     nicknames,
     channelPurpose,
     updatedBy,
+    auditObserver,
+    source,
   } = params;
 
   // Check for existing member with same name (case-insensitive exact match)
@@ -99,7 +115,18 @@ export async function createTeamMember(
     updateType: "new-team-member",
     newValue: name,
     summary: `New team member added: ${name}`,
+    source: source ?? null,
   });
+
+  // Wave 0b §A4: emit AuditEvent for downstream observers.
+  if (auditObserver) {
+    auditObserver({
+      source: source ?? null,
+      entityId: memberId,
+      entityType: "team_member",
+      updatedBy,
+    });
+  }
 
   return {
     ok: true,
@@ -115,6 +142,10 @@ export interface UpdateTeamMemberParams {
   field: string;
   newValue: string;
   updatedBy: string;
+  /** Wave 0b §A4: optional callback fired on successful update. */
+  auditObserver?: (event: AuditEvent) => void;
+  /** Wave 0b §"Wave 0b" #7: write provenance. */
+  source?: AuditSource;
 }
 
 export async function updateTeamMember(
@@ -127,7 +158,7 @@ export async function updateTeamMember(
     newValue: string;
   }>
 > {
-  const { memberName, field, newValue, updatedBy } = params;
+  const { memberName, field, newValue, updatedBy, auditObserver, source } = params;
   const db = getRunwayDb();
 
   const fieldResult = validateAndResolveField(field, TEAM_MEMBER_FIELDS, TEAM_MEMBER_FIELD_TO_COLUMN);
@@ -177,7 +208,17 @@ export async function updateTeamMember(
     newValue,
     summary: `Team member '${member.name}': ${field} changed from "${previousValue}" to "${newValue}"`,
     metadata: JSON.stringify({ field, memberName: member.name }),
+    source: source ?? null,
   });
+
+  if (auditObserver) {
+    auditObserver({
+      source: source ?? null,
+      entityId: member.id,
+      entityType: "team_member",
+      updatedBy,
+    });
+  }
 
   return {
     ok: true,

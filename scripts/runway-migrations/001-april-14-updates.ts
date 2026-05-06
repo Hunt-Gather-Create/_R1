@@ -57,7 +57,7 @@ async function applyStep(
 async function applyResourceSwaps<T extends Record<string, unknown>>(
   ctx: MigrationContext,
   entities: T[],
-  swaps: Array<{ search: string; replacement: string }>,
+  swaps: Array<{ search: string; replacement: string; resourcesReplacement?: string }>,
   config: {
     getSlug: (entity: T) => string | undefined;
     getName: (entity: T) => string;
@@ -75,9 +75,16 @@ async function applyResourceSwaps<T extends Record<string, unknown>>(
       if (!current) continue;
 
       let newValue = current;
-      for (const { search, replacement } of swaps) {
+      for (const { search, replacement, resourcesReplacement } of swaps) {
         if (containsName(newValue, search)) {
-          newValue = replaceResourceName(newValue, search, replacement);
+          // Wave 0b: `resources` writes go through validateRoleTagOnResources
+          // which rejects bare names. Use the role-tagged variant on the
+          // resources column; owner stays bare.
+          const repl =
+            field === "resources" && resourcesReplacement !== undefined
+              ? resourcesReplacement
+              : replacement;
+          newValue = replaceResourceName(newValue, search, repl);
         }
       }
 
@@ -226,10 +233,14 @@ async function clientTeamRoster(ctx: MigrationContext): Promise<void> {
 async function globalResourceSwaps(ctx: MigrationContext): Promise<void> {
   ctx.log("=== Section 3: Global Resource Swaps ===");
 
+  // Wave 0b retro-compliance: `resources` writes go through
+  // validateRoleTagOnResources which rejects bare names; owner column does
+  // not. Per-column replacement strings preserve the original owner-bare
+  // semantics while satisfying the new validator on resources.
   const swaps = [
-    { search: "Paige", replacement: "Lane" },
-    { search: "Roz", replacement: "Lane" },
-    { search: "Avery", replacement: "Kathy" },
+    { search: "Paige", replacement: "Lane", resourcesReplacement: "CD: Lane" },
+    { search: "Roz", replacement: "Lane", resourcesReplacement: "CD: Lane" },
+    { search: "Avery", replacement: "Kathy", resourcesReplacement: "CW: Kathy" },
   ];
 
   // Build client slug lookup
@@ -242,7 +253,7 @@ async function globalResourceSwaps(ctx: MigrationContext): Promise<void> {
     getSlug: (p) => clientSlugById.get(p.clientId),
     getName: (p) => `Project "${p.name}"`,
     updateFn: (p, field, newValue) =>
-      updateProjectField({ clientSlug: clientSlugById.get(p.clientId)!, projectName: p.name, field, newValue, updatedBy: "migration" }),
+      updateProjectField({ clientSlug: clientSlugById.get(p.clientId)!, projectName: p.name, field, newValue, updatedBy: "migration", source: "migration" }),
   });
 
   // Scan all week items (skip Section 4 items) — same pattern: all swaps per field, write once
@@ -258,7 +269,7 @@ async function globalResourceSwaps(ctx: MigrationContext): Promise<void> {
     getName: (item) => `Week item "${item.title}"`,
     skipItem: (item) => isSection4Item(item.title),
     updateFn: (item, field, newValue) =>
-      updateWeekItemField({ weekOf: item.weekOf!, weekItemTitle: item.title, field, newValue, updatedBy: "migration" }),
+      updateWeekItemField({ weekOf: item.weekOf!, weekItemTitle: item.title, field, newValue, updatedBy: "migration", source: "migration" }),
   });
 }
 
@@ -290,7 +301,7 @@ async function ownerReassignments(ctx: MigrationContext): Promise<void> {
       titleSearch: "LPPC Map R2",
       changes: [
         { field: "owner", newValue: "Kathy" },
-        { field: "resources", compute: swapOrSet("Roz", "Lane") },
+        { field: "resources", compute: swapOrSet("Roz", "CD: Lane") },
       ],
     },
     {
@@ -305,16 +316,16 @@ async function ownerReassignments(ctx: MigrationContext): Promise<void> {
       titleSearch: "Social posts reviewed at status",
       changes: [
         { field: "owner", newValue: "Kathy" },
-        { field: "resources", compute: swapOrSet("Roz", "Lane") },
+        { field: "resources", compute: swapOrSet("Roz", "CD: Lane") },
       ],
     },
     {
       titleSearch: "Social Post Approval",
-      changes: [{ field: "resources", compute: swapOrSet("Ronan", "Kathy") }],
+      changes: [{ field: "resources", compute: swapOrSet("Ronan", "CW: Kathy") }],
     },
     {
       titleSearch: "Raise stale items",
-      changes: [{ field: "resources", compute: swapOrSet("Ronan", "Kathy") }],
+      changes: [{ field: "resources", compute: swapOrSet("Ronan", "CW: Kathy") }],
     },
   ];
 
@@ -362,6 +373,7 @@ async function ownerReassignments(ctx: MigrationContext): Promise<void> {
           field: change.field,
           newValue: newValue ?? "",
           updatedBy: "migration",
+          source: "migration",
         });
       }
     }
@@ -386,7 +398,7 @@ async function ownerReassignments(ctx: MigrationContext): Promise<void> {
       clientSlug: "convergix",
       projectName: "Social Content (12 posts/mo)",
       field: "resources",
-      newValue: "Lane",
+      newValue: "CD: Lane",
     },
     {
       clientSlug: "soundly",
@@ -398,7 +410,7 @@ async function ownerReassignments(ctx: MigrationContext): Promise<void> {
       clientSlug: "soundly",
       projectName: "AARP Member Login + Landing Page",
       field: "resources",
-      newValue: "Josefina",
+      newValue: "Dev: Josefina",
     },
     {
       clientSlug: "hopdoddy",
@@ -420,7 +432,7 @@ async function ownerReassignments(ctx: MigrationContext): Promise<void> {
     await applyStep(
       ctx,
       `Project "${projectName}" (${clientSlug}) ${field} → "${newValue}"`,
-      () => updateProjectField({ clientSlug, projectName, field, newValue, updatedBy: "migration" })
+      () => updateProjectField({ clientSlug, projectName, field, newValue, updatedBy: "migration", source: "migration" })
     );
   }
 }
@@ -443,7 +455,7 @@ async function bonterraCleanup(ctx: MigrationContext): Promise<void> {
   await applyStep(
     ctx,
     `Update project: Bonterra / Impact Report notes → "${impactNotes}"`,
-    () => updateProjectField({ clientSlug: "bonterra", projectName: "Impact Report", field: "notes", newValue: impactNotes, updatedBy: "migration" })
+    () => updateProjectField({ clientSlug: "bonterra", projectName: "Impact Report", field: "notes", newValue: impactNotes, updatedBy: "migration", source: "migration" })
   );
 
   // 5c. Update Bonterra contractStatus

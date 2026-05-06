@@ -87,6 +87,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         projectName: L1_PROJECT_NAME,
         newStatus: L1_NEW_STATUS,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) {
         throw new Error(`Op 1 updateProjectStatus failed: ${result.error}`);
@@ -110,6 +111,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "resources",
         newValue: L1_NEW_RESOURCES,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) {
         throw new Error(`Op 2 updateProjectField(resources) failed: ${result.error}`);
@@ -133,6 +135,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "notes",
         newValue: L1_NEW_NOTES,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) {
         throw new Error(`Op 3 updateProjectField(notes) failed: ${result.error}`);
@@ -156,6 +159,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "status",
         newValue: L2_DEV_KO_NEW_STATUS,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) {
         throw new Error(`Op 4 updateWeekItemField(status) failed: ${result.error}`);
@@ -177,6 +181,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "notes",
         newValue: L2_DEV_HANDOFF_NEW_NOTES,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
       if (!result.ok) {
         throw new Error(`Op 5 updateWeekItemField(notes) failed: ${result.error}`);

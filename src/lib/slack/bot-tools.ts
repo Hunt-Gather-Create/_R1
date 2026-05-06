@@ -41,10 +41,45 @@ import {
 } from "@/lib/runway/operations";
 import { getClientContactsStructured } from "@/lib/runway/operations-context";
 import { getMonday, toISODateString } from "@/app/runway/date-utils";
+import { isModalInterceptEnabled } from "@/lib/feature-flags";
+import {
+  interceptCreateForModal,
+  type ConvoState,
+  type InterceptContext,
+} from "./modals/intercept";
+import { createInterceptMissObserver } from "./modals/intercept-miss-alert";
 import { generateGanttShare } from "@/lib/runway/gantt/share-orchestrator";
 
-export function createBotTools(userName: string, now: Date = new Date()) {
+/**
+ * Optional intercept wiring for Wave 7 / Builder 7. When `convoState` and
+ * `context` are passed (the bot's `handleDirectMessage` path), the three
+ * modal-routed `create_*` tools route through `interceptCreateForModal()`
+ * to stage a `bot_modal_proposals` row and return the `modalOpened` signal
+ * to the LLM. When omitted (legacy callers, tests that don't exercise the
+ * intercept), the tools fall through to the direct-write path with
+ * `source: "bot-direct"` so behavior is unchanged.
+ *
+ * The feature flag (`MODAL_INTERCEPT_ENABLED`) is also checked at the
+ * tool-wrapper level so flipping the flag off disables intercept even when
+ * `convoState` is present.
+ */
+export interface BotToolsOptions {
+  convoState?: ConvoState;
+  context?: InterceptContext;
+}
+
+export function createBotTools(
+  userName: string,
+  now: Date = new Date(),
+  options: BotToolsOptions = {},
+) {
   const currentMonday = toISODateString(getMonday(now));
+  const { convoState, context } = options;
+  // Wave 14 carryover: every bot-direct create_* fallback path passes this
+  // observer so a write that slips past the modal gate while
+  // MODAL_INTERCEPT_ENABLED=true gets a structured warn-log. The observer
+  // is fire-and-forget — DB failures are swallowed inside the factory.
+  const interceptMissObserver = createInterceptMissObserver();
   return {
     get_clients: tool({
       description:
@@ -152,6 +187,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           newStatus,
           updatedBy: userName,
           notes,
+          source: "bot-direct",
         });
 
         if (!result.ok) {
@@ -261,7 +297,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
 
     create_project: tool({
       description:
-        "Create a new project under a client. Use when someone says they want to add a project.",
+        "Create a new project under a client. Use when someone says they want to add a project. Supports retainer wrapper fields: pass engagementType='retainer' (and optionally contractStart/contractEnd) when the user mentions retainer cues or year-anchored wrapper names like 'AG1 Pro 2026'. Set isRetainer=true as a redundant signal alongside engagementType. parentProjectId attaches a deliverable L1 to an existing retainer wrapper (must be same client; cycle-checked).",
       inputSchema: z.object({
         clientSlug: z.string().describe("Client slug"),
         name: z.string().describe("Project name"),
@@ -271,8 +307,56 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         dueDate: z.string().optional().describe("Due date (ISO format)"),
         waitingOn: z.string().optional().describe("Who/what we're waiting on"),
         notes: z.string().optional().describe("Project notes"),
+        isRetainer: z
+          .boolean()
+          .optional()
+          .describe(
+            "Redundant retainer signal. Set true alongside engagementType='retainer' when retainer cues are detected. Helps disambiguate intent for the modal.",
+          ),
+        engagementType: z
+          .string()
+          .optional()
+          .describe("'retainer' | 'project'. Pass 'retainer' for wrapper projects."),
+        contractStart: z.string().optional().describe("ISO YYYY-MM-DD; retainer contract start"),
+        contractEnd: z.string().optional().describe("ISO YYYY-MM-DD; retainer contract end"),
+        startDate: z.string().optional().describe("ISO YYYY-MM-DD; project start"),
+        endDate: z.string().optional().describe("ISO YYYY-MM-DD; project end"),
+        parentProjectId: z
+          .string()
+          .optional()
+          .describe(
+            "Retainer wrapper id (same client, no cycle). Attach a deliverable L1 to a retainer wrapper. Use get_projects(engagementType='retainer') to find the id.",
+          ),
       }),
-      execute: async ({ clientSlug, name, status, owner, resources, dueDate, waitingOn, notes }) => {
+      execute: async (params) => {
+        // Wave 7 intercept: if the bot wrapper provided convoState + context
+        // AND the feature flag is on, stage a proposal and return the
+        // modalOpened signal to terminate the LLM loop. Otherwise fall
+        // through to the direct-write path (legacy bot-direct behavior).
+        if (convoState && context && isModalInterceptEnabled()) {
+          return interceptCreateForModal({
+            toolName: "create_project",
+            args: params as Record<string, unknown>,
+            context,
+            convoState,
+          });
+        }
+        const {
+          clientSlug,
+          name,
+          status,
+          owner,
+          resources,
+          dueDate,
+          waitingOn,
+          notes,
+          engagementType,
+          contractStart,
+          contractEnd,
+          startDate,
+          endDate,
+          parentProjectId,
+        } = params;
         const result = await addProject({
           clientSlug,
           name,
@@ -282,7 +366,15 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           dueDate,
           waitingOn,
           notes,
+          engagementType,
+          contractStart,
+          contractEnd,
+          startDate,
+          endDate,
+          parentProjectId,
           updatedBy: userName,
+          source: "bot-direct",
+          auditObserver: interceptMissObserver,
         });
 
         if (!result.ok) {
@@ -321,6 +413,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
             "waitingOn",
             "notes",
             "parentProjectId",
+            "engagementType",
           ])
           .describe("Field to update"),
         newValue: z.string().describe("New value for the field (pass empty string to clear parentProjectId)"),
@@ -332,6 +425,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           field,
           newValue,
           updatedBy: userName,
+          source: "bot-direct",
         });
 
         if (!result.ok) {
@@ -383,9 +477,20 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         notes: z.string().optional().describe("Notes"),
       }),
       execute: async (params) => {
+        // Wave 7 intercept (see create_project for routing rules).
+        if (convoState && context && isModalInterceptEnabled()) {
+          return interceptCreateForModal({
+            toolName: "create_week_item",
+            args: params as Record<string, unknown>,
+            context,
+            convoState,
+          });
+        }
         const result = await createWeekItem({
           ...params,
           updatedBy: userName,
+          source: "bot-direct",
+          auditObserver: interceptMissObserver,
         });
 
         if (!result.ok) {
@@ -462,6 +567,7 @@ export function createBotTools(userName: string, now: Date = new Date()) {
           field,
           newValue,
           updatedBy: userName,
+          source: "bot-direct",
         });
 
         if (!result.ok) {
@@ -618,8 +724,18 @@ export function createBotTools(userName: string, now: Date = new Date()) {
         title: z.string().optional().describe("Job title"),
         roleCategory: z.string().optional().describe("Role category (am, pm, creative, dev, etc.)"),
       }),
-      execute: async ({ name, firstName, fullName, title, roleCategory }) => {
-        const result = await createTeamMember({ name, firstName, fullName, title, roleCategory, updatedBy: userName });
+      execute: async (params) => {
+        // Wave 7 intercept (see create_project for routing rules).
+        if (convoState && context && isModalInterceptEnabled()) {
+          return interceptCreateForModal({
+            toolName: "create_team_member",
+            args: params as Record<string, unknown>,
+            context,
+            convoState,
+          });
+        }
+        const { name, firstName, fullName, title, roleCategory } = params;
+        const result = await createTeamMember({ name, firstName, fullName, title, roleCategory, updatedBy: userName, source: "bot-direct", auditObserver: interceptMissObserver });
         if (!result.ok) return { error: result.error };
         await postMutationUpdate({
           result,

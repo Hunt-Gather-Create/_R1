@@ -335,6 +335,7 @@ async function applyResourcesChange(
     field: "resources",
     newValue: change.to,
     updatedBy: UPDATED_BY,
+    source: "migration",
   });
   if (!result.ok) {
     throw new Error(`updateProjectField(resources) for '${projectName}' failed: ${result.error}`);
