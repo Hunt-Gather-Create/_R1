@@ -37,10 +37,11 @@ import { makeSlashRequest, encodeFormBody } from "./route-test-helpers";
 // Copy" matches uniquely; "AG1 Pro Subscriber 2026" matches "AG1 Pro".
 // ────────────────────────────────────────────────────────────────────────────
 const FIXTURE_PROJECTS = [
-  { id: "proj_brand_refresh_xyz123", name: "Brand Refresh", clientId: "cli_ag1" },
-  { id: "proj_brand_strategy_xyz12", name: "Brand Strategy", clientId: "cli_ag1" },
-  { id: "proj_ag1_pro_2026_full_id1", name: "AG1 Pro Subscriber 2026", clientId: "cli_ag1" },
-  { id: "proj_landing_page_full_id1", name: "Landing Page Copy", clientId: "cli_ag1" },
+  { id: "proj_brand_refresh_xyz123", name: "Brand Refresh", clientId: "cli_ag1", engagementType: "project" },
+  { id: "proj_brand_strategy_xyz12", name: "Brand Strategy", clientId: "cli_ag1", engagementType: "project" },
+  { id: "proj_ag1_pro_2026_full_id1", name: "AG1 Pro Subscriber 2026", clientId: "cli_ag1", engagementType: "project" },
+  { id: "proj_landing_page_full_id1", name: "Landing Page Copy", clientId: "cli_ag1", engagementType: "project" },
+  { id: "proj_retainer_wrap_fullid01", name: "Retainer Wrapper", clientId: "cli_ag1", engagementType: "retainer" },
 ];
 
 const FIXTURE_WEEK_ITEMS = [
@@ -425,6 +426,27 @@ describe("POST /api/slack/commands — edit command flow", () => {
     expect(row.targetEntityId).toBe("proj_brand_refresh_xyz123");
     expect(row.targetEntityType).toBe("project");
     expect(viewsOpen).toHaveBeenCalledTimes(1);
+    // Non-retainer row -> modal opens with retainerMode=false.
+    const callArgs = viewsOpen.mock.calls[0][0] as { view: { __debug?: { retainerMode?: boolean } } };
+    expect(callArgs.view.__debug?.retainerMode).toBe(false);
+  });
+
+  it("/runway-edit-project on a retainer row opens modal with retainerMode=true", async () => {
+    // Bug X2: previously buildModalView always passed retainerMode=false,
+    // so editing a retainer row reopened the modal with the wrapper checkbox
+    // unchecked. Submitting any unrelated change (e.g. only Notes) silently
+    // demoted engagement_type back to "project" because the unchecked
+    // checkbox was read as the user's intent.
+    const { viewsOpen } = setupMocks();
+    const { POST } = await import("./route");
+    const fx = loadFixture<Record<string, string>>("slash-command-edit-multimatch");
+    const payload = { ...fx, command: "/runway-edit-project", text: "proj_retainer_wrap_fullid01" };
+    const req = makeSlashRequest(payload);
+    const res = await POST(req as never);
+    expect(res.status).toBe(200);
+    expect(viewsOpen).toHaveBeenCalledTimes(1);
+    const callArgs = viewsOpen.mock.calls[0][0] as { view: { __debug?: { retainerMode?: boolean } } };
+    expect(callArgs.view.__debug?.retainerMode).toBe(true);
   });
 
   it("/runway-edit-task with single fuzzy-name match populates targetEntityId", async () => {

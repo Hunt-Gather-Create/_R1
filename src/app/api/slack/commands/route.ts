@@ -155,13 +155,21 @@ function buildModalView(input: ViewBuilderInput): Record<string, unknown> {
     }) as unknown as Record<string, unknown>;
   }
   if (input.kind === "project") {
+    // Retainer mode defaults to false from slash entry; the in-modal
+    // checkbox + block_actions handler flips it in place. For edit-mode,
+    // derive from the row's engagementType so a retainer row reopens with
+    // the wrapper checkbox checked - otherwise submitting an unrelated
+    // edit (e.g. only Notes) silently demotes engagement_type back to
+    // "project" because the unchecked checkbox is read as the user's
+    // intent.
+    const retainerMode =
+      input.mode === "edit" &&
+      input.currentValues?.engagementType === "retainer";
     return buildProjectModal({
       args: input.args,
       proposalId: input.proposalId,
       mode: input.mode,
-      // Retainer mode defaults to false from slash entry; the in-modal
-      // checkbox + block_actions handler flips it in place.
-      retainerMode: false,
+      retainerMode,
       currentValues: input.currentValues,
       baselineHint: input.baselineHint,
       multiMatchHint: input.multiMatchHint,
