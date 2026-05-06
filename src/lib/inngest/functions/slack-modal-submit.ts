@@ -71,7 +71,7 @@ import {
   updateWeekItemField,
 } from "@/lib/runway/operations-writes-week";
 import { updateProjectField } from "@/lib/runway/operations-writes-project";
-import { createTeamMember } from "@/lib/runway/operations-writes-team";
+import { createTeamMember, updateTeamMember } from "@/lib/runway/operations-writes-team";
 import {
   formatModalUpdatedBy,
   type AuditSource,
@@ -470,11 +470,14 @@ async function performWrite(params: PerformWriteParams): Promise<WriteResult> {
       updatedBy,
     );
   }
-  // team_member edits are out of scope until updateTeamMember exposes the
-  // observer / source surface; return a no-op WriteResult so the modal still
-  // confirms (validation already enforced no-op rejection).
   if (proposal.targetEntityType === "team_member") {
-    return { entityName: getStr(normalized, "fullName") ?? "team member" };
+    return await writeUpdateTeamMember(
+      proposal,
+      normalized,
+      changedFields,
+      source,
+      updatedBy,
+    );
   }
   throw new Error(
     `Unsupported edit targetEntityType: '${proposal.targetEntityType}'`,
@@ -591,6 +594,61 @@ async function writeCreateTeamMember(
   if (!result.ok) throw new Error(result.error);
 
   return { entityName: fullName };
+}
+
+async function writeUpdateTeamMember(
+  proposal: ProposalRow,
+  normalized: Record<string, unknown>,
+  changedFields: string[],
+  source: AuditSource,
+  updatedBy: string,
+): Promise<WriteResult> {
+  // Load the existing team_member by id so we have a stable lookup name in
+  // case the user is renaming via fullName in this same submit. updateTeamMember
+  // resolves by name (fuzzy), so feeding it the post-rename value would miss.
+  const db = getRunwayDb();
+  const { teamMembers } = await import("@/lib/db/runway-schema");
+  const rows = (await db
+    .select()
+    .from(teamMembers)
+    .where(eq(teamMembers.id, proposal.targetEntityId as string))) as Array<{
+    id: string;
+    name: string;
+  }>;
+  const row = rows[0];
+  if (!row) {
+    throw new Error(
+      `Target team_member ${proposal.targetEntityId} not found at write time`,
+    );
+  }
+
+  // Whitelist the canonical fields the team-member modal collects today.
+  // fullName + roleCategory are the only modal inputs after the X4 cleanup;
+  // the rest of TEAM_MEMBER_FIELDS (title, slackUserId, accountsLed, etc.)
+  // are not surfaced and stay write-protected here.
+  const ALLOW = new Set(["fullName", "roleCategory"]);
+
+  for (const field of changedFields) {
+    if (!ALLOW.has(field)) continue;
+    const newValue = normalized[field];
+    const value =
+      newValue === null || newValue === undefined ? "" : String(newValue);
+    const result = await updateTeamMember({
+      memberName: row.name,
+      field,
+      newValue: value,
+      updatedBy,
+      source,
+    });
+    if (!result.ok) throw new Error(result.error);
+  }
+
+  // Surface the post-update fullName in the confirmation when the user
+  // renamed; otherwise fall back to the original name on the row.
+  const submittedFullName = getStr(normalized, "fullName");
+  return {
+    entityName: submittedFullName ?? row.name,
+  };
 }
 
 async function writeUpdateProject(

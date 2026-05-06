@@ -141,6 +141,10 @@ export interface UpdateTeamMemberParams {
   field: string;
   newValue: string;
   updatedBy: string;
+  /** Wave 0b §A4: optional callback fired on successful update. */
+  auditObserver?: (event: AuditEvent) => void;
+  /** Wave 0b §"Wave 0b" #7: write provenance. */
+  source?: AuditSource;
 }
 
 export async function updateTeamMember(
@@ -153,7 +157,7 @@ export async function updateTeamMember(
     newValue: string;
   }>
 > {
-  const { memberName, field, newValue, updatedBy } = params;
+  const { memberName, field, newValue, updatedBy, auditObserver, source } = params;
   const db = getRunwayDb();
 
   const fieldResult = validateAndResolveField(field, TEAM_MEMBER_FIELDS, TEAM_MEMBER_FIELD_TO_COLUMN);
@@ -204,6 +208,15 @@ export async function updateTeamMember(
     summary: `Team member '${member.name}': ${field} changed from "${previousValue}" to "${newValue}"`,
     metadata: JSON.stringify({ field, memberName: member.name }),
   });
+
+  if (auditObserver) {
+    auditObserver({
+      source: source ?? null,
+      entityId: member.id,
+      entityType: "team_member",
+      updatedBy,
+    });
+  }
 
   return {
     ok: true,
