@@ -917,6 +917,37 @@ describe("POST /api/slack/interactivity — open_create_modal (Builder 8)", () =
     expect(handles.getProjectsFiltered).not.toHaveBeenCalled();
   });
 
+  it("rejects open_create_modal when clicking user does not own the proposal", async () => {
+    // Q4 / Bug fix: handleOpenCreateModal must verify the clicker matches
+    // proposal.userSlackId. In shared channels another user could otherwise
+    // open + submit someone else's draft; the submit-side mismatch path then
+    // marks it `failed` and invalidates the original author's draft.
+    const handles = setupRouteMocks({
+      proposals: [
+        makeProposal({
+          id: "prop_other_user",
+          toolName: "create_week_item",
+          userSlackId: "U_OTHER_USER",
+          args: JSON.stringify({ clientSlug: "ag1" }),
+        }),
+      ],
+    });
+    const { POST } = await import("./route");
+
+    // Fixture's payload.user.id is "U_TEST_001" but the proposal belongs to
+    // U_OTHER_USER -> should fail closed at modal-open time.
+    const body = encodePayload(payloadForProposal("prop_other_user"));
+    const req = makeRequest(body);
+    const res = await POST(req as never);
+    expect(res.status).toBe(200);
+
+    expect(handles.viewsOpen).not.toHaveBeenCalled();
+    expect(handles.buildTaskModal).not.toHaveBeenCalled();
+    expect(handles.postEphemeral).toHaveBeenCalled();
+    const ephemeralCall = handles.postEphemeral.mock.calls[0][0] as { text: string };
+    expect(ephemeralCall.text).toMatch(/belongs to someone else/i);
+  });
+
   it("opens project modal in retainer mode with both hints suppressed", async () => {
     const handles = setupRouteMocks({
       proposals: [

@@ -273,6 +273,17 @@ async function handleOpenCreateModal(
     return new Response("OK", { status: 200 });
   }
 
+  // Ownership check: in shared channels another user can see the open-modal
+  // button on someone else's bot-intercept message. Without this gate, that
+  // user could open + submit a draft they didn't author; the submit handler
+  // would then mark the proposal `failed` for submitter mismatch, invalidating
+  // the original author's draft. Fail closed at modal-open time so the wrong
+  // user never sees the staged data.
+  if (proposal.userSlackId && proposal.userSlackId !== payload.user?.id) {
+    await tryPostEphemeral(channelId, payload.user?.id, "That draft belongs to someone else. Use the slash command to start your own.");
+    return new Response("OK", { status: 200 });
+  }
+
   // Validate proposal lifecycle.
   const now = Date.now();
   const expiresAtMs =
