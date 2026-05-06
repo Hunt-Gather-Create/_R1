@@ -67,6 +67,10 @@ const { mockGetClientContactsStructured } = vi.hoisted(() => ({
   mockGetClientContactsStructured: vi.fn().mockResolvedValue([{ name: "Daniel", role: "Marketing Director" }]),
 }));
 
+const { mockGenerateGanttShare } = vi.hoisted(() => ({
+  mockGenerateGanttShare: vi.fn(),
+}));
+
 vi.mock("./updates-channel", () => ({
   postMutationUpdate: (...args: unknown[]) => mockPostMutationUpdate(...args),
 }));
@@ -74,6 +78,9 @@ vi.mock("ai", () => ({ tool: vi.fn((config) => config) }));
 vi.mock("@/lib/runway/operations", () => mockOps);
 vi.mock("@/lib/runway/operations-context", () => ({
   getClientContactsStructured: (...args: unknown[]) => mockGetClientContactsStructured(...args),
+}));
+vi.mock("@/lib/runway/gantt/share-orchestrator", () => ({
+  generateGanttShare: (...args: unknown[]) => mockGenerateGanttShare(...args),
 }));
 
 import { createBotTools } from "./bot-tools";
@@ -86,7 +93,7 @@ describe("createBotTools", () => {
     tools = createBotTools("Kathy Horn");
   });
 
-  it("creates all 35 tools (23 legacy + 10 tier-2/3 v4 + 1 drift + 1 retainer team)", () => {
+  it("creates all 37 tools (23 legacy + 10 tier-2/3 v4 + 1 drift + 1 retainer team + 2 gantt share)", () => {
     const names = Object.keys(tools);
     expect(names).toEqual([
       "get_clients", "get_projects", "get_retainer_team", "get_pipeline", "get_week_items",
@@ -105,6 +112,8 @@ describe("createBotTools", () => {
       "get_batch_contents", "get_cascade_log",
       // PR #88 Chunk C — drift detection
       "get_rows_changed_since",
+      // Track 1 — gantt share
+      "render_client_gantt", "render_project_gantt",
     ]);
   });
 
@@ -1338,5 +1347,109 @@ describe("createBotTools", () => {
     expect(mockOps.updateProjectField).toHaveBeenCalledWith(
       expect.objectContaining({ field: "engagementType", newValue: "retainer" }),
     );
+  });
+
+  describe("gantt share tools", () => {
+    const successClientResult = {
+      shareUrl: "https://runway.startround1.com/api/runway/gantt-share/tok_abc123",
+      expiresAt: "2026-05-07T00:00:00.000Z",
+      summary: {
+        kind: "client" as const,
+        clientName: "AG1",
+        sectionCount: 3,
+        rowCount: 12,
+        severity: { critical: 0, warn: 1, info: 2 },
+      },
+    };
+    const successProjectResult = {
+      shareUrl: "https://runway.startround1.com/api/runway/gantt-share/tok_def456",
+      expiresAt: "2026-05-07T00:00:00.000Z",
+      summary: {
+        kind: "project" as const,
+        clientName: "AG1",
+        projectName: "AG1 PRO Content",
+        rowCount: 8,
+        severity: { critical: 1, warn: 0, info: 0 },
+      },
+    };
+
+    const execCtx = { toolCallId: "", messages: [], abortSignal: undefined as never };
+
+    beforeEach(() => {
+      mockGenerateGanttShare.mockResolvedValue(successClientResult);
+    });
+
+    it("render_client_gantt — calls generateGanttShare with theme hardcoded to 'light-branded'", async () => {
+      await (tools.render_client_gantt as { execute: (args: unknown, ctx: unknown) => Promise<unknown> }).execute(
+        { clientSlugOrId: "ag1" },
+        execCtx,
+      );
+      expect(mockGenerateGanttShare).toHaveBeenCalledWith({
+        clientSlug: "ag1",
+        theme: "light-branded",
+      });
+    });
+
+    it("render_client_gantt — formats success result as markdown with shareUrl + expires + summary", async () => {
+      const result = await (tools.render_client_gantt as { execute: (args: unknown, ctx: unknown) => Promise<unknown> }).execute(
+        { clientSlugOrId: "ag1" },
+        execCtx,
+      ) as { result: string };
+      expect(result.result).toContain("tok_abc123");
+      expect(result.result).toContain("AG1");
+      expect(result.result).toContain("3 sections");
+      expect(result.result).toContain("12 rows");
+      expect(result.result).toContain("Severity rollup: 0 critical, 1 warn, 2 info");
+    });
+
+    it("render_client_gantt — returns { error } on resolver failure", async () => {
+      mockGenerateGanttShare.mockRejectedValueOnce(new Error("Client not found: \"bad-slug\""));
+      const result = await (tools.render_client_gantt as { execute: (args: unknown, ctx: unknown) => Promise<unknown> }).execute(
+        { clientSlugOrId: "bad-slug" },
+        execCtx,
+      ) as { error: string };
+      expect(result.error).toContain("Client not found");
+    });
+
+    it("render_project_gantt — passes both clientSlugOrId and projectSlugOrId", async () => {
+      mockGenerateGanttShare.mockResolvedValueOnce(successProjectResult);
+      await (tools.render_project_gantt as { execute: (args: unknown, ctx: unknown) => Promise<unknown> }).execute(
+        { clientSlugOrId: "ag1", projectSlugOrId: "AG1 PRO Content" },
+        execCtx,
+      );
+      expect(mockGenerateGanttShare).toHaveBeenCalledWith({
+        clientSlug: "ag1",
+        projectSlug: "AG1 PRO Content",
+        theme: "light-branded",
+      });
+    });
+
+    it("render_project_gantt — formats success result as markdown with project + client name", async () => {
+      mockGenerateGanttShare.mockResolvedValueOnce(successProjectResult);
+      const result = await (tools.render_project_gantt as { execute: (args: unknown, ctx: unknown) => Promise<unknown> }).execute(
+        { clientSlugOrId: "ag1", projectSlugOrId: "AG1 PRO Content" },
+        execCtx,
+      ) as { result: string };
+      expect(result.result).toContain("AG1 PRO Content");
+      expect(result.result).toContain("AG1");
+      expect(result.result).toContain("tok_def456");
+      expect(result.result).toContain("8 rows");
+      expect(result.result).toContain("Severity rollup: 1 critical, 0 warn, 0 info");
+    });
+
+    it("render_project_gantt — returns { error } on resolver failure", async () => {
+      mockGenerateGanttShare.mockRejectedValueOnce(new Error("Project not found: \"missing-proj\""));
+      const result = await (tools.render_project_gantt as { execute: (args: unknown, ctx: unknown) => Promise<unknown> }).execute(
+        { clientSlugOrId: "ag1", projectSlugOrId: "missing-proj" },
+        execCtx,
+      ) as { error: string };
+      expect(result.error).toContain("Project not found");
+    });
+
+    it("render_client_gantt inputSchema.shape does NOT contain theme", () => {
+      const tool = tools.render_client_gantt as { inputSchema: { shape: Record<string, unknown> } };
+      expect(Object.keys(tool.inputSchema.shape)).not.toContain("theme");
+      expect(Object.keys(tool.inputSchema.shape)).toContain("clientSlugOrId");
+    });
   });
 });

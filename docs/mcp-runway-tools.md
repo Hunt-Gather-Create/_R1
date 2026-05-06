@@ -36,6 +36,7 @@ The endpoint speaks the MCP JSON-RPC wire format via `WebStandardStreamableHTTPS
 - Pipeline: [`get_pipeline`](#get_pipeline)
 - Team: [`get_team_members`](#get_team_members)
 - Audit / updates: [`get_updates`](#get_updates) · [`find_updates`](#find_updates) · [`get_update_chain`](#get_update_chain)
+- Gantt rendering: [`render_client_gantt`](#render_client_gantt) · [`render_project_gantt`](#render_project_gantt)
 - Flags + observability: [`get_flags`](#get_flags) · [`get_data_health`](#get_data_health) · [`get_current_batch`](#get_current_batch) · [`get_batch_contents`](#get_batch_contents) · [`get_cascade_log`](#get_cascade_log)
 
 **Writes**
@@ -677,6 +678,85 @@ L1 `ownedProjects` surfaces only projects where this person is the owner. L2 `we
 ```
 
 **Notes:** See [Appendix D](#d-cascade-model) for the cascade model overview.
+
+---
+
+## Gantt rendering
+
+These tools generate hosted-URL share links for Gantt views. Both call `generateGanttShare()` (`src/lib/runway/gantt/share-orchestrator.ts`), which renders HTML, uploads it to R2 at `gantt-share/{nonce}/render.html`, and returns a signed URL served by `/api/runway/gantt-share/<token>`. URLs have a 7-day TTL and are unauthenticated — anyone with the URL can fetch.
+
+### `render_client_gantt`
+
+**Description:** Generate a hosted-URL share link for a client's full project rundown — all top-level projects, retainer wrappers + their L1 children, sorted with content-bearing sections first. Returns a signed 7-day-TTL URL with a summary rollup.
+
+**Params:**
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `clientSlugOrId` | string | yes | Client slug, name, or id (fuzzy-matched against the clients table). |
+| `theme` | enum (`light-internal` \| `light-branded`) | no | Render theme. Default `light-branded` (client-facing, brand palette + logo, no internal alerts). `light-internal` mints a CLI-equivalent rundown with the data-integrity panel included. `dark-account-view` is rejected — that theme is RSC-only. |
+
+**Returns:** `{ shareUrl: string, expiresAt: string (ISO), summary: { kind: "client", clientName: string, sectionCount: number, rowCount: number, severity: { critical: number, warn: number, info: number } } }`
+
+**Example response:**
+
+```json
+{
+  "shareUrl": "https://runway.startround1.com/api/runway/gantt-share/<token>",
+  "expiresAt": "2026-05-12T18:51:20.000Z",
+  "summary": {
+    "kind": "client",
+    "clientName": "Convergix",
+    "sectionCount": 6,
+    "rowCount": 24,
+    "severity": { "critical": 0, "warn": 2, "info": 1 }
+  }
+}
+```
+
+**Notes:**
+- The URL is unauthenticated — anyone with it can fetch. Do NOT share with untrusted parties.
+- Default theme is `light-branded` (client-facing). Use `light-internal` for an internal CLI-equivalent rundown including the data-integrity panel.
+- `dark-account-view` is rejected at this tool — that theme is RSC-only inside the Runway Account View tab.
+- Origin resolution: `NEXT_PUBLIC_APP_URL` env var, falling back to `https://runway.startround1.com`.
+- Throws if R2 is not configured, `RUNWAY_SHARE_SECRET` is missing, or DB resolution fails (error message includes available client slugs).
+
+---
+
+### `render_project_gantt`
+
+**Description:** Generate a hosted-URL share link for a single-project triage Gantt — one L1 project, or a retainer wrapper rendered as a wrapper-shape with its child L1s. Returns a signed 7-day-TTL URL with a summary rollup. Caller must supply both the client and the project; the resolver verifies the project belongs to that client.
+
+**Params:**
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `clientSlugOrId` | string | yes | Client slug, name, or id that owns the project (fuzzy-matched). |
+| `projectSlugOrId` | string | yes | Project name or id (fuzzy-matched against `projects.name` within the client; can also be a retainer wrapper). |
+| `theme` | enum (`light-internal` \| `light-branded`) | no | Render theme. Default `light-branded`. `light-internal` mints the internal CLI variant. `dark-account-view` is rejected — that theme is RSC-only. |
+
+**Returns:** `{ shareUrl: string, expiresAt: string (ISO), summary: { kind: "project", clientName: string, projectName: string, rowCount: number, severity: { critical: number, warn: number, info: number } } }`
+
+**Example response:**
+
+```json
+{
+  "shareUrl": "https://runway.startround1.com/api/runway/gantt-share/<token>",
+  "expiresAt": "2026-05-12T18:51:20.000Z",
+  "summary": {
+    "kind": "project",
+    "clientName": "Convergix",
+    "projectName": "Brand Refresh — Phase 2",
+    "rowCount": 8,
+    "severity": { "critical": 1, "warn": 3, "info": 0 }
+  }
+}
+```
+
+**Notes:**
+- The URL is unauthenticated — anyone with it can fetch. Do NOT share with untrusted parties.
+- For wrapper projects, the rendered view is the wrapper-shape (child L1s as rows); for a leaf L1, it's the single-project triage view (week items as rows).
+- The resolver verifies the project belongs to the supplied client — supplying a mismatched pair errors out.
+- `sectionCount` is omitted from the summary (single-project views aren't multi-section); `projectName` is set instead.
+- Same origin / R2 / secret / fuzzy-match error semantics as [`render_client_gantt`](#render_client_gantt).
 
 ---
 

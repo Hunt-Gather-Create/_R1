@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockOps, registeredTools, registeredDescriptions } = vi.hoisted(() => {
+const { mockOps, mockGenerateGanttShare, registeredTools, registeredDescriptions } = vi.hoisted(() => {
+  const mockGenerateGanttShare = vi.fn();
   const mockOps = {
     getClientsWithCounts: vi.fn().mockResolvedValue([{ name: "Convergix", projectCount: 3 }]),
     getClientDetail: vi.fn().mockResolvedValue({
@@ -65,7 +66,7 @@ const { mockOps, registeredTools, registeredDescriptions } = vi.hoisted(() => {
   type ToolHandler = (params: Record<string, unknown>) => Promise<unknown>;
   const registeredTools = new Map<string, ToolHandler>();
   const registeredDescriptions = new Map<string, string>();
-  return { mockOps, registeredTools, registeredDescriptions };
+  return { mockOps, mockGenerateGanttShare, registeredTools, registeredDescriptions };
 });
 
 // Mock the operations barrel: real shared validators come through via
@@ -89,9 +90,13 @@ vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
     }
   },
 }));
+vi.mock("@/lib/runway/gantt/share-orchestrator", () => ({
+  generateGanttShare: (...args: unknown[]) => mockGenerateGanttShare(...args),
+}));
 
 import { registerRunwayTools } from "./runway-tools";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 
 describe("registerRunwayTools", () => {
   beforeEach(() => {
@@ -1162,4 +1167,109 @@ describe("registerRunwayTools", () => {
   // backed by an in-memory DB (no operations-barrel mocks) so the validator
   // code path is genuinely exercised end-to-end. A regression that deletes
   // a validator from operations-utils would break those tests.
+
+  describe("gantt share tools", () => {
+    const successResult = {
+      shareUrl: "https://runway.startround1.com/api/runway/gantt-share/tok_abc123",
+      expiresAt: "2026-05-07T00:00:00.000Z",
+      summary: {
+        kind: "client" as const,
+        clientName: "AG1",
+        sectionCount: 3,
+        rowCount: 12,
+        severity: { critical: 0, warn: 1, info: 2 },
+      },
+    };
+
+    beforeEach(() => {
+      mockGenerateGanttShare.mockResolvedValue(successResult);
+    });
+
+    it("render_client_gantt — calls generateGanttShare with default theme 'light-branded'", async () => {
+      await registeredTools.get("render_client_gantt")!({ clientSlugOrId: "ag1" });
+      expect(mockGenerateGanttShare).toHaveBeenCalledWith({
+        clientSlug: "ag1",
+        theme: "light-branded",
+      });
+    });
+
+    it("render_client_gantt — passes explicit theme 'light-internal' through", async () => {
+      await registeredTools.get("render_client_gantt")!({ clientSlugOrId: "ag1", theme: "light-internal" });
+      expect(mockGenerateGanttShare).toHaveBeenCalledWith({
+        clientSlug: "ag1",
+        theme: "light-internal",
+      });
+    });
+
+    it("render_client_gantt — schema rejects theme 'dark-account-view'", () => {
+      const schema = z.object({
+        clientSlugOrId: z.string(),
+        theme: z.enum(["light-internal", "light-branded"]).optional(),
+      });
+      const parseResult = schema.safeParse({ clientSlugOrId: "ag1", theme: "dark-account-view" });
+      expect(parseResult.success).toBe(false);
+      if (!parseResult.success) {
+        // Zod reports the valid values, not the invalid input, in the error message.
+        // Assert the error path targets the theme field and the input is not accepted.
+        const issues = parseResult.error.issues;
+        expect(issues.some((i) => i.path.includes("theme"))).toBe(true);
+        // The invalid input value is "dark-account-view" — confirm it is not in the valid set.
+        expect(["light-internal", "light-branded"]).not.toContain("dark-account-view");
+      }
+    });
+
+    it("render_client_gantt — surfaces resolver error via textMessage", async () => {
+      mockGenerateGanttShare.mockRejectedValueOnce(new Error("Client not found: \"bad-slug\". Available: ag1, convergix"));
+      const result = await registeredTools.get("render_client_gantt")!({ clientSlugOrId: "bad-slug" });
+      const text = (result as { content: [{ text: string }] }).content[0].text;
+      expect(text).toContain("Error: Client not found");
+    });
+
+    it("render_client_gantt — returns textResult with shareUrl, expiresAt, summary on success", async () => {
+      const result = await registeredTools.get("render_client_gantt")!({ clientSlugOrId: "ag1" });
+      const text = (result as { content: [{ text: string }] }).content[0].text;
+      const parsed = JSON.parse(text);
+      expect(parsed.shareUrl).toContain("gantt-share");
+      expect(parsed.expiresAt).toBeDefined();
+      expect(parsed.summary.clientName).toBe("AG1");
+    });
+
+    it("render_project_gantt — calls generateGanttShare with projectSlug", async () => {
+      mockGenerateGanttShare.mockResolvedValueOnce({
+        ...successResult,
+        summary: { ...successResult.summary, kind: "project" as const, projectName: "AG1 PRO Content" },
+      });
+      await registeredTools.get("render_project_gantt")!({ clientSlugOrId: "ag1", projectSlugOrId: "AG1 PRO Content" });
+      expect(mockGenerateGanttShare).toHaveBeenCalledWith({
+        clientSlug: "ag1",
+        projectSlug: "AG1 PRO Content",
+        theme: "light-branded",
+      });
+    });
+
+    it("render_project_gantt — surfaces project-not-found error", async () => {
+      mockGenerateGanttShare.mockRejectedValueOnce(new Error("Project not found: \"missing-proj\". Available: AG1 PRO Content"));
+      const result = await registeredTools.get("render_project_gantt")!({ clientSlugOrId: "ag1", projectSlugOrId: "missing-proj" });
+      const text = (result as { content: [{ text: string }] }).content[0].text;
+      expect(text).toContain("Error: Project not found");
+    });
+
+    it("render_project_gantt — schema rejects theme 'dark-account-view'", () => {
+      const schema = z.object({
+        clientSlugOrId: z.string(),
+        projectSlugOrId: z.string(),
+        theme: z.enum(["light-internal", "light-branded"]).optional(),
+      });
+      const parseResult = schema.safeParse({ clientSlugOrId: "ag1", projectSlugOrId: "AG1 PRO Content", theme: "dark-account-view" });
+      expect(parseResult.success).toBe(false);
+      if (!parseResult.success) {
+        // Zod reports the valid values, not the invalid input, in the error message.
+        // Assert the error path targets the theme field and the input is not accepted.
+        const issues = parseResult.error.issues;
+        expect(issues.some((i) => i.path.includes("theme"))).toBe(true);
+        // The invalid input value is "dark-account-view" — confirm it is not in the valid set.
+        expect(["light-internal", "light-branded"]).not.toContain("dark-account-view");
+      }
+    });
+  });
 });

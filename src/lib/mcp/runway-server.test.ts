@@ -126,6 +126,9 @@ describe("createRunwayMcpServer", () => {
       "override_project_date",
       "set_project_parent",
       "batch_apply",
+      // Gantt share tools (Track 1)
+      "render_client_gantt",
+      "render_project_gantt",
     ];
     for (const name of expectedTools) {
       expect(registeredTools.has(name), `Missing tool: ${name}`).toBe(true);

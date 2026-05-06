@@ -1,15 +1,18 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { DayItem, Account, PipelineItem } from "./types";
 import type { UnifiedAccount } from "./unified-view";
 import type { RunwayFlag } from "@/lib/runway/flags";
+import type { SeverityCounts, ClientRundownData } from "@/lib/runway/gantt/types";
 import { parseISODate } from "./date-utils";
 import { mergeWeekendDays, groupByWeek } from "./runway-board-utils";
 import { DayColumn } from "./components/day-column";
 import { TodaySection } from "./components/today-section";
 import { AccountSection } from "./components/account-section";
+import { GanttChartsSection } from "./components/gantt-charts-section";
 import { PipelineRow } from "./components/pipeline-row";
 import { FlagsPanel } from "./components/flags-panel";
 import { NeedsUpdateSection } from "./components/needs-update-section";
@@ -18,7 +21,7 @@ import { InFlightToggle } from "./components/in-flight-toggle";
 import { toggleInFlightAction } from "./actions";
 import { useVersionPoll } from "./use-version-poll";
 
-type View = "triage" | "accounts" | "pipeline";
+type View = "triage" | "accounts" | "gantt-charts" | "pipeline";
 
 interface RunwayBoardProps {
   thisWeek: DayItem[];
@@ -27,8 +30,33 @@ interface RunwayBoardProps {
    * Accepts either the base `Account[]` (legacy) or `UnifiedAccount[]`
    * with inline L2 milestones (chunk 3 #1). AccountSection renders both
    * shapes without branching.
+   *
+   * Track 3 Wave 4: each account may carry an optional `ganttContent`
+   * ReactNode (the pre-rendered RSC dark Gantt embed) consumed by the
+   * Gantt Charts tab, plus an optional `ganttSeverity` rollup used to
+   * paint the AuditBadge above each card. AccountSection ignores both
+   * fields; GanttChartsSection slots them inside each account card.
+   *
+   * Track 3 Wave 5: each account also carries an optional
+   * `readyToCloseIds` Set<string> of L1 project ids whose weekItems are
+   * all completed but the L1 itself isn't yet — surfaced as a small
+   * "Ready to close?" chip in BOTH AccountSection (info-card) and
+   * RundownContentRSC (dark Gantt embed) so the same signal lives in
+   * both views.
+   *
+   * Track 4 Wave 4.3: each account additionally carries the raw filtered
+   * `rundown` (`ClientRundownData | null`) so the new By Account tiered
+   * swimlane can iterate sections directly via `<AccountTier ...>`. Null
+   * when the client has no rundown row (data-integrity nudge).
    */
-  accounts: Account[] | UnifiedAccount[];
+  accounts: Array<
+    (Account | UnifiedAccount) & {
+      rundown?: ClientRundownData | null;
+      ganttContent?: ReactNode;
+      ganttSeverity?: SeverityCounts;
+      readyToCloseIds?: ReadonlySet<string>;
+    }
+  >;
   pipeline: PipelineItem[];
   flags?: RunwayFlag[];
   staleItems?: DayItem[];
@@ -46,6 +74,7 @@ interface RunwayBoardProps {
 const TABS = [
   { key: "triage", label: "This Week" },
   { key: "accounts", label: "By Account" },
+  { key: "gantt-charts", label: "Gantt Charts" },
   { key: "pipeline", label: "Pipeline" },
 ] as const;
 
@@ -203,6 +232,10 @@ export function RunwayBoard({
               </div>
             ) : null}
 
+            {view === "gantt-charts" ? (
+              <GanttChartsSection accounts={accounts} />
+            ) : null}
+
             {view === "pipeline" ? (
               <div className="space-y-6">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -228,7 +261,7 @@ export function RunwayBoard({
             ) : null}
           </div>
 
-          <FlagsPanel flags={flags} />
+          {view !== "accounts" && view !== "gantt-charts" && <FlagsPanel flags={flags} />}
         </div>
       </main>
     </div>

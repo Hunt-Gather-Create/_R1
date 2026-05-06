@@ -93,6 +93,15 @@ export interface Account {
   contractValue?: string;
   contractTerm?: string;
   contractStatus: "signed" | "unsigned" | "expired";
+  /**
+   * Track 4 audit fix (2026-05-05): contract start/end dates surfaced on the
+   * By Account client header. Sourced from the retainer wrapper L1's
+   * `contractStart`/`contractEnd` fields when one exists; null otherwise.
+   * Optional because non-retainer accounts (project-only or pipeline-only)
+   * carry no canonical contract dates at the client level.
+   */
+  contractStart?: string | null;
+  contractEnd?: string | null;
   team?: string;
   items: TriageItem[];
 }
@@ -126,3 +135,40 @@ export type WeekDay = {
 export type PipelineRow = typeof pipelineItems.$inferSelect & {
   accountName: string | null;
 };
+
+// ── Gantt rundown extension ──────────────────────────────
+//
+// Track 3 Wave 3: AccountSection no longer consumes a rundown. The Gantt
+// embed has been removed from the By Account tab and will be reintroduced
+// on a separate "Gantt Charts" tab in Wave 4. The rundown types below are
+// retained because the legacy `/api/runway/gantt-embed` route + helpers
+// still reference them.
+//
+// Track 4 Wave 4.3: AccountSection re-consumes a `rundown` (raw filtered
+// `ClientRundownData`) so it can render the new tiered swimlane via
+// `<AccountTier ...>`. The Gantt Charts tab continues to consume the
+// pre-rendered `ganttContent` ReactNode in parallel — the two views read
+// the same upstream filter result through different shapes.
+
+/**
+ * A RundownSection descriptor (metadata only — no rendered content).
+ * The rendered JSX is passed separately via React's RSC slot mechanism.
+ */
+export interface RenderedRundownSection {
+  anchor: string;
+  kind: "wrapper" | "wrapper-child" | "standalone";
+  title: string;
+  parentTitle?: string;
+}
+
+/**
+ * Per-client severity + section metadata for the AuditBadge and section
+ * grouping. Does NOT include rendered HTML — content is passed as ReactNode
+ * via the RSC children pattern (react-dom/server is banned in Next.js 16
+ * App Router entrypoints, including route handlers).
+ */
+export interface RenderedClientRundownData {
+  generatedAt: string;
+  overallSeverity: import("@/lib/runway/gantt/types").SeverityCounts;
+  sections: RenderedRundownSection[];
+}
