@@ -15,7 +15,10 @@
  * nor themes.ts. The route calls renderToStaticMarkup directly (allowed in
  * route handlers as long as no OTHER file in the static graph imports it).
  *
- * Auth: RUNWAY_EMBED_SECRET optional shared-secret gate.
+ * Auth: RUNWAY_EMBED_SECRET shared-secret gate. Required in production —
+ * if unset in prod, the route hard-fails with 500 rather than silently
+ * disabling auth. In development, missing secret logs a warning and
+ * proceeds without auth so local rendering keeps working.
  *
  * Response: { generatedAt, overallSeverity, sections: RenderedRundownSection[] }
  */
@@ -36,13 +39,24 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { toISODateString } from "@/app/runway/date-utils";
 import type { RenderedRundownSection } from "@/app/runway/types";
 
-const EMBED_SECRET = process.env.RUNWAY_EMBED_SECRET ?? null;
-
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  // Optional shared-secret gate (set RUNWAY_EMBED_SECRET in .env.local for prod)
-  if (EMBED_SECRET) {
+  // Shared-secret gate. Read at request time (not module init) so
+  // environment changes are picked up and tests can stub the var.
+  const embedSecret = process.env.RUNWAY_EMBED_SECRET;
+  if (!embedSecret) {
+    if (process.env.NODE_ENV === "production") {
+      console.error(
+        "[gantt-embed] RUNWAY_EMBED_SECRET is not configured in production — refusing to serve",
+      );
+      return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
+    }
+    // Dev/test only — allow without auth, but log so the gap is visible.
+    console.warn(
+      "[gantt-embed] RUNWAY_EMBED_SECRET unset (non-production) — proceeding without auth",
+    );
+  } else {
     const auth = request.headers.get("x-embed-secret");
-    if (auth !== EMBED_SECRET) {
+    if (auth !== embedSecret) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
