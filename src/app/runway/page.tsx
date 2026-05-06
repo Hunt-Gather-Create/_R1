@@ -9,7 +9,7 @@ import { buildUnifiedAccounts, filterWrapperDayItems } from "./unified-view";
 import { extractClientRundown } from "@/lib/runway/gantt/server";
 import { getRunwayDb } from "@/lib/db/runway";
 import { clients as clientsTable, projects as projectsTable } from "@/lib/db/runway-schema";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, inArray, isNull } from "drizzle-orm";
 import { filterActiveRundown, isReadyToClose } from "@/lib/runway/gantt/filter-active";
 import { RundownContentRSC } from "./components/rundown-content-rsc";
 import type { ClientRundownData, RundownSection } from "@/lib/runway/gantt/types";
@@ -50,6 +50,14 @@ function computeReadyToCloseIds(sections: readonly RundownSection[]): Set<string
  * them on a separate "Gantt Charts" tab. The By Account tab no longer
  * renders Gantt embeds, but the rundown drives the active-status filter
  * that hides accounts whose work has all completed/canceled.
+ *
+ * Perf (Qodo P1 #1): the previous implementation awaited per-client DB
+ * work inside a for-loop, creating an O(N) async waterfall that scaled
+ * linearly with client count. We now (1) fetch top-level projects for
+ * ALL clients in a single batched query using inArray() and group them
+ * by clientId in-memory, and (2) fan out the per-client
+ * extractClientRundown() calls in parallel via Promise.all. This removes
+ * the N+1 on top-level lookups AND the sequential await chain.
  */
 async function getClientRundowns(): Promise<Map<string, ClientRundownData>> {
   const db = getRunwayDb();
@@ -57,19 +65,43 @@ async function getClientRundowns(): Promise<Map<string, ClientRundownData>> {
   const generatedAt = todayISO;
 
   const allClients = await db.select().from(clientsTable);
-  const result = new Map<string, ClientRundownData>();
-  for (const client of allClients) {
-    const topLevels = await db
-      .select()
-      .from(projectsTable)
-      .where(
-        and(eq(projectsTable.clientId, client.id), isNull(projectsTable.parentProjectId)),
-      )
-      .orderBy(asc(projectsTable.name));
-    const rundown = await extractClientRundown(db, client, topLevels, generatedAt, todayISO);
-    result.set(client.id, rundown);
+  if (allClients.length === 0) return new Map<string, ClientRundownData>();
+
+  const clientIds = allClients.map((c) => c.id);
+
+  // Single batched query for ALL top-level projects across every client,
+  // ordered by name. We then bucket them by clientId so each client gets
+  // its own ordered list — matching the per-client query shape the
+  // for-loop produced, just without the N round-trips.
+  const allTopLevels = await db
+    .select()
+    .from(projectsTable)
+    .where(
+      and(inArray(projectsTable.clientId, clientIds), isNull(projectsTable.parentProjectId)),
+    )
+    .orderBy(asc(projectsTable.name));
+
+  type TopLevelRow = (typeof allTopLevels)[number];
+  const topLevelsByClient = new Map<string, TopLevelRow[]>();
+  for (const row of allTopLevels) {
+    const bucket = topLevelsByClient.get(row.clientId);
+    if (bucket) {
+      bucket.push(row);
+    } else {
+      topLevelsByClient.set(row.clientId, [row]);
+    }
   }
-  return result;
+
+  // Fan out extractClientRundown across all clients in parallel.
+  const entries = await Promise.all(
+    allClients.map(async (client) => {
+      const topLevels = topLevelsByClient.get(client.id) ?? [];
+      const rundown = await extractClientRundown(db, client, topLevels, generatedAt, todayISO);
+      return [client.id, rundown] as const;
+    }),
+  );
+
+  return new Map<string, ClientRundownData>(entries);
 }
 
 export const metadata = {
