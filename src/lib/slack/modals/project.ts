@@ -40,6 +40,7 @@ import {
   BASELINE_PARENT_PICKER_HINT,
   MODAL_HEADERS,
 } from "./copy";
+import { BLOCK_IDS } from "./constants";
 import {
   asString,
   asStringArray,
@@ -232,7 +233,7 @@ function buildClientBlock(currentValues?: Record<string, unknown>) {
   }
   return {
     type: "input",
-    block_id: "client_block",
+    block_id: BLOCK_IDS.CLIENT,
     label: plainText("Client"),
     // dispatch_action fires block_actions on Client pick. The handler writes
     // the chosen clientId into private_metadata so the cascading Parent
@@ -256,7 +257,7 @@ function buildIsRetainerBlock(retainerMode: boolean) {
   if (retainerMode) element.initial_options = [option];
   return {
     type: "input",
-    block_id: "is_retainer_block",
+    block_id: BLOCK_IDS.IS_RETAINER,
     label: plainText("Retainer wrapper"),
     optional: true,
     // Toggle re-renders via response_action: "update". dispatch_action triggers
@@ -276,7 +277,7 @@ function buildProjectNameBlock(currentValues?: Record<string, unknown>) {
   if (initial) element.initial_value = initial;
   return {
     type: "input",
-    block_id: "project_name_block",
+    block_id: BLOCK_IDS.PROJECT_NAME,
     label: plainText("Project name"),
     element,
   };
@@ -288,7 +289,7 @@ function buildEngagementTypeRadioBlock(currentValues?: Record<string, unknown>) 
     ENGAGEMENT_TYPE_OPTIONS[0];
   return {
     type: "input",
-    block_id: "engagement_type_block",
+    block_id: BLOCK_IDS.ENGAGEMENT_TYPE,
     label: plainText("Engagement type"),
     element: {
       type: "radio_buttons",
@@ -304,7 +305,7 @@ function buildEngagementTypeLockedBlock() {
   // submitted radio value and writes engagementType=retainer.
   return {
     type: "context",
-    block_id: "engagement_type_block",
+    block_id: BLOCK_IDS.ENGAGEMENT_TYPE,
     elements: [mrkdwn("Engagement type: Retainer (locked)")],
   };
 }
@@ -328,7 +329,7 @@ function buildParentRetainerBlock(currentValues?: Record<string, unknown>) {
   }
   return {
     type: "input",
-    block_id: "parent_retainer_block",
+    block_id: BLOCK_IDS.PARENT_RETAINER,
     label: plainText("Parent retainer"),
     optional: true,
     element,
@@ -346,7 +347,7 @@ function buildStatusBlock(currentValues?: Record<string, unknown>) {
   if (initial) element.initial_option = staticOption(initial);
   return {
     type: "input",
-    block_id: "status_block",
+    block_id: BLOCK_IDS.STATUS,
     label: plainText("Status"),
     element,
   };
@@ -363,7 +364,7 @@ function buildCategoryBlock(currentValues?: Record<string, unknown>) {
   if (initial) element.initial_option = staticOption(initial);
   return {
     type: "input",
-    block_id: "category_block",
+    block_id: BLOCK_IDS.CATEGORY,
     label: plainText("Category"),
     element,
   };
@@ -382,7 +383,7 @@ function buildOwnerBlock(currentValues?: Record<string, unknown>) {
   }
   return {
     type: "input",
-    block_id: "owner_block",
+    block_id: BLOCK_IDS.OWNER,
     label: plainText("Owner"),
     element,
   };
@@ -491,7 +492,7 @@ function buildNotesBlock(currentValues?: Record<string, unknown>) {
   if (initial) element.initial_value = initial;
   return {
     type: "input",
-    block_id: "notes_block",
+    block_id: BLOCK_IDS.NOTES,
     label: plainText("Notes"),
     optional: true,
     element,
@@ -510,7 +511,7 @@ function buildMultiMatchHintBlock(message: string) {
   // Section block with bold/emphasis. Slack mrkdwn uses *text* for bold.
   return {
     type: "section",
-    block_id: "multi_match_hint_block",
+    block_id: BLOCK_IDS.MULTI_MATCH_HINT,
     text: mrkdwn(`*${message}*`),
   };
 }
@@ -520,7 +521,7 @@ function buildBaselineHintBlock(message: string) {
   // always-on advisory line above the picker.
   return {
     type: "context",
-    block_id: "baseline_hint_block",
+    block_id: BLOCK_IDS.BASELINE_HINT,
     elements: [mrkdwn(message)],
   };
 }
@@ -632,7 +633,7 @@ export function buildProjectModal(params: BuildProjectModalParams): SlackView {
   // status + engagementType matrix server-side.
   blocks.push(
     buildDateBlock(
-      "start_date_block",
+      BLOCK_IDS.START_DATE,
       "start_date_picker",
       "Start date",
       asString(currentValues?.startDate),
@@ -641,7 +642,7 @@ export function buildProjectModal(params: BuildProjectModalParams): SlackView {
   );
   blocks.push(
     buildDateBlock(
-      "end_date_block",
+      BLOCK_IDS.END_DATE,
       "end_date_picker",
       "End date",
       asString(currentValues?.endDate),
@@ -650,7 +651,7 @@ export function buildProjectModal(params: BuildProjectModalParams): SlackView {
   );
   blocks.push(
     buildDateBlock(
-      "due_date_block",
+      BLOCK_IDS.DUE_DATE,
       "due_date_picker",
       "Due date",
       asString(currentValues?.dueDate),
@@ -662,7 +663,7 @@ export function buildProjectModal(params: BuildProjectModalParams): SlackView {
   if (retainerMode) {
     blocks.push(
       buildDateBlock(
-        "contract_start_block",
+        BLOCK_IDS.CONTRACT_START,
         "contract_start_picker",
         "Contract start",
         asString(currentValues?.contractStart),
@@ -671,7 +672,7 @@ export function buildProjectModal(params: BuildProjectModalParams): SlackView {
     );
     blocks.push(
       buildDateBlock(
-        "contract_end_block",
+        BLOCK_IDS.CONTRACT_END,
         "contract_end_picker",
         "Contract end",
         asString(currentValues?.contractEnd),

@@ -18,6 +18,7 @@
  *   - All strings flow through `MODAL_HEADERS` (./copy.ts) where possible.
  */
 
+import { BLOCK_IDS } from "./constants";
 import { MODAL_HEADERS } from "./copy";
 import { truncate } from "./helpers";
 import { buildMultiMatchCandidatePicker } from "./picker-block";
@@ -161,7 +162,7 @@ export function buildTeamMemberModal(params: BuildTeamMemberModalParams): SlackV
   if (errorBlock) {
     blocks.push({
       type: "section",
-      block_id: "error_block",
+      block_id: BLOCK_IDS.ERROR,
       text: { type: "mrkdwn", text: `:warning: ${errorBlock.message}` },
     });
   }
@@ -193,7 +194,7 @@ export function buildTeamMemberModal(params: BuildTeamMemberModalParams): SlackV
   // Full name (required).
   blocks.push({
     type: "input",
-    block_id: "name_block",
+    block_id: BLOCK_IDS.NAME,
     label: { type: "plain_text", text: "Full name" },
     element: {
       type: "plain_text_input",
@@ -214,7 +215,7 @@ export function buildTeamMemberModal(params: BuildTeamMemberModalParams): SlackV
 
   blocks.push({
     type: "input",
-    block_id: "role_category_block",
+    block_id: BLOCK_IDS.ROLE_CATEGORY,
     label: { type: "plain_text", text: "Role category" },
     element: {
       type: "static_select",

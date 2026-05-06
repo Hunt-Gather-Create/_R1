@@ -27,6 +27,7 @@
  * Resources repeater is capped at 10 rows.
  */
 
+import { BLOCK_IDS } from "./constants";
 import {
   BASELINE_PARENT_PICKER_HINT,
   CASCADE_DEADLINE_EXPLAINER,
@@ -191,7 +192,7 @@ function buildClientBlock(currentValues?: Record<string, unknown>) {
   }
   return {
     type: "input",
-    block_id: "client_block",
+    block_id: BLOCK_IDS.CLIENT,
     label: plainText("Client"),
     // dispatch_action fires block_actions on Client pick. The handler writes
     // the chosen clientId into private_metadata so the cascading Parent
@@ -222,7 +223,7 @@ function buildParentProjectBlock(currentValues?: Record<string, unknown>) {
   }
   return {
     type: "input",
-    block_id: "parent_project_block",
+    block_id: BLOCK_IDS.PARENT_PROJECT,
     label: plainText("Parent project"),
     element,
   };
@@ -238,7 +239,7 @@ function buildTitleBlock(currentValues?: Record<string, unknown>) {
   if (initial) element.initial_value = initial;
   return {
     type: "input",
-    block_id: "title_block",
+    block_id: BLOCK_IDS.TITLE,
     label: plainText("Title"),
     element,
   };
@@ -255,7 +256,7 @@ function buildCategoryBlock(currentValues?: Record<string, unknown>) {
   if (initial) element.initial_option = staticOption(initial);
   return {
     type: "input",
-    block_id: "category_block",
+    block_id: BLOCK_IDS.CATEGORY,
     label: plainText("Category"),
     element,
   };
@@ -274,7 +275,7 @@ function buildDateTypeBlock(currentValues?: Record<string, unknown>) {
     findOption(DATE_TYPE_OPTIONS, resolved) ?? DATE_TYPE_OPTIONS[0];
   return {
     type: "input",
-    block_id: "date_type_block",
+    block_id: BLOCK_IDS.DATE_TYPE,
     label: plainText("Date type"),
     // dispatch_action fires block_actions on toggle so the interactivity
     // handler can rebuild the view via views.update. Single mode shows
@@ -300,7 +301,7 @@ function buildDateBlock(currentValues?: Record<string, unknown>) {
   if (initial) element.initial_date = initial;
   return {
     type: "input",
-    block_id: "date_block",
+    block_id: BLOCK_IDS.DATE,
     label: plainText("Date"),
     element,
   };
@@ -316,7 +317,7 @@ function buildStartDateBlock(currentValues?: Record<string, unknown>) {
   if (initial) element.initial_date = initial;
   return {
     type: "input",
-    block_id: "start_date_block",
+    block_id: BLOCK_IDS.START_DATE,
     label: plainText("Start date"),
     element,
   };
@@ -332,7 +333,7 @@ function buildEndDateBlock(currentValues?: Record<string, unknown>) {
   if (initial) element.initial_date = initial;
   return {
     type: "input",
-    block_id: "end_date_block",
+    block_id: BLOCK_IDS.END_DATE,
     label: plainText("End date"),
     element,
   };
@@ -351,7 +352,7 @@ function buildOwnerBlock(currentValues?: Record<string, unknown>) {
   }
   return {
     type: "input",
-    block_id: "owner_block",
+    block_id: BLOCK_IDS.OWNER,
     label: plainText("Owner"),
     element,
   };
@@ -440,7 +441,7 @@ function buildNotesBlock(currentValues?: Record<string, unknown>) {
   if (initial) element.initial_value = initial;
   return {
     type: "input",
-    block_id: "notes_block",
+    block_id: BLOCK_IDS.NOTES,
     label: plainText("Notes"),
     optional: true,
     element,
@@ -459,7 +460,7 @@ function buildMultiMatchHintBlock(message: string) {
   // Section block with bold/emphasis. Slack mrkdwn uses *text* for bold.
   return {
     type: "section",
-    block_id: "multi_match_hint_block",
+    block_id: BLOCK_IDS.MULTI_MATCH_HINT,
     text: mrkdwn(`*${message}*`),
   };
 }
@@ -469,7 +470,7 @@ function buildBaselineHintBlock(message: string) {
   // always-on advisory line above the picker.
   return {
     type: "context",
-    block_id: "baseline_hint_block",
+    block_id: BLOCK_IDS.BASELINE_HINT,
     elements: [mrkdwn(message)],
   };
 }
@@ -477,7 +478,7 @@ function buildBaselineHintBlock(message: string) {
 function buildCascadeDeadlineBlock() {
   return {
     type: "context",
-    block_id: "cascade_deadline_explainer_block",
+    block_id: BLOCK_IDS.CASCADE_DEADLINE_EXPLAINER,
     elements: [mrkdwn(CASCADE_DEADLINE_EXPLAINER)],
   };
 }
