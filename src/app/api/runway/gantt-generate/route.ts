@@ -32,7 +32,14 @@ function validateAuth(request: NextRequest): boolean {
 }
 
 export async function POST(request: NextRequest) {
-  if (!validateAuth(request)) {
+  let authed: boolean;
+  try {
+    authed = validateAuth(request);
+  } catch (err) {
+    console.error("[gantt-generate] auth validation threw:", err);
+    return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
+  }
+  if (!authed) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
