@@ -46,7 +46,7 @@ export type AccountForTier = {
   name: string;
   slug: string;
   team: string | null;
-  severity: "critical" | "warning" | "ok" | null;
+  severity: "critical" | "warning" | null;
   sowSigned: boolean | null;
   contractStart: string | null;
   contractEnd: string | null;
