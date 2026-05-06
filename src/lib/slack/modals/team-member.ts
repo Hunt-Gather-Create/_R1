@@ -75,9 +75,7 @@ export interface BuildTeamMemberModalParams {
    * LLM-extracted args from the natural-language intercept (Pattern A) or
    * slash-command empty-args proposal (Pattern B). Recognized keys:
    *   - fullName: string  -> pre-fills the full-name input
-   *   - clientId: string  -> pre-selects the client dropdown
    *   - roleCategory: one of ROLE_CATEGORY_OPTIONS values -> pre-selects role
-   *   - email: string     -> pre-fills the email input
    * Unknown keys are ignored.
    */
   args: Record<string, unknown>;
@@ -136,8 +134,6 @@ export function buildTeamMemberModal(params: BuildTeamMemberModalParams): SlackV
   const source = mode === "edit" ? { ...args, ...(currentValues ?? {}) } : args;
 
   const fullName = typeof source.fullName === "string" ? source.fullName : "";
-  const clientId = typeof source.clientId === "string" ? source.clientId : "";
-  const email = typeof source.email === "string" ? source.email : "";
   const roleCategoryRaw =
     typeof source.roleCategory === "string" ? source.roleCategory : "";
   const roleCategory = ROLE_CATEGORY_VALUES.has(roleCategoryRaw) ? roleCategoryRaw : "";
@@ -186,30 +182,14 @@ export function buildTeamMemberModal(params: BuildTeamMemberModalParams): SlackV
     );
   }
 
-  // Client picker - assigns the team member to a client by accountsLed.
-  blocks.push({
-    type: "input",
-    block_id: "client_block",
-    label: { type: "plain_text", text: "Client" },
-    element: {
-      type: "static_select",
-      action_id: "client_select",
-      placeholder: { type: "plain_text", text: "Pick a client" },
-      ...(clientId
-        ? {
-            initial_option: {
-              text: { type: "plain_text", text: clientId },
-              value: clientId,
-            },
-          }
-        : {}),
-      // Real options are injected at render time by the route handler from a
-      // live client list. The builder leaves `options` as a single
-      // placeholder so Slack accepts the view; the handler patches it before
-      // calling views.open. (Slack rejects static_select with empty options.)
-      options: [{ text: { type: "plain_text", text: " " }, value: "__placeholder__" }],
-    },
-  });
+  // No client picker on the team-member modal: the team_members schema has no
+  // client_id column. Cross-client membership lives in `accountsLed` (JSON
+  // array of client slugs) which is not surfaced here. An earlier draft
+  // rendered a placeholder client_select that the route handler was supposed
+  // to patch with live options at views.open time; that handler never landed,
+  // and the value never flowed to the write path either. Removing the block
+  // keeps the modal aligned with the schema and unblocks team-member CRUD
+  // via Slack.
 
   // Full name (required).
   blocks.push({
@@ -246,19 +226,12 @@ export function buildTeamMemberModal(params: BuildTeamMemberModalParams): SlackV
     },
   });
 
-  // Email (optional).
-  blocks.push({
-    type: "input",
-    block_id: "email_block",
-    optional: true,
-    label: { type: "plain_text", text: "Email" },
-    element: {
-      type: "plain_text_input",
-      action_id: "email_input",
-      placeholder: { type: "plain_text", text: "name@example.com" },
-      ...(email ? { initial_value: email } : {}),
-    },
-  });
+  // No email block on the team-member modal: the team_members schema has no
+  // email column, so collected values were silently dropped on create and the
+  // edit-flow diff (computeChangedFields' hasOwnProperty guard) skipped the
+  // field entirely - changing ONLY email left changedFields empty and the
+  // validator rejected the submit with "no changes detected." Remove the
+  // block to keep the modal aligned with the schema.
 
   return {
     type: "modal",

@@ -37,9 +37,7 @@ function baseEditParams(
     mode: "edit",
     currentValues: {
       fullName: "Sam Rivera",
-      clientId: "client_01JKCLIENTAG10001ABCDEFGHJ",
       roleCategory: "creative",
-      email: "sam@example.test",
     },
     ...overrides,
   };
@@ -75,15 +73,18 @@ describe("buildTeamMemberModal — create", () => {
     expect(view.close?.text).toBe("Cancel");
   });
 
-  it("has all four expected blocks (client, name, role, email)", () => {
+  it("has all two expected blocks (name, role) and no client_block or email_block", () => {
+    // team_members has no client_id or email column; both pickers were removed
+    // (Bug X4 fix). Cross-client membership lives in `accountsLed`, not
+    // surfaced here. Email had no column to write to and was silently dropped.
     const view = buildTeamMemberModal(baseCreateParams());
     const blockIds = view.blocks.map((b) => (b as { block_id?: string }).block_id);
     expect(blockIds).toEqual([
-      "client_block",
       "name_block",
       "role_category_block",
-      "email_block",
     ]);
+    expect(blockIds).not.toContain("client_block");
+    expect(blockIds).not.toContain("email_block");
   });
 
   it("leaves all input fields blank in create mode", () => {
@@ -93,18 +94,6 @@ describe("buildTeamMemberModal — create", () => {
       "name_block",
     ) as { element?: { initial_value?: string } } | undefined;
     expect(nameBlock?.element?.initial_value).toBeUndefined();
-
-    const emailBlock = findBlock(
-      view.blocks as Array<{ block_id?: string }>,
-      "email_block",
-    ) as { element?: { initial_value?: string } } | undefined;
-    expect(emailBlock?.element?.initial_value).toBeUndefined();
-
-    const clientBlock = findBlock(
-      view.blocks as Array<{ block_id?: string }>,
-      "client_block",
-    ) as { element?: { initial_option?: unknown } } | undefined;
-    expect(clientBlock?.element?.initial_option).toBeUndefined();
 
     const roleBlock = findBlock(
       view.blocks as Array<{ block_id?: string }>,
@@ -140,13 +129,16 @@ describe("buildTeamMemberModal — edit", () => {
     expect(nameBlock?.element?.initial_value).toBe("Sam Rivera");
   });
 
-  it("pre-fills the email input from currentValues", () => {
+  it("does not render an email_block (Bug X4 fix)", () => {
+    // team_members schema has no email column; the block was removed because
+    // the validator's hasOwnProperty diff guard made changing only email read
+    // as "no changes detected" and reject the submit.
     const view = buildTeamMemberModal(baseEditParams());
     const emailBlock = findBlock(
       view.blocks as Array<{ block_id?: string }>,
       "email_block",
-    ) as { element?: { initial_value?: string } } | undefined;
-    expect(emailBlock?.element?.initial_value).toBe("sam@example.test");
+    );
+    expect(emailBlock).toBeUndefined();
   });
 
   it("pre-selects the role category from currentValues", () => {
@@ -158,20 +150,19 @@ describe("buildTeamMemberModal — edit", () => {
     expect(roleBlock?.element?.initial_option?.value).toBe("creative");
   });
 
-  it("pre-selects the client from currentValues.clientId", () => {
+  it("does not render a client_block (Bug X4 fix)", () => {
+    // team_members schema has no client_id column; the picker was removed.
     const view = buildTeamMemberModal(baseEditParams());
     const clientBlock = findBlock(
       view.blocks as Array<{ block_id?: string }>,
       "client_block",
-    ) as { element?: { initial_option?: { value?: string } } } | undefined;
-    expect(clientBlock?.element?.initial_option?.value).toBe(
-      "client_01JKCLIENTAG10001ABCDEFGHJ",
     );
+    expect(clientBlock).toBeUndefined();
   });
 
   it("falls back to a placeholder header when fullName is missing", () => {
     const view = buildTeamMemberModal(
-      baseEditParams({ currentValues: { clientId: "x" } }),
+      baseEditParams({ currentValues: { roleCategory: "dev" } }),
     );
     // Header is still type-aware: edit, but with empty interpolation it should
     // still use the editTeamMember formatter -> "Edit team member - "
@@ -236,10 +227,10 @@ describe("ROLE_CATEGORY_OPTIONS", () => {
 // ---------------------------------------------------------------------------
 
 describe("required field markers", () => {
-  it("client, name, and role_category blocks are required", () => {
+  it("name and role_category blocks are required", () => {
     const view = buildTeamMemberModal(baseCreateParams());
     const blocks = view.blocks as Array<{ block_id?: string; optional?: boolean }>;
-    const required = ["client_block", "name_block", "role_category_block"];
+    const required = ["name_block", "role_category_block"];
     for (const id of required) {
       const block = blocks.find((b) => b.block_id === id);
       // Slack's `optional: false` is the default for input blocks; we accept
@@ -248,11 +239,11 @@ describe("required field markers", () => {
     }
   });
 
-  it("email block is optional", () => {
+  it("email_block is no longer rendered (Bug X4 fix)", () => {
     const view = buildTeamMemberModal(baseCreateParams());
     const blocks = view.blocks as Array<{ block_id?: string; optional?: boolean }>;
     const emailBlock = blocks.find((b) => b.block_id === "email_block");
-    expect(emailBlock?.optional).toBe(true);
+    expect(emailBlock).toBeUndefined();
   });
 });
 
@@ -274,7 +265,7 @@ describe("error block rendering", () => {
   it("does not render an error block when errorBlock is omitted", () => {
     const view = buildTeamMemberModal(baseCreateParams());
     const first = view.blocks[0] as { block_id?: string };
-    expect(first.block_id).toBe("client_block");
+    expect(first.block_id).toBe("name_block");
   });
 });
 
@@ -292,17 +283,6 @@ describe("create mode pre-fill from args", () => {
       "name_block",
     ) as { element?: { initial_value?: string } } | undefined;
     expect(nameBlock?.element?.initial_value).toBe("Casey Quinn");
-  });
-
-  it("pre-fills the email from args.email", () => {
-    const view = buildTeamMemberModal({
-      ...baseCreateParams({ args: { email: "casey@example.test" } }),
-    });
-    const emailBlock = findBlock(
-      view.blocks as Array<{ block_id?: string }>,
-      "email_block",
-    ) as { element?: { initial_value?: string } } | undefined;
-    expect(emailBlock?.element?.initial_value).toBe("casey@example.test");
   });
 
   it("pre-selects the role category from args.roleCategory", () => {
@@ -375,9 +355,6 @@ describe("buildTeamMemberModal — Slack title-length guard (≤24 chars)", () =
 });
 
 describe("buildTeamMemberModal — Slack empty-options guard", () => {
-  // Note: the client_block currently uses a single-item placeholder option that
-  // the route handler patches at views.open time. The guard below permits that
-  // (length >= 1). Real options are injected before the API call.
   it("emits no static_select with empty options (default create render)", () => {
     const view = buildTeamMemberModal(baseCreateParams());
     const offenders: string[] = [];
@@ -484,9 +461,9 @@ describe("multi-match candidate picker", () => {
     const pickerIdx = blocks.findIndex(
       (b) => b.block_id === "multi_match_candidate_block",
     );
-    const firstClientIdx = blocks.findIndex((b) => b.block_id === "client_block");
+    const firstInputIdx = blocks.findIndex((b) => b.block_id === "name_block");
     expect(pickerIdx).toBeGreaterThanOrEqual(0);
-    expect(firstClientIdx).toBeGreaterThan(pickerIdx);
+    expect(firstInputIdx).toBeGreaterThan(pickerIdx);
   });
 
   it("does NOT render the picker block when currentValues is set", () => {

@@ -223,11 +223,12 @@ function projectState(
 }
 
 function teamMemberState(over: Partial<Record<string, Record<string, unknown>>> = {}): StateValues {
+  // Bug X4 fix: team-member modal no longer renders client_block or
+  // email_block (no matching schema columns). Validator extraction was
+  // updated to match. Test stub mirrors the live modal shape.
   return {
-    client_block: { client_select: selectV("client_xyz") },
     name_block: { name_input: plainTextV("Sam Rivera") },
     role_category_block: { role_category_select: selectV("creative") },
-    email_block: { email_input: plainTextV("sam@example.test") },
     ...over,
   };
 }

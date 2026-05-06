@@ -366,24 +366,20 @@ function extractProjectFields(
 }
 
 interface ExtractedTeamMemberFields {
-  clientId: string | null;
   fullName: string | null;
   roleCategory: string | null;
-  email: string | null;
 }
 
 function extractTeamMemberFields(
   values: Record<string, Record<string, unknown>>,
 ): ExtractedTeamMemberFields {
   return {
-    clientId: readSelect(values, "client_block", "client_select"),
     fullName: readPlainText(values, "name_block", "name_input"),
     roleCategory: readSelect(
       values,
       "role_category_block",
       "role_category_select",
     ),
-    email: readPlainText(values, "email_block", "email_input"),
   };
 }
 
@@ -501,10 +497,8 @@ function teamMemberExtractToCanonical(
   fields: ExtractedTeamMemberFields,
 ): Record<string, unknown> {
   return {
-    clientId: fields.clientId,
     fullName: fields.fullName,
     roleCategory: fields.roleCategory,
-    email: fields.email,
   };
 }
 
