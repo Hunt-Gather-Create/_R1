@@ -784,6 +784,58 @@ describe("buildTaskModal — Range/Single-day toggle", () => {
     expect(initial.value).toBe("range");
   });
 
+  it("date_type_block is suppressed during multi-match disambiguation phase", () => {
+    // Bug X1: Slack's radio_buttons input element caches `initial_option`
+    // from the first render and ignores subsequent `views.update` payloads.
+    // If we render the radio with a placeholder Single default during
+    // disambiguation (cv=null + candidates), the Range-shaped row's later
+    // update is silently overridden. Gating the block on !inDisambiguationPhase
+    // means the radio appears for the first time after pick, with the correct
+    // initial_option fresh.
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_disambig_no_radio",
+      mode: "edit",
+      multiMatchCandidates: [
+        { id: "wi_a", label: "TEST Task Single A" },
+        { id: "wi_b", label: "TEST Task Single B" },
+      ],
+    });
+    expect(findBlock(view, "date_type_block")).toBeUndefined();
+  });
+
+  it("date_type_block renders post-pick even when candidates are still passed", () => {
+    // After the user picks a candidate, currentValues is populated. The
+    // candidate picker's gate (hasPickedEntity) flips false → radio renders
+    // for the first time on this views.update with the correct initial_option.
+    const view = buildTaskModal({
+      args: {},
+      proposalId: "prop_disambig_post_pick",
+      mode: "edit",
+      multiMatchCandidates: [
+        { id: "wi_a", label: "TEST Task Single A" },
+        { id: "wi_b", label: "TEST Task Single B" },
+      ],
+      currentValues: {
+        title: "TEST Task Single B",
+        date: null,
+        startDate: "2026-05-14",
+        endDate: "2026-05-20",
+      },
+    });
+    const radioBlock = findBlock(view, "date_type_block") as Block;
+    expect(radioBlock).toBeDefined();
+    const initial = (
+      radioBlock.element as { initial_option: { value: string } }
+    ).initial_option;
+    expect(initial.value).toBe("range");
+    // Range-shape inference should also drive the outer dateType so start/end
+    // blocks render instead of the single date_block.
+    expect(findBlock(view, "start_date_block")).toBeDefined();
+    expect(findBlock(view, "end_date_block")).toBeDefined();
+    expect(findBlock(view, "date_block")).toBeUndefined();
+  });
+
   it("date_type radio fires dispatch_action for views.update toggle", () => {
     const view = buildTaskModal({
       args: {},

@@ -524,8 +524,11 @@ export function buildTaskModal(params: BuildTaskModalParams): SlackView {
     errorBlock,
   } = params;
 
-  const dateType =
-    asString(currentValues?.dateType) === "range" ? "range" : "single";
+  // Resolve dateType from explicit field or by inferring from date / start /
+  // end shape. Without inference, a freshly-picked Range row (no explicit
+  // dateType yet) would render `date_block` instead of start/end pickers
+  // until the user toggled the radio.
+  const dateType = inferDateTypeFromArgs(currentValues) ?? "single";
   const category = asString(currentValues?.category);
 
   // Multi-match disambiguation phase: caller-side fuzzy match returned >1
@@ -588,8 +591,17 @@ export function buildTaskModal(params: BuildTaskModalParams): SlackView {
   // 7. Category
   blocks.push(buildCategoryBlock(currentValues) as SlackView["blocks"][number]);
 
-  // 8. Date type radio (drives picker mode via dispatch_action → views.update)
-  blocks.push(buildDateTypeBlock(currentValues) as SlackView["blocks"][number]);
+  // 8. Date type radio (drives picker mode via dispatch_action → views.update).
+  // Suppressed during multi-match disambiguation: Slack's radio_buttons input
+  // element caches its `initial_option` from the first render and ignores
+  // subsequent `views.update` payloads. If we render the radio with a
+  // placeholder Single default before the user picks a row, a Range-shaped
+  // row's later update is silently overridden. Skipping the block during
+  // disambiguation means the radio appears for the first time after pick,
+  // so Slack honors the correct initial_option fresh.
+  if (!inDisambiguationPhase) {
+    blocks.push(buildDateTypeBlock(currentValues) as SlackView["blocks"][number]);
+  }
 
   // 9. Date pickers. Single shows one, Range shows two. Validator + submit
   // handler mirror Single's date to both startDate AND endDate so every task
