@@ -455,6 +455,10 @@ export interface AuditRecordParams {
   batchId?: string | null;
   /** v4: id of the parent update that triggered this cascade-generated record. */
   triggeredByUpdateId?: string | null;
+  /** Wave 0b §"Wave 0b" #7: write provenance tag. Persisted to updates.source
+   *  for audit lineage. Pre-modal-era callers omit this; new modal + slash
+   *  paths thread it through. NULL when omitted. */
+  source?: AuditSource | null;
 }
 
 /** Insert an audit record into the updates table. Returns the inserted row's id. */
@@ -474,6 +478,7 @@ export async function insertAuditRecord(params: AuditRecordParams): Promise<stri
     metadata: params.metadata,
     batchId: params.batchId ?? _currentBatchId ?? null,
     triggeredByUpdateId: params.triggeredByUpdateId ?? null,
+    source: params.source ?? null,
   });
   return id;
 }

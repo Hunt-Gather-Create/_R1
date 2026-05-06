@@ -359,6 +359,7 @@ export async function createWeekItem(
     updateType: "new-week-item",
     newValue: title,
     summary: `New week item${clientName ? ` (${clientName})` : ""}: ${title}`,
+    source: source ?? null,
   });
 
   // Wave 0b §A4: emit AuditEvent for downstream observers.
@@ -583,6 +584,7 @@ export async function updateWeekItemField(
     newValue: effectiveNewValue,
     summary: `Week item '${item.title}': ${field} changed from "${previousValue}" to "${summaryNewValue}"`,
     metadata: JSON.stringify({ field }),
+    source: source ?? null,
   });
 
   // Populate reverseCascadeDetail only when the cascade fired AND we

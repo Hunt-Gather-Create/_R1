@@ -143,6 +143,7 @@ export async function updateProjectStatus(
     previousValue: previousStatus,
     newValue: newStatus,
     summary: `${client.name} / ${project.name}: ${previousStatus} -> ${newStatus}${notes ? `. ${notes}` : ""}`,
+    source: source ?? null,
   });
 
   // v4 §8: write a cascade audit row per affected L2, linked to the parent update.
@@ -168,6 +169,7 @@ export async function updateProjectStatus(
       summary: `Cascaded from ${project.name} status change: ${title} → ${newStatus}`,
       metadata: JSON.stringify({ weekItemId: itemId, field: "status" }),
       triggeredByUpdateId: parentAuditId,
+      source: source ?? null,
     });
     cascadeDetail.push({
       itemId,

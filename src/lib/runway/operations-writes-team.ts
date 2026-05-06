@@ -115,6 +115,7 @@ export async function createTeamMember(
     updateType: "new-team-member",
     newValue: name,
     summary: `New team member added: ${name}`,
+    source: source ?? null,
   });
 
   // Wave 0b §A4: emit AuditEvent for downstream observers.
@@ -207,6 +208,7 @@ export async function updateTeamMember(
     newValue,
     summary: `Team member '${member.name}': ${field} changed from "${previousValue}" to "${newValue}"`,
     metadata: JSON.stringify({ field, memberName: member.name }),
+    source: source ?? null,
   });
 
   if (auditObserver) {

@@ -332,6 +332,7 @@ export async function updateProjectField(
     newValue: effectiveNewValue,
     summary: `${client.name} / ${project.name}: ${field} changed from "${previousValue}" to "${summaryNewValue}"`,
     metadata: JSON.stringify({ field }),
+    source: source ?? null,
   });
 
   // v4 §8: emit child audit rows for each cascaded week item, linked to parent.
@@ -359,6 +360,7 @@ export async function updateProjectField(
       summary: `Cascaded from ${project.name} dueDate change: ${itemTitle} → ${summaryNewValue}`,
       metadata: JSON.stringify({ weekItemId: itemId, field: "date" }),
       triggeredByUpdateId: parentAuditId,
+      source: source ?? null,
     });
     cascadeDetail.push({
       itemId,

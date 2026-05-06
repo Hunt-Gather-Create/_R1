@@ -244,6 +244,7 @@ export async function addProject(
     updateType: "new-item",
     newValue: name,
     summary: `New project added to ${client.name}: ${name}`,
+    source: source ?? null,
   });
 
   // Wave 0b §A4: emit AuditEvent for downstream observers (Wave 14
