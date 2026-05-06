@@ -167,12 +167,13 @@ Key disambiguation: "Lane" defaults to Lane Jordan (Creative Director), not Rona
 
 ## Board UI
 
-Server-rendered page at `/runway` with three client-side views:
+Server-rendered page at `/runway` with FOUR client-side views:
 
 | View | Component | Data Source |
 |------|-----------|-------------|
 | This Week | `TodaySection` + `DayColumn` | `getWeekItems()` split by current week |
-| By Account | `AccountSection` | `getClientsWithProjects()` |
+| By Account | `AccountSection` → `AccountTier` | `getClientsWithProjects()` + `extractClientRundown()` (filtered) |
+| Gantt Charts | `GanttChartsSection` → `RundownContentRSC` | `extractClientRundown()` (filtered, dark theme) |
 | Pipeline | `PipelineRow` | `getPipeline()` |
 
 ### Data Flow
@@ -215,11 +216,41 @@ Day columns use `max-h-[60vh] overflow-y-auto` so they scroll internally instead
 
 ### Account View
 
-`AccountSection` shows projects as divider-separated sections (border-t between items) sorted by startDate. Key behaviors:
+`AccountSection` is now a thin wrapper that delegates to `AccountTier` (Track 4 redesign). The tier renders a three-level swimlane:
 
-- **Date sorting**: `startDateSortKey()` returns the ISO `startDate` (YYYY-MM-DD), falling back to a high-sentinel string so items without a startDate sort to the end. Lexicographic ISO comparison preserves chronological order without parsing Dates.
-- **Contract label expansion**: `formatContractTerm()` expands abbreviations (MSA, SOW, NDA) in contract term strings for readability.
-- **Graceful nulls**: Missing `contractValue` or `contractTerm` fields are simply not rendered (no empty elements).
+```
+Client header
+└─ Wrapper (optional, for retainers)
+   └─ Project (L1)
+      └─ Task cards row (L2 mini-cards, flex-wrap)
+```
+
+Key behaviors:
+
+- **Native `<details>` collapse**: each level (Client / Wrapper / Project) wraps in `CollapsibleSection`, which uses native `<details>` + scoped CSS for chevron rotation. No React state. Default expanded; collapse state does NOT persist across tab switches.
+- **Active-status filter**: `filterActiveRundown()` from `src/lib/runway/gantt/filter-active.ts` removes Projects with status ∈ {completed, canceled}, removes empty Wrappers, removes Clients with zero surviving sections. Applied in `page.tsx` before the rundown reaches the tier.
+- **L2 task hide**: completed/canceled tasks (week items) are also filtered out of the L2-card row in `AccountTier` (per Wave 4.6 operator feedback — they're not faded, they're gone).
+- **L2 mini-card**: `L2MiniCard` mirrors the By Week task card (`DayItemCard`) — account name (uppercase), category indicator, title, `Dates: M/D`, `Resources:`, `Owner:`. Width ~260px above `sm` breakpoint, full-width below. No notes (intentional — notes only appear on the By Week view).
+- **Ready-to-close chip**: `computeReadyToCloseIds()` precomputes `Set<string>` of L1 ids where every child week item is `completed` but the L1 itself is not yet `completed`/`canceled`. The chip surfaces inline near the L1 title in both the By Account tier AND the Gantt Charts dark embed.
+- **Header data**: client header shows team line, severity badge (derived from `ganttSeverity` rollup), SOW chip (when `contractStatus === "signed"`), contract date range (sourced from the retainer wrapper L1's `contractStart`/`contractEnd`).
+
+Empty-state handling:
+
+- Account with no rundown → "No active rundowns." card
+- Project with all tasks completed/canceled (post-filter) → header renders alone with `No Scheduled Tasks` chip
+- `null – null` date ranges → date span hidden entirely
+
+### Gantt Charts View
+
+Track 3 added a 4th tab between By Account and Pipeline. Renders one dark-themed Gantt embed per active client. Implementation pattern:
+
+- `extractClientRundown()` runs server-side in `page.tsx` (RSC) — produces `ClientRundownData` per client (sections, weekitems, severity)
+- `filterActiveRundown()` strips completed/canceled before rendering (same filter the By Account tier consumes)
+- `RundownContentRSC` is a Server Component that renders the Gantt sections using the dark theme. The output JSX is passed as `ganttContent: ReactNode` (RSC slot pattern) to `GanttChartsSection`, a client component
+- The slot pattern bypasses Next.js 16 Turbopack's ban on `react-dom/server` in App Router entrypoints — the SSR happens at the Server Component layer, not via the banned `renderToStaticMarkup` API
+- Each section uses native `<details>` with the same chevron-rotation CSS as the By Account tier (Wave 4.4 polish for visual parity)
+- Default expanded; collapse state independent per tab
+- FlagsPanel hidden on this tab (and on By Account); visible only on This Week + Pipeline
 
 ### Pipeline View
 

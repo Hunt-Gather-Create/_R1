@@ -1,285 +1,128 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { Account, TriageItem, DayItemEntry } from "../types";
-import { accountHasWrapper } from "../unified-view";
-import { getOwnerResourcesDisplay } from "./display-utils";
-import { StatusBadge, StaleBadge, ContractBadge, MetadataLabel } from "./status-badge";
-import { DatesLine } from "./dates-line";
-
 /**
- * Extended triage item with unified-view L2 milestones attached.
- * Kept in this file as an optional prop field so AccountSection works for
- * both the legacy (no milestones) and unified (with milestones) shapes.
- * Also carries optional `children` when this L1 is a retainer wrapper
- * (PR #88 Chunk F) — nested children render their own milestones inline.
+ * Track 4 Wave 4.3 — By Account tab consumer.
+ *
+ * AccountSection is now a thin wrapper around <AccountTier>. The tier
+ * component owns three-level Client / Wrapper / L1 hierarchy + the L2
+ * mini-card swimlane (Wave 4.1 + 4.2). This file's job is to map the
+ * board-level `account` shape (an `Account | UnifiedAccount` carrying
+ * Track 3/4 wiring fields) into the `AccountForTier` props the tier
+ * expects, and forward the active-filtered rundown + readyToCloseIds.
+ *
+ * Empty-state: when `account.rundown` is null OR has zero sections, we
+ * render a compact card with the client name + a dim "No active
+ * rundowns." line. This preserves the contract that AccountSection
+ * always renders something for the account (page.tsx upstream filter
+ * drops accounts whose filtered rundown has zero sections, so this
+ * branch is the data-integrity-nudge fallback for clients without a
+ * rundown row at all).
  */
-type TriageItemWithMilestones = TriageItem & {
-  milestones?: DayItemEntry[];
-  children?: TriageItemWithMilestones[];
+
+import type { Account } from "../types";
+import type {
+  ClientRundownData,
+  SeverityCounts,
+} from "@/lib/runway/gantt/types";
+import { AccountTier, type AccountForTier } from "./account-tier/AccountTier";
+
+type AccountWithWiring = Account & {
+  rundown?: ClientRundownData | null;
+  readyToCloseIds?: ReadonlySet<string>;
+  /**
+   * Track 3 Wave 4: page.tsx attaches the client's overall severity rollup
+   * (counts of critical / warn / info issues across the active-filtered
+   * Gantt rundown). The Track 4 audit fix threads this through into the
+   * tier's `severity` prop so the client header chips render correctly.
+   */
+  ganttSeverity?: SeverityCounts;
 };
 
 /**
- * Threshold for auto-collapsing retainer wrappers. Keeps wide wrappers
- * (e.g. a retainer that spans 10+ deliverables) from blowing out the page
- * on first render. v4 convention (2026-04-21 / PR #88 Chunk F).
+ * Track 4 audit fix (2026-05-05): collapse the per-account severity rollup
+ * (critical/warn/info counts) into the discriminator the client header
+ * SeverityBadge expects. Critical wins over warning; both must be > 0 to
+ * fire the badge. Info-only and zero-counts return null so the header
+ * stays clean.
  */
-const WRAPPER_AUTO_COLLAPSE_THRESHOLD = 5;
+export function deriveSeverity(
+  counts: SeverityCounts | undefined,
+): "critical" | "warning" | null {
+  if (!counts) return null;
+  if (counts.critical > 0) return "critical";
+  if (counts.warn > 0) return "warning";
+  return null;
+}
 
-/**
- * Sort key built on ISO `startDate` (YYYY-MM-DD). Items with no startDate
- * sort to the end. Lexicographic comparison on the ISO string preserves
- * chronological order without parsing into a Date.
- *
- * Replaces the legacy `targetSortKey` free-text parser (PR 88 Wave 2) —
- * the `projects.target` column was dropped in favor of structured
- * startDate/endDate.
- */
-function startDateSortKey(startDate?: string | null): string {
-  return startDate ?? "\uffff";
+interface AccountSectionProps {
+  /**
+   * Account shape from the board. May carry the new Track 4 wiring
+   * fields (`rundown`, `readyToCloseIds`) attached upstream in page.tsx.
+   * Tests sometimes pass the bare `Account` — both shapes flow through.
+   */
+  account: AccountWithWiring;
+  /**
+   * Track 3 Wave 5: optional explicit readyToCloseIds. When present it
+   * wins over `account.readyToCloseIds`. Kept for back-compat with
+   * existing test wires that pass it as a discrete prop.
+   */
+  readyToCloseIds?: ReadonlySet<string>;
 }
 
 /**
- * Expand common contract abbreviations for readability.
+ * Map the board's `Account` shape onto the `AccountForTier` shape the
+ * tier consumes. Track 4 audit fix (2026-05-05): `severity` now derives
+ * from the per-account `ganttSeverity` rollup (page.tsx attaches it via
+ * the active-filtered rundown), and `contractStart`/`contractEnd` thread
+ * through from the retainer wrapper L1. `sowSigned` continues to derive
+ * from `contractStatus === "signed"`.
  */
-function formatContractTerm(term?: string): string | undefined {
-  if (!term) return undefined;
-  return term
-    .replace(/\bMSA\b/g, "Master Service Agreement")
-    .replace(/\bSOW\b/g, "Statement of Work")
-    .replace(/\bNDA\b/g, "Non-Disclosure Agreement");
+function toAccountForTier(account: AccountWithWiring): AccountForTier {
+  return {
+    name: account.name,
+    slug: account.slug,
+    team: account.team ?? null,
+    severity: deriveSeverity(account.ganttSeverity),
+    sowSigned: account.contractStatus === "signed",
+    contractStart: account.contractStart ?? null,
+    contractEnd: account.contractEnd ?? null,
+  };
 }
 
-/**
- * Inner body of a project card -- the identity line, metadata row,
- * notes, and inline L2 milestone list. Extracted so a retainer wrapper
- * card can reuse the same rendering for both the wrapper header and
- * each nested child card without duplication.
- */
-function ProjectCardBody({
-  item,
-  outsideRetainer = false,
-}: {
-  item: TriageItemWithMilestones;
-  outsideRetainer?: boolean;
-}) {
-  const { showOwnerSeparately, displayResources } = getOwnerResourcesDisplay(item);
+export function AccountSection({ account, readyToCloseIds }: AccountSectionProps) {
+  const accountReadyIds: ReadonlySet<string> =
+    readyToCloseIds ?? account.readyToCloseIds ?? new Set<string>();
 
-  // Chunk 3 #1 — unified Project View: L2 milestones rendered inline
-  // under each L1 when the caller provides them. Silent when absent.
-  const milestones = item.milestones ?? [];
+  const rundown = account.rundown ?? null;
+  const hasSections = rundown !== null && rundown.sections.length > 0;
 
-  return (
-    <div className="min-w-0">
-      <div className="flex items-center gap-2">
-        <p className="text-sm font-medium text-foreground">{item.title}</p>
-        <StatusBadge status={item.status} />
-        {item.staleDays ? <StaleBadge days={item.staleDays} /> : null}
-        {outsideRetainer ? (
-          <span
-            data-testid="outside-retainer-marker"
-            className="rounded-full border border-muted-foreground/30 bg-muted/20 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-          >
-            Outside retainer
-          </span>
-        ) : null}
-      </div>
-      <div className="mt-1">
-        <DatesLine startDate={item.startDate} endDate={item.endDate} />
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-        {displayResources ? (
-          <MetadataLabel label="Resources" value={displayResources} />
-        ) : null}
-        {showOwnerSeparately ? (
-          <MetadataLabel label="Owner" value={item.owner!} className="text-xs text-muted-foreground/50" />
-        ) : null}
-        {item.waitingOn ? (
-          <MetadataLabel label="Waiting on" value={item.waitingOn} className="text-xs text-amber-400/80" />
-        ) : null}
-      </div>
-      {item.notes ? (
-        <p className="mt-1 text-xs text-muted-foreground/70">
-          {item.notes}
-        </p>
-      ) : null}
-      {milestones.length > 0 ? (
-        <ul
-          data-testid="project-milestones"
-          className="mt-2 space-y-0.5 pl-3 text-xs text-muted-foreground/80"
-        >
-          {milestones.map((m, i) => (
-            <li key={`${m.id ?? m.title}-${i}`} className="flex items-center gap-1.5">
-              <span aria-hidden className="text-muted-foreground/40">&bull;</span>
-              <span>{m.title}</span>
-              {m.status ? (
-                <span className="text-muted-foreground/60">({m.status})</span>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
-function ProjectCard({
-  item,
-  outsideRetainer = false,
-}: {
-  item: TriageItemWithMilestones;
-  outsideRetainer?: boolean;
-}) {
-  const children = item.children ?? [];
-  const hasChildren = children.length > 0;
-  // v4 (PR #88 Chunk F): auto-collapse wide wrappers so a retainer with 15+
-  // deliverable L1s doesn't blow out the page on first render. Operators
-  // can still expand manually.
-  const [expanded, setExpanded] = useState(
-    hasChildren ? children.length < WRAPPER_AUTO_COLLAPSE_THRESHOLD : true,
-  );
-
-  if (!hasChildren) {
+  if (!hasSections) {
     return (
-      <div className="border-t border-border/30 py-3 first:border-t-0 first:pt-0">
-        <ProjectCardBody item={item} outsideRetainer={outsideRetainer} />
+      <div
+        data-testid="account-section-empty"
+        className="rounded-xl border border-border bg-card/30 p-3 sm:p-5"
+      >
+        <h3 className="text-lg font-bold text-foreground sm:text-xl">
+          {account.name}
+        </h3>
+        {account.team ? (
+          <p className="mt-0.5 text-xs text-muted-foreground">{account.team}</p>
+        ) : null}
+        <p className="mt-3 text-xs text-muted-foreground/60">
+          No active rundowns.
+        </p>
       </div>
     );
   }
 
   return (
-    <div
-      data-testid="project-wrapper-card"
-      className="border-t border-border/30 py-3 first:border-t-0 first:pt-0"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <ProjectCardBody item={item} />
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          data-testid="project-wrapper-toggle"
-          className="shrink-0 rounded px-2 py-0.5 text-xs text-muted-foreground/70 hover:bg-muted/30 hover:text-foreground"
-        >
-          {expanded ? "Collapse" : `Expand (${children.length})`}
-        </button>
-      </div>
-      {expanded ? (
-        <ul
-          data-testid="project-wrapper-children"
-          className="mt-3 space-y-0 border-l-2 border-border/40 pl-3"
-        >
-          {children.map((child) => (
-            <li key={child.id} className="py-2 first:pt-0 last:pb-0">
-              <ProjectCardBody item={child} />
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
-interface AccountSectionProps {
-  /**
-   * Account with standard triage items. When the caller provides items that
-   * also carry `milestones` (unified Project View — chunk 3 #1), ProjectCard
-   * renders them inline without any additional prop plumbing.
-   */
-  account: Account | (Omit<Account, "items"> & { items: TriageItemWithMilestones[] });
-}
-
-export function AccountSection({ account }: AccountSectionProps) {
-  const activeItems = useMemo(
-    () =>
-      account.items
-        .filter(
-          (i) => i.category === "active" || i.category === "awaiting-client"
-        )
-        .slice()
-        .sort((a, b) => {
-          const keyA = startDateSortKey(a.startDate);
-          const keyB = startDateSortKey(b.startDate);
-          if (keyA !== keyB) return keyA < keyB ? -1 : 1;
-          return 0;
-        }),
-    [account.items]
-  );
-
-  const holdItems = useMemo(
-    () => account.items.filter((i) => i.category === "on-hold"),
-    [account.items]
-  );
-
-  // True when the account contains a retainer L1 that ≥1 in-account L1
-  // references via parentProjectId. Standalone L1s in that account that
-  // are NOT themselves retainers and are NOT nested under the wrapper
-  // render with an "Outside retainer" marker so it's obvious on the
-  // board that they sit outside the retainer's scope.
-  const hasWrapper = useMemo(
-    () => accountHasWrapper(account),
-    [account],
-  );
-
-  const displayTerm = formatContractTerm(account.contractTerm);
-
-  return (
     <div className="rounded-xl border border-border bg-card/30 p-3 sm:p-5">
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h3 className="text-lg font-bold text-foreground sm:text-xl">{account.name}</h3>
-          {account.team ? (
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {account.team}
-            </p>
-          ) : null}
-        </div>
-        <div className="sm:text-right">
-          {/* Dollar amounts moved to Pipeline view only (2026-04 operator
-              ask). By Account is the "what's in play" view; contract value
-              noise distracts from the work list. Contract term + status
-              badge stay — they describe the engagement, not its price. */}
-          {displayTerm ? (
-            <p className="text-xs text-muted-foreground">
-              {displayTerm}
-            </p>
-          ) : null}
-          <ContractBadge status={account.contractStatus} />
-        </div>
-      </div>
-
-      {activeItems.length > 0 ? (
-        <div className="space-y-0">
-          {activeItems.map((item) => (
-            <ProjectCard
-              key={item.id}
-              item={item}
-              outsideRetainer={
-                hasWrapper &&
-                !item.parentProjectId &&
-                item.engagementType !== "retainer"
-              }
-            />
-          ))}
-        </div>
-      ) : null}
-
-      {holdItems.length > 0 ? (
-        <div className="mt-3 border-t border-border/30 pt-3">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground/50">
-            On Hold
-          </p>
-          {holdItems.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground/60"
-            >
-              <span>{item.title}</span>
-              {item.notes ? <span>— {item.notes}</span> : null}
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <AccountTier
+        account={toAccountForTier(account)}
+        rundown={rundown}
+        readyToCloseIds={accountReadyIds}
+        theme="light"
+      />
     </div>
   );
 }

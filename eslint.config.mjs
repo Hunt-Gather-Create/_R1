@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vercel build artifacts (created by `vercel build`).
+    ".vercel/**",
     // Legacy local assets from prior preview integration.
     "public/nutrient-viewer/**",
     // docs/tmp is a scratch directory for investigation scripts and plan docs.
