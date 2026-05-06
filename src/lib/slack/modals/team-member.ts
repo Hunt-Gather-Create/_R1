@@ -19,6 +19,7 @@
  */
 
 import { MODAL_HEADERS } from "./copy";
+import { truncate } from "./helpers";
 import { buildMultiMatchCandidatePicker } from "./picker-block";
 import { hasPickedEntity } from "./picker-state";
 
@@ -39,9 +40,7 @@ export interface SlackView {
 const SLACK_TITLE_MAX = 24;
 
 function truncateTitle(s: string, max: number = SLACK_TITLE_MAX): string {
-  if (s.length <= max) return s;
-  if (max <= 3) return s.slice(0, max);
-  return `${s.slice(0, max - 3)}...`;
+  return truncate(s, max);
 }
 
 // ---------------------------------------------------------------------------

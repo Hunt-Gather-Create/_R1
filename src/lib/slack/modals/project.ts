@@ -40,6 +40,15 @@ import {
   BASELINE_PARENT_PICKER_HINT,
   MODAL_HEADERS,
 } from "./copy";
+import {
+  asString,
+  asStringArray,
+  findOption,
+  mrkdwn,
+  plainText,
+  staticOption,
+  truncate,
+} from "./helpers";
 import { buildMultiMatchCandidatePicker } from "./picker-block";
 import { hasPickedEntity } from "./picker-state";
 
@@ -172,22 +181,8 @@ const RESOURCE_ROLE_OPTIONS: Array<{ value: string; label: string }> = [
 ];
 
 // ---------------------------------------------------------------------------
-// Small helpers
+// Helpers
 // ---------------------------------------------------------------------------
-
-function plainText(text: string, emoji = true) {
-  return { type: "plain_text" as const, text, emoji };
-}
-
-function mrkdwn(text: string) {
-  return { type: "mrkdwn" as const, text };
-}
-
-function truncate(s: string, max: number): string {
-  if (s.length <= max) return s;
-  if (max <= 3) return s.slice(0, max);
-  return `${s.slice(0, max - 3)}...`;
-}
 
 function header(
   mode: "create" | "edit",
@@ -211,27 +206,6 @@ function header(
   return truncate(full, SLACK_TITLE_MAX);
 }
 
-function asString(v: unknown): string | undefined {
-  return typeof v === "string" && v.length > 0 ? v : undefined;
-}
-
-function asStringArray(v: unknown): string[] | undefined {
-  if (!Array.isArray(v)) return undefined;
-  const out = v.filter((x): x is string => typeof x === "string");
-  return out.length > 0 ? out : undefined;
-}
-
-function findOption(
-  options: Array<{ value: string; label: string }>,
-  v: string | undefined,
-): { value: string; label: string } | undefined {
-  if (!v) return undefined;
-  return options.find((o) => o.value === v);
-}
-
-function staticOption(o: { value: string; label: string }) {
-  return { text: plainText(o.label), value: o.value };
-}
 
 // ---------------------------------------------------------------------------
 // Block builders
