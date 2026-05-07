@@ -55,9 +55,12 @@ const LIGHT_INTERNAL: Record<GanttStatus, StatusColorEntry> = {
     legendBg: "#3b82f6",
   },
   scheduled: {
-    // item 11: teal solid bar (no dashed border) -- attention without warning
-    bar: "#06b6d4",
-    legendBg: "#06b6d4",
+    // QA tweak 2026-05-07: switched from teal (#06b6d4) to violet because
+    // teal read as "blue cousin" of in-progress at small sizes. Violet sits
+    // opposite blue on the wheel, so scheduled now reads distinctly as
+    // "queued / not yet active" without warning-coding.
+    bar: "#8b5cf6",
+    legendBg: "#8b5cf6",
   },
   "at-risk": {
     bar: "#f59e0b",
@@ -97,9 +100,11 @@ const LIGHT_BRANDED: Record<GanttStatus, StatusColorEntry> = {
     legendBg: "#0E5DFF",
   },
   scheduled: {
-    // item 11: teal solid -- consistent with light-internal, brand-appropriate
-    bar: "#0891B2",
-    legendBg: "#0891B2",
+    // QA tweak 2026-05-07: violet replaces teal so scheduled doesn't read as
+    // a "blue cousin" of in-progress (Civ brand blue #0E5DFF). Slightly
+    // deeper than light-internal violet for contrast on white branded bg.
+    bar: "#7c3aed",
+    legendBg: "#7c3aed",
   },
   "at-risk": {
     bar: "#F59E0B",
@@ -135,10 +140,10 @@ const LIGHT_BRANDED: Record<GanttStatus, StatusColorEntry> = {
  *
  * Tailwind equivalents (for reference only -- NOT interpolated):
  *   active:    bg-blue-500/70
- *   scheduled: bg-slate-500/40 + border dashed border-slate-500
+ *   scheduled: bg-violet-500/60     (QA 2026-05-07: was bg-cyan-500/60)
  *   at-risk:   bg-amber-500/60
  *   blocked:   bg-red-500/60
- *   completed: bg-emerald-500/40 + border border-emerald-400 + opacity 0.7
+ *   completed: bg-slate-500/50 + border border-slate-400/60
  *   canceled:  bg-slate-600/30 + border border-slate-400/40
  */
 const DARK_ACCOUNT: Record<GanttStatus, StatusColorEntry> = {

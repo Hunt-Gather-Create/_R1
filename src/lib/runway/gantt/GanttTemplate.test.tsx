@@ -1189,9 +1189,11 @@ describe("rowClass (item 12: Project/Task visual hierarchy)", () => {
     expect(html).toContain("#0E5DFF");
   });
 
-  it("item 11: scheduled teal color present in light-internal CSS", () => {
+  it("scheduled violet color present in light-internal CSS (QA tweak 2026-05-07)", () => {
+    // Was teal #06b6d4 (item 11); switched to violet because teal blended
+    // with in-progress blue at small bar sizes.
     const html = renderGantt(makeGanttData(), "light-internal");
-    expect(html).toContain("#06b6d4");
+    expect(html).toContain("#8b5cf6");
   });
 
   it("item 11: completed muted slate present in light-internal CSS", () => {

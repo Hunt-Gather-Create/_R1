@@ -147,8 +147,9 @@
 }
 
 .darkEmbed :global(.bar.scheduled) {
-  /* dashboard-cleanup item 11: teal solid replaces dashed pale gray */
-  @apply bg-cyan-500/60;
+  /* QA tweak 2026-05-07: violet replaces teal so scheduled reads as
+     "queued" rather than blending with in-progress blue. */
+  @apply bg-violet-500/60;
 }
 
 .darkEmbed :global(.bar.at-risk) {
@@ -164,6 +165,21 @@
   @apply bg-slate-500/50;
   border: 1px solid;
   @apply border-slate-400/60;
+}
+
+/* QA tweak 2026-05-07: completed rows dim their title + meta text so the
+   row reads as "done" without strikethrough (canceled keeps strikethrough).
+   Mirrors the LIGHT_INTERNAL.completed.rowText behavior in colors.ts. */
+.darkEmbed :global(.row.completed > .title) {
+  @apply text-slate-500;
+}
+
+.darkEmbed :global(.row.completed > .meta) {
+  @apply text-slate-600;
+}
+
+.darkEmbed :global(.row.completed > .dates) {
+  @apply text-slate-600;
 }
 
 .darkEmbed :global(.bar.canceled) {
@@ -190,8 +206,8 @@
 }
 
 .darkEmbed :global(.milestone.scheduled) {
-  /* dashboard-cleanup item 11: teal solid replaces dashed pale gray */
-  @apply bg-cyan-500/60;
+  /* QA tweak 2026-05-07: violet to match bar.scheduled */
+  @apply bg-violet-500/60;
 }
 
 .darkEmbed :global(.milestone.at-risk) {
@@ -262,8 +278,8 @@
 }
 
 .darkEmbed :global(.legend-swatch[data-status="scheduled"]) {
-  /* dashboard-cleanup item 11: teal to match bar */
-  @apply bg-cyan-500/60;
+  /* QA tweak 2026-05-07: violet to match bar.scheduled */
+  @apply bg-violet-500/60;
 }
 
 .darkEmbed :global(.legend-swatch[data-status="at-risk"]) {

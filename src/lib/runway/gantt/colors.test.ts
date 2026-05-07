@@ -40,8 +40,10 @@ describe("GANTT_STATUS_COLORS", () => {
       expect(li.active.bar).toBe("#3b82f6");
     });
 
-    it("scheduled bar = #06b6d4 (teal solid -- item 11)", () => {
-      expect(li.scheduled.bar).toBe("#06b6d4");
+    it("scheduled bar = #8b5cf6 (violet -- QA tweak 2026-05-07)", () => {
+      // Was teal #06b6d4 (item 11); switched to violet because teal blended
+      // with the in-progress blue at small sizes.
+      expect(li.scheduled.bar).toBe("#8b5cf6");
       expect(li.scheduled.barBorder).toBeUndefined();
     });
 
@@ -75,8 +77,10 @@ describe("GANTT_STATUS_COLORS", () => {
       expect(lb.active.bar).toBe("#0E5DFF");
     });
 
-    it("scheduled bar = #0891B2 (teal solid -- item 11)", () => {
-      expect(lb.scheduled.bar).toBe("#0891B2");
+    it("scheduled bar = #7c3aed (violet -- QA tweak 2026-05-07)", () => {
+      // Was teal #0891B2 (item 11); switched to violet to keep parity with
+      // light-internal and avoid blue-cousin confusion with Civ brand blue.
+      expect(lb.scheduled.bar).toBe("#7c3aed");
       expect(lb.scheduled.barBorder).toBeUndefined();
     });
 
