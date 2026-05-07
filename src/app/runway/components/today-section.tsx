@@ -24,16 +24,14 @@ export function TodaySection({
         <span className="text-base text-muted-foreground">{todayFormatted}</span>
       </div>
       {todayColumn && todayColumn.items.length > 0 ? (
-        <div className="max-h-[70vh] overflow-y-auto">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {todayColumn.items.map((item, i) => (
-              <DayItemCard
-                key={item.id ?? `${item.account}|${item.title}|${i}`}
-                item={item}
-                size="lg"
-              />
-            ))}
-          </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {todayColumn.items.map((item, i) => (
+            <DayItemCard
+              key={item.id ?? `${item.account}|${item.title}|${i}`}
+              item={item}
+              size="lg"
+            />
+          ))}
         </div>
       ) : null}
     </section>
