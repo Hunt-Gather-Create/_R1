@@ -3,22 +3,22 @@
  *
  * Operator-locked rules (Track 3 Wave 2):
  *
- *   hideL1(l1)            = l1.status ∈ {completed, canceled}
+ *   hideL1(l1)            = l1.status in {completed, canceled}
  *   hideWrapper(w, kids)  = all(hideL1(k) for k in kids)
- *                           AND all(wi.status ∈ {completed, canceled}
+ *                           AND all(wi.status in {completed, canceled}
  *                                   for wi in w.directWeekItems)
  *   hideClient(c)         = no wrapper or L1 survives  (caller's concern;
  *                           this module returns sections.length === 0 when
  *                           the whole rundown filters out)
  *
  * Edge cases:
- *  - L1 with 0 weekItems → NOT hidden (data-integrity surface).
- *  - L1 with all weekItems completed but L1.status NOT terminal →
+ *  - L1 with 0 weekItems -> NOT hidden (data-integrity surface).
+ *  - L1 with all weekItems completed but L1.status NOT terminal ->
  *    NOT hidden + flagged via isReadyToClose() as "ready to close?".
- *  - Wrapper with no kids and no orphans → NOT hidden (degenerate).
+ *  - Wrapper with no kids and no orphans -> NOT hidden (degenerate).
  *  - Wrapper-level: at the rundown layer, orphan weekItem statuses are
  *    NOT carried in `RawData.orphanWeekItems` (only id+title). Therefore
- *    `filterActiveRundown` is conservative — any orphans present keep the
+ *    `filterActiveRundown` is conservative -- any orphans present keep the
  *    wrapper visible. Callers with full WeekItemRow data can still use
  *    `isWrapperHidden()` directly for precise evaluation.
  *  - "canceled" is treated identically to "completed" for hide rules.
@@ -38,9 +38,9 @@ const TERMINAL_STATUSES = new Set<string>(["completed", "canceled"]);
 
 /**
  * Returns true if the L1 should be hidden from the active view.
- * Hide rule: l1.status ∈ {completed, canceled}.
+ * Hide rule: l1.status in {completed, canceled}.
  *
- * Note: L1 with 0 weekItems is NOT considered here — that's a row-count
+ * Note: L1 with 0 weekItems is NOT considered here -- that's a row-count
  * concern, not a status concern. This function only evaluates the L1's
  * own status field.
  */
@@ -54,7 +54,7 @@ export function isL1Hidden(l1: ProjectRow): boolean {
  * Hide rule: all child L1s hidden AND every direct weekItem in
  * {completed, canceled}.
  *
- * Degenerate case: a wrapper with no kids and no orphans is NOT hidden —
+ * Degenerate case: a wrapper with no kids and no orphans is NOT hidden --
  * `every` over an empty array is true, but the AND'd intent is "everything
  * present is terminal", which is vacuously true with no signal at all.
  * We surface that as "not hidden" so a hollow wrapper remains visible as
@@ -65,7 +65,7 @@ export function isWrapperHidden(
   childL1s: ProjectRow[],
   directWeekItems: WeekItemRow[],
 ): boolean {
-  // Nothing to hide — degenerate empty wrapper stays visible.
+  // Nothing to hide -- degenerate empty wrapper stays visible.
   if (childL1s.length === 0 && directWeekItems.length === 0) return false;
 
   const allChildrenHidden = childL1s.every((c) => isL1Hidden(c));
@@ -80,22 +80,37 @@ export function isWrapperHidden(
 }
 
 /**
- * Returns true if this L1 has all its weekItems completed BUT the L1
- * itself is not yet marked completed/canceled. Surfaces a "ready to
- * close?" indicator in views to nudge close-out.
+ * Returns true if this L1 should surface a "ready to close?" indicator.
+ * Two branches (dashboard-cleanup item 9):
+ *
+ * Branch A (existing): L1 has weekItems and ALL are completed, but L1 itself
+ * is not yet in {completed, canceled}.
+ *
+ * Branch B (new): L1 has 0 weekItems AND endDate is non-null AND endDate is
+ * in the past AND status is NOT terminal. Conservative: L1 with no endDate,
+ * or endDate in the future, does NOT fire.
  *
  * Returns false when:
- *  - L1 has 0 weekItems (no rollup signal yet)
- *  - Any weekItem is non-completed (including null = scheduled and
- *    canceled — only literal "completed" counts as completion)
+ *  - L1 has 0 weekItems AND (endDate null OR endDate in future)
+ *  - Any weekItem is non-completed (null = scheduled, canceled = not done)
  *  - L1 itself is already in {completed, canceled}
  */
 export function isReadyToClose(
   l1: ProjectRow,
   weekItems: WeekItemRow[],
+  todayISO?: string,
 ): boolean {
-  if (weekItems.length === 0) return false;
   if (l1.status != null && TERMINAL_STATUSES.has(l1.status)) return false;
+
+  if (weekItems.length === 0) {
+    // Branch B: L1 has no L2 breakdown -- the project IS the deliverable.
+    // Only flag when end date has passed and no terminal status yet.
+    if (!l1.endDate) return false;
+    const today = todayISO ?? new Date().toISOString().slice(0, 10);
+    return l1.endDate < today;
+  }
+
+  // Branch A: all weekItems completed.
   return weekItems.every((wi) => wi.status === "completed");
 }
 
@@ -121,7 +136,7 @@ export function filterActiveRundown(
   rundown: ClientRundownData,
 ): ClientRundownData {
   // First pass: identify hidden wrappers (keyed by wrapper project id, since
-  // section anchors are slugs of names — wrapper-children link via the L1's
+  // section anchors are slugs of names -- wrapper-children link via the L1's
   // parentProjectId which is an id, not a slug).
   const hiddenWrapperIds = new Set<string>();
 

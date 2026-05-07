@@ -309,6 +309,46 @@ describe("isReadyToClose", () => {
     ];
     expect(isReadyToClose(l1, items)).toBe(false);
   });
+
+  // dashboard-cleanup item 9: Branch B -- L1 with no L2s, past endDate
+  it("(item 9) returns true when L1 has 0 weekItems, endDate is past, status non-terminal", () => {
+    const l1 = makeProject({ status: "in-production", endDate: "2026-04-01" });
+    expect(isReadyToClose(l1, [], "2026-05-07")).toBe(true);
+  });
+
+  it("(item 9) returns false when L1 has 0 weekItems, endDate is future", () => {
+    const l1 = makeProject({ status: "in-production", endDate: "2026-12-31" });
+    expect(isReadyToClose(l1, [], "2026-05-07")).toBe(false);
+  });
+
+  it("(item 9) returns false when L1 has 0 weekItems, endDate is null (conservative)", () => {
+    const l1 = makeProject({ status: "in-production", endDate: null });
+    expect(isReadyToClose(l1, [], "2026-05-07")).toBe(false);
+  });
+
+  it("(item 9) returns false when L1 has 0 weekItems, endDate is past, status is completed (already closed)", () => {
+    const l1 = makeProject({ status: "completed", endDate: "2026-04-01" });
+    expect(isReadyToClose(l1, [], "2026-05-07")).toBe(false);
+  });
+
+  it("(item 9) returns false when L1 has 0 weekItems, endDate is past, status is canceled", () => {
+    const l1 = makeProject({ status: "canceled", endDate: "2026-04-01" });
+    expect(isReadyToClose(l1, [], "2026-05-07")).toBe(false);
+  });
+
+  it("(item 9) returns false when L1 has 0 weekItems, endDate equals today (not yet past)", () => {
+    const l1 = makeProject({ status: "in-production", endDate: "2026-05-07" });
+    // endDate < today is strict less-than; same-day is not yet past
+    expect(isReadyToClose(l1, [], "2026-05-07")).toBe(false);
+  });
+
+  it("(item 9) branch A still works with todayISO passed (existing weekItems behavior unchanged)", () => {
+    const l1 = makeProject({ status: "in-production" });
+    const items = [
+      makeWeekItem({ id: "w1", status: "completed" }),
+    ];
+    expect(isReadyToClose(l1, items, "2026-05-07")).toBe(true);
+  });
 });
 
 // ── filterActiveRundown ──────────────────────────────────
