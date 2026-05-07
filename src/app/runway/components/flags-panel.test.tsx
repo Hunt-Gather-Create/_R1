@@ -57,9 +57,12 @@ describe("FlagsPanel", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("renders flags count badge", () => {
+  it("does NOT render a top-level flags count badge (operator-locked 2026-05-07: counts live on each section)", () => {
     render(<FlagsPanel flags={[staleFlag, bottleneckFlag]} />);
-    expect(screen.getByText("2")).toBeInTheDocument();
+    // The top-level "Flags 2" badge was removed; counts are per-section.
+    // Each section shows its own count badge.
+    expect(screen.getByTestId("flag-section-count-client")).toHaveTextContent("1");
+    expect(screen.getByTestId("flag-section-count-resourcing")).toHaveTextContent("1");
   });
 
   it("renders the Flags heading", () => {
@@ -80,7 +83,8 @@ describe("FlagsPanel (item 2 section reorg)", () => {
   it("routes deadline flags into Delivery Flags section", () => {
     render(<FlagsPanel flags={[deadlineFlag]} />);
     expect(screen.getByTestId("flag-section-delivery")).toBeInTheDocument();
-    expect(screen.getByText(/Delivery Flags \(1\)/)).toBeInTheDocument();
+    expect(screen.getByText("Delivery Flags")).toBeInTheDocument();
+    expect(screen.getByTestId("flag-section-count-delivery")).toHaveTextContent("1");
     expect(screen.queryByTestId("flag-section-client")).not.toBeInTheDocument();
     expect(screen.queryByTestId("flag-section-resourcing")).not.toBeInTheDocument();
   });
@@ -100,7 +104,8 @@ describe("FlagsPanel (item 2 section reorg)", () => {
   it("routes stale flags into Client Warnings section", () => {
     render(<FlagsPanel flags={[staleFlag]} />);
     expect(screen.getByTestId("flag-section-client")).toBeInTheDocument();
-    expect(screen.getByText(/Client Warnings \(1\)/)).toBeInTheDocument();
+    expect(screen.getByText("Client Warnings")).toBeInTheDocument();
+    expect(screen.getByTestId("flag-section-count-client")).toHaveTextContent("1");
     expect(screen.queryByTestId("flag-section-delivery")).not.toBeInTheDocument();
     expect(screen.queryByTestId("flag-section-resourcing")).not.toBeInTheDocument();
   });
@@ -146,7 +151,8 @@ describe("FlagsPanel (item 2 section reorg)", () => {
     };
     render(<FlagsPanel flags={[conflict]} />);
     expect(screen.getByTestId("flag-section-resourcing")).toBeInTheDocument();
-    expect(screen.getByText(/Resourcing Warnings \(1\)/)).toBeInTheDocument();
+    expect(screen.getByText("Resourcing Warnings")).toBeInTheDocument();
+    expect(screen.getByTestId("flag-section-count-resourcing")).toHaveTextContent("1");
   });
 
   it("routes bottleneck flags into Resourcing Warnings section", () => {
@@ -197,6 +203,7 @@ describe("FlagsPanel (item 2 section reorg)", () => {
       relatedPerson: "Kathy",
     };
     render(<FlagsPanel flags={[bottleneckFlag, conflict]} />);
-    expect(screen.getByText(/Resourcing Warnings \(2\)/)).toBeInTheDocument();
+    expect(screen.getByText("Resourcing Warnings")).toBeInTheDocument();
+    expect(screen.getByTestId("flag-section-count-resourcing")).toHaveTextContent("2");
   });
 });
