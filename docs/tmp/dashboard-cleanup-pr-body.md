@@ -2,7 +2,7 @@
 
 ## Summary
 
-Closes 10 locked items from `docs/plans/dashboard-cleanup-pr.md` plus a stack of QA-discovered fixes layered during morning verification. The PR is structured as ~21 atomic commits so each finding can be reviewed in isolation. All visual decisions were operator-confirmed live during QA.
+Closes 10 locked items from `docs/plans/dashboard-cleanup-pr.md` plus a stack of QA-discovered fixes and a post-QA cleanup pass (DRY refactor, data-tp tooling brought to runway side). The PR is structured as 27 atomic commits so each finding can be reviewed in isolation. All visual decisions were operator-confirmed live during QA.
 
 ## What's in scope
 
@@ -44,15 +44,27 @@ These were not in the original plan but were found and fixed during interactive 
 
 - **ABM client deleted**. ABM was test data; not working with that client. 36 rows removed across 3 tables (5 projects, 5 weekItems, 25 audit `updates`, 1 client). Verified no other client touched: `13 → 12 clients`, `59 → 54 projects`. Background agent dispatch with read-only DRY-RUN inventory before deletion. Report: `docs/tmp/abm-deletion-report-2026-05-07.md`.
 
+### Post-QA cleanup pass
+
+A `/code-review` sweep after QA flagged remaining warts that were fixed in-PR rather than deferred:
+
+- **DRY collapse: shared `<SectionToggle>` + `<SectionHeader>`** (commit `11f2222`). Two near-identical toggle components (`InFlightToggle`, `NeedsUpdateToggle` — ~110 lines each) and the matching header rows in their parent sections collapsed into one preset-driven `<SectionToggle section="in-flight" | "needs-update">` and one `<SectionHeader>`. Net `-81` lines, zero behavior change, stable test ids preserved. Parametrized `section-toggle.test.tsx` (33 cases) replaces 3 separate toggle test files. Adds `actions.test.ts` thin coverage for the two server actions.
+- **data-tp skills brought to runway-bound side** (commit `aadce3f`). The `data-evaluator-tp` and `data-integrity-tp` skill directories existed only on `origin/main` (Jason's fork) and never crossed to `upstream/runway`. Worktrees branched from runway couldn't see them in slash autocomplete. Latest in-flight content (10 markdown files, ~2000 lines) committed onto this branch so they land on runway via this PR. Tim's R1 main intentionally stays clean of these — they are Runway-specific operator tooling.
+- **data-tp memory-layer docs brought to runway-bound side** (commit `e32b15e`). Same root cause as the skills: `docs/data-tp/cohort-handoff.md` (rolling session log read by the data-integrity-tp skill), plus the two `skill-patches/v4-candidates-*.md` files lived only on parent main. All three brought across so future TP sessions reading from runway aren't amnesiac.
+- **v4-triage tracker** (commit `0ecfb44`). The two per-cohort `v4-candidates-*.md` files are point-in-time captures that duplicate as more cohorts close. Replaced with a single durable triage doc at `docs/plans/data-tp-skill-v4-triage.md` indexing all 10 known patch candidates with mutable status fields (open / in-flight / landed / dropped). The two source files stay in the PR for full-prose reference but are queued for removal in a follow-up docs hygiene audit once the first patch lands via the new tracker.
+
 ## Tests
 
 | Metric | Value |
 |---|---|
 | Baseline (upstream/runway) | 3442 |
-| Final (after all commits + QA) | 3553 |
-| Tests added | +111 |
-| Test files added | 4 (colors.test.ts, section-chips.test.tsx, needs-update-toggle.test.tsx, plus holdout suite from initial agent run) |
-| Lint | 0 errors, 13 warnings (all pre-existing baseline) |
+| Final (after all commits + QA + post-QA cleanup) | 3565 |
+| Tests added | +123 |
+| Test files added | 5 (`colors.test.ts`, `section-chips.test.tsx`, `section-toggle.test.tsx`, `actions.test.ts`, plus holdout suite from initial agent run) |
+| Lint (changed files) | 0 errors, 0 warnings |
+| Lint (full repo) | 0 errors, 13 warnings — all pre-existing baseline in files this PR doesn't touch |
+| `/preflight` | ✅ build, grep gate, tests, lint all green |
+| `/pr-ready` | ✅ no `console.log`, no `debugger`, no `TODO`/`FIXME`, no `any` types in changed files |
 
 ## Visual decisions locked during QA
 
@@ -80,10 +92,13 @@ These were not in the original plan but were found and fixed during interactive 
 - [ ] Project rows visibly heavier than Task rows (typography + brand-blue marker bar + thicker timeline bar)
 - [ ] L1 with no L2s under a wrapper (or top-level): shows both READY TO CLOSE + NO SCHEDULED TASKS chips on both By Account AND Gantt Charts
 - [ ] Standalone Gantt CLI HTML output: chart header reads "(Project)" not "(L1)"; section kind tag reads "Project" not "L1"
+- [ ] Both section toggles (In Flight, Needs Update) flip via the shared `<SectionToggle>`; click each, refresh page, verify state persisted via `view_preferences`
+- [ ] Slash command parity (post-merge + post-`git checkout runway` in parent repo + CC restart): `/data-evaluator-tp` and `/data-integrity-tp` autocomplete, the data-tp skills find their cohort-handoff and skill-patch docs at `docs/data-tp/`
 
 ## Deployment notes
 
 - No schema changes
 - One added field on `view_preferences` JSON: `needsUpdateToggle: boolean` (defaults to `true`); old rows merge cleanly via `parsePreferences()`'s default-spread
-- Vercel preview build expected to pass (lint clean, all tests green, no new external deps)
+- Vercel preview build expected to pass (lint clean, all tests green, no new external deps). Cross-fork canary deploy validated locally before opening PR.
+- New non-code files brought across to runway side (skill files + memory-layer docs): `.claude/skills/data-evaluator-tp/`, `.claude/skills/data-integrity-tp/`, `docs/data-tp/cohort-handoff.md`, `docs/data-tp/skill-patches/`, `docs/plans/data-tp-skill-v4-triage.md`. None are imported by application code; they're operator tooling for the data-tp workflow that the runway-side skills consume.
 - Two reports left in `docs/tmp/` for audit trail: agent's run reports + ABM deletion report
