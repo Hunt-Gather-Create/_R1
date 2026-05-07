@@ -136,3 +136,14 @@ export function weekItemsForSection(section: RundownSection): AnnotatedRow[] {
       r.status !== "canceled",
   );
 }
+
+/**
+ * L1 entity id for a section whose raw data is L1-shaped. Wrapper sections
+ * return null (the wrapper itself is not an L1). Shared by both the By
+ * Account tier and the Gantt Charts dark embed for ready-to-close chip
+ * resolution.
+ */
+export function l1IdForSection(section: RundownSection): string | null {
+  const raw = section.data.raw;
+  return raw.kind === "l1" ? raw.entity.id : null;
+}

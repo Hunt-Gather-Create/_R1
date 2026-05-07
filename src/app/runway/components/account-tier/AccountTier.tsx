@@ -38,7 +38,7 @@ import type {
   AnnotatedRow,
 } from "@/lib/runway/gantt/types";
 import { groupSections } from "@/lib/runway/gantt/group-sections";
-import { weekItemsForSection } from "@/lib/runway/gantt/section-builders";
+import { weekItemsForSection, l1IdForSection } from "@/lib/runway/gantt/section-builders";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { L2MiniCard } from "./L2MiniCard";
 
@@ -101,19 +101,10 @@ function byStartDateNullsLast(a: AnnotatedRow, b: AnnotatedRow): number {
   return 0;
 }
 
-/**
- * Returns the L1 entity id for a section whose raw data is L1-shaped.
- * Wrapper sections (raw.kind === "wrapper") return null since the
- * wrapper itself is not an L1.
- */
-function l1IdForSection(section: RundownSection): string | null {
-  const raw = section.data.raw;
-  return raw.kind === "l1" ? raw.entity.id : null;
-}
-
-// `weekItemsForSection` lives in `@/lib/runway/gantt/section-builders` so
-// both the By Account view and the Gantt Charts dark embed share the same
-// definition of "scheduled tasks" (kind === weekitem, status not terminal).
+// `l1IdForSection` and `weekItemsForSection` both live in
+// `@/lib/runway/gantt/section-builders` so the By Account view and the
+// Gantt Charts dark embed share the same predicates for L1 identity and
+// "what counts as a scheduled task."
 
 // ─── Sub-components ───────────────────────────────────────────────────────
 //

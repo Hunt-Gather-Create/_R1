@@ -13,18 +13,8 @@ import * as React from "react";
 import { GanttSectionDark } from "@/lib/runway/gantt/gantt-section-dark";
 import type { RundownSection } from "@/lib/runway/gantt/types";
 import { groupSections } from "@/lib/runway/gantt/group-sections";
-import { weekItemsForSection } from "@/lib/runway/gantt/section-builders";
+import { weekItemsForSection, l1IdForSection } from "@/lib/runway/gantt/section-builders";
 import { ReadyToCloseChip, NoScheduledTasksChip } from "./section-chips";
-
-/**
- * Returns the L1 id for a section that has L1 raw data, or null for
- * wrappers / non-l1 raw shapes. Mirror logic in section-builders.ts.
- */
-function l1IdForSection(section: RundownSection): string | null {
-  const raw = section.data.raw;
-  if (raw.kind !== "l1") return null;
-  return raw.entity.id;
-}
 
 // Track 4 audit fix (2026-05-05, WARN — Panel 3): the inline `groupSections`
 // + `SectionBlock` definitions were extracted to
