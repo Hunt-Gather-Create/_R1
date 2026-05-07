@@ -1,4 +1,4 @@
-import type { DayItem } from "./types";
+import type { DayItem, DayItemEntry } from "./types";
 import { parseISODate, getMondayISODate } from "./date-utils";
 
 export interface WeekGroup {
@@ -57,5 +57,45 @@ export function groupByWeek(days: DayItem[]): WeekGroup[] {
       label: `w/o ${d.getMonth() + 1}/${d.getDate()}`,
       days: weekDays,
     };
+  });
+}
+
+// Terminal statuses -- rows in these states are excluded from the active-span
+// filter (they're not "actively spanning" if done/canceled).
+const TERMINAL_STATUSES = new Set(["completed", "canceled"]);
+
+/**
+ * Returns true if this weekItem is actively spanning today -- i.e. it has
+ * started and not yet ended, and is not in a terminal status.
+ *
+ * Placement rule (dashboard-cleanup item 4): once startDate <= today, the
+ * item belongs in the Today / In Flight zones, not in a day-cell column.
+ *
+ * Multi-day rows with startDate > today still appear in their startDate
+ * day cell (forecast visibility).
+ */
+export function isActivelySpanning(item: DayItemEntry, todayISO: string): boolean {
+  const start = item.startDate;
+  const end = item.endDate;
+  if (!start || !end) return false;
+  if (start === end) return false; // single-day item
+  if (item.status && TERMINAL_STATUSES.has(item.status)) return false;
+  return start <= todayISO && todayISO <= end;
+}
+
+/**
+ * Filter a DayItem array to remove actively-spanning rows from each day's
+ * items. This prevents multi-day rows from appearing in BOTH the This Week
+ * day-cell columns AND the Today / In Flight zones simultaneously.
+ *
+ * Rows with startDate > today pass through unchanged (forecast anchor).
+ * Single-day rows pass through unchanged.
+ * Terminal rows pass through unchanged.
+ */
+export function filterSpanningFromDayCells(days: DayItem[], todayISO: string): DayItem[] {
+  return days.map((day) => {
+    const filteredItems = day.items.filter((item) => !isActivelySpanning(item, todayISO));
+    if (filteredItems.length === day.items.length) return day; // no change
+    return { ...day, items: filteredItems };
   });
 }

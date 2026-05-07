@@ -8,7 +8,7 @@ import type { UnifiedAccount } from "./unified-view";
 import type { RunwayFlag } from "@/lib/runway/flags";
 import type { SeverityCounts, ClientRundownData } from "@/lib/runway/gantt/types";
 import { parseISODate } from "./date-utils";
-import { mergeWeekendDays, groupByWeek } from "./runway-board-utils";
+import { mergeWeekendDays, groupByWeek, filterSpanningFromDayCells } from "./runway-board-utils";
 import { DayColumn } from "./components/day-column";
 import { TodaySection } from "./components/today-section";
 import { AccountSection } from "./components/account-section";
@@ -106,15 +106,16 @@ function useBoardData(
     [thisWeek, todayStr]
   );
 
-  const restOfWeek = useMemo(
-    () =>
-      mergeWeekendDays(
-        thisWeek.filter(
-          (day) => parseISODate(day.date).toDateString() !== todayStr
-        )
-      ),
-    [thisWeek, todayStr]
-  );
+  const restOfWeek = useMemo(() => {
+    const todayISO = new Date().toISOString().slice(0, 10);
+    // dashboard-cleanup item 4: remove actively-spanning rows from day cells.
+    // Once startDate <= today, the row lives in Today / In Flight, not the
+    // day-grid cell anchored on its startDate.
+    const nonTodayDays = thisWeek.filter(
+      (day) => parseISODate(day.date).toDateString() !== todayStr
+    );
+    return mergeWeekendDays(filterSpanningFromDayCells(nonTodayDays, todayISO));
+  }, [thisWeek, todayStr]);
 
   const upcomingWeeks = useMemo(
     () => groupByWeek(mergeWeekendDays(upcoming)),
