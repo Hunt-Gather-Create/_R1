@@ -476,7 +476,9 @@ function inlineDateClass(row: AnnotatedRow): string {
 }
 
 function chartLabel(data: GanttData): string {
-  return data.raw.kind === "wrapper" ? "Wrapper" : "L1";
+  // User-facing label rendered in the chart header. End users say
+  // "Project" / "Task", never "L1" / "L2".
+  return data.raw.kind === "wrapper" ? "Wrapper" : "Project";
 }
 
 /** The most-severe severity present on a row, for badge coloring. */
@@ -1199,9 +1201,11 @@ function RundownToc({ sections, theme }: { sections: RundownSection[]; theme: Th
 }
 
 function kindTag(kind: RundownSection["kind"]): string {
+  // Visible badge on each section's <h2>. End users say "Project" / "Task",
+  // never "L1" / "L2".
   if (kind === "wrapper") return "Wrapper";
   if (kind === "wrapper-child") return "Sub-project";
-  return "L1";
+  return "Project";
 }
 
 export function SectionBlock({ section, theme }: { section: RundownSection; theme: Theme }): React.JSX.Element {
