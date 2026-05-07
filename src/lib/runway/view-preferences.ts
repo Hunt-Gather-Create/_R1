@@ -8,9 +8,10 @@
  * additive without a migration — just pass a different scope string.
  *
  * JSON shape (versionless, add fields as needed):
- *   { inFlightToggle?: boolean; ... }
+ *   { inFlightToggle?: boolean; needsUpdateToggle?: boolean; ... }
  *
  * v4 (2026-04-21): introduced for the Week Of In Flight toggle.
+ * v5 (2026-05-07): added needsUpdateToggle for the Needs Update section.
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
@@ -19,12 +20,16 @@ import { eq } from "drizzle-orm";
 
 export interface RunwayViewPreferences {
   inFlightToggle?: boolean;
+  needsUpdateToggle?: boolean;
 }
 
 const DEFAULT_PREFERENCES: RunwayViewPreferences = {
   // Chunk 3 #6 — locked pre-flight decision (pr86-orchestration-amendment.md):
   // In Flight toggle default = ON.
   inFlightToggle: true,
+  // Dashboard cleanup item 3 (extended 2026-05-07): Needs Update toggle
+  // default = ON. Mirrors In Flight pattern.
+  needsUpdateToggle: true,
 };
 
 const GLOBAL_SCOPE = "global";

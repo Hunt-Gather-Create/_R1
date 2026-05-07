@@ -10,12 +10,16 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: mockRefresh }),
 }));
 
-// Stub the server action so client tests don't try to cross module boundary.
+// Stub the server actions so client tests don't try to cross module boundary.
 const mockToggleInFlight = vi.fn<(next: boolean) => Promise<{ inFlightToggle: boolean }>>(
   async (next: boolean) => ({ inFlightToggle: next })
 );
+const mockToggleNeedsUpdate = vi.fn<(next: boolean) => Promise<{ needsUpdateToggle: boolean }>>(
+  async (next: boolean) => ({ needsUpdateToggle: next })
+);
 vi.mock("./actions", () => ({
   toggleInFlightAction: (next: boolean) => mockToggleInFlight(next),
+  toggleNeedsUpdateAction: (next: boolean) => mockToggleNeedsUpdate(next),
 }));
 
 // Stub InFlightSection so we can assert which weekItems source it received

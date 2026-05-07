@@ -17,7 +17,7 @@ import { PipelineRow } from "./components/pipeline-row";
 import { FlagsPanel } from "./components/flags-panel";
 import { NeedsUpdateSection } from "./components/needs-update-section";
 import { InFlightSection } from "./components/in-flight-section";
-import { toggleInFlightAction } from "./actions";
+import { toggleInFlightAction, toggleNeedsUpdateAction } from "./actions";
 import { useVersionPoll } from "./use-version-poll";
 
 type View = "triage" | "accounts" | "gantt-charts" | "pipeline";
@@ -61,6 +61,8 @@ interface RunwayBoardProps {
   staleItems?: DayItem[];
   /** Initial persisted toggle value. Defaults to true (chunk 3 #6). */
   initialInFlightEnabled?: boolean;
+  /** Initial persisted Needs Update toggle value. Defaults to true. */
+  initialNeedsUpdateEnabled?: boolean;
   /**
    * Full unfiltered day-bucket array from `getWeekItems()`. Page-level
    * bucketing for thisWeek/upcoming drops past-Monday buckets, which
@@ -133,11 +135,13 @@ export function RunwayBoard({
   flags = [],
   staleItems = [],
   initialInFlightEnabled = true,
+  initialNeedsUpdateEnabled = true,
   inFlightSource,
 }: RunwayBoardProps) {
   const router = useRouter();
   const [view, setView] = useState<View>("triage");
   const [inFlightEnabled, setInFlightEnabled] = useState(initialInFlightEnabled);
+  const [needsUpdateEnabled, setNeedsUpdateEnabled] = useState(initialNeedsUpdateEnabled);
   const { pipelineTotal, todayColumn, restOfWeek, upcomingWeeks } = useBoardData(thisWeek, upcoming, pipeline);
   const { isStale } = useVersionPoll(router);
 
@@ -181,7 +185,12 @@ export function RunwayBoard({
           <div className="min-w-0 flex-1">
             {view === "triage" ? (
               <div className="space-y-6 sm:space-y-10">
-                <NeedsUpdateSection staleItems={staleItems} />
+                <NeedsUpdateSection
+                  staleItems={staleItems}
+                  enabled={needsUpdateEnabled}
+                  onToggle={toggleNeedsUpdateAction}
+                  onToggleChange={setNeedsUpdateEnabled}
+                />
                 <TodaySection todayColumn={todayColumn} />
                 <InFlightSection
                   weekItems={inFlightSource}

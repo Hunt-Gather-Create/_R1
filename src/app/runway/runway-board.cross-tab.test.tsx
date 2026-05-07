@@ -37,6 +37,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("./actions", () => ({
   toggleInFlightAction: async (next: boolean) => ({ inFlightToggle: next }),
+  toggleNeedsUpdateAction: async (next: boolean) => ({ needsUpdateToggle: next }),
 }));
 
 // Stub AccountSection so we can probe collapse state without supplying a

@@ -330,6 +330,7 @@ export default async function RunwayPage() {
       flags={flags}
       staleItems={staleItems}
       initialInFlightEnabled={viewPrefs.inFlightToggle ?? true}
+      initialNeedsUpdateEnabled={viewPrefs.needsUpdateToggle ?? true}
       inFlightSource={inFlightSourceDeduped}
     />
   );
