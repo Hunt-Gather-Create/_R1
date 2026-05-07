@@ -73,6 +73,10 @@ export interface DayItemEntry {
   // v4: explicit dependency on upstream L2 ids (runway-v4-convention.md §"blocked_by").
   // Resolved blockers carry title/status for inline rendering when visible.
   blockedBy?: BlockedByRef[] | null;
+  // dashboard-cleanup item 1: parent project name for L2 week items.
+  // Set when the weekItem's project has a parentProjectId (i.e. it is an
+  // L2 nested under an L1 retainer or project). Absent for top-level L1 items.
+  parentProjectName?: string | null;
 }
 
 export interface BlockedByRef {

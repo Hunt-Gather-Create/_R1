@@ -223,6 +223,29 @@ describe("DayItemCard", () => {
     );
     expect(screen.getByTestId("dates-line")).toHaveTextContent("Dates: 4/17 – 5/11");
   });
+
+  // dashboard-cleanup item 1: L2 cards show parent project name under client
+  it("renders parent project name for L2 items when parentProjectName is provided", () => {
+    render(
+      <DayItemCard
+        item={createEntry({ parentProjectName: "Convergix Retainer Q2" })}
+      />
+    );
+    expect(screen.getByTestId("parent-project-name")).toBeInTheDocument();
+    expect(screen.getByTestId("parent-project-name")).toHaveTextContent(
+      "Convergix Retainer Q2"
+    );
+  });
+
+  it("does not render parent project name when parentProjectName is absent", () => {
+    render(<DayItemCard item={createEntry()} />);
+    expect(screen.queryByTestId("parent-project-name")).not.toBeInTheDocument();
+  });
+
+  it("does not render parent project name when parentProjectName is null", () => {
+    render(<DayItemCard item={createEntry({ parentProjectName: null })} />);
+    expect(screen.queryByTestId("parent-project-name")).not.toBeInTheDocument();
+  });
 });
 
 describe("getEffectiveType", () => {
