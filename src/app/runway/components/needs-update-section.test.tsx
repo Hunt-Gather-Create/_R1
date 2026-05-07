@@ -82,7 +82,9 @@ describe("NeedsUpdateSection (toggle mode)", () => {
     );
     expect(screen.getByTestId("needs-update-section")).toBeInTheDocument();
     expect(screen.getByTestId("needs-update-toggle")).toBeInTheDocument();
-    expect(screen.queryByTestId("needs-update-count")).not.toBeInTheDocument();
+    // Count badge stays visible so user can see what's hidden
+    // (operator-locked 2026-05-07).
+    expect(screen.getByTestId("needs-update-count")).toHaveTextContent("2");
     expect(screen.queryByText(/DM the bot to clear them/)).not.toBeInTheDocument();
     expect(screen.queryByText("CDS Review")).not.toBeInTheDocument();
   });

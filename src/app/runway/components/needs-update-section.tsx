@@ -36,7 +36,7 @@ export function NeedsUpdateSection({
         <h2 className="font-display text-2xl font-bold text-red-300/90">
           Needs Update
         </h2>
-        {enabled && totalCount > 0 ? (
+        {totalCount > 0 ? (
           <span
             data-testid="needs-update-count"
             className="rounded-full bg-red-500/15 px-2.5 py-0.5 text-sm font-medium text-red-300/90"

@@ -158,9 +158,10 @@ describe("InFlightSection (inline toggle -- item 3)", () => {
     // Section renders so the user can re-enable
     expect(screen.getByTestId("in-flight-section")).toBeInTheDocument();
     expect(screen.getByTestId("in-flight-toggle")).toBeInTheDocument();
-    // But no count badge when disabled
-    expect(screen.queryByTestId("in-flight-count")).not.toBeInTheDocument();
-    // And no cards rendered
+    // Count badge stays so user can see what's hidden by the toggle
+    // (operator-locked 2026-05-07).
+    expect(screen.getByTestId("in-flight-count")).toHaveTextContent("1");
+    // But no cards rendered
     expect(screen.queryByText("Active Work")).not.toBeInTheDocument();
   });
 

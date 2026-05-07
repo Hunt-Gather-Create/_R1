@@ -45,12 +45,14 @@ export function InFlightSection({
   // the `new Date()` call (when `nowISO` is undefined) produces a fresh string
   // each render -- primitive-equal in practice, but the allocation is still
   // wasted work and obscures the dependency array.
+  // Compute the in-flight set regardless of `enabled` so the count badge
+  // can stay visible when the section is toggled off (operator-locked
+  // 2026-05-07: users want to know what's hidden by the toggle).
   const inFlight = useMemo<DayItemEntry[]>(() => {
-    if (!enabled) return [];
     const today = nowISO ?? new Date().toISOString().slice(0, 10);
     const all = weekItems.flatMap((day) => day.items);
     return filterInFlight(all, today);
-  }, [enabled, weekItems, nowISO]);
+  }, [weekItems, nowISO]);
 
   // When no toggle props are provided, fall back to legacy behavior:
   // hide entirely when disabled or when there are no items. This preserves
@@ -66,7 +68,7 @@ export function InFlightSection({
         <h2 className="font-display text-2xl font-bold text-sky-300">
           In Flight
         </h2>
-        {enabled ? (
+        {inFlight.length > 0 ? (
           <span
             data-testid="in-flight-count"
             className="rounded-full bg-sky-500/20 px-2.5 py-0.5 text-sm font-medium text-sky-200"
