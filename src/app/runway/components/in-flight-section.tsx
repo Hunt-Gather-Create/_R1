@@ -3,7 +3,8 @@
 import { useMemo } from "react";
 import type { DayItem, DayItemEntry } from "../types";
 import { DayItemCard } from "./day-item-card";
-import { InFlightToggle } from "./in-flight-toggle";
+import { SectionToggle } from "./section-toggle";
+import { SectionHeader } from "./section-header";
 import { filterInFlight } from "@/lib/runway/plate-summary";
 
 interface InFlightSectionProps {
@@ -41,10 +42,6 @@ export function InFlightSection({
   onToggle,
   onToggleChange,
 }: InFlightSectionProps) {
-  // Derive `today` inside the memo instead of on every render. Without this
-  // the `new Date()` call (when `nowISO` is undefined) produces a fresh string
-  // each render -- primitive-equal in practice, but the allocation is still
-  // wasted work and obscures the dependency array.
   // Compute the in-flight set regardless of `enabled` so the count badge
   // can stay visible when the section is toggled off (operator-locked
   // 2026-05-07: users want to know what's hidden by the toggle).
@@ -64,29 +61,22 @@ export function InFlightSection({
 
   return (
     <section data-testid="in-flight-section">
-      <div className="mb-4 flex items-center gap-3">
-        <h2 className="font-display text-2xl font-bold text-sky-300">
-          In Flight
-        </h2>
-        {inFlight.length > 0 ? (
-          <span
-            data-testid="in-flight-count"
-            className="rounded-full bg-sky-500/20 px-2.5 py-0.5 text-sm font-medium text-sky-200"
-          >
-            {inFlight.length}
-          </span>
-        ) : null}
-        {hasToggle ? (
-          <span className="ml-1">
-            <InFlightToggle
+      <SectionHeader
+        section="in-flight"
+        title="In Flight"
+        count={inFlight.length}
+        toggle={
+          hasToggle ? (
+            <SectionToggle
+              section="in-flight"
               initialEnabled={enabled}
               onToggle={onToggle}
               onChange={onToggleChange}
               compact
             />
-          </span>
-        ) : null}
-      </div>
+          ) : undefined
+        }
+      />
       {enabled && inFlight.length > 0 ? (
         <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-3 sm:p-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">

@@ -2,7 +2,8 @@
 
 import type { DayItem } from "../types";
 import { DayItemCard } from "./day-item-card";
-import { NeedsUpdateToggle } from "./needs-update-toggle";
+import { SectionToggle } from "./section-toggle";
+import { SectionHeader } from "./section-header";
 
 interface NeedsUpdateSectionProps {
   staleItems: DayItem[];
@@ -32,29 +33,22 @@ export function NeedsUpdateSection({
 
   return (
     <section data-testid="needs-update-section">
-      <div className="mb-4 flex items-center gap-3">
-        <h2 className="font-display text-2xl font-bold text-red-300/90">
-          Needs Update
-        </h2>
-        {totalCount > 0 ? (
-          <span
-            data-testid="needs-update-count"
-            className="rounded-full bg-red-500/15 px-2.5 py-0.5 text-sm font-medium text-red-300/90"
-          >
-            {totalCount}
-          </span>
-        ) : null}
-        {hasToggle ? (
-          <span className="ml-1">
-            <NeedsUpdateToggle
+      <SectionHeader
+        section="needs-update"
+        title="Needs Update"
+        count={totalCount}
+        toggle={
+          hasToggle ? (
+            <SectionToggle
+              section="needs-update"
               initialEnabled={enabled}
               onToggle={onToggle}
               onChange={onToggleChange}
               compact
             />
-          </span>
-        ) : null}
-      </div>
+          ) : undefined
+        }
+      />
       {enabled && totalCount > 0 ? (
         <>
           <p className="mb-4 text-sm text-muted-foreground">
