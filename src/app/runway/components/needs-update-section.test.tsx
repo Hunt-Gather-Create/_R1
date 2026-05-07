@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { NeedsUpdateSection } from "./needs-update-section";
 import type { DayItem } from "../types";
@@ -62,5 +62,53 @@ describe("NeedsUpdateSection", () => {
     render(<NeedsUpdateSection staleItems={[staleDay2, staleDay]} />);
     expect(screen.getByText("LPPC Kickoff")).toBeInTheDocument();
     expect(screen.getByText("CDS Review")).toBeInTheDocument();
+  });
+});
+
+describe("NeedsUpdateSection (toggle mode)", () => {
+  it("renders inline toggle in header when onToggle provided", () => {
+    const onToggle = vi.fn().mockResolvedValue({});
+    render(
+      <NeedsUpdateSection staleItems={[staleDay]} enabled onToggle={onToggle} />
+    );
+    expect(screen.getByTestId("needs-update-toggle")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Needs Update" })).toBeInTheDocument();
+  });
+
+  it("keeps the heading + toggle visible when toggled off so user can re-enable", () => {
+    const onToggle = vi.fn().mockResolvedValue({});
+    render(
+      <NeedsUpdateSection staleItems={[staleDay]} enabled={false} onToggle={onToggle} />
+    );
+    expect(screen.getByTestId("needs-update-section")).toBeInTheDocument();
+    expect(screen.getByTestId("needs-update-toggle")).toBeInTheDocument();
+    // Count badge stays visible so user can see what's hidden
+    // (operator-locked 2026-05-07).
+    expect(screen.getByTestId("needs-update-count")).toHaveTextContent("2");
+    expect(screen.queryByText(/DM the bot to clear them/)).not.toBeInTheDocument();
+    expect(screen.queryByText("CDS Review")).not.toBeInTheDocument();
+  });
+
+  it("hides count when toggled off but keeps the heading", () => {
+    const onToggle = vi.fn().mockResolvedValue({});
+    render(
+      <NeedsUpdateSection staleItems={[staleDay]} enabled={false} onToggle={onToggle} />
+    );
+    expect(screen.getByRole("heading", { name: "Needs Update" })).toBeInTheDocument();
+  });
+
+  it("renders the heading row even when there are zero stale items so user can leave it on", () => {
+    const onToggle = vi.fn().mockResolvedValue({});
+    render(
+      <NeedsUpdateSection staleItems={[]} enabled onToggle={onToggle} />
+    );
+    expect(screen.getByTestId("needs-update-section")).toBeInTheDocument();
+    expect(screen.getByTestId("needs-update-toggle")).toBeInTheDocument();
+    expect(screen.queryByTestId("needs-update-count")).not.toBeInTheDocument();
+  });
+
+  it("legacy mode (no toggle props) hides entirely when zero items", () => {
+    const { container } = render(<NeedsUpdateSection staleItems={[]} />);
+    expect(container.firstChild).toBeNull();
   });
 });

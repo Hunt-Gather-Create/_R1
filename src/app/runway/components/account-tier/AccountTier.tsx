@@ -31,12 +31,14 @@
  */
 
 import type { ReactNode } from "react";
+import { ReadyToCloseChip, NoScheduledTasksChip } from "../section-chips";
 import type {
   ClientRundownData,
   RundownSection,
   AnnotatedRow,
 } from "@/lib/runway/gantt/types";
 import { groupSections } from "@/lib/runway/gantt/group-sections";
+import { weekItemsForSection, l1IdForSection } from "@/lib/runway/gantt/section-builders";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { L2MiniCard } from "./L2MiniCard";
 
@@ -99,34 +101,17 @@ function byStartDateNullsLast(a: AnnotatedRow, b: AnnotatedRow): number {
   return 0;
 }
 
-/**
- * Returns the L1 entity id for a section whose raw data is L1-shaped.
- * Wrapper sections (raw.kind === "wrapper") return null since the
- * wrapper itself is not an L1.
- */
-function l1IdForSection(section: RundownSection): string | null {
-  const raw = section.data.raw;
-  return raw.kind === "l1" ? raw.entity.id : null;
-}
-
-/**
- * Pull weekItem rows out of a section's GanttData. L1-view sections carry
- * their own weekItems as `rows`; wrappers do not (orphan weekItems aside,
- * which we do not surface here).
- *
- * Wave 4.6 correction #1: filter out completed/canceled L2s — those status
- * values are hidden from the By Account view entirely.
- */
-function weekItemsForSection(section: RundownSection): AnnotatedRow[] {
-  return section.data.rows.filter(
-    (r) =>
-      r.kind === "weekitem" &&
-      r.status !== "completed" &&
-      r.status !== "canceled",
-  );
-}
+// `l1IdForSection` and `weekItemsForSection` both live in
+// `@/lib/runway/gantt/section-builders` so the By Account view and the
+// Gantt Charts dark embed share the same predicates for L1 identity and
+// "what counts as a scheduled task."
 
 // ─── Sub-components ───────────────────────────────────────────────────────
+//
+// `ReadyToCloseChip` + `NoScheduledTasksChip` are imported from
+// `../section-chips` (the dark Gantt embed renders the same set, dark
+// variant). `SeverityBadge` and `SowChip` are local-only and use
+// `ChipBase` below as their primitive.
 
 function ChipBase({
   children,
@@ -144,28 +129,6 @@ function ChipBase({
     >
       {children}
     </span>
-  );
-}
-
-function ReadyToCloseChip() {
-  return (
-    <ChipBase
-      className="normal-case bg-amber-500/20 text-amber-400"
-      testId="ready-to-close-chip"
-    >
-      Ready to close?
-    </ChipBase>
-  );
-}
-
-function NoScheduledTasksChip() {
-  return (
-    <ChipBase
-      className="normal-case bg-muted text-muted-foreground"
-      testId="no-scheduled-tasks-chip"
-    >
-      No Scheduled Tasks
-    </ChipBase>
   );
 }
 

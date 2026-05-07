@@ -13,7 +13,13 @@ vi.mock("@/lib/db/runway", () => ({
 
 vi.mock("@/lib/db/runway-schema", () => ({
   clients: { name: "clients", id: "id" },
-  projects: { sortOrder: "sortOrder", clientId: "clientId" },
+  projects: {
+    sortOrder: "sortOrder",
+    clientId: "clientId",
+    id: "id",
+    name: "name",
+    parentProjectId: "parentProjectId",
+  },
   weekItems: {
     weekOf: "weekOf",
     date: "date",
@@ -36,6 +42,7 @@ vi.mock("drizzle-orm", () => ({
   isNotNull: vi.fn((col) => ({ isNotNull: col })),
   asc: vi.fn((col) => ({ asc: col })),
   desc: vi.fn((col) => ({ desc: col })),
+  inArray: vi.fn((col, vals) => ({ inArray: [col, vals] })),
 }));
 
 // queries.ts now imports getClientNameMap from operations for DRY

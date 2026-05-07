@@ -23,6 +23,8 @@ import * as React from "react";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { renderToStaticMarkup } = require("react-dom/server") as typeof import("react-dom/server");
 import { formatHeadline } from "./counter";
+// dashboard-cleanup item 10: color tokens for all 3 Gantt themes.
+import { GANTT_STATUS_COLORS } from "./colors";
 import { getThemeTokens } from "./themes";
 import type {
   AnnotatedRow,
@@ -96,6 +98,91 @@ export function computeTodayPosition(axis: AxisParams): number | null {
 }
 
 // ── Component ─────────────────────────────────────────────
+
+/**
+ * dashboard-cleanup item 10: generate the status-color CSS rules from the
+ * centralized GANTT_STATUS_COLORS token map. Appended to the end of STYLES /
+ * STYLES_BRANDED so their selectors override the hardcoded declarations above.
+ * When item 11 (color scheme update) runs, only GANTT_STATUS_COLORS needs
+ * editing -- these generated rules automatically propagate the change.
+ */
+/**
+ * dashboard-cleanup item 12: L1 vs L2 (Project / Task) visual hierarchy CSS.
+ * Injected at the end of STYLES and STYLES_BRANDED so these rules override
+ * any earlier declarations. Shared by both light themes; dark uses the CSS module.
+ *
+ * Three layers:
+ *   1. Typography: L1 title = bold + slightly larger (14px vs 13px default)
+ *   2. Marker bar: 4px left border before the L1 row, brand-accent colored
+ *   3. Timeline height: L1 bars taller (26px timeline vs 22px default)
+ */
+function buildHierarchyCss(markerColor: string): string {
+  return `
+  /* dashboard-cleanup item 12: Project (L1) visual hierarchy */
+  .row.l1 .title { font-weight: 700; font-size: 14px; }
+  .row.l2 .title { font-weight: 400; }
+  /* Marker bar: 4px left accent before L1 rows only */
+  .row.l1 { border-left: 4px solid ${markerColor}; padding-left: 6px; }
+  .row.l2 { border-left: 4px solid transparent; padding-left: 6px; }
+  /* Thicker timeline bars for L1 (taller container) */
+  .row.l1 .timeline { height: 26px; }
+  .row.l1 .bar { top: 3px; bottom: 3px; border-radius: 3px; }
+`;
+}
+
+function buildStatusCssLightInternal(): string {
+  const c = GANTT_STATUS_COLORS["light-internal"];
+  return `
+  /* dashboard-cleanup item 10: status colors sourced from GANTT_STATUS_COLORS */
+  .legend-swatch.active { background: ${c.active.bar}; }
+  .legend-swatch.scheduled { background: ${c.scheduled.bar}; ${c.scheduled.barBorder ? `border: ${c.scheduled.barBorder};` : ""} ${c.scheduled.barExtra ?? ""} }
+  .legend-swatch.at-risk { background: ${c["at-risk"].bar}; }
+  .legend-swatch.blocked { background: ${c.blocked.bar}; }
+  .legend-swatch.completed { background: ${c.completed.bar}; ${c.completed.barBorder ? `border: ${c.completed.barBorder};` : ""} box-sizing: border-box; }
+  .legend-swatch.canceled { background: ${c.canceled.bar}; }
+  .bar { position: absolute; top: 4px; bottom: 4px; background: ${c.active.bar}; border-radius: 2px; }
+  .bar.scheduled { background: ${c.scheduled.bar}; ${c.scheduled.barBorder ? `border: ${c.scheduled.barBorder};` : ""} ${c.scheduled.barExtra ?? ""} }
+  .bar.at-risk { background: ${c["at-risk"].bar}; }
+  .bar.blocked { background: ${c.blocked.bar}; }
+  .row.completed .bar { background: ${c.completed.bar}; ${c.completed.barBorder ? `border: ${c.completed.barBorder};` : ""} box-sizing: border-box; opacity: 1; }
+  .row.completed .title, .row.completed .meta, .row.completed .dates { color: ${c.completed.rowText ?? "#475569"}; }
+  .row.canceled .bar { background: ${c.canceled.bar}; opacity: 1; }
+  .row.canceled .title, .row.canceled .meta, .row.canceled .dates { text-decoration: line-through; color: ${c.canceled.rowText ?? "#94a3b8"}; }
+  .milestone { position: absolute; top: 4px; width: 14px; height: 14px; transform: translateX(-7px) rotate(45deg); background: #6366f1; }
+  .milestone.scheduled { background: ${c.scheduled.bar}; ${c.scheduled.barBorder ? `border: ${c.scheduled.barBorder};` : ""} box-sizing: border-box; }
+  .milestone.at-risk { background: ${c["at-risk"].bar}; }
+  .milestone.blocked { background: ${c.blocked.bar}; }
+  .row.completed .milestone { background: ${c.completed.bar}; ${c.completed.barBorder ? `border: ${c.completed.barBorder};` : ""} box-sizing: border-box; }
+  .row.canceled .milestone { background: #cbd5e1; opacity: 0.6; }
+`;
+}
+
+function buildStatusCssLightBranded(): string {
+  const c = GANTT_STATUS_COLORS["light-branded"];
+  return `
+  /* dashboard-cleanup item 10: status colors sourced from GANTT_STATUS_COLORS */
+  .legend-swatch.active { background: ${c.active.bar}; }
+  .legend-swatch.scheduled { background: ${c.scheduled.bar}; ${c.scheduled.barBorder ? `border: ${c.scheduled.barBorder};` : ""} ${c.scheduled.barExtra ?? ""} }
+  .legend-swatch.at-risk { background: ${c["at-risk"].bar}; }
+  .legend-swatch.blocked { background: ${c.blocked.bar}; }
+  .legend-swatch.completed { background: ${c.completed.bar}; ${c.completed.barBorder ? `border: ${c.completed.barBorder};` : ""} box-sizing: border-box; opacity: 0.6; }
+  .legend-swatch.canceled { background: ${c.canceled.bar}; }
+  .bar { position: absolute; top: 4px; bottom: 4px; background: ${c.active.bar}; border-radius: 2px; }
+  .bar.scheduled { background: ${c.scheduled.bar}; ${c.scheduled.barBorder ? `border: ${c.scheduled.barBorder};` : ""} ${c.scheduled.barExtra ?? ""} }
+  .bar.at-risk { background: ${c["at-risk"].bar}; ${c["at-risk"].barExtra ?? ""} }
+  .bar.blocked { background: ${c.blocked.bar}; ${c.blocked.barExtra ?? ""} }
+  .row.completed .bar { background: ${c.completed.bar}; ${c.completed.barBorder ? `border: ${c.completed.barBorder};` : ""} box-sizing: border-box; opacity: 0.6; }
+  .row.completed .title, .row.completed .meta, .row.completed .dates { color: ${c.completed.rowText ?? "#333333"}; }
+  .row.canceled .bar { background: ${c.canceled.bar}; opacity: 1; }
+  .row.canceled .title, .row.canceled .meta, .row.canceled .dates { text-decoration: line-through; color: ${c.canceled.rowText ?? "#9CA3AF"}; }
+  .milestone { position: absolute; top: 4px; width: 14px; height: 14px; transform: translateX(-7px) rotate(45deg); background: ${c.active.bar}; }
+  .milestone.scheduled { background: ${c.scheduled.bar}; ${c.scheduled.barBorder ? `border: ${c.scheduled.barBorder};` : ""} box-sizing: border-box; }
+  .milestone.at-risk { background: ${c["at-risk"].bar}; ${c["at-risk"].barExtra ?? ""} }
+  .milestone.blocked { background: ${c.blocked.bar}; ${c.blocked.barExtra ?? ""} }
+  .row.completed .milestone { background: ${c.completed.bar}; ${c.completed.barBorder ? `border: ${c.completed.barBorder};` : ""} box-sizing: border-box; opacity: 0.6; }
+  .row.canceled .milestone { background: ${c.canceled.bar}; opacity: 0.6; }
+`;
+}
 
 const STYLES = `
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; margin: 0; padding: 0; color: #222; background: #fafafa; }
@@ -270,7 +357,7 @@ const STYLES = `
      extra margin-bottom puts breathing room between L1 groups. */
   .rundown-section.wrapper-child { margin: 18px 0 28px 24px; padding: 12px 0 0 14px; border-top: 1px solid #e5e7eb; border-left: 3px solid #c4b5fd; }
   .rundown-section.wrapper-child .section-head h2 { font-size: 15px; }
-`;
+` + buildStatusCssLightInternal() + buildHierarchyCss("#0E5DFF");
 
 const STYLES_BRANDED = `
   body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #333333; background: #ffffff; }
@@ -364,7 +451,7 @@ const STYLES_BRANDED = `
      to its wrapper above. */
   .rundown-section.wrapper-child { margin: 18px 0 28px 24px; padding: 12px 0 0 14px; border-top: 1px solid #E5E7EB; border-left: 3px solid #0E5DFF; }
   .rundown-section.wrapper-child .section-head h2 { font-size: 15px; }
-`;
+` + buildStatusCssLightBranded() + buildHierarchyCss("#0E5DFF");
 
 function metaLine(row: AnnotatedRow): string {
   const ownerPart = row.owner ? `O: ${row.owner}` : "";
@@ -374,6 +461,9 @@ function metaLine(row: AnnotatedRow): string {
 
 function rowClass(row: AnnotatedRow): string {
   const classes = ["row"];
+  // dashboard-cleanup item 12: l1/l2 CSS hook for visual differentiation
+  if (row.kind === "project") classes.push("l1");
+  if (row.kind === "weekitem") classes.push("l2");
   if (row.kind === "weekitem" || row.kind === "project") {
     if (row.status === "completed") classes.push("completed");
     if (row.status === "canceled") classes.push("canceled");
@@ -386,7 +476,9 @@ function inlineDateClass(row: AnnotatedRow): string {
 }
 
 function chartLabel(data: GanttData): string {
-  return data.raw.kind === "wrapper" ? "Wrapper" : "L1";
+  // User-facing label rendered in the chart header. End users say
+  // "Project" / "Task", never "L1" / "L2".
+  return data.raw.kind === "wrapper" ? "Wrapper" : "Project";
 }
 
 /** The most-severe severity present on a row, for badge coloring. */
@@ -1109,9 +1201,11 @@ function RundownToc({ sections, theme }: { sections: RundownSection[]; theme: Th
 }
 
 function kindTag(kind: RundownSection["kind"]): string {
+  // Visible badge on each section's <h2>. End users say "Project" / "Task",
+  // never "L1" / "L2".
   if (kind === "wrapper") return "Wrapper";
   if (kind === "wrapper-child") return "Sub-project";
-  return "L1";
+  return "Project";
 }
 
 export function SectionBlock({ section, theme }: { section: RundownSection; theme: Theme }): React.JSX.Element {

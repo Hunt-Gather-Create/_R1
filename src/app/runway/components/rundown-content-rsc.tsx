@@ -13,34 +13,8 @@ import * as React from "react";
 import { GanttSectionDark } from "@/lib/runway/gantt/gantt-section-dark";
 import type { RundownSection } from "@/lib/runway/gantt/types";
 import { groupSections } from "@/lib/runway/gantt/group-sections";
-
-/**
- * Track 3 Wave 5: small "Ready to close?" chip rendered in the dark Gantt
- * embed when an L1 has every weekItem completed but the L1 itself is not
- * yet in {completed, canceled}. Mirrors the AccountSection chip on the By
- * Account tab — same operator-locked signal in both views. Amber tint
- * matches the awaiting-client status dark palette.
- */
-function ReadyToCloseChipDark(): React.JSX.Element {
-  return (
-    <span
-      data-testid="ready-to-close-chip"
-      className="ml-2 inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-300"
-    >
-      Ready to close?
-    </span>
-  );
-}
-
-/**
- * Returns the L1 id for a section that has L1 raw data, or null for
- * wrappers / non-l1 raw shapes. Mirror logic in section-builders.ts.
- */
-function l1IdForSection(section: RundownSection): string | null {
-  const raw = section.data.raw;
-  if (raw.kind !== "l1") return null;
-  return raw.entity.id;
-}
+import { weekItemsForSection, l1IdForSection } from "@/lib/runway/gantt/section-builders";
+import { ReadyToCloseChip, NoScheduledTasksChip } from "./section-chips";
 
 // Track 4 audit fix (2026-05-05, WARN — Panel 3): the inline `groupSections`
 // + `SectionBlock` definitions were extracted to
@@ -152,7 +126,10 @@ export function RundownContentRSC({
                     <summary className="cursor-pointer list-none text-xs font-medium text-slate-300">
                       <GanttChartsChevron />
                       {child.title}
-                      {childReady ? <ReadyToCloseChipDark /> : null}
+                      {childReady ? <ReadyToCloseChip variant="dark" /> : null}
+                      {weekItemsForSection(child).length === 0 ? (
+                        <NoScheduledTasksChip variant="dark" />
+                      ) : null}
                     </summary>
                     <div className="mt-2">
                       <GanttSectionDark data={child.data} sectionKind={child.kind} />
@@ -175,7 +152,10 @@ export function RundownContentRSC({
             <summary className="cursor-pointer list-none text-sm font-medium text-slate-300">
               <GanttChartsChevron />
               {block.section.title}
-              {standaloneReady ? <ReadyToCloseChipDark /> : null}
+              {standaloneReady ? <ReadyToCloseChip variant="dark" /> : null}
+              {weekItemsForSection(block.section).length === 0 ? (
+                <NoScheduledTasksChip variant="dark" />
+              ) : null}
             </summary>
             <div className="mt-3">
               <GanttSectionDark data={block.section.data} sectionKind={block.section.kind} />

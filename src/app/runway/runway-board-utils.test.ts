@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { mergeWeekendDays, groupByWeek } from "./runway-board-utils";
-import type { DayItem } from "./types";
+import { mergeWeekendDays, groupByWeek, isActivelySpanning, filterSpanningFromDayCells } from "./runway-board-utils";
+import type { DayItem, DayItemEntry } from "./types";
 
 function day(date: string, label: string, itemCount = 0): DayItem {
   return {
@@ -121,5 +121,111 @@ describe("groupByWeek", () => {
     expect(result).toHaveLength(1);
     expect(result[0].mondayDate).toBe("2026-04-06");
     expect(result[0].days).toHaveLength(2);
+  });
+});
+
+// ── dashboard-cleanup item 4: multi-day placement predicates ─────────────
+
+function makeEntry(overrides: Partial<DayItemEntry> = {}): DayItemEntry {
+  return {
+    title: "Multi-day Task",
+    account: "Convergix",
+    type: "delivery",
+    ...overrides,
+  };
+}
+
+describe("isActivelySpanning (item 4)", () => {
+  const TODAY = "2026-05-07";
+
+  it("returns true when today falls strictly between start and end", () => {
+    const item = makeEntry({ startDate: "2026-05-01", endDate: "2026-05-15" });
+    expect(isActivelySpanning(item, TODAY)).toBe(true);
+  });
+
+  it("returns true when startDate = today (inclusive)", () => {
+    const item = makeEntry({ startDate: TODAY, endDate: "2026-05-15" });
+    expect(isActivelySpanning(item, TODAY)).toBe(true);
+  });
+
+  it("returns true when endDate = today (inclusive)", () => {
+    const item = makeEntry({ startDate: "2026-05-01", endDate: TODAY });
+    expect(isActivelySpanning(item, TODAY)).toBe(true);
+  });
+
+  it("returns false when startDate > today (not yet started -- forecast anchor stays in day cell)", () => {
+    const item = makeEntry({ startDate: "2026-05-10", endDate: "2026-05-20" });
+    expect(isActivelySpanning(item, TODAY)).toBe(false);
+  });
+
+  it("returns false when endDate < today (already ended)", () => {
+    const item = makeEntry({ startDate: "2026-04-01", endDate: "2026-05-01" });
+    expect(isActivelySpanning(item, TODAY)).toBe(false);
+  });
+
+  it("returns false for single-day items (start == end)", () => {
+    const item = makeEntry({ startDate: TODAY, endDate: TODAY });
+    expect(isActivelySpanning(item, TODAY)).toBe(false);
+  });
+
+  it("returns false when startDate is null", () => {
+    const item = makeEntry({ startDate: null, endDate: "2026-05-15" });
+    expect(isActivelySpanning(item, TODAY)).toBe(false);
+  });
+
+  it("returns false when endDate is null", () => {
+    const item = makeEntry({ startDate: "2026-05-01", endDate: null });
+    expect(isActivelySpanning(item, TODAY)).toBe(false);
+  });
+
+  it("returns false when status is completed (terminal)", () => {
+    const item = makeEntry({ startDate: "2026-05-01", endDate: "2026-05-15", status: "completed" });
+    expect(isActivelySpanning(item, TODAY)).toBe(false);
+  });
+
+  it("returns false when status is canceled (terminal)", () => {
+    const item = makeEntry({ startDate: "2026-05-01", endDate: "2026-05-15", status: "canceled" });
+    expect(isActivelySpanning(item, TODAY)).toBe(false);
+  });
+
+  it("returns true when status is in-progress and spanning", () => {
+    const item = makeEntry({ startDate: "2026-05-01", endDate: "2026-05-15", status: "in-progress" });
+    expect(isActivelySpanning(item, TODAY)).toBe(true);
+  });
+});
+
+describe("filterSpanningFromDayCells (item 4)", () => {
+  const TODAY = "2026-05-07";
+
+  it("removes actively-spanning items from their day-cell column", () => {
+    const spanning = makeEntry({ startDate: "2026-05-01", endDate: "2026-05-15", status: "in-progress", title: "Spanning" });
+    const singleDay = makeEntry({ startDate: TODAY, endDate: TODAY, title: "Single Day" });
+    const dayBucket: DayItem = {
+      date: "2026-05-01",
+      label: "Mon 5/1",
+      items: [spanning, singleDay],
+    };
+
+    const result = filterSpanningFromDayCells([dayBucket], TODAY);
+    expect(result[0].items).toHaveLength(1);
+    expect(result[0].items[0].title).toBe("Single Day");
+  });
+
+  it("preserves future-starting multi-day items (startDate > today)", () => {
+    const future = makeEntry({ startDate: "2026-05-10", endDate: "2026-05-20", title: "Future" });
+    const dayBucket: DayItem = { date: "2026-05-10", label: "Mon 5/10", items: [future] };
+    const result = filterSpanningFromDayCells([dayBucket], TODAY);
+    expect(result[0].items).toHaveLength(1);
+  });
+
+  it("returns the same object reference when no items are filtered", () => {
+    const single = makeEntry({ startDate: TODAY, endDate: TODAY, title: "Single" });
+    const dayBucket: DayItem = { date: TODAY, label: "Wed 5/7", items: [single] };
+    const result = filterSpanningFromDayCells([dayBucket], TODAY);
+    expect(result[0]).toBe(dayBucket); // identity preserved -- no allocation
+  });
+
+  it("handles empty days array", () => {
+    expect(filterSpanningFromDayCells([], TODAY)).toEqual([]);
   });
 });

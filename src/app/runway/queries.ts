@@ -5,7 +5,7 @@ import {
   weekItems,
   pipelineItems,
 } from "@/lib/db/runway-schema";
-import { eq, and, gte, lte, lt, or, isNull, isNotNull, asc } from "drizzle-orm";
+import { eq, and, gte, lte, lt, or, isNull, isNotNull, asc, inArray } from "drizzle-orm";
 import type { ClientWithProjects, DayItemType, PipelineRow, WeekDay } from "./types";
 import { parseISODate, getMonday, getMondayISODate, toISODateString } from "./date-utils";
 import { getClientNameMap, groupBy } from "@/lib/runway/operations";
@@ -66,10 +66,18 @@ function resolveBlockedByRefs(
 function mapWeekItemToEntry(
   item: WeekItemRow,
   clientNameById: Map<string, string>,
-  weekItemById: Map<string, WeekItemRow>
+  weekItemById: Map<string, WeekItemRow>,
+  parentProjectNameById: Map<string, string>,
 ): WeekDay["items"][number] {
   const blockedByRefs = resolveBlockedByRefs(item.blockedBy, weekItemById);
   const updatedMs = item.updatedAt ? item.updatedAt.getTime() : null;
+  // dashboard-cleanup item 1: resolve parent project name for L2 week items.
+  // A weekItem is an L2 when its project has a parentProjectId. The map
+  // parentProjectNameById is keyed by project id -> parent project name,
+  // pre-built at call site via a batched projects query (no N+1).
+  const parentProjectName = item.projectId
+    ? (parentProjectNameById.get(item.projectId) ?? null)
+    : null;
   return {
     id: item.id,
     projectId: item.projectId ?? null,
@@ -85,6 +93,7 @@ function mapWeekItemToEntry(
     ...(item.endDate != null ? { endDate: item.endDate } : {}),
     ...(updatedMs != null ? { updatedAtMs: updatedMs } : {}),
     ...(blockedByRefs.length > 0 ? { blockedBy: blockedByRefs } : {}),
+    ...(parentProjectName != null ? { parentProjectName } : {}),
   };
 }
 
@@ -96,6 +105,7 @@ function groupWeekItemsIntoDays(
   items: WeekItemRow[],
   clientNameById: Map<string, string>,
   keyFn: (item: WeekItemRow) => string = (item) => item.startDate ?? item.date ?? "",
+  parentProjectNameById: Map<string, string> = new Map(),
 ): WeekDay[] {
   const grouped = groupBy(items, keyFn);
   const sortedDates = [...grouped.keys()].sort();
@@ -107,7 +117,7 @@ function groupWeekItemsIntoDays(
     date: dateStr,
     label: formatDayLabel(dateStr),
     items: (grouped.get(dateStr) ?? []).map((item) =>
-      mapWeekItemToEntry(item, clientNameById, weekItemById)
+      mapWeekItemToEntry(item, clientNameById, weekItemById, parentProjectNameById)
     ),
   }));
 }
@@ -137,6 +147,36 @@ export async function getClientsWithProjects(): Promise<ClientWithProjects[]> {
 }
 
 // weekOf is indexed (idx_week_items_week_of) — see runway-schema.ts
+/**
+ * Build a map from a weekItem's projectId -> the L1 project's display name.
+ *
+ * Item 1 QA fix 2026-05-07: previously this map only emitted entries when
+ * the L1 itself had a parentProjectId (i.e. wrapper-child L1). That made
+ * the card subtitle render the WRAPPER name (e.g. "1H Convergix Retainer")
+ * for retainer-nested tasks and render NOTHING for top-level L1 tasks
+ * (e.g. Pencils Down under "Website Revamp"). Operator wants the immediate
+ * L1 name on every L2 card uniformly so users can disambiguate when an
+ * account has multiple projects in flight. Now: one batched query, returns
+ * `projectId -> projects.name` for every project referenced by a weekItem.
+ */
+async function buildParentProjectNameMap(
+  items: WeekItemRow[],
+): Promise<Map<string, string>> {
+  const db = getRunwayDb();
+
+  const projectIds = [...new Set(
+    items.map((i) => i.projectId).filter((id): id is string => Boolean(id)),
+  )];
+  if (projectIds.length === 0) return new Map();
+
+  const rows = await db
+    .select({ id: projects.id, name: projects.name })
+    .from(projects)
+    .where(inArray(projects.id, projectIds));
+
+  return new Map(rows.map((r) => [r.id, r.name]));
+}
+
 export async function getWeekItems(weekOf?: string): Promise<WeekDay[]> {
   const db = getRunwayDb();
 
@@ -153,7 +193,11 @@ export async function getWeekItems(weekOf?: string): Promise<WeekDay[]> {
         .from(weekItems)
         .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
 
-  return groupWeekItemsIntoDays(items, clientNameById);
+  // dashboard-cleanup item 1: resolve parent project names for L2 week items
+  // (those whose project has a parentProjectId). Two batched queries, no N+1.
+  const parentProjectNameById = await buildParentProjectNameMap(items);
+
+  return groupWeekItemsIntoDays(items, clientNameById, undefined, parentProjectNameById);
 }
 
 export async function getPipeline(): Promise<PipelineRow[]> {
@@ -233,15 +277,17 @@ export async function getStaleWeekItems(): Promise<WeekDay[]> {
   if (pastItems.length === 0) return [];
 
   // Needs Update is the "red" state. The only way out is staff action on the
-  // L2 itself — mark `completed` OR push `endDate` forward. No suppression
+  // L2 itself -- mark `completed` OR push `endDate` forward. No suppression
   // based on parent-project edits, sibling-row edits, or freshness windows.
   // (The previous freshness-window suppression was hiding real overdue work.)
   //
   // Bucket on endDate (due day) so day-group labels read "when did this go
-  // red" — overrides the default startDate-first keying used elsewhere.
+  // red" -- overrides the default startDate-first keying used elsewhere.
+  const parentProjectNameById = await buildParentProjectNameMap(pastItems);
   return groupWeekItemsIntoDays(
     pastItems,
     clientNameById,
     (item) => item.endDate ?? item.date ?? "",
+    parentProjectNameById,
   );
 }

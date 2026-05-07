@@ -28,7 +28,7 @@ export function DayColumn({
         ) : null}
         {day.label}
       </h3>
-      <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+      <div className="space-y-2">
         {day.items.map((item, i) => (
           <DayItemCard
             key={item.id ?? `${item.account}|${item.title}|${i}`}

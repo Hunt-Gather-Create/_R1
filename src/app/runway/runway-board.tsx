@@ -8,7 +8,7 @@ import type { UnifiedAccount } from "./unified-view";
 import type { RunwayFlag } from "@/lib/runway/flags";
 import type { SeverityCounts, ClientRundownData } from "@/lib/runway/gantt/types";
 import { parseISODate } from "./date-utils";
-import { mergeWeekendDays, groupByWeek } from "./runway-board-utils";
+import { mergeWeekendDays, groupByWeek, filterSpanningFromDayCells } from "./runway-board-utils";
 import { DayColumn } from "./components/day-column";
 import { TodaySection } from "./components/today-section";
 import { AccountSection } from "./components/account-section";
@@ -17,8 +17,7 @@ import { PipelineRow } from "./components/pipeline-row";
 import { FlagsPanel } from "./components/flags-panel";
 import { NeedsUpdateSection } from "./components/needs-update-section";
 import { InFlightSection } from "./components/in-flight-section";
-import { InFlightToggle } from "./components/in-flight-toggle";
-import { toggleInFlightAction } from "./actions";
+import { toggleInFlightAction, toggleNeedsUpdateAction } from "./actions";
 import { useVersionPoll } from "./use-version-poll";
 
 type View = "triage" | "accounts" | "gantt-charts" | "pipeline";
@@ -62,6 +61,8 @@ interface RunwayBoardProps {
   staleItems?: DayItem[];
   /** Initial persisted toggle value. Defaults to true (chunk 3 #6). */
   initialInFlightEnabled?: boolean;
+  /** Initial persisted Needs Update toggle value. Defaults to true. */
+  initialNeedsUpdateEnabled?: boolean;
   /**
    * Full unfiltered day-bucket array from `getWeekItems()`. Page-level
    * bucketing for thisWeek/upcoming drops past-Monday buckets, which
@@ -107,15 +108,16 @@ function useBoardData(
     [thisWeek, todayStr]
   );
 
-  const restOfWeek = useMemo(
-    () =>
-      mergeWeekendDays(
-        thisWeek.filter(
-          (day) => parseISODate(day.date).toDateString() !== todayStr
-        )
-      ),
-    [thisWeek, todayStr]
-  );
+  const restOfWeek = useMemo(() => {
+    const todayISO = new Date().toISOString().slice(0, 10);
+    // dashboard-cleanup item 4: remove actively-spanning rows from day cells.
+    // Once startDate <= today, the row lives in Today / In Flight, not the
+    // day-grid cell anchored on its startDate.
+    const nonTodayDays = thisWeek.filter(
+      (day) => parseISODate(day.date).toDateString() !== todayStr
+    );
+    return mergeWeekendDays(filterSpanningFromDayCells(nonTodayDays, todayISO));
+  }, [thisWeek, todayStr]);
 
   const upcomingWeeks = useMemo(
     () => groupByWeek(mergeWeekendDays(upcoming)),
@@ -133,11 +135,13 @@ export function RunwayBoard({
   flags = [],
   staleItems = [],
   initialInFlightEnabled = true,
+  initialNeedsUpdateEnabled = true,
   inFlightSource,
 }: RunwayBoardProps) {
   const router = useRouter();
   const [view, setView] = useState<View>("triage");
   const [inFlightEnabled, setInFlightEnabled] = useState(initialInFlightEnabled);
+  const [needsUpdateEnabled, setNeedsUpdateEnabled] = useState(initialNeedsUpdateEnabled);
   const { pipelineTotal, todayColumn, restOfWeek, upcomingWeeks } = useBoardData(thisWeek, upcoming, pipeline);
   const { isStale } = useVersionPoll(router);
 
@@ -181,16 +185,18 @@ export function RunwayBoard({
           <div className="min-w-0 flex-1">
             {view === "triage" ? (
               <div className="space-y-6 sm:space-y-10">
-                <InFlightToggle
-                  initialEnabled={initialInFlightEnabled}
-                  onToggle={toggleInFlightAction}
-                  onChange={setInFlightEnabled}
+                <NeedsUpdateSection
+                  staleItems={staleItems}
+                  enabled={needsUpdateEnabled}
+                  onToggle={toggleNeedsUpdateAction}
+                  onToggleChange={setNeedsUpdateEnabled}
                 />
-                <NeedsUpdateSection staleItems={staleItems} />
                 <TodaySection todayColumn={todayColumn} />
                 <InFlightSection
                   weekItems={inFlightSource}
                   enabled={inFlightEnabled}
+                  onToggle={toggleInFlightAction}
+                  onToggleChange={setInFlightEnabled}
                 />
 
                 {restOfWeek.length > 0 ? (

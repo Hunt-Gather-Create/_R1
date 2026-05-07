@@ -29,12 +29,17 @@ import type { ClientRundownData, RundownSection } from "@/lib/runway/gantt/types
  * every CHILD L1 under it is itself ready-to-close, which the per-row
  * chip already conveys. So wrapper rows are excluded from the set.
  */
-function computeReadyToCloseIds(sections: readonly RundownSection[]): Set<string> {
+function computeReadyToCloseIds(
+  sections: readonly RundownSection[],
+  todayISO: string,
+): Set<string> {
   const ids = new Set<string>();
   for (const section of sections) {
     const raw = section.data.raw;
     if (raw.kind !== "l1") continue;
-    if (isReadyToClose(raw.entity, raw.children)) {
+    // dashboard-cleanup item 9: pass todayISO so Branch B (0 weekItems +
+    // past endDate) can compare without calling `new Date()` on every L1.
+    if (isReadyToClose(raw.entity, raw.children, todayISO)) {
       ids.add(raw.entity.id);
     }
   }
@@ -126,6 +131,10 @@ export default async function RunwayPage() {
     getViewPreferences(),
     getClientRundowns(),
   ]);
+
+  // Compute once so all downstream callers share the same "today" value
+  // for date comparisons (isReadyToClose branch B, etc.).
+  const todayISO = new Date().toISOString().slice(0, 10);
 
   // Split week items into thisWeek and upcoming in a single pass
   const currentWeekOf = getMondayISODate(new Date());
@@ -258,7 +267,7 @@ export default async function RunwayPage() {
       // embed (via RundownContentRSC's prop). Operator-locked: same
       // signal must appear in both views.
       const readyToCloseIds = filtered
-        ? computeReadyToCloseIds(filtered.sections)
+        ? computeReadyToCloseIds(filtered.sections, todayISO)
         : new Set<string>();
       const ganttContent: ReactNode | undefined = filtered
         ? (
@@ -321,6 +330,7 @@ export default async function RunwayPage() {
       flags={flags}
       staleItems={staleItems}
       initialInFlightEnabled={viewPrefs.inFlightToggle ?? true}
+      initialNeedsUpdateEnabled={viewPrefs.needsUpdateToggle ?? true}
       inFlightSource={inFlightSourceDeduped}
     />
   );

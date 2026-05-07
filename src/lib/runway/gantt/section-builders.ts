@@ -22,6 +22,7 @@ import type {
   Issue,
   ProjectRow,
   RawData,
+  RundownSection,
   SeverityCounts,
   WeekItemRow,
 } from "./types";
@@ -119,4 +120,30 @@ export function addSeverity(target: SeverityCounts, src: SeverityCounts): void {
   target.critical += src.critical;
   target.warn += src.warn;
   target.info += src.info;
+}
+
+/**
+ * Filtered weekItem rows for a section: kind === "weekitem" and not in a
+ * terminal status. Drives both the By Account L2 list AND the Gantt Charts
+ * "is this L1 empty?" check, so the two surfaces share a definition of
+ * "scheduled tasks."
+ */
+export function weekItemsForSection(section: RundownSection): AnnotatedRow[] {
+  return section.data.rows.filter(
+    (r) =>
+      r.kind === "weekitem" &&
+      r.status !== "completed" &&
+      r.status !== "canceled",
+  );
+}
+
+/**
+ * L1 entity id for a section whose raw data is L1-shaped. Wrapper sections
+ * return null (the wrapper itself is not an L1). Shared by both the By
+ * Account tier and the Gantt Charts dark embed for ready-to-close chip
+ * resolution.
+ */
+export function l1IdForSection(section: RundownSection): string | null {
+  const raw = section.data.raw;
+  return raw.kind === "l1" ? raw.entity.id : null;
 }

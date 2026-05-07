@@ -3,7 +3,10 @@ import { render, screen } from "@testing-library/react";
 import { FlagsPanel } from "./flags-panel";
 import type { RunwayFlag } from "@/lib/runway/flags";
 
-const criticalFlag: RunwayFlag = {
+// ── Fixtures ─────────────────────────────────────────────────────────────
+
+// Client Warnings section
+const staleFlag: RunwayFlag = {
   id: "f1",
   type: "stale",
   severity: "critical",
@@ -12,7 +15,8 @@ const criticalFlag: RunwayFlag = {
   relatedClient: "convergix",
 };
 
-const warningFlag: RunwayFlag = {
+// Resourcing Warnings section
+const bottleneckFlag: RunwayFlag = {
   id: "f2",
   type: "bottleneck",
   severity: "warning",
@@ -21,13 +25,31 @@ const warningFlag: RunwayFlag = {
   relatedPerson: "Daniel",
 };
 
-const infoFlag: RunwayFlag = {
+// Delivery Flags section (info deadline). Title shape mirrors the
+// production detector output ("Account: Item title"); the "tomorrow"
+// signal lives in severity=info + detail, NOT the title.
+const deadlineFlag: RunwayFlag = {
   id: "f3",
   type: "deadline",
   severity: "info",
-  title: "LPPC: Report Due",
+  title: "LPPC: Quarterly Report",
   detail: "Due tomorrow",
 };
+
+// Delivery Flags section (today deadline). Title shape mirrors the
+// production detector output ("Account: Item title"); the "today" signal
+// lives in severity=warning + detail, NOT the title -- the prior fixture
+// had "today" in the title, which masked the deliveryEmoji predicate bug
+// fixed 2026-05-07.
+const deadlineTodayFlag: RunwayFlag = {
+  id: "f4",
+  type: "deadline",
+  severity: "warning",
+  title: "Convergix: Status Report",
+  detail: "Due today",
+};
+
+// ── Core panel tests ──────────────────────────────────────────────────────
 
 describe("FlagsPanel", () => {
   it("renders nothing when flags array is empty", () => {
@@ -35,51 +57,60 @@ describe("FlagsPanel", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("renders flags count badge", () => {
-    render(<FlagsPanel flags={[criticalFlag, warningFlag]} />);
-    expect(screen.getByText("2")).toBeInTheDocument();
+  it("does NOT render a top-level flags count badge (operator-locked 2026-05-07: counts live on each section)", () => {
+    render(<FlagsPanel flags={[staleFlag, bottleneckFlag]} />);
+    // The top-level "Flags 2" badge was removed; counts are per-section.
+    // Each section shows its own count badge.
+    expect(screen.getByTestId("flag-section-count-client")).toHaveTextContent("1");
+    expect(screen.getByTestId("flag-section-count-resourcing")).toHaveTextContent("1");
   });
 
   it("renders the Flags heading", () => {
-    render(<FlagsPanel flags={[warningFlag]} />);
+    render(<FlagsPanel flags={[bottleneckFlag]} />);
     expect(screen.getByText("Flags")).toBeInTheDocument();
   });
 
-  it("groups flags by severity with labels", () => {
-    render(<FlagsPanel flags={[criticalFlag, warningFlag, infoFlag]} />);
-    expect(screen.getByText("Critical (1)")).toBeInTheDocument();
-    expect(screen.getByText("Warning (1)")).toBeInTheDocument();
-    expect(screen.getByText("Info (1)")).toBeInTheDocument();
-  });
-
   it("renders flag titles and details", () => {
-    render(<FlagsPanel flags={[criticalFlag]} />);
+    render(<FlagsPanel flags={[staleFlag]} />);
     expect(screen.getByText("Very Old Project")).toBeInTheDocument();
     expect(screen.getByText("Convergix -- stale 45 days")).toBeInTheDocument();
   });
+});
 
-  it("shows multiple flags in the same severity group", () => {
-    const anotherWarning: RunwayFlag = {
-      id: "f4",
-      type: "resource-conflict",
+// ── dashboard-cleanup item 2: 3-section reorg ─────────────────────────────
+
+describe("FlagsPanel (item 2 section reorg)", () => {
+  it("routes deadline flags into Delivery Flags section", () => {
+    render(<FlagsPanel flags={[deadlineFlag]} />);
+    expect(screen.getByTestId("flag-section-delivery")).toBeInTheDocument();
+    expect(screen.getByText("Delivery Flags")).toBeInTheDocument();
+    expect(screen.getByTestId("flag-section-count-delivery")).toHaveTextContent("1");
+    expect(screen.queryByTestId("flag-section-client")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("flag-section-resourcing")).not.toBeInTheDocument();
+  });
+
+  it("routes past-end-l2 flags into Delivery Flags section", () => {
+    const pastEnd: RunwayFlag = {
+      id: "pe1",
+      type: "past-end-l2",
       severity: "warning",
-      title: "Leslie overloaded",
-      detail: "3 clients in 10 days",
+      title: "Past-due: LPPC Writeup",
+      detail: "3 days overdue",
     };
-    render(<FlagsPanel flags={[warningFlag, anotherWarning]} />);
-    expect(screen.getByText("Warning (2)")).toBeInTheDocument();
-    expect(screen.getByText("Daniel has 4 items in their inbox")).toBeInTheDocument();
-    expect(screen.getByText("Leslie overloaded")).toBeInTheDocument();
+    render(<FlagsPanel flags={[pastEnd]} />);
+    expect(screen.getByTestId("flag-section-delivery")).toBeInTheDocument();
   });
 
-  it("omits severity sections with no flags", () => {
-    render(<FlagsPanel flags={[infoFlag]} />);
-    expect(screen.queryByText(/Critical/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Warning/)).not.toBeInTheDocument();
-    expect(screen.getByText("Info (1)")).toBeInTheDocument();
+  it("routes stale flags into Client Warnings section", () => {
+    render(<FlagsPanel flags={[staleFlag]} />);
+    expect(screen.getByTestId("flag-section-client")).toBeInTheDocument();
+    expect(screen.getByText("Client Warnings")).toBeInTheDocument();
+    expect(screen.getByTestId("flag-section-count-client")).toHaveTextContent("1");
+    expect(screen.queryByTestId("flag-section-delivery")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("flag-section-resourcing")).not.toBeInTheDocument();
   });
 
-  it("renders retainer-renewal flags in the warning group", () => {
+  it("routes retainer-renewal flags into Client Warnings section", () => {
     const renewal: RunwayFlag = {
       id: "renewal-1",
       type: "retainer-renewal",
@@ -89,14 +120,13 @@ describe("FlagsPanel", () => {
       relatedClient: "convergix",
     };
     render(<FlagsPanel flags={[renewal]} />);
-    expect(screen.getByText("Warning (1)")).toBeInTheDocument();
+    expect(screen.getByTestId("flag-section-client")).toBeInTheDocument();
     expect(
       screen.getByText("Retainer renewal: Convergix / Retainer Wrapper"),
     ).toBeInTheDocument();
-    expect(screen.getByText("expires 2026-05-10 (15 days)")).toBeInTheDocument();
   });
 
-  it("renders contract-expired flags in the warning group", () => {
+  it("routes contract-expired flags into Client Warnings section", () => {
     const expired: RunwayFlag = {
       id: "expired-1",
       type: "contract-expired",
@@ -106,9 +136,74 @@ describe("FlagsPanel", () => {
       relatedClient: "high-desert-law",
     };
     render(<FlagsPanel flags={[expired]} />);
-    expect(screen.getByText("Warning (1)")).toBeInTheDocument();
-    expect(
-      screen.getByText("Contract expired: High Desert Law"),
-    ).toBeInTheDocument();
+    expect(screen.getByTestId("flag-section-client")).toBeInTheDocument();
+    expect(screen.getByText("Contract expired: High Desert Law")).toBeInTheDocument();
+  });
+
+  it("routes resource-conflict into Resourcing Warnings section", () => {
+    const conflict: RunwayFlag = {
+      id: "rc1",
+      type: "resource-conflict",
+      severity: "warning",
+      title: "Leslie overloaded: 4 deliverables in 10 days",
+      detail: "Across 3 clients",
+      relatedPerson: "Leslie",
+    };
+    render(<FlagsPanel flags={[conflict]} />);
+    expect(screen.getByTestId("flag-section-resourcing")).toBeInTheDocument();
+    expect(screen.getByText("Resourcing Warnings")).toBeInTheDocument();
+    expect(screen.getByTestId("flag-section-count-resourcing")).toHaveTextContent("1");
+  });
+
+  it("routes bottleneck flags into Resourcing Warnings section", () => {
+    render(<FlagsPanel flags={[bottleneckFlag]} />);
+    expect(screen.getByTestId("flag-section-resourcing")).toBeInTheDocument();
+  });
+
+  it("renders all 3 sections when each has a flag", () => {
+    render(<FlagsPanel flags={[staleFlag, bottleneckFlag, deadlineFlag]} />);
+    expect(screen.getByTestId("flag-section-delivery")).toBeInTheDocument();
+    expect(screen.getByTestId("flag-section-client")).toBeInTheDocument();
+    expect(screen.getByTestId("flag-section-resourcing")).toBeInTheDocument();
+  });
+
+  it("omits empty sections (no zombie headers)", () => {
+    render(<FlagsPanel flags={[deadlineFlag]} />);
+    expect(screen.queryByTestId("flag-section-client")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("flag-section-resourcing")).not.toBeInTheDocument();
+  });
+
+  it("sections appear in order: Delivery -> Client -> Resourcing", () => {
+    render(<FlagsPanel flags={[bottleneckFlag, staleFlag, deadlineFlag]} />);
+    const deliveryEl = screen.getByTestId("flag-section-delivery");
+    const clientEl = screen.getByTestId("flag-section-client");
+    const resourcingEl = screen.getByTestId("flag-section-resourcing");
+    // compareDocumentPosition: DOCUMENT_POSITION_FOLLOWING = 4
+    expect(deliveryEl.compareDocumentPosition(clientEl) & 4).toBeTruthy();
+    expect(clientEl.compareDocumentPosition(resourcingEl) & 4).toBeTruthy();
+  });
+
+  it("deadline 'today' flags get fire emoji (🔥)", () => {
+    render(<FlagsPanel flags={[deadlineTodayFlag]} />);
+    expect(screen.getByText("🔥")).toBeInTheDocument();
+  });
+
+  it("deadline 'tomorrow/upcoming' flags get clock emoji (⏰)", () => {
+    render(<FlagsPanel flags={[deadlineFlag]} />);
+    expect(screen.getByText("⏰")).toBeInTheDocument();
+  });
+
+  it("multiple flags in one section show correct count", () => {
+    const conflict: RunwayFlag = {
+      id: "rc2",
+      type: "resource-conflict",
+      severity: "warning",
+      title: "Kathy overloaded",
+      detail: "3 clients",
+      relatedPerson: "Kathy",
+    };
+    render(<FlagsPanel flags={[bottleneckFlag, conflict]} />);
+    expect(screen.getByText("Resourcing Warnings")).toBeInTheDocument();
+    expect(screen.getByTestId("flag-section-count-resourcing")).toHaveTextContent("2");
   });
 });

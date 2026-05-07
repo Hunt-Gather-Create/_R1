@@ -24,6 +24,8 @@ Shared learnings and context that persist across sessions for all contributors.
 - Runway scripts need env vars exported from `.env.local` (drizzle-kit and tsx don't auto-load it)
 - MCP SDK: use `WebStandardStreamableHTTPServerTransport` in Next.js routes, not the Node.js adapter
 - Slack input-block elements (radio_buttons, checkboxes, plain_text_input inside an `input` block) cache their `initial_option` / `initial_options` / `initial_value` from the FIRST render of a given `block_id` and silently ignore subsequent `views.update` payloads that try to change the initial state. Workaround: gate the block on the disambiguation phase so it appears for the FIRST TIME after the user picks (Bug X1 fix at task.ts `date_type_block`); or rotate the `block_id` to force a fresh render. See `docs/plans/slack-modal-bug-x2-retainer-edit-fix.md` for the lead hypothesis on the open Bug X2 retainer-toggle case.
+- Nested `overflow-y-auto` containers inside the page scroll trigger Chrome's scroll-anchoring on macOS — the section header outside the scrollport appears "pinned" while cards flow past as the inner scrollport drains momentum. Avoid `max-h-[Xvh] overflow-y-auto` wrappers around card grids on the runway dashboard; let the page scroll as one container. (Lesson learned 2026-05-07 from `today-section.tsx` + `day-column.tsx` cleanup.)
+- End users say "Project" / "Task" — never "L1" / "L2". Internal helper / function / variable / file names can keep L1/L2 (those are JS identifiers). Anything that renders to user-facing text (chart headers, kind tags, ARIA labels, badge text) must use Project / Task.
 
 ## Decisions
 

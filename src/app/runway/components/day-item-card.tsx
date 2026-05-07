@@ -83,6 +83,14 @@ export function DayItemCard({ item, size = "sm" }: DayItemCardProps) {
       <div className={`flex items-start justify-between ${s.gap}`}>
         <div className="min-w-0 flex-1">
           <p className={ACCOUNT_CLASS}>{item.account}</p>
+          {item.parentProjectName ? (
+            <p
+              data-testid="parent-project-name"
+              className="text-xs text-muted-foreground/60 leading-tight mb-0.5"
+            >
+              {item.parentProjectName}
+            </p>
+          ) : null}
           <p className={s.title}>{item.title}</p>
           <div className={s.meta}>
             <DatesLine

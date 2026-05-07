@@ -540,7 +540,8 @@ describe("renderGantt", () => {
       ],
     });
     const html = renderGantt(data);
-    expect(html).toContain("row completed");
+    // item 12: rows now emit l1/l2 class, so the full class is "row l1 completed" or "row l2 completed"
+    expect(html).toMatch(/row l[12] completed/);
   });
 
   it("applies the canceled class to rows with status=canceled", () => {
@@ -556,7 +557,8 @@ describe("renderGantt", () => {
       ],
     });
     const html = renderGantt(data);
-    expect(html).toContain("row canceled");
+    // item 12: rows now emit l1/l2 class, so the full class is "row l1 canceled" or "row l2 canceled"
+    expect(html).toMatch(/row l[12] canceled/);
   });
 
   it("emits an alert badge ⚠ on rows that have sub-row issues, severity-colored", () => {
@@ -623,7 +625,8 @@ describe("diamond / milestone status-driven color class", () => {
       ],
     });
     const html = renderGantt(data);
-    expect(html).toContain("row completed");
+    // item 12: rows now emit l1/l2 class, so the full class is "row l1 completed" or "row l2 completed"
+    expect(html).toMatch(/row l[12] completed/);
     expect(html).toMatch(/class="milestone /);
   });
 
@@ -640,7 +643,8 @@ describe("diamond / milestone status-driven color class", () => {
       ],
     });
     const html = renderGantt(data);
-    expect(html).toContain("row canceled");
+    // item 12: rows now emit l1/l2 class, so the full class is "row l1 canceled" or "row l2 canceled"
+    expect(html).toMatch(/row l[12] canceled/);
     expect(html).toMatch(/class="milestone /);
   });
 
@@ -1131,9 +1135,69 @@ describe("G4: SectionLegend cross-theme", () => {
     expect(lightBranded).toContain("#0E5DFF");
     expect(lightBranded).not.toContain("#3b82f6"); // internal color must not bleed in
 
-    // dark: Tailwind classes — operator-locked 2026-05-04, swatch must
+    // dark: Tailwind classes -- operator-locked 2026-05-04, swatch must
     // match bar palette (bg-blue-500/70), not the prior bg-sky-400.
     const dark = renderGantt(makeGanttData(), "dark-account-view");
     expect(dark).toContain("bg-blue-500/70");
+  });
+});
+
+// ── dashboard-cleanup item 12: L1/L2 row class assertions ────────────────
+
+describe("rowClass (item 12: Project/Task visual hierarchy)", () => {
+  it("project rows get class 'l1' emitted in rendered HTML", () => {
+    const projectRow = makeRow({
+      kind: "project",
+      id: "p1",
+      title: "AG1 Pro Content",
+      startDate: "2026-05-01",
+      endDate: "2026-05-31",
+    });
+    const data = makeGanttData({ rows: [projectRow] });
+    const html = renderGantt(data, "light-internal");
+    expect(html).toContain('class="row l1"');
+  });
+
+  it("weekitem rows get class 'l2' emitted in rendered HTML", () => {
+    const weekRow = makeRow({
+      kind: "weekitem",
+      id: "w1",
+      title: "AG1 Writeup",
+      startDate: "2026-05-01",
+      endDate: "2026-05-10",
+    });
+    const data = makeGanttData({ rows: [weekRow] });
+    const html = renderGantt(data, "light-internal");
+    expect(html).toContain('class="row l2"');
+  });
+
+  it("completed project row gets both 'l1' and 'completed' classes", () => {
+    const row = makeRow({
+      kind: "project",
+      status: "completed",
+      startDate: "2026-04-01",
+      endDate: "2026-04-30",
+    });
+    const data = makeGanttData({ rows: [row] });
+    const html = renderGantt(data, "light-internal");
+    expect(html).toContain("row l1 completed");
+  });
+
+  it("L1 marker bar color (#0E5DFF) is present in light-internal STYLES", () => {
+    // The buildHierarchyCss function injects the marker color into the CSS.
+    const html = renderGantt(makeGanttData(), "light-internal");
+    expect(html).toContain("#0E5DFF");
+  });
+
+  it("scheduled violet color present in light-internal CSS (QA tweak 2026-05-07)", () => {
+    // Was teal #06b6d4 (item 11); switched to violet because teal blended
+    // with in-progress blue at small bar sizes.
+    const html = renderGantt(makeGanttData(), "light-internal");
+    expect(html).toContain("#8b5cf6");
+  });
+
+  it("item 11: completed muted slate present in light-internal CSS", () => {
+    const html = renderGantt(makeGanttData(), "light-internal");
+    expect(html).toContain("#cbd5e1");
   });
 });

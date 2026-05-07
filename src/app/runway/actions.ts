@@ -23,3 +23,14 @@ export async function toggleInFlightAction(
   revalidatePath("/runway");
   return prefs;
 }
+
+/**
+ * Toggle the Needs Update section. Mirrors toggleInFlightAction.
+ */
+export async function toggleNeedsUpdateAction(
+  next: boolean
+): Promise<RunwayViewPreferences> {
+  const prefs = await setViewPreferences({ needsUpdateToggle: next });
+  revalidatePath("/runway");
+  return prefs;
+}

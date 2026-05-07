@@ -309,6 +309,46 @@ describe("isReadyToClose", () => {
     ];
     expect(isReadyToClose(l1, items)).toBe(false);
   });
+
+  // dashboard-cleanup item 9: Branch B -- L1 with no L2s, past endDate
+  it("(item 9) returns true when L1 has 0 weekItems, endDate is past, status non-terminal", () => {
+    const l1 = makeProject({ status: "in-production", endDate: "2026-04-01" });
+    expect(isReadyToClose(l1, [], "2026-05-07")).toBe(true);
+  });
+
+  it("(item 9) returns false when L1 has 0 weekItems, endDate is future", () => {
+    const l1 = makeProject({ status: "in-production", endDate: "2026-12-31" });
+    expect(isReadyToClose(l1, [], "2026-05-07")).toBe(false);
+  });
+
+  it("(item 9) returns false when L1 has 0 weekItems, endDate is null (conservative)", () => {
+    const l1 = makeProject({ status: "in-production", endDate: null });
+    expect(isReadyToClose(l1, [], "2026-05-07")).toBe(false);
+  });
+
+  it("(item 9) returns false when L1 has 0 weekItems, endDate is past, status is completed (already closed)", () => {
+    const l1 = makeProject({ status: "completed", endDate: "2026-04-01" });
+    expect(isReadyToClose(l1, [], "2026-05-07")).toBe(false);
+  });
+
+  it("(item 9) returns false when L1 has 0 weekItems, endDate is past, status is canceled", () => {
+    const l1 = makeProject({ status: "canceled", endDate: "2026-04-01" });
+    expect(isReadyToClose(l1, [], "2026-05-07")).toBe(false);
+  });
+
+  it("(item 9) returns false when L1 has 0 weekItems, endDate equals today (not yet past)", () => {
+    const l1 = makeProject({ status: "in-production", endDate: "2026-05-07" });
+    // endDate < today is strict less-than; same-day is not yet past
+    expect(isReadyToClose(l1, [], "2026-05-07")).toBe(false);
+  });
+
+  it("(item 9) branch A still works with todayISO passed (existing weekItems behavior unchanged)", () => {
+    const l1 = makeProject({ status: "in-production" });
+    const items = [
+      makeWeekItem({ id: "w1", status: "completed" }),
+    ];
+    expect(isReadyToClose(l1, items, "2026-05-07")).toBe(true);
+  });
 });
 
 // ── filterActiveRundown ──────────────────────────────────
@@ -690,5 +730,102 @@ describe("filterActiveRundown", () => {
     const originalSectionCount = rundown.sections.length;
     filterActiveRundown(rundown);
     expect(rundown.sections.length).toBe(originalSectionCount);
+  });
+
+  // Dashboard cleanup item 6 -- Accounts View wrapper-hide regression guard.
+  // `filterActiveRundown` is invoked in page.tsx before threading the rundown
+  // to AccountSection. This test locks the end-to-end wrapper-hide behavior
+  // so regressions surface before they reach the UI.
+  it("(Accounts View item 6) hides wrapper + all its L1 children when every child is in terminal status", () => {
+    const wrapper = makeProject({
+      id: "p-retainer",
+      name: "Acme Retainer",
+      engagementType: "retainer",
+    });
+    const l1A = makeProject({
+      id: "p-l1-a",
+      parentProjectId: "p-retainer",
+      status: "completed",
+    });
+    const l1B = makeProject({
+      id: "p-l1-b",
+      parentProjectId: "p-retainer",
+      status: "canceled",
+    });
+
+    const sections: RundownSection[] = [
+      makeSection({
+        anchor: "p-retainer",
+        kind: "wrapper",
+        title: "Acme Retainer",
+        data: makeWrapperData(wrapper, [l1A, l1B]),
+      }),
+      makeSection({
+        anchor: "p-l1-a",
+        kind: "wrapper-child",
+        title: "L1 A",
+        parentTitle: "Acme Retainer",
+        data: makeL1Data(l1A),
+      }),
+      makeSection({
+        anchor: "p-l1-b",
+        kind: "wrapper-child",
+        title: "L1 B",
+        parentTitle: "Acme Retainer",
+        data: makeL1Data(l1B),
+      }),
+    ];
+
+    const out = filterActiveRundown(makeRundown(sections));
+    // All three sections (wrapper + 2 children) must be hidden.
+    expect(out.sections).toHaveLength(0);
+  });
+
+  it("(Accounts View item 6) keeps wrapper visible when one child L1 is still active", () => {
+    const wrapper = makeProject({
+      id: "p-retainer",
+      name: "Acme Retainer",
+      engagementType: "retainer",
+    });
+    const l1Done = makeProject({
+      id: "p-l1-done",
+      parentProjectId: "p-retainer",
+      status: "completed",
+    });
+    const l1Active = makeProject({
+      id: "p-l1-active",
+      parentProjectId: "p-retainer",
+      status: "in-production",
+    });
+
+    const sections: RundownSection[] = [
+      makeSection({
+        anchor: "p-retainer",
+        kind: "wrapper",
+        title: "Acme Retainer",
+        data: makeWrapperData(wrapper, [l1Done, l1Active]),
+      }),
+      makeSection({
+        anchor: "p-l1-done",
+        kind: "wrapper-child",
+        title: "L1 Done",
+        parentTitle: "Acme Retainer",
+        data: makeL1Data(l1Done),
+      }),
+      makeSection({
+        anchor: "p-l1-active",
+        kind: "wrapper-child",
+        title: "L1 Active",
+        parentTitle: "Acme Retainer",
+        data: makeL1Data(l1Active),
+      }),
+    ];
+
+    const out = filterActiveRundown(makeRundown(sections));
+    // Wrapper + active child survive; completed child is dropped.
+    expect(out.sections.map((s) => s.anchor)).toEqual([
+      "p-retainer",
+      "p-l1-active",
+    ]);
   });
 });

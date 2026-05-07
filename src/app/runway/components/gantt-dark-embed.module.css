@@ -147,9 +147,9 @@
 }
 
 .darkEmbed :global(.bar.scheduled) {
-  @apply bg-slate-500/40;
-  border: 1px dashed;
-  @apply border-slate-500;
+  /* QA tweak 2026-05-07: violet replaces teal so scheduled reads as
+     "queued" rather than blending with in-progress blue. */
+  @apply bg-violet-500/60;
 }
 
 .darkEmbed :global(.bar.at-risk) {
@@ -161,10 +161,25 @@
 }
 
 .darkEmbed :global(.bar.completed) {
-  @apply bg-emerald-500/40;
+  /* dashboard-cleanup item 11: muted slate -- done, not competing with active */
+  @apply bg-slate-500/50;
   border: 1px solid;
-  @apply border-emerald-400;
-  opacity: 0.7;
+  @apply border-slate-400/60;
+}
+
+/* QA tweak 2026-05-07: completed rows dim their title + meta text so the
+   row reads as "done" without strikethrough (canceled keeps strikethrough).
+   Mirrors the LIGHT_INTERNAL.completed.rowText behavior in colors.ts. */
+.darkEmbed :global(.row.completed > .title) {
+  @apply text-slate-500;
+}
+
+.darkEmbed :global(.row.completed > .meta) {
+  @apply text-slate-600;
+}
+
+.darkEmbed :global(.row.completed > .dates) {
+  @apply text-slate-600;
 }
 
 .darkEmbed :global(.bar.canceled) {
@@ -191,9 +206,8 @@
 }
 
 .darkEmbed :global(.milestone.scheduled) {
-  @apply bg-slate-500/40;
-  border: 1px dashed;
-  @apply border-slate-500;
+  /* QA tweak 2026-05-07: violet to match bar.scheduled */
+  @apply bg-violet-500/60;
 }
 
 .darkEmbed :global(.milestone.at-risk) {
@@ -205,10 +219,10 @@
 }
 
 .darkEmbed :global(.milestone.completed) {
-  @apply bg-emerald-500/40;
+  /* dashboard-cleanup item 11: muted slate to match bar */
+  @apply bg-slate-500/50;
   border: 1px solid;
-  @apply border-emerald-400;
-  opacity: 0.7;
+  @apply border-slate-400/60;
 }
 
 .darkEmbed :global(.milestone.canceled) {
@@ -264,9 +278,8 @@
 }
 
 .darkEmbed :global(.legend-swatch[data-status="scheduled"]) {
-  @apply bg-slate-500/40;
-  border: 1px dashed;
-  @apply border-slate-500;
+  /* QA tweak 2026-05-07: violet to match bar.scheduled */
+  @apply bg-violet-500/60;
 }
 
 .darkEmbed :global(.legend-swatch[data-status="at-risk"]) {
@@ -278,16 +291,53 @@
 }
 
 .darkEmbed :global(.legend-swatch[data-status="completed"]) {
-  @apply bg-emerald-500/40;
+  /* dashboard-cleanup item 11: muted slate to match bar */
+  @apply bg-slate-500/50;
   border: 1px solid;
-  @apply border-emerald-400;
-  opacity: 0.7;
+  @apply border-slate-400/60;
 }
 
 .darkEmbed :global(.legend-swatch[data-status="canceled"]) {
   @apply bg-slate-600/30;
   border: 1px solid;
   @apply border-slate-400/40;
+}
+
+/* ── L1 vs L2 (Project / Task) visual hierarchy ─────── */
+/* dashboard-cleanup item 12: three-layer differentiation so Projects read
+   heavier than Tasks at a glance. Marker color is blue-400 (#60a5fa) which
+   reads clearly on the dark background without burning through it. */
+
+.darkEmbed :global(.row.l1 > .title) {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.darkEmbed :global(.row.l2 > .title) {
+  font-weight: 400;
+}
+
+/* Marker bar: 4px solid left border on L1 rows only */
+.darkEmbed :global(.row.l1) {
+  border-left: 4px solid;
+  @apply border-blue-400/70;
+  padding-left: 6px;
+}
+
+.darkEmbed :global(.row.l2) {
+  border-left: 4px solid transparent;
+  padding-left: 6px;
+}
+
+/* Thicker timeline bar area for L1 */
+.darkEmbed :global(.row.l1 .timeline) {
+  height: 24px;
+}
+
+.darkEmbed :global(.row.l1 .bar) {
+  top: 3px;
+  height: 18px;
+  border-radius: 4px;
 }
 
 /* ── Container queries: axis density ────────────────── */
