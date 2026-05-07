@@ -32,68 +32,68 @@ describe("GANTT_STATUS_COLORS", () => {
     }
   });
 
-  // light-internal -- assert token values match GanttTemplate.tsx STYLES inline hex
-  describe("light-internal token values match GanttTemplate.tsx STYLES", () => {
+  // light-internal -- dashboard-cleanup item 11 color scheme
+  describe("light-internal token values (item 11 updated scheme)", () => {
     const li = GANTT_STATUS_COLORS["light-internal"];
 
-    it("active bar = #3b82f6", () => {
+    it("active bar = #3b82f6 (unchanged)", () => {
       expect(li.active.bar).toBe("#3b82f6");
     });
 
-    it("scheduled bar = #eff6ff (dashed pale blue)", () => {
-      expect(li.scheduled.bar).toBe("#eff6ff");
-      expect(li.scheduled.barBorder).toBe("1px dashed #93c5fd");
+    it("scheduled bar = #06b6d4 (teal solid -- item 11)", () => {
+      expect(li.scheduled.bar).toBe("#06b6d4");
+      expect(li.scheduled.barBorder).toBeUndefined();
     });
 
-    it("at-risk bar = #f59e0b", () => {
+    it("at-risk bar = #f59e0b (unchanged)", () => {
       expect(li["at-risk"].bar).toBe("#f59e0b");
     });
 
-    it("blocked bar = #ef4444", () => {
+    it("blocked bar = #ef4444 (unchanged)", () => {
       expect(li.blocked.bar).toBe("#ef4444");
     });
 
-    it("completed bar = #86efac with green border", () => {
-      expect(li.completed.bar).toBe("#86efac");
-      expect(li.completed.barBorder).toBe("1px solid #4ade80");
+    it("completed bar = #cbd5e1 (muted slate -- item 11)", () => {
+      expect(li.completed.bar).toBe("#cbd5e1");
+      expect(li.completed.barBorder).toBe("1px solid #94a3b8");
     });
 
-    it("completed row text = #475569 (muted slate)", () => {
-      expect(li.completed.rowText).toBe("#475569");
+    it("completed row text = #94a3b8 (lighter slate -- item 11)", () => {
+      expect(li.completed.rowText).toBe("#94a3b8");
     });
 
-    it("canceled row text = #94a3b8 (strikethrough slate)", () => {
+    it("canceled row text = #94a3b8 (unchanged)", () => {
       expect(li.canceled.rowText).toBe("#94a3b8");
     });
   });
 
-  // light-branded -- assert token values match GanttTemplate.tsx STYLES_BRANDED
-  describe("light-branded token values match GanttTemplate.tsx STYLES_BRANDED", () => {
+  // light-branded -- dashboard-cleanup item 11 color scheme
+  describe("light-branded token values (item 11 updated scheme)", () => {
     const lb = GANTT_STATUS_COLORS["light-branded"];
 
-    it("active bar = #0E5DFF (Civ brand blue)", () => {
+    it("active bar = #0E5DFF (Civ brand blue, unchanged)", () => {
       expect(lb.active.bar).toBe("#0E5DFF");
     });
 
-    it("scheduled bar = #F9FAFB with dashed gray border", () => {
-      expect(lb.scheduled.bar).toBe("#F9FAFB");
-      expect(lb.scheduled.barBorder).toBe("1px dashed #D1D5DB");
+    it("scheduled bar = #0891B2 (teal solid -- item 11)", () => {
+      expect(lb.scheduled.bar).toBe("#0891B2");
+      expect(lb.scheduled.barBorder).toBeUndefined();
     });
 
-    it("at-risk bar = #F59E0B", () => {
+    it("at-risk bar = #F59E0B (unchanged)", () => {
       expect(lb["at-risk"].bar).toBe("#F59E0B");
     });
 
-    it("blocked bar = #DC2626", () => {
+    it("blocked bar = #DC2626 (unchanged)", () => {
       expect(lb.blocked.bar).toBe("#DC2626");
     });
 
-    it("completed bar = #10B981 with green border", () => {
-      expect(lb.completed.bar).toBe("#10B981");
-      expect(lb.completed.barBorder).toBe("1px solid #059669");
+    it("completed bar = #CBD5E1 (muted slate -- item 11)", () => {
+      expect(lb.completed.bar).toBe("#CBD5E1");
+      expect(lb.completed.barBorder).toBe("1px solid #94A3B8");
     });
 
-    it("canceled bar = #9CA3AF (flat gray)", () => {
+    it("canceled bar = #9CA3AF (flat gray, unchanged)", () => {
       expect(lb.canceled.bar).toBe("#9CA3AF");
     });
   });
@@ -136,12 +136,15 @@ describe("barBg helper", () => {
 });
 
 describe("barBorder helper", () => {
-  it("returns the border string when present", () => {
-    expect(barBorder("light-internal", "scheduled")).toBe("1px dashed #93c5fd");
+  it("returns the border string when present (completed has a border)", () => {
+    // item 11: completed has a subtle slate border
+    expect(barBorder("light-internal", "completed")).toBe("1px solid #94a3b8");
   });
 
   it("returns empty string when no border is set", () => {
     expect(barBorder("light-internal", "active")).toBe("");
     expect(barBorder("light-internal", "blocked")).toBe("");
+    // item 11: scheduled is now solid teal, no border
+    expect(barBorder("light-internal", "scheduled")).toBe("");
   });
 });

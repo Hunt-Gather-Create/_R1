@@ -41,8 +41,13 @@ export interface StatusColorEntry {
 }
 
 /**
- * Light-internal theme: neutral Tailwind blue for active, muted grays for
- * completed/canceled, attention colors for at-risk/blocked.
+ * Light-internal theme (dashboard-cleanup item 11 color scheme update):
+ * - active: unchanged Tailwind blue
+ * - scheduled: teal solid bar (#06b6d4 / cyan-500). Replaces pale dashed blue.
+ *   Chosen: teal reads "upcoming/planned" without being warning-coded.
+ * - completed: muted slate fill + lighter text. Replaces solid green.
+ *   Distinguishable from canceled (which keeps strikethrough) and from active.
+ * - canceled: unchanged diagonal strikethrough on gray
  */
 const LIGHT_INTERNAL: Record<GanttStatus, StatusColorEntry> = {
   active: {
@@ -50,11 +55,9 @@ const LIGHT_INTERNAL: Record<GanttStatus, StatusColorEntry> = {
     legendBg: "#3b82f6",
   },
   scheduled: {
-    bar: "#eff6ff",
-    barBorder: "1px dashed #93c5fd",
-    legendBg: "#eff6ff",
-    legendBorder: "1px dashed #93c5fd",
-    barExtra: "box-sizing: border-box;",
+    // item 11: teal solid bar (no dashed border) -- attention without warning
+    bar: "#06b6d4",
+    legendBg: "#06b6d4",
   },
   "at-risk": {
     bar: "#f59e0b",
@@ -65,15 +68,16 @@ const LIGHT_INTERNAL: Record<GanttStatus, StatusColorEntry> = {
     legendBg: "#ef4444",
   },
   completed: {
-    bar: "#86efac",
-    barBorder: "1px solid #4ade80",
-    legendBg: "#86efac",
-    legendBorder: "1px solid #4ade80",
+    // item 11: muted gray fill -- "done and closed out", not competing with active
+    bar: "#cbd5e1",
+    barBorder: "1px solid #94a3b8",
+    legendBg: "#cbd5e1",
+    legendBorder: "1px solid #94a3b8",
     barExtra: "box-sizing: border-box;",
-    rowText: "#475569",
+    rowText: "#94a3b8",
   },
   canceled: {
-    // Diagonal strikethrough overlay on gray
+    // Diagonal strikethrough overlay on gray -- unchanged
     bar: "linear-gradient(to top right, transparent calc(50% - 1px), #64748b calc(50% - 1px), #64748b calc(50% + 1px), transparent calc(50% + 1px)), #cbd5e1",
     legendBg: "linear-gradient(to top right, transparent calc(50% - 1px), #64748b calc(50% - 1px), #64748b calc(50% + 1px), transparent calc(50% + 1px)), #cbd5e1",
     rowText: "#94a3b8",
@@ -81,8 +85,11 @@ const LIGHT_INTERNAL: Record<GanttStatus, StatusColorEntry> = {
 };
 
 /**
- * Light-branded theme: Civilization brand blue #0E5DFF for active,
- * slightly softer pastels for completed/scheduled.
+ * Light-branded theme (dashboard-cleanup item 11 color scheme update):
+ * - scheduled: teal #0891B2 (cyan-600 -- slightly deeper than internal for
+ *   contrast against white branded bg). Replaces pale dashed gray.
+ * - completed: muted slate -- matches internal theme semantics.
+ * - canceled: unchanged flat gray
  */
 const LIGHT_BRANDED: Record<GanttStatus, StatusColorEntry> = {
   active: {
@@ -90,11 +97,9 @@ const LIGHT_BRANDED: Record<GanttStatus, StatusColorEntry> = {
     legendBg: "#0E5DFF",
   },
   scheduled: {
-    bar: "#F9FAFB",
-    barBorder: "1px dashed #D1D5DB",
-    legendBg: "#F9FAFB",
-    legendBorder: "1px dashed #D1D5DB",
-    barExtra: "box-sizing: border-box;",
+    // item 11: teal solid -- consistent with light-internal, brand-appropriate
+    bar: "#0891B2",
+    legendBg: "#0891B2",
   },
   "at-risk": {
     bar: "#F59E0B",
@@ -107,12 +112,13 @@ const LIGHT_BRANDED: Record<GanttStatus, StatusColorEntry> = {
     barExtra: "opacity: 0.7;",
   },
   completed: {
-    bar: "#10B981",
-    barBorder: "1px solid #059669",
-    legendBg: "#10B981",
-    legendBorder: "1px solid #059669",
-    barExtra: "box-sizing: border-box; opacity: 0.6;",
-    rowText: "#333333",
+    // item 11: muted gray -- "done", not competing with active Civ blue
+    bar: "#CBD5E1",
+    barBorder: "1px solid #94A3B8",
+    legendBg: "#CBD5E1",
+    legendBorder: "1px solid #94A3B8",
+    barExtra: "box-sizing: border-box;",
+    rowText: "#6B7280",
   },
   canceled: {
     bar: "#9CA3AF",

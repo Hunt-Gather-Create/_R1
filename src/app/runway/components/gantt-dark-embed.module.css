@@ -147,9 +147,8 @@
 }
 
 .darkEmbed :global(.bar.scheduled) {
-  @apply bg-slate-500/40;
-  border: 1px dashed;
-  @apply border-slate-500;
+  /* dashboard-cleanup item 11: teal solid replaces dashed pale gray */
+  @apply bg-cyan-500/60;
 }
 
 .darkEmbed :global(.bar.at-risk) {
@@ -161,10 +160,10 @@
 }
 
 .darkEmbed :global(.bar.completed) {
-  @apply bg-emerald-500/40;
+  /* dashboard-cleanup item 11: muted slate -- done, not competing with active */
+  @apply bg-slate-500/50;
   border: 1px solid;
-  @apply border-emerald-400;
-  opacity: 0.7;
+  @apply border-slate-400/60;
 }
 
 .darkEmbed :global(.bar.canceled) {
@@ -191,9 +190,8 @@
 }
 
 .darkEmbed :global(.milestone.scheduled) {
-  @apply bg-slate-500/40;
-  border: 1px dashed;
-  @apply border-slate-500;
+  /* dashboard-cleanup item 11: teal solid replaces dashed pale gray */
+  @apply bg-cyan-500/60;
 }
 
 .darkEmbed :global(.milestone.at-risk) {
@@ -205,10 +203,10 @@
 }
 
 .darkEmbed :global(.milestone.completed) {
-  @apply bg-emerald-500/40;
+  /* dashboard-cleanup item 11: muted slate to match bar */
+  @apply bg-slate-500/50;
   border: 1px solid;
-  @apply border-emerald-400;
-  opacity: 0.7;
+  @apply border-slate-400/60;
 }
 
 .darkEmbed :global(.milestone.canceled) {
@@ -264,9 +262,8 @@
 }
 
 .darkEmbed :global(.legend-swatch[data-status="scheduled"]) {
-  @apply bg-slate-500/40;
-  border: 1px dashed;
-  @apply border-slate-500;
+  /* dashboard-cleanup item 11: teal to match bar */
+  @apply bg-cyan-500/60;
 }
 
 .darkEmbed :global(.legend-swatch[data-status="at-risk"]) {
@@ -278,10 +275,10 @@
 }
 
 .darkEmbed :global(.legend-swatch[data-status="completed"]) {
-  @apply bg-emerald-500/40;
+  /* dashboard-cleanup item 11: muted slate to match bar */
+  @apply bg-slate-500/50;
   border: 1px solid;
-  @apply border-emerald-400;
-  opacity: 0.7;
+  @apply border-slate-400/60;
 }
 
 .darkEmbed :global(.legend-swatch[data-status="canceled"]) {
