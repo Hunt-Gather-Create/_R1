@@ -104,6 +104,9 @@ function metaLine(row: AnnotatedRow): string {
 
 function rowClass(row: AnnotatedRow): string {
   const classes = ["row"];
+  // dashboard-cleanup item 12: l1/l2 CSS hook for visual differentiation
+  if (row.kind === "project") classes.push("l1");
+  if (row.kind === "weekitem") classes.push("l2");
   if (row.kind === "weekitem" || row.kind === "project") {
     if (row.status === "completed") classes.push("completed");
     if (row.status === "canceled") classes.push("canceled");

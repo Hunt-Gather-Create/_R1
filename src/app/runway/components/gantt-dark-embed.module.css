@@ -287,6 +287,43 @@
   @apply border-slate-400/40;
 }
 
+/* ── L1 vs L2 (Project / Task) visual hierarchy ─────── */
+/* dashboard-cleanup item 12: three-layer differentiation so Projects read
+   heavier than Tasks at a glance. Marker color is blue-400 (#60a5fa) which
+   reads clearly on the dark background without burning through it. */
+
+.darkEmbed :global(.row.l1 > .title) {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.darkEmbed :global(.row.l2 > .title) {
+  font-weight: 400;
+}
+
+/* Marker bar: 4px solid left border on L1 rows only */
+.darkEmbed :global(.row.l1) {
+  border-left: 4px solid;
+  @apply border-blue-400/70;
+  padding-left: 6px;
+}
+
+.darkEmbed :global(.row.l2) {
+  border-left: 4px solid transparent;
+  padding-left: 6px;
+}
+
+/* Thicker timeline bar area for L1 */
+.darkEmbed :global(.row.l1 .timeline) {
+  height: 24px;
+}
+
+.darkEmbed :global(.row.l1 .bar) {
+  top: 3px;
+  height: 18px;
+  border-radius: 4px;
+}
+
 /* ── Container queries: axis density ────────────────── */
 /* Post-2026-05-05 axis rework: density is now adaptive at the source —
    computeAxis emits tier-correct counts (≤14d daily / 15-56d weekly /

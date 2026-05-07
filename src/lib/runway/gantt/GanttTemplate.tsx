@@ -106,6 +106,30 @@ export function computeTodayPosition(axis: AxisParams): number | null {
  * When item 11 (color scheme update) runs, only GANTT_STATUS_COLORS needs
  * editing -- these generated rules automatically propagate the change.
  */
+/**
+ * dashboard-cleanup item 12: L1 vs L2 (Project / Task) visual hierarchy CSS.
+ * Injected at the end of STYLES and STYLES_BRANDED so these rules override
+ * any earlier declarations. Shared by both light themes; dark uses the CSS module.
+ *
+ * Three layers:
+ *   1. Typography: L1 title = bold + slightly larger (14px vs 13px default)
+ *   2. Marker bar: 4px left border before the L1 row, brand-accent colored
+ *   3. Timeline height: L1 bars taller (26px timeline vs 22px default)
+ */
+function buildHierarchyCss(markerColor: string): string {
+  return `
+  /* dashboard-cleanup item 12: Project (L1) visual hierarchy */
+  .row.l1 .title { font-weight: 700; font-size: 14px; }
+  .row.l2 .title { font-weight: 400; }
+  /* Marker bar: 4px left accent before L1 rows only */
+  .row.l1 { border-left: 4px solid ${markerColor}; padding-left: 6px; }
+  .row.l2 { border-left: 4px solid transparent; padding-left: 6px; }
+  /* Thicker timeline bars for L1 (taller container) */
+  .row.l1 .timeline { height: 26px; }
+  .row.l1 .bar { top: 3px; bottom: 3px; border-radius: 3px; }
+`;
+}
+
 function buildStatusCssLightInternal(): string {
   const c = GANTT_STATUS_COLORS["light-internal"];
   return `
@@ -333,7 +357,7 @@ const STYLES = `
      extra margin-bottom puts breathing room between L1 groups. */
   .rundown-section.wrapper-child { margin: 18px 0 28px 24px; padding: 12px 0 0 14px; border-top: 1px solid #e5e7eb; border-left: 3px solid #c4b5fd; }
   .rundown-section.wrapper-child .section-head h2 { font-size: 15px; }
-` + buildStatusCssLightInternal();
+` + buildStatusCssLightInternal() + buildHierarchyCss("#0E5DFF");
 
 const STYLES_BRANDED = `
   body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #333333; background: #ffffff; }
@@ -427,7 +451,7 @@ const STYLES_BRANDED = `
      to its wrapper above. */
   .rundown-section.wrapper-child { margin: 18px 0 28px 24px; padding: 12px 0 0 14px; border-top: 1px solid #E5E7EB; border-left: 3px solid #0E5DFF; }
   .rundown-section.wrapper-child .section-head h2 { font-size: 15px; }
-` + buildStatusCssLightBranded();
+` + buildStatusCssLightBranded() + buildHierarchyCss("#0E5DFF");
 
 function metaLine(row: AnnotatedRow): string {
   const ownerPart = row.owner ? `O: ${row.owner}` : "";
@@ -437,6 +461,9 @@ function metaLine(row: AnnotatedRow): string {
 
 function rowClass(row: AnnotatedRow): string {
   const classes = ["row"];
+  // dashboard-cleanup item 12: l1/l2 CSS hook for visual differentiation
+  if (row.kind === "project") classes.push("l1");
+  if (row.kind === "weekitem") classes.push("l2");
   if (row.kind === "weekitem" || row.kind === "project") {
     if (row.status === "completed") classes.push("completed");
     if (row.status === "canceled") classes.push("canceled");
