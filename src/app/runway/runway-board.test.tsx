@@ -21,13 +21,39 @@ vi.mock("./actions", () => ({
 // Stub InFlightSection so we can assert which weekItems source it received
 // without coupling to its internal filterInFlight logic. The testid mirrors
 // the real component's so document-order tests work against the same handle.
+// Dashboard cleanup item 3: the stub now renders the toggle inline in the
+// section (matching the real component's new behavior) so board-level
+// toggle tests continue to find data-testid="in-flight-toggle".
 vi.mock("./components/in-flight-section", () => ({
-  InFlightSection: ({ weekItems, enabled }: { weekItems: DayItem[]; enabled: boolean }) => (
+  InFlightSection: ({
+    weekItems,
+    enabled,
+    onToggle,
+    onToggleChange,
+  }: {
+    weekItems: DayItem[];
+    enabled: boolean;
+    onToggle?: (next: boolean) => Promise<unknown>;
+    onToggleChange?: (next: boolean) => void;
+  }) => (
     <div
       data-testid="in-flight-section"
       data-week-items={JSON.stringify(weekItems)}
       data-enabled={String(enabled)}
-    />
+    >
+      {onToggle !== undefined ? (
+        <button
+          role="switch"
+          aria-checked={enabled}
+          data-testid="in-flight-toggle"
+          onClick={() => {
+            const next = !enabled;
+            onToggleChange?.(next);
+            void onToggle(next);
+          }}
+        />
+      ) : null}
+    </div>
   ),
 }));
 

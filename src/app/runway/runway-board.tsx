@@ -17,7 +17,6 @@ import { PipelineRow } from "./components/pipeline-row";
 import { FlagsPanel } from "./components/flags-panel";
 import { NeedsUpdateSection } from "./components/needs-update-section";
 import { InFlightSection } from "./components/in-flight-section";
-import { InFlightToggle } from "./components/in-flight-toggle";
 import { toggleInFlightAction } from "./actions";
 import { useVersionPoll } from "./use-version-poll";
 
@@ -181,16 +180,13 @@ export function RunwayBoard({
           <div className="min-w-0 flex-1">
             {view === "triage" ? (
               <div className="space-y-6 sm:space-y-10">
-                <InFlightToggle
-                  initialEnabled={initialInFlightEnabled}
-                  onToggle={toggleInFlightAction}
-                  onChange={setInFlightEnabled}
-                />
                 <NeedsUpdateSection staleItems={staleItems} />
                 <TodaySection todayColumn={todayColumn} />
                 <InFlightSection
                   weekItems={inFlightSource}
                   enabled={inFlightEnabled}
+                  onToggle={toggleInFlightAction}
+                  onToggleChange={setInFlightEnabled}
                 />
 
                 {restOfWeek.length > 0 ? (

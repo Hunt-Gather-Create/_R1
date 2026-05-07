@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { InFlightSection } from "./in-flight-section";
 import type { DayItem, DayItemEntry } from "../types";
@@ -16,7 +16,7 @@ function makeDay(items: DayItemEntry[]): DayItem {
   return { date: "2026-04-20", label: "Mon 4/20", items };
 }
 
-describe("InFlightSection", () => {
+describe("InFlightSection (no toggle -- legacy mode)", () => {
   it("renders items in-progress whose today falls in their start/end window", () => {
     const day = makeDay([
       makeEntry({
@@ -34,7 +34,7 @@ describe("InFlightSection", () => {
     expect(screen.getByText("In Flight")).toBeInTheDocument();
   });
 
-  it("returns null when disabled", () => {
+  it("returns null when disabled (legacy: no toggle props)", () => {
     const day = makeDay([
       makeEntry({
         status: "in-progress",
@@ -102,5 +102,85 @@ describe("InFlightSection", () => {
 
     render(<InFlightSection weekItems={[day]} enabled nowISO="2026-04-20" />);
     expect(screen.getByText("2")).toBeInTheDocument();
+  });
+});
+
+describe("InFlightSection (inline toggle -- item 3)", () => {
+  it("renders the section header with an inline toggle when onToggle is provided", () => {
+    const onToggle = vi.fn().mockResolvedValue(undefined);
+    const day = makeDay([
+      makeEntry({
+        title: "Active Work",
+        status: "in-progress",
+        startDate: "2026-04-10",
+        endDate: "2026-04-30",
+      }),
+    ]);
+
+    render(
+      <InFlightSection
+        weekItems={[day]}
+        enabled
+        nowISO="2026-04-20"
+        onToggle={onToggle}
+      />
+    );
+
+    expect(screen.getByTestId("in-flight-section")).toBeInTheDocument();
+    // The visible h2 heading -- use role query to avoid matching sr-only span
+    expect(screen.getByRole("heading", { name: "In Flight" })).toBeInTheDocument();
+    // Toggle rendered inline in the header
+    expect(screen.getByTestId("in-flight-toggle")).toBeInTheDocument();
+    // Count badge visible
+    expect(screen.getByTestId("in-flight-count")).toBeInTheDocument();
+  });
+
+  it("still renders the section header when disabled (with toggle), allowing re-enable", () => {
+    const onToggle = vi.fn().mockResolvedValue(undefined);
+    const day = makeDay([
+      makeEntry({
+        title: "Active Work",
+        status: "in-progress",
+        startDate: "2026-04-10",
+        endDate: "2026-04-30",
+      }),
+    ]);
+
+    render(
+      <InFlightSection
+        weekItems={[day]}
+        enabled={false}
+        nowISO="2026-04-20"
+        onToggle={onToggle}
+      />
+    );
+
+    // Section renders so the user can re-enable
+    expect(screen.getByTestId("in-flight-section")).toBeInTheDocument();
+    expect(screen.getByTestId("in-flight-toggle")).toBeInTheDocument();
+    // But no count badge when disabled
+    expect(screen.queryByTestId("in-flight-count")).not.toBeInTheDocument();
+    // And no cards rendered
+    expect(screen.queryByText("Active Work")).not.toBeInTheDocument();
+  });
+
+  it("hides the count badge when there are no matching items but toggle is provided", () => {
+    const onToggle = vi.fn().mockResolvedValue(undefined);
+    const day = makeDay([
+      makeEntry({ status: "completed", startDate: "2026-04-10", endDate: "2026-04-30" }),
+    ]);
+
+    render(
+      <InFlightSection
+        weekItems={[day]}
+        enabled
+        nowISO="2026-04-20"
+        onToggle={onToggle}
+      />
+    );
+
+    // Section renders (has toggle), but count badge is 0 -- still shown when enabled
+    expect(screen.getByTestId("in-flight-section")).toBeInTheDocument();
+    expect(screen.getByTestId("in-flight-toggle")).toBeInTheDocument();
   });
 });
