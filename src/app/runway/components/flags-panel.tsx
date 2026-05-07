@@ -57,13 +57,16 @@ const SECTION_ORDER: FlagSection[] = ["delivery", "client", "resourcing"];
 /**
  * Emoji for delivery flags by flag type + whether the deadline is today.
  * dashboard-cleanup item 2 decision: fire emoji for today, clock for upcoming.
+ *
+ * Today vs tomorrow is keyed off severity (set in detectDeadlines:
+ * `severity: isToday ? "warning" : "info"`). Title-matching previously
+ * lived here but never fired because flag titles do not contain "today" --
+ * the word lives in `flag.detail` instead.
  */
 function deliveryEmoji(flag: RunwayFlag): string {
-  // detectDeadlines fires "due today" as title-matching logic.
-  // We check the title since the flag doesn't carry a structured date field.
-  if (flag.type === "deadline" && /today/i.test(flag.title)) return "🔥"; // fire
-  if (flag.type === "deadline") return "⏰"; // alarm clock
-  if (flag.type === "past-end-l2") return "🟠"; // orange circle for overdue (less alarming than red)
+  if (flag.type === "deadline" && flag.severity === "warning") return "🔥"; // today
+  if (flag.type === "deadline") return "⏰"; // tomorrow / upcoming
+  if (flag.type === "past-end-l2") return "🟠"; // overdue (less alarming than red)
   return "⚠"; // fallback warning
 }
 

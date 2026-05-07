@@ -25,21 +25,27 @@ const bottleneckFlag: RunwayFlag = {
   relatedPerson: "Daniel",
 };
 
-// Delivery Flags section (info deadline)
+// Delivery Flags section (info deadline). Title shape mirrors the
+// production detector output ("Account: Item title"); the "tomorrow"
+// signal lives in severity=info + detail, NOT the title.
 const deadlineFlag: RunwayFlag = {
   id: "f3",
   type: "deadline",
   severity: "info",
-  title: "LPPC: Report Due tomorrow",
+  title: "LPPC: Quarterly Report",
   detail: "Due tomorrow",
 };
 
-// Delivery Flags section (today deadline)
+// Delivery Flags section (today deadline). Title shape mirrors the
+// production detector output ("Account: Item title"); the "today" signal
+// lives in severity=warning + detail, NOT the title -- the prior fixture
+// had "today" in the title, which masked the deliveryEmoji predicate bug
+// fixed 2026-05-07.
 const deadlineTodayFlag: RunwayFlag = {
   id: "f4",
   type: "deadline",
   severity: "warning",
-  title: "Convergix: Status Report due today",
+  title: "Convergix: Status Report",
   detail: "Due today",
 };
 
