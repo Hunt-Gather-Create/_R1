@@ -691,4 +691,101 @@ describe("filterActiveRundown", () => {
     filterActiveRundown(rundown);
     expect(rundown.sections.length).toBe(originalSectionCount);
   });
+
+  // Dashboard cleanup item 6 -- Accounts View wrapper-hide regression guard.
+  // `filterActiveRundown` is invoked in page.tsx before threading the rundown
+  // to AccountSection. This test locks the end-to-end wrapper-hide behavior
+  // so regressions surface before they reach the UI.
+  it("(Accounts View item 6) hides wrapper + all its L1 children when every child is in terminal status", () => {
+    const wrapper = makeProject({
+      id: "p-retainer",
+      name: "Acme Retainer",
+      engagementType: "retainer",
+    });
+    const l1A = makeProject({
+      id: "p-l1-a",
+      parentProjectId: "p-retainer",
+      status: "completed",
+    });
+    const l1B = makeProject({
+      id: "p-l1-b",
+      parentProjectId: "p-retainer",
+      status: "canceled",
+    });
+
+    const sections: RundownSection[] = [
+      makeSection({
+        anchor: "p-retainer",
+        kind: "wrapper",
+        title: "Acme Retainer",
+        data: makeWrapperData(wrapper, [l1A, l1B]),
+      }),
+      makeSection({
+        anchor: "p-l1-a",
+        kind: "wrapper-child",
+        title: "L1 A",
+        parentTitle: "Acme Retainer",
+        data: makeL1Data(l1A),
+      }),
+      makeSection({
+        anchor: "p-l1-b",
+        kind: "wrapper-child",
+        title: "L1 B",
+        parentTitle: "Acme Retainer",
+        data: makeL1Data(l1B),
+      }),
+    ];
+
+    const out = filterActiveRundown(makeRundown(sections));
+    // All three sections (wrapper + 2 children) must be hidden.
+    expect(out.sections).toHaveLength(0);
+  });
+
+  it("(Accounts View item 6) keeps wrapper visible when one child L1 is still active", () => {
+    const wrapper = makeProject({
+      id: "p-retainer",
+      name: "Acme Retainer",
+      engagementType: "retainer",
+    });
+    const l1Done = makeProject({
+      id: "p-l1-done",
+      parentProjectId: "p-retainer",
+      status: "completed",
+    });
+    const l1Active = makeProject({
+      id: "p-l1-active",
+      parentProjectId: "p-retainer",
+      status: "in-production",
+    });
+
+    const sections: RundownSection[] = [
+      makeSection({
+        anchor: "p-retainer",
+        kind: "wrapper",
+        title: "Acme Retainer",
+        data: makeWrapperData(wrapper, [l1Done, l1Active]),
+      }),
+      makeSection({
+        anchor: "p-l1-done",
+        kind: "wrapper-child",
+        title: "L1 Done",
+        parentTitle: "Acme Retainer",
+        data: makeL1Data(l1Done),
+      }),
+      makeSection({
+        anchor: "p-l1-active",
+        kind: "wrapper-child",
+        title: "L1 Active",
+        parentTitle: "Acme Retainer",
+        data: makeL1Data(l1Active),
+      }),
+    ];
+
+    const out = filterActiveRundown(makeRundown(sections));
+    // Wrapper + active child survive; completed child is dropped.
+    expect(out.sections.map((s) => s.anchor)).toEqual([
+      "p-retainer",
+      "p-l1-active",
+    ]);
+  });
 });
