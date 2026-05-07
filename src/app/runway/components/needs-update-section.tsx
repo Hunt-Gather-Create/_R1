@@ -33,13 +33,13 @@ export function NeedsUpdateSection({
   return (
     <section data-testid="needs-update-section">
       <div className="mb-4 flex items-center gap-3">
-        <h2 className="font-display text-2xl font-bold text-red-400">
+        <h2 className="font-display text-2xl font-bold text-red-300/90">
           Needs Update
         </h2>
         {enabled && totalCount > 0 ? (
           <span
             data-testid="needs-update-count"
-            className="rounded-full bg-red-500/20 px-2.5 py-0.5 text-sm font-medium text-red-300"
+            className="rounded-full bg-red-500/15 px-2.5 py-0.5 text-sm font-medium text-red-300/90"
           >
             {totalCount}
           </span>

@@ -56,9 +56,9 @@ export function NeedsUpdateToggle({
       data-testid="needs-update-toggle"
       disabled={isPending}
       onClick={handleClick}
-      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60 ${
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60 ${
         enabled
-          ? "border-red-400/40 bg-red-500"
+          ? "border-red-300/30 bg-red-500/75"
           : "border-border bg-muted"
       }`}
     >

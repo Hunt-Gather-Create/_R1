@@ -63,7 +63,7 @@ function deliveryEmoji(flag: RunwayFlag): string {
   // We check the title since the flag doesn't carry a structured date field.
   if (flag.type === "deadline" && /today/i.test(flag.title)) return "🔥"; // fire
   if (flag.type === "deadline") return "⏰"; // alarm clock
-  if (flag.type === "past-end-l2") return "🔴"; // red circle for overdue
+  if (flag.type === "past-end-l2") return "🟠"; // orange circle for overdue (less alarming than red)
   return "⚠"; // fallback warning
 }
 
