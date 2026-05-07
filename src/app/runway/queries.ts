@@ -148,53 +148,33 @@ export async function getClientsWithProjects(): Promise<ClientWithProjects[]> {
 
 // weekOf is indexed (idx_week_items_week_of) — see runway-schema.ts
 /**
- * Build a map from L2 project id to its parent project name.
- * Batches: one query for all projects whose ids appear in the weekItem set,
- * then one query for the parent ids. No N+1.
- * Returns empty map when no L2 items are present.
+ * Build a map from a weekItem's projectId -> the L1 project's display name.
+ *
+ * Item 1 QA fix 2026-05-07: previously this map only emitted entries when
+ * the L1 itself had a parentProjectId (i.e. wrapper-child L1). That made
+ * the card subtitle render the WRAPPER name (e.g. "1H Convergix Retainer")
+ * for retainer-nested tasks and render NOTHING for top-level L1 tasks
+ * (e.g. Pencils Down under "Website Revamp"). Operator wants the immediate
+ * L1 name on every L2 card uniformly so users can disambiguate when an
+ * account has multiple projects in flight. Now: one batched query, returns
+ * `projectId -> projects.name` for every project referenced by a weekItem.
  */
 async function buildParentProjectNameMap(
   items: WeekItemRow[],
 ): Promise<Map<string, string>> {
   const db = getRunwayDb();
 
-  // Collect unique projectIds from the weekItems set.
   const projectIds = [...new Set(
     items.map((i) => i.projectId).filter((id): id is string => Boolean(id)),
   )];
   if (projectIds.length === 0) return new Map();
 
-  // Fetch only the id + parentProjectId columns for the relevant projects.
-  const projectRows = await db
-    .select({ id: projects.id, parentProjectId: projects.parentProjectId })
+  const rows = await db
+    .select({ id: projects.id, name: projects.name })
     .from(projects)
     .where(inArray(projects.id, projectIds));
 
-  // Collect unique parentProjectIds for a second batched lookup.
-  const parentIds = [...new Set(
-    projectRows
-      .map((r) => r.parentProjectId)
-      .filter((pid): pid is string => Boolean(pid)),
-  )];
-  if (parentIds.length === 0) return new Map();
-
-  // Fetch parent project names in one shot.
-  const parentRows = await db
-    .select({ id: projects.id, name: projects.name })
-    .from(projects)
-    .where(inArray(projects.id, parentIds));
-
-  const parentNameById = new Map(parentRows.map((r) => [r.id, r.name]));
-
-  // Build final map: project id -> parent project name.
-  const out = new Map<string, string>();
-  for (const row of projectRows) {
-    if (row.parentProjectId) {
-      const parentName = parentNameById.get(row.parentProjectId);
-      if (parentName) out.set(row.id, parentName);
-    }
-  }
-  return out;
+  return new Map(rows.map((r) => [r.id, r.name]));
 }
 
 export async function getWeekItems(weekOf?: string): Promise<WeekDay[]> {
