@@ -122,4 +122,39 @@ describe("withRunwayRetry", () => {
     await expect(withRunwayRetry(fn, "test")).rejects.toThrow("Bad request");
     expect(fn).toHaveBeenCalledTimes(1);
   });
+
+  // Coverage for the getViewPreferences read path. The 2026-05-08 prod
+  // ECONNRESET stack trace pointed at view_preferences.ts:63 — that read
+  // is now wrapped in withRunwayRetry("getViewPreferences"). Mirrors the
+  // existing getCachedClients case so the label surfaces in the warn log
+  // when the wrap actually fires.
+  it("retries the view-preferences read path on transient ECONNRESET", async () => {
+    const transient = Object.assign(new Error("socket hang up"), {
+      code: "ECONNRESET",
+    });
+    const fn = vi
+      .fn()
+      .mockRejectedValueOnce(transient)
+      .mockResolvedValueOnce([{ scope: "global", preferences: "{}" }]);
+    const result = await withRunwayRetry(fn, "getViewPreferences");
+    expect(result).toEqual([{ scope: "global", preferences: "{}" }]);
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("getViewPreferences");
+  });
+
+  it("does NOT retry view-preferences `no such table` (caller catches it)", async () => {
+    // view_preferences.ts has a try/catch that swallows SQLITE_ERROR `no such
+    // table` and falls back to defaults. That error is non-transient — the
+    // retry helper must propagate it on the first attempt so the caller's
+    // catch fires immediately and does not stall on retries+backoff.
+    const noTable = Object.assign(
+      new Error("SQLITE_ERROR: no such table: view_preferences"),
+      { code: "SQLITE_ERROR" },
+    );
+    const fn = vi.fn().mockRejectedValue(noTable);
+    await expect(withRunwayRetry(fn, "getViewPreferences")).rejects.toBe(noTable);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
 });

@@ -75,19 +75,26 @@ export async function resolveClient(
   db: DrizzleDb,
   input: string,
 ): Promise<ResolveClientResult> {
-  const allClients = await db.select().from(clients);
+  const allClients = await withRunwayRetry(
+    () => db.select().from(clients),
+    "resolveClient:clients",
+  );
   const result = resolveClientFromList(allClients, input);
   if (!result.ok) return result;
 
-  const topLevelProjects = await db
-    .select()
-    .from(projectsTable)
-    .where(
-      and(
-        eq(projectsTable.clientId, result.client.id),
-        isNull(projectsTable.parentProjectId),
-      ),
-    );
+  const topLevelProjects = await withRunwayRetry(
+    () =>
+      db
+        .select()
+        .from(projectsTable)
+        .where(
+          and(
+            eq(projectsTable.clientId, result.client.id),
+            isNull(projectsTable.parentProjectId),
+          ),
+        ),
+    "resolveClient:topLevelProjects",
+  );
 
   return { ok: true, client: result.client, topLevelProjects };
 }
@@ -97,8 +104,8 @@ export async function resolveProject(
   input: string,
 ): Promise<ResolveProjectResult> {
   const [allClients, allProjects] = await Promise.all([
-    db.select().from(clients),
-    db.select().from(projectsTable),
+    withRunwayRetry(() => db.select().from(clients), "resolveProject:clients"),
+    withRunwayRetry(() => db.select().from(projectsTable), "resolveProject:projects"),
   ]);
   const clientsById = new Map(allClients.map((c) => [c.id, c]));
 
@@ -116,10 +123,14 @@ export async function extractData(
   subject: ResolvedSubject,
   client: ClientRow,
 ): Promise<RawData> {
-  const items = await db
-    .select()
-    .from(weekItems)
-    .where(eq(weekItems.projectId, subject.project.id));
+  const items = await withRunwayRetry(
+    () =>
+      db
+        .select()
+        .from(weekItems)
+        .where(eq(weekItems.projectId, subject.project.id)),
+    "extractData",
+  );
   return buildRawData(subject, client, items);
 }
 
