@@ -19,6 +19,7 @@ import {
   weekItems,
 } from "@/lib/db/runway-schema";
 import { uploadContent } from "@/lib/storage/r2-client";
+import { withRunwayRetry } from "@/lib/runway/retry";
 import {
   classifyProject,
   resolveClientFromList,
@@ -140,15 +141,19 @@ export async function extractClientRundown(
   // one query per top-level project.
   const childrenByParent = new Map<string, ProjectRow[]>();
   if (topLevelProjects.length > 0) {
-    const allChildren = await db
-      .select()
-      .from(projectsTable)
-      .where(
-        inArray(
-          projectsTable.parentProjectId,
-          topLevelProjects.map((p) => p.id),
-        ),
-      );
+    const allChildren = await withRunwayRetry(
+      () =>
+        db
+          .select()
+          .from(projectsTable)
+          .where(
+            inArray(
+              projectsTable.parentProjectId,
+              topLevelProjects.map((p) => p.id),
+            ),
+          ),
+      "extractClientRundown:children",
+    );
     for (const child of allChildren) {
       const pid = child.parentProjectId;
       if (!pid) continue;
@@ -184,10 +189,14 @@ export async function extractClientRundown(
 
   const wiByProject = new Map<string, WeekItemRow[]>();
   if (idsNeedingWeekItems.size > 0) {
-    const all = await db
-      .select()
-      .from(weekItems)
-      .where(inArray(weekItems.projectId, Array.from(idsNeedingWeekItems)));
+    const all = await withRunwayRetry(
+      () =>
+        db
+          .select()
+          .from(weekItems)
+          .where(inArray(weekItems.projectId, Array.from(idsNeedingWeekItems))),
+      "extractClientRundown:weekItems",
+    );
     for (const w of all) {
       const pid = w.projectId;
       if (!pid) continue;

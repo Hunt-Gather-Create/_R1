@@ -9,6 +9,7 @@ import { eq, and, gte, lte, lt, or, isNull, isNotNull, asc, inArray } from "driz
 import type { ClientWithProjects, DayItemType, PipelineRow, WeekDay } from "./types";
 import { parseISODate, getMonday, getMondayISODate, toISODateString } from "./date-utils";
 import { getClientNameMap, groupBy } from "@/lib/runway/operations";
+import { withRunwayRetry } from "@/lib/runway/retry";
 
 // ── Shared helpers ──────────────────────────────────────
 
@@ -127,15 +128,16 @@ function groupWeekItemsIntoDays(
 export async function getClientsWithProjects(): Promise<ClientWithProjects[]> {
   const db = getRunwayDb();
 
-  const allClients = await db
-    .select()
-    .from(clients)
-    .orderBy(asc(clients.name));
-
-  const allProjects = await db
-    .select()
-    .from(projects)
-    .orderBy(asc(projects.sortOrder));
+  const [allClients, allProjects] = await Promise.all([
+    withRunwayRetry(
+      () => db.select().from(clients).orderBy(asc(clients.name)),
+      "getClientsWithProjects:clients",
+    ),
+    withRunwayRetry(
+      () => db.select().from(projects).orderBy(asc(projects.sortOrder)),
+      "getClientsWithProjects:projects",
+    ),
+  ]);
 
   // Group projects by clientId using Map for O(1) lookups
   const projectsByClient = groupBy(allProjects, (p) => p.clientId);
@@ -169,10 +171,14 @@ async function buildParentProjectNameMap(
   )];
   if (projectIds.length === 0) return new Map();
 
-  const rows = await db
-    .select({ id: projects.id, name: projects.name })
-    .from(projects)
-    .where(inArray(projects.id, projectIds));
+  const rows = await withRunwayRetry(
+    () =>
+      db
+        .select({ id: projects.id, name: projects.name })
+        .from(projects)
+        .where(inArray(projects.id, projectIds)),
+    "buildParentProjectNameMap",
+  );
 
   return new Map(rows.map((r) => [r.id, r.name]));
 }
@@ -182,16 +188,20 @@ export async function getWeekItems(weekOf?: string): Promise<WeekDay[]> {
 
   const clientNameById = await getClientNameMap();
 
-  const items = weekOf
-    ? await db
-        .select()
-        .from(weekItems)
-        .where(eq(weekItems.weekOf, weekOf))
-        .orderBy(asc(weekItems.date), asc(weekItems.sortOrder))
-    : await db
-        .select()
-        .from(weekItems)
-        .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
+  const items = await withRunwayRetry(
+    () =>
+      weekOf
+        ? db
+            .select()
+            .from(weekItems)
+            .where(eq(weekItems.weekOf, weekOf))
+            .orderBy(asc(weekItems.date), asc(weekItems.sortOrder))
+        : db
+            .select()
+            .from(weekItems)
+            .orderBy(asc(weekItems.date), asc(weekItems.sortOrder)),
+    "getWeekItems",
+  );
 
   // dashboard-cleanup item 1: resolve parent project names for L2 week items
   // (those whose project has a parentProjectId). Two batched queries, no N+1.
@@ -205,10 +215,10 @@ export async function getPipeline(): Promise<PipelineRow[]> {
 
   const clientNameById = await getClientNameMap();
 
-  const items = await db
-    .select()
-    .from(pipelineItems)
-    .orderBy(asc(pipelineItems.sortOrder));
+  const items = await withRunwayRetry(
+    () => db.select().from(pipelineItems).orderBy(asc(pipelineItems.sortOrder)),
+    "getPipeline",
+  );
 
   return items.map((item) => ({
     ...item,
@@ -252,20 +262,24 @@ export async function getStaleWeekItems(): Promise<WeekDay[]> {
   // Verbose form (rather than `lt(coalesce(endDate, date), today)`) matches
   // the JS predicate exactly and is drift-resistant against rows where
   // date != endDate (the convention isn't yet guaranteed across all clients).
-  const allItems = await db
-    .select()
-    .from(weekItems)
-    .where(
-      and(
-        gte(weekItems.weekOf, lookbackISO),
-        lte(weekItems.weekOf, mondayISO),
-        or(
-          and(isNotNull(weekItems.endDate), lt(weekItems.endDate, todayISO)),
-          and(isNull(weekItems.endDate), lt(weekItems.date, todayISO)),
-        ),
-      ),
-    )
-    .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
+  const allItems = await withRunwayRetry(
+    () =>
+      db
+        .select()
+        .from(weekItems)
+        .where(
+          and(
+            gte(weekItems.weekOf, lookbackISO),
+            lte(weekItems.weekOf, mondayISO),
+            or(
+              and(isNotNull(weekItems.endDate), lt(weekItems.endDate, todayISO)),
+              and(isNull(weekItems.endDate), lt(weekItems.date, todayISO)),
+            ),
+          ),
+        )
+        .orderBy(asc(weekItems.date), asc(weekItems.sortOrder)),
+    "getStaleWeekItems",
+  );
 
   // Past-due predicate: endDate ?? date < today AND not completed.
   // Per Data TP convention: date == endDate for range tasks, but be defensive
