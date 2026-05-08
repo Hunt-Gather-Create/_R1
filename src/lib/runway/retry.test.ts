@@ -26,6 +26,21 @@ describe("isTransientNetworkError", () => {
     expect(isTransientNetworkError(err)).toBe(true);
   });
 
+  it("returns true when ENOTFOUND lives on the cause chain", () => {
+    // Mirrors the real cold-start stack captured 2026-05-08 against the
+    // free-tier Turso host: drizzle outer + FetchError inner with
+    // type: 'system', code: 'ENOTFOUND'. DNS lookup miss that resolves
+    // by the time the second attempt fires.
+    const cause = Object.assign(
+      new Error(
+        "request to https://runway-jasonburks.aws-us-east-1.turso.io/v2/pipeline failed, reason: getaddrinfo ENOTFOUND runway-jasonburks.aws-us-east-1.turso.io",
+      ),
+      { type: "system", errno: "ENOTFOUND", code: "ENOTFOUND" },
+    );
+    const err = Object.assign(new Error("Failed query: select ... from clients ..."), { cause });
+    expect(isTransientNetworkError(err)).toBe(true);
+  });
+
   it("returns true on 'fetch failed' message even without a code", () => {
     expect(isTransientNetworkError(new Error("fetch failed"))).toBe(true);
   });

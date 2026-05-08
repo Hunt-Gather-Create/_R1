@@ -38,6 +38,15 @@ const TRANSIENT_CODES = new Set([
   "ETIMEDOUT",
   "ENETUNREACH",
   "EAI_AGAIN",
+  // ENOTFOUND: getaddrinfo failed (DNS resolution miss). Observed on
+  // /runway cold-start hits in local repro 2026-05-08 against the
+  // free-tier Turso host. Distinct from EAI_AGAIN (which the resolver
+  // returns for "try later" on temporary nameserver failures);
+  // ENOTFOUND fires when the lookup completes but returns no record,
+  // which still happens transiently on Vercel Fluid Compute cold starts
+  // before the per-region DNS resolver warms its cache. The retry burns
+  // ~50ms before the second attempt, by which point DNS has typically resolved.
+  "ENOTFOUND",
   "UND_ERR_SOCKET",
   "UND_ERR_CONNECT_TIMEOUT",
 ]);
