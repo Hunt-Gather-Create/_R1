@@ -93,6 +93,7 @@ import {
 } from "@/lib/slack/modals/copy";
 
 import { inngest } from "../client";
+import { INNGEST_PLAN_CAP } from "../concurrency-limits";
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -182,7 +183,7 @@ export const slackModalSubmit = inngest.createFunction(
     id: "slack-modal-submit",
     name: "Slack modal submission",
     retries: 2,
-    concurrency: { limit: 50 },
+    concurrency: { limit: INNGEST_PLAN_CAP },
   },
   { event: "slack-modal/submit" },
   async ({ event, step, logger }) => {

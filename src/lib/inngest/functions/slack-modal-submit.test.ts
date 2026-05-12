@@ -8,6 +8,8 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 
+import { INNGEST_PLAN_CAP } from "../concurrency-limits";
+
 // ── Mocks ───────────────────────────────────────────────────────────
 
 // In-memory proposals "table" — each test populates this directly.
@@ -288,7 +290,7 @@ describe("slackModalSubmit (Inngest function)", () => {
     expect(mockCreateFunction).toHaveBeenCalled();
     const [config, trigger] = mockCreateFunction.mock.calls[0];
     expect(config.id).toBe("slack-modal-submit");
-    expect(config.concurrency).toEqual({ limit: 50 });
+    expect(config.concurrency).toEqual({ limit: INNGEST_PLAN_CAP });
     expect(trigger).toEqual({ event: "slack-modal/submit" });
   });
 
