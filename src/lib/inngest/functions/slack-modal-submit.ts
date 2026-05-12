@@ -182,7 +182,7 @@ export const slackModalSubmit = inngest.createFunction(
     id: "slack-modal-submit",
     name: "Slack modal submission",
     retries: 2,
-    concurrency: { limit: 50 },
+    concurrency: { limit: 5 },
   },
   { event: "slack-modal/submit" },
   async ({ event, step, logger }) => {

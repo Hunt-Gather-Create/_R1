@@ -288,7 +288,7 @@ describe("slackModalSubmit (Inngest function)", () => {
     expect(mockCreateFunction).toHaveBeenCalled();
     const [config, trigger] = mockCreateFunction.mock.calls[0];
     expect(config.id).toBe("slack-modal-submit");
-    expect(config.concurrency).toEqual({ limit: 50 });
+    expect(config.concurrency).toEqual({ limit: 5 });
     expect(trigger).toEqual({ event: "slack-modal/submit" });
   });
 
