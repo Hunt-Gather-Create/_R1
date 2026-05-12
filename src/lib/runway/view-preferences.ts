@@ -16,6 +16,7 @@
 
 import { getRunwayDb } from "@/lib/db/runway";
 import { viewPreferences } from "@/lib/db/runway-schema";
+import { withRunwayRetry } from "@/lib/runway/retry";
 import { eq } from "drizzle-orm";
 
 export interface RunwayViewPreferences {
@@ -58,13 +59,23 @@ export async function getViewPreferences(
   // (i.e. schema not yet pushed to prod), return defaults rather than
   // crashing the whole page. TP coordinates `pnpm runway:push` at
   // integration; in the meantime the UI behaves as if the toggle is ON.
+  //
+  // 2026-05-08: wrapped the read in withRunwayRetry so transient libsql/Turso
+  // ECONNRESETs no longer take the SSR render down. Same pattern as the rest
+  // of the /runway hot-path reads. The retry helper rethrows non-transient
+  // errors untouched, so the existing `no such table` catch below still fires
+  // exactly as before.
   try {
     const db = getRunwayDb();
-    const rows = await db
-      .select()
-      .from(viewPreferences)
-      .where(eq(viewPreferences.scope, scope))
-      .limit(1);
+    const rows = await withRunwayRetry(
+      () =>
+        db
+          .select()
+          .from(viewPreferences)
+          .where(eq(viewPreferences.scope, scope))
+          .limit(1),
+      "getViewPreferences",
+    );
     if (rows.length === 0) return { ...DEFAULT_PREFERENCES };
     return parsePreferences(rows[0].preferences);
   } catch (err) {

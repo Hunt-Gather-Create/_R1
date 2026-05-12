@@ -17,6 +17,7 @@ import {
 } from "@/lib/db/runway-schema";
 import { eq, asc } from "drizzle-orm";
 import { createHash } from "crypto";
+import { withRunwayRetry } from "@/lib/runway/retry";
 
 // ── Constants ────────────────────────────────────────────
 
@@ -123,7 +124,10 @@ async function getCachedClients(): Promise<ClientRow[]> {
     return _cachedClients;
   }
   const db = getRunwayDb();
-  _cachedClients = await db.select().from(clients).orderBy(asc(clients.name));
+  _cachedClients = await withRunwayRetry(
+    () => db.select().from(clients).orderBy(asc(clients.name)),
+    "getCachedClients",
+  );
   _cacheTimestamp = now;
   return _cachedClients;
 }

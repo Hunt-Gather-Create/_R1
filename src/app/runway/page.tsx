@@ -11,6 +11,7 @@ import { getRunwayDb } from "@/lib/db/runway";
 import { clients as clientsTable, projects as projectsTable } from "@/lib/db/runway-schema";
 import { and, asc, inArray, isNull } from "drizzle-orm";
 import { filterActiveRundown, isReadyToClose } from "@/lib/runway/gantt/filter-active";
+import { withRunwayRetry } from "@/lib/runway/retry";
 import { RundownContentRSC } from "./components/rundown-content-rsc";
 import type { ClientRundownData, RundownSection } from "@/lib/runway/gantt/types";
 
@@ -69,7 +70,10 @@ async function getClientRundowns(): Promise<Map<string, ClientRundownData>> {
   const todayISO = new Date().toISOString().slice(0, 10);
   const generatedAt = todayISO;
 
-  const allClients = await db.select().from(clientsTable);
+  const allClients = await withRunwayRetry(
+    () => db.select().from(clientsTable),
+    "getClientRundowns:clients",
+  );
   if (allClients.length === 0) return new Map<string, ClientRundownData>();
 
   const clientIds = allClients.map((c) => c.id);
@@ -78,13 +82,17 @@ async function getClientRundowns(): Promise<Map<string, ClientRundownData>> {
   // ordered by name. We then bucket them by clientId so each client gets
   // its own ordered list — matching the per-client query shape the
   // for-loop produced, just without the N round-trips.
-  const allTopLevels = await db
-    .select()
-    .from(projectsTable)
-    .where(
-      and(inArray(projectsTable.clientId, clientIds), isNull(projectsTable.parentProjectId)),
-    )
-    .orderBy(asc(projectsTable.name));
+  const allTopLevels = await withRunwayRetry(
+    () =>
+      db
+        .select()
+        .from(projectsTable)
+        .where(
+          and(inArray(projectsTable.clientId, clientIds), isNull(projectsTable.parentProjectId)),
+        )
+        .orderBy(asc(projectsTable.name)),
+    "getClientRundowns:topLevels",
+  );
 
   type TopLevelRow = (typeof allTopLevels)[number];
   const topLevelsByClient = new Map<string, TopLevelRow[]>();

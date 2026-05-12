@@ -19,6 +19,7 @@ import {
   weekItems,
 } from "@/lib/db/runway-schema";
 import { uploadContent } from "@/lib/storage/r2-client";
+import { withRunwayRetry } from "@/lib/runway/retry";
 import {
   classifyProject,
   resolveClientFromList,
@@ -74,19 +75,26 @@ export async function resolveClient(
   db: DrizzleDb,
   input: string,
 ): Promise<ResolveClientResult> {
-  const allClients = await db.select().from(clients);
+  const allClients = await withRunwayRetry(
+    () => db.select().from(clients),
+    "resolveClient:clients",
+  );
   const result = resolveClientFromList(allClients, input);
   if (!result.ok) return result;
 
-  const topLevelProjects = await db
-    .select()
-    .from(projectsTable)
-    .where(
-      and(
-        eq(projectsTable.clientId, result.client.id),
-        isNull(projectsTable.parentProjectId),
-      ),
-    );
+  const topLevelProjects = await withRunwayRetry(
+    () =>
+      db
+        .select()
+        .from(projectsTable)
+        .where(
+          and(
+            eq(projectsTable.clientId, result.client.id),
+            isNull(projectsTable.parentProjectId),
+          ),
+        ),
+    "resolveClient:topLevelProjects",
+  );
 
   return { ok: true, client: result.client, topLevelProjects };
 }
@@ -96,8 +104,8 @@ export async function resolveProject(
   input: string,
 ): Promise<ResolveProjectResult> {
   const [allClients, allProjects] = await Promise.all([
-    db.select().from(clients),
-    db.select().from(projectsTable),
+    withRunwayRetry(() => db.select().from(clients), "resolveProject:clients"),
+    withRunwayRetry(() => db.select().from(projectsTable), "resolveProject:projects"),
   ]);
   const clientsById = new Map(allClients.map((c) => [c.id, c]));
 
@@ -115,10 +123,14 @@ export async function extractData(
   subject: ResolvedSubject,
   client: ClientRow,
 ): Promise<RawData> {
-  const items = await db
-    .select()
-    .from(weekItems)
-    .where(eq(weekItems.projectId, subject.project.id));
+  const items = await withRunwayRetry(
+    () =>
+      db
+        .select()
+        .from(weekItems)
+        .where(eq(weekItems.projectId, subject.project.id)),
+    "extractData",
+  );
   return buildRawData(subject, client, items);
 }
 
@@ -140,15 +152,19 @@ export async function extractClientRundown(
   // one query per top-level project.
   const childrenByParent = new Map<string, ProjectRow[]>();
   if (topLevelProjects.length > 0) {
-    const allChildren = await db
-      .select()
-      .from(projectsTable)
-      .where(
-        inArray(
-          projectsTable.parentProjectId,
-          topLevelProjects.map((p) => p.id),
-        ),
-      );
+    const allChildren = await withRunwayRetry(
+      () =>
+        db
+          .select()
+          .from(projectsTable)
+          .where(
+            inArray(
+              projectsTable.parentProjectId,
+              topLevelProjects.map((p) => p.id),
+            ),
+          ),
+      "extractClientRundown:children",
+    );
     for (const child of allChildren) {
       const pid = child.parentProjectId;
       if (!pid) continue;
@@ -184,10 +200,14 @@ export async function extractClientRundown(
 
   const wiByProject = new Map<string, WeekItemRow[]>();
   if (idsNeedingWeekItems.size > 0) {
-    const all = await db
-      .select()
-      .from(weekItems)
-      .where(inArray(weekItems.projectId, Array.from(idsNeedingWeekItems)));
+    const all = await withRunwayRetry(
+      () =>
+        db
+          .select()
+          .from(weekItems)
+          .where(inArray(weekItems.projectId, Array.from(idsNeedingWeekItems))),
+      "extractClientRundown:weekItems",
+    );
     for (const w of all) {
       const pid = w.projectId;
       if (!pid) continue;
