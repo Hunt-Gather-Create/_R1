@@ -7,7 +7,7 @@ const mockGetPipeline = vi.fn();
 
 const mockGetStaleWeekItems = vi.fn().mockResolvedValue([]);
 
-vi.mock("./queries", () => ({
+vi.mock("../queries", () => ({
   getClientsWithProjects: () => mockGetClientsWithProjects(),
   getWeekItems: () => mockGetWeekItems(),
   getPipeline: () => mockGetPipeline(),
@@ -31,7 +31,7 @@ vi.mock("@/lib/runway/gantt/server", () => ({
 // pull in the real component's downstream chain (themes, GanttSection,
 // etc.). The stub returns a serializable marker so the JSON-stringified
 // data-props blob can prove ganttContent is present.
-vi.mock("./components/rundown-content-rsc", () => ({
+vi.mock("../components/rundown-content-rsc", () => ({
   RundownContentRSC: ({ sections }: { sections: { anchor: string }[] }) => (
     <div
       data-testid="rundown-content-rsc-stub"
@@ -76,14 +76,14 @@ vi.mock("@/lib/runway/view-preferences", () => ({
   getViewPreferences: vi.fn().mockResolvedValue({ inFlightToggle: true }),
 }));
 
-vi.mock("./runway-board", () => ({
+vi.mock("../runway-board", () => ({
   RunwayBoard: (props: Record<string, unknown>) => {
     // Expose props as data attributes for testing
     return <div data-testid="runway-board" data-props={JSON.stringify(props)} />;
   },
 }));
 
-vi.mock("./date-utils", () => ({
+vi.mock("../date-utils", () => ({
   getMondayISODate: (date: Date) => {
     const d = new Date(date);
     const day = d.getDay();
