@@ -115,8 +115,14 @@ export function RundownContentRSC({
                   span two L1s. */}
               {block.children.map((child) => {
                 const childL1Id = l1IdForSection(child);
+                const childItemsCount = weekItemsForSection(child).length;
+                // Issue #41: ReadyToClose is meaningful only when at least
+                // one scheduled item remains. AND-out empty sections so the
+                // chip never appears alongside NoScheduledTasks.
                 const childReady =
-                  childL1Id !== null && readyToCloseIds?.has(childL1Id) === true;
+                  childL1Id !== null &&
+                  readyToCloseIds?.has(childL1Id) === true &&
+                  childItemsCount > 0;
                 return (
                   <details
                     key={child.anchor}
@@ -127,7 +133,7 @@ export function RundownContentRSC({
                       <GanttChartsChevron />
                       {child.title}
                       {childReady ? <ReadyToCloseChip variant="dark" /> : null}
-                      {weekItemsForSection(child).length === 0 ? (
+                      {childItemsCount === 0 ? (
                         <NoScheduledTasksChip variant="dark" />
                       ) : null}
                     </summary>
@@ -141,8 +147,13 @@ export function RundownContentRSC({
           );
         }
         const standaloneL1Id = l1IdForSection(block.section);
+        const standaloneItemsCount = weekItemsForSection(block.section).length;
+        // Issue #41 parallel: standalone L1 mirrors the wrapper-child rule —
+        // ReadyToClose suppressed when the section has zero scheduled items.
         const standaloneReady =
-          standaloneL1Id !== null && readyToCloseIds?.has(standaloneL1Id) === true;
+          standaloneL1Id !== null &&
+          readyToCloseIds?.has(standaloneL1Id) === true &&
+          standaloneItemsCount > 0;
         return (
           <details
             key={block.section.anchor}
@@ -153,7 +164,7 @@ export function RundownContentRSC({
               <GanttChartsChevron />
               {block.section.title}
               {standaloneReady ? <ReadyToCloseChip variant="dark" /> : null}
-              {weekItemsForSection(block.section).length === 0 ? (
+              {standaloneItemsCount === 0 ? (
                 <NoScheduledTasksChip variant="dark" />
               ) : null}
             </summary>
