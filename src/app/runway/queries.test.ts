@@ -357,6 +357,73 @@ describe("getStaleWeekItems", () => {
     vi.useRealTimers();
   });
 
+  // Issue #53: canceled items previously leaked into Needs Update because
+  // the negative predicate only excluded "completed". The positive predicate
+  // now enumerates active-non-terminal statuses (scheduled, in-progress,
+  // blocked, at-risk), so canceled drops out.
+  it("excludes canceled items even when past-due (Issue #53)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    mockResults.push([createWeekItem({ date: "2026-04-06", status: "canceled" })]);
+    mockResults.push([]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    expect(result).toHaveLength(0);
+
+    vi.useRealTimers();
+  });
+
+  it("includes blocked items with past endDate (regression)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    mockResults.push([createWeekItem({ date: "2026-04-06", status: "blocked" })]);
+    mockResults.push([]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].items[0].title).toBe("CDS Review");
+
+    vi.useRealTimers();
+  });
+
+  it("includes at-risk items with past endDate (regression)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    mockResults.push([createWeekItem({ date: "2026-04-06", status: "at-risk" })]);
+    mockResults.push([]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    expect(result).toHaveLength(1);
+
+    vi.useRealTimers();
+  });
+
+  it("treats null status as active scheduled (v4 convention)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+
+    // Per v4 convention (operations-utils.ts:930) null status == scheduled.
+    // Past-due rows with null status should still surface in Needs Update.
+    mockResults.push([createWeekItem({ date: "2026-04-06", status: null })]);
+    mockResults.push([]);
+
+    const { getStaleWeekItems } = await import("./queries");
+    const result = await getStaleWeekItems();
+
+    expect(result).toHaveLength(1);
+
+    vi.useRealTimers();
+  });
+
   it("treats items without projectId as always stale", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-07T12:00:00"));
