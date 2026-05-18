@@ -174,7 +174,19 @@ describe("safeRunwayReturnTo", () => {
 
   it("returns /runway when the path is the auth sub-tree (no self-loop)", () => {
     expect(safeRunwayReturnTo("/runway/auth")).toBe("/runway");
+    expect(safeRunwayReturnTo("/runway/auth/")).toBe("/runway");
+    expect(safeRunwayReturnTo("/runway/auth/callback")).toBe("/runway");
     expect(safeRunwayReturnTo("/runway/auth?returnTo=/runway")).toBe("/runway");
+    expect(safeRunwayReturnTo("/runway/auth#frag")).toBe("/runway");
+  });
+
+  // Regression: PR #103 LlamaPReview flagged that the original boundary check
+  // used `startsWith("/runway/auth")` and would collapse adjacent-but-distinct
+  // routes (e.g., /runway/authorize) to /runway once those routes existed.
+  it("does NOT collapse adjacent-but-distinct paths like /runway/authorize", () => {
+    expect(safeRunwayReturnTo("/runway/authorize")).toBe("/runway/authorize");
+    expect(safeRunwayReturnTo("/runway/auth-callback")).toBe("/runway/auth-callback");
+    expect(safeRunwayReturnTo("/runway/authsomething")).toBe("/runway/authsomething");
   });
 
   it("preserves /runway and any future /runway/* sub-path that isn't /runway/auth", () => {

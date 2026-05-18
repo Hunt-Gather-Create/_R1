@@ -68,6 +68,9 @@ export function safeRunwayReturnTo(
 ): string {
   if (!raw) return "/runway";
   if (!raw.startsWith("/runway")) return "/runway";
-  if (raw.startsWith("/runway/auth")) return "/runway";
+  const pathOnly = raw.split(/[?#]/, 1)[0]!;
+  if (pathOnly === "/runway/auth" || pathOnly.startsWith("/runway/auth/")) {
+    return "/runway";
+  }
   return raw;
 }
