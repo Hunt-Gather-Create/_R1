@@ -472,6 +472,17 @@ describe("Category C: cascade and interaction", () => {
   it("C4: status cascade to linked week items (terminal items protected)", async () => {
     const { updateProjectStatus } = await import("./operations-writes");
 
+    // Issue #4b: updateProjectStatus now runs compat-check against the
+    // project's current category. The seed sets CDS Messaging with
+    // category="active"; flipping status→completed alone would now hard-
+    // reject (completed × non-completed is invalid). Pre-flip the category
+    // to "completed" via raw SQL so the cascade test exercises the path
+    // operators take in real prod (category change first, then status).
+    await rawClient.execute({
+      sql: "UPDATE projects SET category = ? WHERE id = ?",
+      args: ["completed", "pj-cds"],
+    });
+
     const result = await updateProjectStatus({
       clientSlug: "convergix",
       projectName: "CDS Messaging",
