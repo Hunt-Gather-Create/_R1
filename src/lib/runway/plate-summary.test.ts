@@ -292,11 +292,40 @@ describe("filterInFlight", () => {
     expect(filterInFlight(items, NOW).map((i) => i.title)).toEqual(["Last day"]);
   });
 
-  it("excludes items whose status is not in-progress", () => {
+  it("excludes items whose status is neither in-progress nor scheduled", () => {
+    // Issue #3: scheduled is now an accepted In Flight status, so the
+    // exclusion set is {completed, canceled, blocked, at-risk, null}.
     const items = [
       { status: "completed", startDate: "2026-04-10", endDate: "2026-04-30" },
+      { status: "canceled", startDate: "2026-04-10", endDate: "2026-04-30" },
       { status: null, startDate: "2026-04-10", endDate: "2026-04-30" },
       { status: "blocked", startDate: "2026-04-10", endDate: "2026-04-30" },
+      { status: "at-risk", startDate: "2026-04-10", endDate: "2026-04-30" },
+    ];
+    expect(filterInFlight(items, NOW)).toHaveLength(0);
+  });
+
+  it("keeps scheduled items mid-window (Issue #3 fix)", () => {
+    // status='scheduled' with start < today < or == end was previously
+    // invisible across In Flight, Today, and Needs Update. Broadening
+    // the predicate surfaces it under In Flight.
+    const items = [
+      { status: "scheduled", startDate: "2026-04-10", endDate: "2026-04-30", title: "Scheduled mid" },
+    ];
+    expect(filterInFlight(items, NOW).map((i) => i.title)).toEqual(["Scheduled mid"]);
+  });
+
+  it("excludes scheduled items on kickoff day (belongs to Today, not In Flight)", () => {
+    // Strict-start rule applies to both in-progress and scheduled.
+    const items = [
+      { status: "scheduled", startDate: "2026-04-20", endDate: "2026-04-30", title: "Scheduled today" },
+    ];
+    expect(filterInFlight(items, NOW)).toHaveLength(0);
+  });
+
+  it("excludes scheduled items whose endDate is past", () => {
+    const items = [
+      { status: "scheduled", startDate: "2026-04-01", endDate: "2026-04-10", title: "Scheduled past" },
     ];
     expect(filterInFlight(items, NOW)).toHaveLength(0);
   });
