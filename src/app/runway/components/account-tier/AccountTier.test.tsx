@@ -448,6 +448,29 @@ describe("AccountTier", () => {
     expect(screen.queryByTestId("ready-to-close-chip")).toBeNull();
   });
 
+  // Issue #41: an L1 with zero scheduled items has nothing to be ready-to-close
+  // on. The ReadyToClose chip is suppressed in the empty branch so the empty
+  // state shows only "No Scheduled Tasks", never both chips at once.
+  it("suppresses ReadyToClose chip on an empty L1 even when its id is in readyToCloseIds (Issue #41)", () => {
+    const account = mockAccount();
+    // Empty L1 section — no weekItems at all.
+    const rundown = mockRundown([
+      makeSection("standalone", "Empty L1", [], undefined, "l1-empty-closing"),
+    ]);
+    render(
+      <AccountTier
+        account={account}
+        rundown={rundown}
+        readyToCloseIds={new Set(["l1-empty-closing"])}
+      />,
+    );
+    // Empty branch still renders the NoScheduledTasks chip.
+    expect(screen.getByTestId("l1-empty")).toBeTruthy();
+    expect(screen.getByTestId("no-scheduled-tasks-chip")).toBeTruthy();
+    // But NOT the ReadyToClose chip — that would contradict the empty state.
+    expect(screen.queryByTestId("ready-to-close-chip")).toBeNull();
+  });
+
   it("renders all CollapsibleSections expanded by default", () => {
     const account = mockAccount();
     const rundown = mockRundown([
