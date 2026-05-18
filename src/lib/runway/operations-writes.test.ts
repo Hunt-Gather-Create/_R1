@@ -50,6 +50,46 @@ let _idCounter = 0;
 vi.mock("./operations-utils", () => ({
   CASCADE_STATUSES: ["completed", "blocked", "on-hold"],
   TERMINAL_ITEM_STATUSES: ["completed", "canceled"],
+  L1_PROJECT_STATUSES_ARR: [
+    "in-production",
+    "awaiting-client",
+    "not-started",
+    "blocked",
+    "on-hold",
+    "completed",
+    "canceled",
+  ] as const,
+  validateStatusCategoryCompatibility: (status: string, category: string) => {
+    // Light-weight mock that mirrors the real module's canceled symmetry +
+    // completed catch-all enough for the write-path tests. The full matrix is
+    // exercised in operations-utils.test.ts; here we just need the canceled +
+    // active rejection path.
+    if (!status || !category) return { ok: true } as const;
+    const L1_STATUSES = new Set([
+      "in-production", "awaiting-client", "not-started",
+      "blocked", "on-hold", "completed", "canceled",
+    ]);
+    const L1_CATEGORIES = new Set([
+      "active", "awaiting-client", "pipeline",
+      "on-hold", "completed", "canceled",
+    ]);
+    if (!L1_STATUSES.has(status) || !L1_CATEGORIES.has(category)) {
+      return { ok: true } as const;
+    }
+    if (status === "canceled" && category !== "canceled") {
+      return { ok: false, error: `Status 'canceled' requires category 'canceled'; got '${category}'.` } as const;
+    }
+    if (category === "canceled" && status !== "canceled") {
+      return { ok: false, error: `Category 'canceled' requires status 'canceled'; got '${status}'.` } as const;
+    }
+    if (status === "completed" && category !== "completed") {
+      return { ok: false, error: `Status 'completed' requires category 'completed'; got '${category}'.` } as const;
+    }
+    if (status === "blocked" && category === "active") {
+      return { ok: false, soft: true, error: `Status 'blocked' on category 'active' is unusual — confirm this is intended.` } as const;
+    }
+    return { ok: true } as const;
+  },
   generateIdempotencyKey: (...parts: string[]) => parts.join("|"),
   generateId: () => `mock-id-${++_idCounter}`,
   getClientOrFail: async (slug: string) => {
@@ -121,7 +161,7 @@ describe("updateProjectStatus", () => {
     const result = await updateProjectStatus({
       clientSlug: "unknown",
       projectName: "Test",
-      newStatus: "done",
+      newStatus: "completed",
       updatedBy: "jason",
     });
 
@@ -143,7 +183,7 @@ describe("updateProjectStatus", () => {
     const result = await updateProjectStatus({
       clientSlug: "convergix",
       projectName: "Nonexistent",
-      newStatus: "done",
+      newStatus: "completed",
       updatedBy: "jason",
     });
 
@@ -162,7 +202,7 @@ describe("updateProjectStatus", () => {
     const result = await updateProjectStatus({
       clientSlug: "convergix",
       projectName: "CDS Messaging",
-      newStatus: "done",
+      newStatus: "completed",
       updatedBy: "kathy",
     });
 
@@ -243,7 +283,7 @@ describe("updateProjectStatus", () => {
     await updateProjectStatus({
       clientSlug: "convergix",
       projectName: "CDS Messaging",
-      newStatus: "done",
+      newStatus: "completed",
       updatedBy: "kathy",
     });
 
@@ -578,6 +618,105 @@ describe("updateProjectStatus", () => {
       expect(result.data?.auditId).toBeTruthy();
       // getLinkedWeekItems should not even run for non-cascade statuses.
       expect(mockGetLinkedWeekItems).not.toHaveBeenCalled();
+    });
+  });
+
+  // Issue #4b: whitelist + compat-check enforcement.
+  describe("Issue #4b — newStatus whitelist + compat check", () => {
+    it("accepts canceled as a valid newStatus when project.category is canceled", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue({ ...project, category: "canceled" });
+
+      const { updateProjectStatus } = await import("./operations-writes");
+      const result = await updateProjectStatus({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        newStatus: "canceled",
+        updatedBy: "jason",
+      });
+
+      expect(result.ok).toBe(true);
+    });
+
+    it("rejects out-of-enum newStatus 'archived' before client lookup", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+
+      const { updateProjectStatus } = await import("./operations-writes");
+      const result = await updateProjectStatus({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        newStatus: "archived",
+        updatedBy: "jason",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/Invalid project status 'archived'/);
+      // Fail-fast: client lookup must not even run for invalid statuses.
+      expect(mockGetClientBySlug).not.toHaveBeenCalled();
+    });
+
+    it("rejects newStatus='canceled' when project.category='active' via compat check", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue({ ...project, category: "active" });
+
+      const { updateProjectStatus } = await import("./operations-writes");
+      const result = await updateProjectStatus({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        newStatus: "canceled",
+        updatedBy: "jason",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/Status 'canceled' requires category 'canceled'/);
+      // Project status row must not have been mutated.
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+    });
+
+    it("does NOT cascade canceled to L2s (CASCADE_STATUSES excludes canceled)", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue({ ...project, category: "canceled" });
+      mockGetLinkedWeekItems.mockResolvedValue([
+        { id: "wi1", title: "L2 child", status: "in-progress" },
+      ]);
+
+      const { updateProjectStatus } = await import("./operations-writes");
+      const result = await updateProjectStatus({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        newStatus: "canceled",
+        updatedBy: "jason",
+      });
+
+      expect(result.ok).toBe(true);
+      // getLinkedWeekItems should not run because canceled is not in
+      // CASCADE_STATUSES — no cascade lookup or write should happen.
+      expect(mockGetLinkedWeekItems).not.toHaveBeenCalled();
+      // The only mockUpdateSet call should be the L1 status update (one call),
+      // not any L2 cascade updates.
+      expect(mockUpdateSet).toHaveBeenCalledTimes(1);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "canceled" }),
+      );
+    });
+
+    it("preserves soft-warn behavior: blocked + active passes through (non-blocking)", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue({ ...project, category: "active" });
+
+      const { updateProjectStatus } = await import("./operations-writes");
+      const result = await updateProjectStatus({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        newStatus: "blocked",
+        updatedBy: "jason",
+      });
+
+      // Soft-warn should NOT block the write — operator workflow preserved.
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "blocked" }),
+      );
     });
   });
 });
