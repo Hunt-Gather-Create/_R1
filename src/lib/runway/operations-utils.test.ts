@@ -1112,6 +1112,52 @@ describe("validateStatusCategoryCompatibility", () => {
     expect(validateStatusCategoryCompatibility("completed", "review").ok).toBe(true);
     expect(validateStatusCategoryCompatibility("scheduled", "delivery").ok).toBe(true);
   });
+
+  // Issue #4: L1 `canceled` status — operator-locked rule "canceled × canceled
+  // is the only valid pair" enforced symmetrically (both axes).
+  it("accepts canceled + canceled (only valid canceled pair)", async () => {
+    const { validateStatusCategoryCompatibility } = await import("./operations-utils");
+    expect(validateStatusCategoryCompatibility("canceled", "canceled").ok).toBe(true);
+  });
+
+  it("hard-rejects canceled status with non-canceled category", async () => {
+    const { validateStatusCategoryCompatibility } = await import("./operations-utils");
+    expect(validateStatusCategoryCompatibility("canceled", "active").ok).toBe(false);
+    expect(validateStatusCategoryCompatibility("canceled", "pipeline").ok).toBe(false);
+    expect(validateStatusCategoryCompatibility("canceled", "awaiting-client").ok).toBe(false);
+    expect(validateStatusCategoryCompatibility("canceled", "on-hold").ok).toBe(false);
+    expect(validateStatusCategoryCompatibility("canceled", "completed").ok).toBe(false);
+  });
+
+  it("hard-rejects non-canceled status with canceled category", async () => {
+    const { validateStatusCategoryCompatibility } = await import("./operations-utils");
+    expect(validateStatusCategoryCompatibility("in-production", "canceled").ok).toBe(false);
+    expect(validateStatusCategoryCompatibility("not-started", "canceled").ok).toBe(false);
+    expect(validateStatusCategoryCompatibility("awaiting-client", "canceled").ok).toBe(false);
+    expect(validateStatusCategoryCompatibility("on-hold", "canceled").ok).toBe(false);
+    expect(validateStatusCategoryCompatibility("blocked", "canceled").ok).toBe(false);
+  });
+
+  it("canceled rejection surfaces a specific error string", async () => {
+    const { validateStatusCategoryCompatibility } = await import("./operations-utils");
+    const r1 = validateStatusCategoryCompatibility("canceled", "active");
+    expect(r1.ok).toBe(false);
+    if (!r1.ok) expect(r1.error).toMatch(/Status 'canceled' requires category 'canceled'/);
+    const r2 = validateStatusCategoryCompatibility("in-production", "canceled");
+    expect(r2.ok).toBe(false);
+    if (!r2.ok) expect(r2.error).toMatch(/Category 'canceled' requires status 'canceled'/);
+  });
+
+  it("L1_PROJECT_STATUSES_ARR exports a 7-value readonly tuple including canceled", async () => {
+    const { L1_PROJECT_STATUSES_ARR } = await import("./operations-utils");
+    expect(L1_PROJECT_STATUSES_ARR).toContain("canceled");
+    expect(L1_PROJECT_STATUSES_ARR).toHaveLength(7);
+  });
+
+  it("CASCADE_STATUSES does NOT include canceled (no auto-cascade to L2s)", async () => {
+    const { CASCADE_STATUSES } = await import("./operations-utils");
+    expect(CASCADE_STATUSES).not.toContain("canceled");
+  });
 });
 
 describe("validateRoleTagOnResources", () => {
