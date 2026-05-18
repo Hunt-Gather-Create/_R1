@@ -9,12 +9,15 @@
  * (client component). Native HTML <details> provides open/close without JS.
  */
 
-import * as React from "react";
 import { GanttSectionDark } from "@/lib/runway/gantt/gantt-section-dark";
 import type { RundownSection } from "@/lib/runway/gantt/types";
 import { groupSections } from "@/lib/runway/gantt/group-sections";
 import { weekItemsForSection, l1IdForSection } from "@/lib/runway/gantt/section-builders";
 import { ReadyToCloseChip, NoScheduledTasksChip } from "./section-chips";
+import {
+  GanttChartsChevron,
+  GanttChartsChevronStyle,
+} from "./gantt-charts-collapse";
 
 // Track 4 audit fix (2026-05-05, WARN — Panel 3): the inline `groupSections`
 // + `SectionBlock` definitions were extracted to
@@ -22,53 +25,12 @@ import { ReadyToCloseChip, NoScheduledTasksChip } from "./section-chips";
 // algorithm with `account-tier/AccountTier.tsx`. Drift risk between the
 // two consumers is removed — any rule change to wrapper-child grouping
 // lands in one place.
-
-/**
- * Track 4 Wave 4.4 — chevron-rotation polish for the dark Gantt embed.
- *
- * Mirrors the Wave 4.1 `CollapsibleSection` pattern (which uses class
- * `account-tier-details` + `account-tier-chevron`) so both tabs feel
- * like the same product. Native `<details>` still drives open/close —
- * we just hide the default disclosure triangle, render a custom chevron
- * `▶`, and rotate it 90deg via the `[open]` attribute selector with a
- * 150ms ease-out transition.
- *
- * Inlined here (not imported from CollapsibleSection) because this
- * component is a Server Component in the App Router module graph and
- * already emits raw `<details>` with theme-specific Tailwind classes;
- * a parallel scoped class lets us evolve the dark embed without
- * touching the account-tier primitive.
- */
-const GANTT_CHARTS_CHEVRON_CSS = `
-  details.gantt-charts-details > summary {
-    list-style: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  details.gantt-charts-details > summary::-webkit-details-marker {
-    display: none;
-  }
-  details.gantt-charts-details > summary > .gantt-charts-chevron {
-    display: inline-block;
-    transition: transform 150ms ease-out;
-    transform: rotate(0deg);
-    font-size: 0.65rem;
-    line-height: 1;
-  }
-  details.gantt-charts-details[open] > summary > .gantt-charts-chevron {
-    transform: rotate(90deg);
-  }
-`;
-
-function GanttChartsChevron(): React.JSX.Element {
-  return (
-    <span aria-hidden="true" className="gantt-charts-chevron">
-      ▶
-    </span>
-  );
-}
+//
+// Issue #49 (2026-05-18): the chevron + scoped CSS used to live inline in
+// this file. They moved to `./gantt-charts-collapse.tsx` so the client-
+// component `gantt-charts-section.tsx` can render the same affordance at
+// the client level without re-defining the CSS rule. This file is a pure
+// consumer now — same rendered output, no behavior change.
 
 export function RundownContentRSC({
   sections,
@@ -89,7 +51,7 @@ export function RundownContentRSC({
 
   return (
     <>
-      <style>{GANTT_CHARTS_CHEVRON_CSS}</style>
+      <GanttChartsChevronStyle />
       {blocks.map((block) => {
         if (block.kind === "wrapper") {
           return (
