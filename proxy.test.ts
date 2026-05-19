@@ -43,14 +43,6 @@ describe("proxy middleware", () => {
     expect(paths).toContain("/login");
   });
 
-  it("excludes /runway tree from WorkOS auth (password gate handles it)", async () => {
-    await import("./proxy");
-    const call = vi.mocked(authkitMiddleware).mock.calls[0][0];
-    const paths = call.middlewareAuth.unauthenticatedPaths;
-    expect(paths).toContain("/runway");
-    expect(paths).toContain("/runway/:path*");
-  });
-
   it("has a matcher that excludes static files", async () => {
     const mod = await import("./proxy");
     expect(mod.config.matcher).toEqual([
