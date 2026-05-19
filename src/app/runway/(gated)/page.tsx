@@ -1,18 +1,18 @@
 import type { ReactNode } from "react";
-import { getClientsWithProjects, getWeekItems, getPipeline, getStaleWeekItems } from "./queries";
-import type { ItemStatus, ItemCategory } from "./types";
-import { RunwayBoard } from "./runway-board";
-import { getMondayISODate, parseISODate } from "./date-utils";
+import { getClientsWithProjects, getWeekItems, getPipeline, getStaleWeekItems } from "../queries";
+import type { ItemStatus, ItemCategory } from "../types";
+import { RunwayBoard } from "../runway-board";
+import { getMondayISODate, parseISODate } from "../date-utils";
 import { analyzeFlags } from "@/lib/runway/flags";
 import { getViewPreferences } from "@/lib/runway/view-preferences";
-import { buildUnifiedAccounts, filterWrapperDayItems } from "./unified-view";
+import { buildUnifiedAccounts, filterWrapperDayItems } from "../unified-view";
 import { extractClientRundown } from "@/lib/runway/gantt/server";
 import { getRunwayDb } from "@/lib/db/runway";
 import { clients as clientsTable, projects as projectsTable } from "@/lib/db/runway-schema";
 import { and, asc, inArray, isNull } from "drizzle-orm";
 import { filterActiveRundown, isReadyToClose } from "@/lib/runway/gantt/filter-active";
 import { withRunwayRetry } from "@/lib/runway/retry";
-import { RundownContentRSC } from "./components/rundown-content-rsc";
+import { RundownContentRSC } from "../components/rundown-content-rsc";
 import type { ClientRundownData, RundownSection } from "@/lib/runway/gantt/types";
 
 /**
