@@ -32,14 +32,14 @@ export const GANTT_CHARTS_CHEVRON_CSS = `
   details.gantt-charts-details > summary::-webkit-details-marker {
     display: none;
   }
-  details.gantt-charts-details > summary > .gantt-charts-chevron {
+  details.gantt-charts-details > summary .gantt-charts-chevron {
     display: inline-block;
     transition: transform 150ms ease-out;
     transform: rotate(0deg);
     font-size: 0.65rem;
     line-height: 1;
   }
-  details.gantt-charts-details[open] > summary > .gantt-charts-chevron {
+  details.gantt-charts-details[open] > summary .gantt-charts-chevron {
     transform: rotate(90deg);
   }
 `;
