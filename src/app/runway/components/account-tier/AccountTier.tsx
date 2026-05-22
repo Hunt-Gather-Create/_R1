@@ -255,6 +255,11 @@ function L1Section({
 
   // Empty L1 (no scheduled L2s after status filter): header-only flat row
   // with the inline "No Scheduled Tasks" chip, no <details>.
+  //
+  // Issue #41: an L1 with no scheduled items has nothing to be ready-to-close
+  // on — the ready-to-close signal is meaningful only when there's at least
+  // one scheduled task remaining to close out. Suppress the chip here so the
+  // empty state shows only "No Scheduled Tasks", never both chips at once.
   if (items.length === 0) {
     return (
       <div
@@ -263,7 +268,7 @@ function L1Section({
       >
         <L1Header
           section={section}
-          readyToClose={ready}
+          readyToClose={false}
           showNoScheduledChip
         />
       </div>

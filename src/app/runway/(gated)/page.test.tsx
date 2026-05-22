@@ -233,6 +233,80 @@ describe("RunwayPage", () => {
     expect(props.upcoming).toHaveLength(0);
   });
 
+  // Issue #4 (WeekOf display gap): canceled L2s — and the L1 wrapper they
+  // rendered through — were visible on the WeekOf grid even though they're
+  // terminal. The filter mirrors the By Account upstream pattern.
+  it("excludes canceled L2s from the thisWeek bucket (Issue #4)", async () => {
+    const dayWithCanceledOnly = {
+      date: "2026-04-06", label: "Mon 4/6",
+      items: [{ title: "Canceled task", account: "Convergix", type: "review" as const, status: "canceled" }],
+    };
+    mockGetClientsWithProjects.mockResolvedValue([]);
+    mockGetWeekItems.mockResolvedValue([dayWithCanceledOnly]);
+    mockGetPipeline.mockResolvedValue([]);
+
+    const el = await RunwayPage();
+    render(el);
+
+    const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+    // Day drains to zero after filtering → dropped entirely.
+    expect(props.thisWeek).toHaveLength(0);
+  });
+
+  it("excludes completed L2s from the thisWeek bucket (Issue #4 regression)", async () => {
+    const dayWithCompletedOnly = {
+      date: "2026-04-06", label: "Mon 4/6",
+      items: [{ title: "Completed task", account: "Convergix", type: "review" as const, status: "completed" }],
+    };
+    mockGetClientsWithProjects.mockResolvedValue([]);
+    mockGetWeekItems.mockResolvedValue([dayWithCompletedOnly]);
+    mockGetPipeline.mockResolvedValue([]);
+
+    const el = await RunwayPage();
+    render(el);
+
+    const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+    expect(props.thisWeek).toHaveLength(0);
+  });
+
+  it("excludes canceled L2s from the upcoming bucket (Issue #4)", async () => {
+    const futureDayWithCanceledOnly = {
+      date: "2026-04-13", label: "Mon 4/13",
+      items: [{ title: "Future canceled", account: "X", type: "delivery" as const, status: "canceled" }],
+    };
+    mockGetClientsWithProjects.mockResolvedValue([]);
+    mockGetWeekItems.mockResolvedValue([futureDayWithCanceledOnly]);
+    mockGetPipeline.mockResolvedValue([]);
+
+    const el = await RunwayPage();
+    render(el);
+
+    const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+    expect(props.upcoming).toHaveLength(0);
+  });
+
+  it("keeps active L2s in their day bucket even when terminal siblings are filtered (Issue #4)", async () => {
+    // Mixed day: one canceled, one active — active survives, day stays in bucket.
+    const mixedDay = {
+      date: "2026-04-06", label: "Mon 4/6",
+      items: [
+        { title: "Canceled task", account: "X", type: "review" as const, status: "canceled" },
+        { title: "Active task", account: "X", type: "delivery" as const, status: "in-progress" },
+      ],
+    };
+    mockGetClientsWithProjects.mockResolvedValue([]);
+    mockGetWeekItems.mockResolvedValue([mixedDay]);
+    mockGetPipeline.mockResolvedValue([]);
+
+    const el = await RunwayPage();
+    render(el);
+
+    const props = JSON.parse(screen.getByTestId("runway-board").getAttribute("data-props")!);
+    expect(props.thisWeek).toHaveLength(1);
+    expect(props.thisWeek[0].items).toHaveLength(1);
+    expect(props.thisWeek[0].items[0].title).toBe("Active task");
+  });
+
   it("passes flags from analyzeFlags to RunwayBoard", async () => {
     const mockFlags = [{ id: "f1", type: "stale", severity: "warning", title: "Old", detail: "stale 14d" }];
     mockAnalyzeFlags.mockReturnValue(mockFlags);

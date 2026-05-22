@@ -25,6 +25,13 @@ import { withRunwayRetry } from "@/lib/runway/retry";
  * Statuses that cascade from a project to its linked week items.
  * Terminal or blocking states propagate down; non-terminal statuses don't
  * because individual week items may be at different stages.
+ *
+ * NOTE (Issue #4 / l1-canceled-status-fix.md §3 recco B, 2026-05-18):
+ * `canceled` is intentionally NOT in this list. Operator-locked: L1
+ * cancellation does NOT auto-flip child L2s. Operators flip child L2s
+ * explicitly so that "client never delivered scope" cases preserve the
+ * audit trail of work already done. Do not add `canceled` here without
+ * an operator decision to invert this policy.
  */
 export const CASCADE_STATUSES = ["completed", "blocked", "on-hold"] as const;
 
@@ -1019,21 +1026,29 @@ export function normalizeEmptyToNull(
  * `WEEK_ITEM_CATEGORIES`) — week-item categories like `review` / `delivery` /
  * `deadline` overlap zero with project categories like `active` / `pipeline`,
  * so the L1 matrix would over-fire if applied unconditionally to L2.
+ *
+ * Issue #4 (2026-05-18): `canceled` added to both sets. Operator-locked rule:
+ * `canceled × canceled` is the only valid pair. See
+ * `validateStatusCategoryCompatibility` below for the enforcement.
  */
-const L1_PROJECT_STATUSES = new Set([
+export const L1_PROJECT_STATUSES_ARR = [
   "in-production",
   "awaiting-client",
   "not-started",
   "blocked",
   "on-hold",
   "completed",
-]);
+  "canceled",
+] as const;
+export type L1ProjectStatus = (typeof L1_PROJECT_STATUSES_ARR)[number];
+const L1_PROJECT_STATUSES = new Set<string>(L1_PROJECT_STATUSES_ARR);
 const L1_PROJECT_CATEGORIES = new Set([
   "active",
   "awaiting-client",
   "pipeline",
   "on-hold",
   "completed",
+  "canceled",
 ]);
 
 /**
@@ -1045,6 +1060,8 @@ const L1_PROJECT_CATEGORIES = new Set([
  *  - HARD REJECT: awaiting-client + pipeline
  *  - HARD REJECT: on-hold + active
  *  - HARD REJECT: completed + (any non-completed L1 category)
+ *  - HARD REJECT: canceled + (any non-canceled L1 category)  ← Issue #4
+ *  - HARD REJECT: (any non-canceled L1 status) + canceled    ← Issue #4
  *  - SOFT WARN:   blocked + active (legitimate edge case — surface as warning,
  *                 do NOT reject)
  *
@@ -1108,6 +1125,21 @@ export function validateStatusCategoryCompatibility(
     return {
       ok: false,
       error: `Status 'completed' requires category 'completed'; got '${category}'.`,
+    };
+  }
+  // Issue #4: canceled is symmetric to completed — terminal-on-terminal only.
+  // Operator-locked per l1-canceled-status-fix.md §1 (option A): `canceled ×
+  // canceled` is the ONLY valid pair for the canceled axis.
+  if (status === "canceled" && category !== "canceled") {
+    return {
+      ok: false,
+      error: `Status 'canceled' requires category 'canceled'; got '${category}'.`,
+    };
+  }
+  if (category === "canceled" && status !== "canceled") {
+    return {
+      ok: false,
+      error: `Category 'canceled' requires status 'canceled'; got '${status}'.`,
     };
   }
   // Soft-warn: blocked + active is a real edge case (work resumed but a

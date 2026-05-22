@@ -138,13 +138,19 @@ export function contractExpiredPillText(pill: ContractExpiredPill): string {
 
 /**
  * Return only the items that are actively "in flight" today:
- *  - `status === 'in-progress'` AND
+ *  - `status` is `'in-progress'` OR `'scheduled'` AND
  *  - today is in the half-open interval `(start_date, end_date]`. The
  *    kickoff day (`start_date == today`) belongs to Today, not In Flight,
  *    so the dashboard doesn't double-count items on Day 0. `end_date`
  *    null is treated as same as `start_date` — under the strict-start
  *    rule, single-day items never appear in In Flight (they belong to
  *    Today on their one day).
+ *
+ * Issue #3: status doesn't auto-promote, so an L2 with `status='scheduled'`
+ * whose date window includes today was previously invisible across In
+ * Flight, Today, and Needs Update. Broadening this predicate to also
+ * accept `scheduled` surfaces mid-window scheduled work as actively in
+ * flight (display-only — DB status field is unchanged).
  *
  * Does NOT mutate its input. Used by the Week Of In Flight toggle section.
  */
@@ -153,7 +159,7 @@ export function filterInFlight<T extends { status?: string | null; startDate?: s
   nowISO: string
 ): T[] {
   return items.filter((item) => {
-    if (item.status !== "in-progress") return false;
+    if (item.status !== "in-progress" && item.status !== "scheduled") return false;
     const start = item.startDate;
     if (!start) return false;
     const end = item.endDate ?? start;

@@ -13,6 +13,7 @@ import { and, asc, inArray, isNull } from "drizzle-orm";
 import { filterActiveRundown, isReadyToClose } from "@/lib/runway/gantt/filter-active";
 import { withRunwayRetry } from "@/lib/runway/retry";
 import { RundownContentRSC } from "../components/rundown-content-rsc";
+import { TERMINAL_ITEM_STATUSES } from "@/lib/runway/operations-utils";
 import type { ClientRundownData, RundownSection } from "@/lib/runway/gantt/types";
 
 /**
@@ -144,18 +145,30 @@ export default async function RunwayPage() {
   // for date comparisons (isReadyToClose branch B, etc.).
   const todayISO = new Date().toISOString().slice(0, 10);
 
-  // Split week items into thisWeek and upcoming in a single pass
+  // Split week items into thisWeek and upcoming in a single pass.
+  //
+  // Issue #4 (WeekOf display gap): filter terminal-status L2s
+  // (completed/canceled) out before bucketing. This mirrors the upstream
+  // filter applied to the By Account view (rundown layer +
+  // `weekItemsForSection` in section-builders.ts) so the two surfaces
+  // stay consistent on terminal items. Days that drain to zero after
+  // filtering are dropped entirely so we don't render empty day headers.
   const currentWeekOf = getMondayISODate(new Date());
 
   const thisWeek: typeof allWeekItems = [];
   const upcoming: typeof allWeekItems = [];
 
   for (const day of allWeekItems) {
+    const filteredItems = day.items.filter(
+      (item) => !(TERMINAL_ITEM_STATUSES as readonly string[]).includes(item.status ?? ""),
+    );
+    if (filteredItems.length === 0) continue;
+    const dayFiltered = { ...day, items: filteredItems };
     const itemMonday = getMondayISODate(parseISODate(day.date));
     if (itemMonday === currentWeekOf) {
-      thisWeek.push(day);
+      thisWeek.push(dayFiltered);
     } else if (itemMonday > currentWeekOf) {
-      upcoming.push(day);
+      upcoming.push(dayFiltered);
     }
   }
 

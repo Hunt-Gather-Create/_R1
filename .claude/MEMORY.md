@@ -16,6 +16,7 @@ Shared learnings and context that persist across sessions for all contributors.
 - Chat messages stored in R2 (JSON), not in the database
 - Two-step file upload: presigned URL from `/api/attachments/upload`, then confirm via `/api/attachments/confirm`
 - AI skills are lazy-loaded: listed by name/description in system prompt, full content fetched on-demand via `load_skill` tool
+- L1 status enum has 7 values incl. `canceled` (operations-utils.ts:1031); compat matrix locks `canceled × canceled` as the only valid pair (operations-utils.ts:1130); `CASCADE_STATUSES` omits `canceled` — L1 cancel does NOT auto-flip child L2s (operator-locked, operations-utils.ts:36). `updateProjectStatus` whitelists `newStatus` against the enum + runs compat check against the project's current category.
 
 ## Gotchas
 

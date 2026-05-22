@@ -281,12 +281,27 @@ export async function getStaleWeekItems(): Promise<WeekDay[]> {
     "getStaleWeekItems",
   );
 
-  // Past-due predicate: endDate ?? date < today AND not completed.
+  // Past-due predicate: endDate ?? date < today AND status is active-non-terminal.
   // Per Data TP convention: date == endDate for range tasks, but be defensive
   // with the ?? fallback in case any row drifts.
+  //
+  // Issue #53: switched from `status !== "completed"` to a positive predicate
+  // enumerating the active-non-terminal statuses. Canceled items previously
+  // leaked into Needs Update because the negative predicate only excluded
+  // "completed". The positive form here makes future status additions default
+  // to "not in Needs Update" unless explicitly added — safer than enumerating
+  // exclusions. Null status is treated as "scheduled" per the v4 convention
+  // (operations-utils.ts:930 — NULL = scheduled at the L2 enum boundary).
+  const ACTIVE_NON_TERMINAL_STATUSES = new Set<string>([
+    "scheduled",
+    "in-progress",
+    "blocked",
+    "at-risk",
+  ]);
   const pastItems = allItems.filter((item) => {
     const dueDate = item.endDate ?? item.date;
-    return dueDate != null && dueDate < todayISO && item.status !== "completed";
+    if (dueDate == null || dueDate >= todayISO) return false;
+    return ACTIVE_NON_TERMINAL_STATUSES.has(item.status ?? "scheduled");
   });
   if (pastItems.length === 0) return [];
 

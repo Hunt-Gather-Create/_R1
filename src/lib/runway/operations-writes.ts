@@ -12,6 +12,7 @@ import { projects, weekItems } from "@/lib/db/runway-schema";
 import { eq } from "drizzle-orm";
 import {
   CASCADE_STATUSES,
+  L1_PROJECT_STATUSES_ARR,
   TERMINAL_ITEM_STATUSES,
   generateIdempotencyKey,
   generateId,
@@ -19,6 +20,7 @@ import {
   resolveProjectOrFail,
   checkDuplicate,
   insertAuditRecord,
+  validateStatusCategoryCompatibility,
 } from "./operations-utils";
 import type {
   AuditEvent,
@@ -61,6 +63,17 @@ export async function updateProjectStatus(
   const { clientSlug, projectName, newStatus, updatedBy, notes, auditObserver, source } = params;
   const db = getRunwayDb();
 
+  // Issue #4b: whitelist newStatus against the L1 enum. Closes the
+  // "writes garbage silently" loophole previously documented in auto-memory
+  // feedback_l1_vs_l2_status_enums.md. Runs before client/project lookup so
+  // invalid statuses fail fast.
+  if (!(L1_PROJECT_STATUSES_ARR as readonly string[]).includes(newStatus)) {
+    return {
+      ok: false,
+      error: `Invalid project status '${newStatus}'. Allowed: ${L1_PROJECT_STATUSES_ARR.join(", ")}.`,
+    };
+  }
+
   const lookup = await getClientOrFail(clientSlug);
   if (!lookup.ok) return lookup;
   const { client } = lookup;
@@ -68,6 +81,19 @@ export async function updateProjectStatus(
   const projectLookup = await resolveProjectOrFail(client.id, client.name, projectName);
   if (!projectLookup.ok) return projectLookup;
   const project = projectLookup.project;
+
+  // Issue #4b: compat check against the project's CURRENT category.
+  // `updateProjectStatus` does not take a `newCategory` param — it updates
+  // status only — so the compat axis is `newStatus × project.category`.
+  // Soft-warn (blocked + active) passes through; only hard rejects block
+  // the write, matching existing soft-warn semantics in
+  // operations-writes-project.ts:175.
+  if (project.category) {
+    const compat = validateStatusCategoryCompatibility(newStatus, project.category);
+    if (!compat.ok && !compat.soft) {
+      return { ok: false, error: compat.error };
+    }
+  }
 
   const previousStatus = project.status;
   const idemKey = generateIdempotencyKey(

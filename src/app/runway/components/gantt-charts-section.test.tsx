@@ -4,6 +4,7 @@ import { GanttChartsSection } from "./gantt-charts-section";
 import { RundownContentRSC } from "./rundown-content-rsc";
 import type { Account } from "../types";
 import type {
+  AnnotatedRow,
   ClientRow,
   GanttData,
   ProjectRow,
@@ -11,6 +12,27 @@ import type {
   SeverityCounts,
   WeekItemRow,
 } from "@/lib/runway/gantt/types";
+
+// Issue #41 (2026-05-18): RundownContentRSC now suppresses the ReadyToClose
+// chip on empty sections. Tests below that exercise chip presence need a
+// non-empty `rows` array — one in-progress weekitem is enough to bypass
+// the suppression and exercise the chip path on its own.
+function makeActiveAnnotatedWeekItem(): AnnotatedRow {
+  return {
+    kind: "weekitem",
+    id: `wi-${Math.random().toString(36).slice(2, 8)}`,
+    title: "Active L2",
+    owner: null,
+    resources: null,
+    startDate: "2026-05-04",
+    endDate: "2026-05-08",
+    status: "in-progress",
+    category: "delivery",
+    weekOf: "2026-05-04",
+    inline: [],
+    subRow: [],
+  } as AnnotatedRow;
+}
 
 // GanttSectionDark renders a complex DOM and is exercised by its own unit
 // suite + the live page. Stub it here so the chip-in-dark-embed tests
@@ -60,7 +82,7 @@ describe("GanttChartsSection", () => {
     expect(screen.queryByTestId("gantt-charts-empty")).not.toBeInTheDocument();
   });
 
-  it("renders one article per surviving account", () => {
+  it("renders one card per surviving account", () => {
     const accounts = [
       { ...baseAccount({ name: "Convergix", slug: "convergix" }) },
       { ...baseAccount({ name: "Bonterra", slug: "bonterra" }) },
@@ -97,8 +119,9 @@ describe("GanttChartsSection", () => {
     ];
     render(<GanttChartsSection accounts={accounts} />);
 
-    const cardA = screen.getByText("A").closest("article")!;
-    const cardB = screen.getByText("B").closest("article")!;
+    // Issue #49: per-account wrapper is now <details>, not <article>.
+    const cardA = screen.getByText("A").closest("details")!;
+    const cardB = screen.getByText("B").closest("details")!;
 
     // ganttContent must be inside its own card.
     expect(cardA).toContainElement(screen.getByTestId("gantt-content-a"));
@@ -107,6 +130,40 @@ describe("GanttChartsSection", () => {
     // Cross-card leak check: A's ganttContent should NOT appear in B's card.
     expect(cardA).not.toContainElement(screen.getByTestId("gantt-content-b"));
     expect(cardB).not.toContainElement(screen.getByTestId("gantt-content-a"));
+  });
+
+  // Issue #49: client-level chevron + collapse parity with the inner
+  // wrapper/L1 details inside RundownContentRSC. Operator-flagged 2026-05-12.
+  it("renders each per-account card as a <details> with gantt-charts-details class", () => {
+    const accounts = [
+      { ...baseAccount({ slug: "a", name: "A" }) },
+      { ...baseAccount({ slug: "b", name: "B" }) },
+    ];
+    const { container } = render(<GanttChartsSection accounts={accounts} />);
+    const detailsEls = container.querySelectorAll("details");
+    expect(detailsEls.length).toBe(2);
+    for (const d of detailsEls) {
+      expect(d.classList.contains("gantt-charts-details")).toBe(true);
+    }
+  });
+
+  it("defaults each account card to open (collapse affordance, but expanded on first paint)", () => {
+    const accounts = [{ ...baseAccount({ slug: "a", name: "A" }) }];
+    const { container } = render(<GanttChartsSection accounts={accounts} />);
+    const details = container.querySelector("details");
+    expect(details).not.toBeNull();
+    expect(details!.hasAttribute("open")).toBe(true);
+  });
+
+  it("renders the chevron span inside each <summary>", () => {
+    const accounts = [{ ...baseAccount({ slug: "a", name: "A" }) }];
+    const { container } = render(<GanttChartsSection accounts={accounts} />);
+    const summary = container.querySelector("summary");
+    expect(summary).not.toBeNull();
+    const chevron = summary!.querySelector(".gantt-charts-chevron");
+    expect(chevron).not.toBeNull();
+    expect(chevron!.getAttribute("aria-hidden")).toBe("true");
+    expect(chevron!.textContent).toBe("▶");
   });
 
   it("renders AuditBadge when ganttSeverity is provided", () => {
@@ -270,9 +327,13 @@ describe("RundownContentRSC ready-to-close chip (dark embed)", () => {
 
   it("renders the chip on a standalone section whose L1 id is in readyToCloseIds", () => {
     const l1 = makeProject({ id: "p-ready", name: "Ready Project" });
+    // Inject a non-terminal weekitem so the Issue #41 suppression doesn't
+    // hide the chip; this test verifies presence on non-empty sections.
+    const section = makeStandaloneSection(l1);
+    section.data = { ...section.data, rows: [makeActiveAnnotatedWeekItem()] };
     render(
       <RundownContentRSC
-        sections={[makeStandaloneSection(l1)]}
+        sections={[section]}
         readyToCloseIds={new Set(["p-ready"])}
       />
     );
@@ -297,11 +358,16 @@ describe("RundownContentRSC ready-to-close chip (dark embed)", () => {
     const wrapper = makeWrapperSection("wrap1");
     const childReady = makeProject({ id: "child-ready", name: "Child Ready", parentProjectId: "wrap1" });
     const childCold = makeProject({ id: "child-cold", name: "Child Cold", parentProjectId: "wrap1" });
+    // Issue #41 suppression: ready child needs at least one weekitem row to
+    // render the chip. Cold child stays empty so we also verify the chip is
+    // only on the ready section, not the cold one.
+    const readySection = makeWrapperChildSection(childReady);
+    readySection.data = { ...readySection.data, rows: [makeActiveAnnotatedWeekItem()] };
     render(
       <RundownContentRSC
         sections={[
           wrapper,
-          makeWrapperChildSection(childReady),
+          readySection,
           makeWrapperChildSection(childCold),
         ]}
         readyToCloseIds={new Set(["child-ready"])}
