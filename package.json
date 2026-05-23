@@ -27,7 +27,8 @@
     "dev:inngest": "NPM_CONFIG_CACHE=$(mktemp -d) npx --yes --ignore-scripts=false inngest-cli@latest dev",
     "dev:all": "concurrently \"pnpm dev\" \"pnpm dev:inngest\"",
     "dev:warm": "for r in commands interactivity options events; do curl -s -o /dev/null -w \"%{http_code} /api/slack/$r\\n\" -X POST http://localhost:3000/api/slack/$r -d ''; done",
-    "dev:warm:wait": "until curl -so /dev/null http://localhost:3000 2>/dev/null; do sleep 1; done && pnpm dev:warm"
+    "dev:warm:wait": "until curl -so /dev/null http://localhost:3000 2>/dev/null; do sleep 1; done && pnpm dev:warm",
+    "runway:smoke": "playwright test"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.23",
@@ -92,6 +93,7 @@
     "zod": "^4.3.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",

@@ -120,7 +120,7 @@ importers:
         version: 3.13.18(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@workos-inc/authkit-nextjs':
         specifier: ^2.13.0
-        version: 2.13.0(express@5.2.1)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+        version: 2.13.0(express@5.2.1)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.60.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       ai:
         specifier: ^6.0.48
         version: 6.0.48(zod@4.3.5)
@@ -147,7 +147,7 @@ importers:
         version: 4.0.3
       inngest:
         specifier: ^3.54.0
-        version: 3.54.0(@opentelemetry/core@2.5.0(@opentelemetry/api@1.9.0))(express@5.2.1)(hono@4.12.10)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.3.5)
+        version: 3.54.0(@opentelemetry/core@2.5.0(@opentelemetry/api@1.9.0))(express@5.2.1)(hono@4.12.10)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.60.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.3.5)
       iron-session:
         specifier: ^8.0.4
         version: 8.0.4
@@ -165,7 +165,7 @@ importers:
         version: 5.1.6
       next:
         specifier: 16.2.4
-        version: 16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+        version: 16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.60.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       react:
         specifier: 19.2.3
         version: 19.2.3
@@ -194,6 +194,9 @@ importers:
         specifier: ^4.3.5
         version: 4.3.5
     devDependencies:
+      '@playwright/test':
+        specifier: ^1.60.0
+        version: 1.60.0
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.1.18
@@ -2103,6 +2106,11 @@ packages:
   '@peculiar/webcrypto@1.5.0':
     resolution: {integrity: sha512-BRs5XUAwiyCDQMsVA9IDvDa7UBR9gAvPHgugOeGng3YN6vJ9JYonyDc0lNczErgtCWtucjR5N7VtaonboD/ezg==}
     engines: {node: '>=10.12.0'}
+
+  '@playwright/test@1.60.0':
+    resolution: {integrity: sha512-O71yZIbAh/PxDMNGns37GHBIfrVkEVyn+AXyIa5dOTfb4/xNvRWV+Vv/NMbNCtODB/pO7vLlF2OTmMVLhmr7Ag==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
@@ -4651,6 +4659,11 @@ packages:
   fs-constants@1.0.0:
     resolution: {integrity: sha512-y6OAwoSIf7FyjMIv94u+b5rdheZEjzR63GTyZJm5qh4Bi+2YgwLCcI/fPFZkL5PSixOt6ZNKm+w+Hfp/Bciwow==}
 
+  fsevents@2.3.2:
+    resolution: {integrity: sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==}
+    engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
+    os: [darwin]
+
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
@@ -5597,6 +5610,16 @@ packages:
   pkce-challenge@5.0.1:
     resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
     engines: {node: '>=16.20.0'}
+
+  playwright-core@1.60.0:
+    resolution: {integrity: sha512-9bW6zvX/m0lEbgTKJ6YppOKx8H3VOPBMOCFh2irXFOT4BbHgrx5hPjwJYLT40Lu+4qtD36qKc/Hn56StUW57IA==}
+    engines: {node: '>=18'}
+    hasBin: true
+
+  playwright@1.60.0:
+    resolution: {integrity: sha512-hheHdokM8cdqCb0lcE3s+zT4t4W+vvjpGxsZlDnikarzx8tSzMebh3UiFtgqwFwnTnjYQcsyMF8ei2mCO/tpeA==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
@@ -8858,6 +8881,10 @@ snapshots:
       tslib: 2.8.1
       webcrypto-core: 1.8.1
 
+  '@playwright/test@1.60.0':
+    dependencies:
+      playwright: 1.60.0
+
   '@protobufjs/aspromise@1.1.2': {}
 
   '@protobufjs/base64@1.1.2': {}
@@ -10467,12 +10494,12 @@ snapshots:
       '@vitest/pretty-format': 4.0.18
       tinyrainbow: 3.0.3
 
-  '@workos-inc/authkit-nextjs@2.13.0(express@5.2.1)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)':
+  '@workos-inc/authkit-nextjs@2.13.0(express@5.2.1)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.60.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)':
     dependencies:
-      '@workos-inc/node': 7.82.0(express@5.2.1)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))
+      '@workos-inc/node': 7.82.0(express@5.2.1)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.60.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))
       iron-session: 8.0.4
       jose: 5.10.0
-      next: 16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      next: 16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.60.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       path-to-regexp: 6.3.0
       react: 19.2.3
       react-dom: 19.2.3(react@19.2.3)
@@ -10480,9 +10507,9 @@ snapshots:
       - express
       - koa
 
-  '@workos-inc/node@7.82.0(express@5.2.1)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))':
+  '@workos-inc/node@7.82.0(express@5.2.1)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.60.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))':
     dependencies:
-      iron-session: 6.3.1(express@5.2.1)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))
+      iron-session: 6.3.1(express@5.2.1)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.60.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))
       jose: 5.6.3
       leb: 1.0.0
       qs: 6.14.1
@@ -11632,6 +11659,9 @@ snapshots:
   fs-constants@1.0.0:
     optional: true
 
+  fsevents@2.3.2:
+    optional: true
+
   fsevents@2.3.3:
     optional: true
 
@@ -11871,7 +11901,7 @@ snapshots:
   ini@1.3.8:
     optional: true
 
-  inngest@3.54.0(@opentelemetry/core@2.5.0(@opentelemetry/api@1.9.0))(express@5.2.1)(hono@4.12.10)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.3.5):
+  inngest@3.54.0(@opentelemetry/core@2.5.0(@opentelemetry/api@1.9.0))(express@5.2.1)(hono@4.12.10)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.60.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.3.5):
     dependencies:
       '@bufbuild/protobuf': 2.11.0
       '@inngest/ai': 0.1.7
@@ -11902,7 +11932,7 @@ snapshots:
     optionalDependencies:
       express: 5.2.1
       hono: 4.12.10
-      next: 16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      next: 16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.60.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       typescript: 5.9.3
     transitivePeerDependencies:
       - '@opentelemetry/core'
@@ -11921,7 +11951,7 @@ snapshots:
 
   ipaddr.js@1.9.1: {}
 
-  iron-session@6.3.1(express@5.2.1)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)):
+  iron-session@6.3.1(express@5.2.1)(next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.60.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)):
     dependencies:
       '@peculiar/webcrypto': 1.5.0
       '@types/cookie': 0.5.4
@@ -11932,7 +11962,7 @@ snapshots:
       iron-webcrypto: 0.2.8
     optionalDependencies:
       express: 5.2.1
-      next: 16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      next: 16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.60.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
 
   iron-session@8.0.4:
     dependencies:
@@ -12369,7 +12399,7 @@ snapshots:
 
   negotiator@1.0.0: {}
 
-  next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3):
+  next@16.2.4(@babel/core@7.28.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.60.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3):
     dependencies:
       '@next/env': 16.2.4
       '@swc/helpers': 0.5.15
@@ -12389,6 +12419,7 @@ snapshots:
       '@next/swc-win32-arm64-msvc': 16.2.4
       '@next/swc-win32-x64-msvc': 16.2.4
       '@opentelemetry/api': 1.9.0
+      '@playwright/test': 1.60.0
       sharp: 0.34.5
     transitivePeerDependencies:
       - '@babel/core'
@@ -12559,6 +12590,14 @@ snapshots:
   picomatch@4.0.3: {}
 
   pkce-challenge@5.0.1: {}
+
+  playwright-core@1.60.0: {}
+
+  playwright@1.60.0:
+    dependencies:
+      playwright-core: 1.60.0
+    optionalDependencies:
+      fsevents: 2.3.2
 
   possible-typed-array-names@1.1.0: {}
 
