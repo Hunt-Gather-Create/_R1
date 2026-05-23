@@ -1,285 +1,84 @@
-# CLAUDE.md
+# CLAUDE.md — Navigation Map
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Runway is Civilization Agency's triage dashboard (Phase 0 of the agency PM tool). It runs on
+the Next.js R1 platform with a separate Turso DB, a Slack bot for natural-language updates,
+and an MCP server for AI consumers. See `VISION.md` for the full pitch.
 
-## Project Memory
+## Where to look for what
 
-@.claude/MEMORY.md
-
-**Rules for updating project memory:**
-- When you discover a non-obvious pattern, gotcha, or useful context about this codebase, add it to `.claude/MEMORY.md`
-- Keep entries concise (1-2 lines each) — this file is loaded into every session
-- Organize under the existing headings: Scripts, Patterns, Gotchas, Decisions
-- Remove entries that become outdated or wrong
-- This is shared team memory (checked into git), not personal notes
+| If task requires… | Read | Decay |
+|---|---|---|
+| Strategic context, "why does X exist" | `VISION.md` | Stable |
+| About to make an architectural / operational call | `DECISIONS.md` | Slow-grows |
+| Picking up an item, filing new work, phase planning | `ROADMAP.md` + GitHub Issues | Monthly / live |
+| Resuming session or re-orienting to project state | `STATUS.md` | Event-driven |
+| Resuming THIS branch's session specifically | `.claude/sessions/<branch>.md` | Per-session |
+| Executing a feature with a design | `docs/plans/<feature>.md` | Per-feature |
+| Understanding subsystem behavior, debugging, patterns | `.claude/MEMORY.md` | Frequent |
+| Architecture / module map detail | `docs/runway.md` | As-needed |
+| React / Next.js performance | `.claude/skills/vercel-react-best-practices/` | As-needed |
+| Cross-fork Vercel preview | `.claude/skills/canary/SKILL.md` | As-needed |
+| Prod data writes | `.claude/skills/data-integrity-tp/SKILL.md` | As-needed |
+| Visual QA against production | `.claude/skills/runway-visual-qa/SKILL.md` | As-needed |
 
 ## Commands
 
 ```bash
-pnpm dev              # Start dev server at localhost:3000
+pnpm dev              # Dev server at localhost:3000
 pnpm build            # Production build
-pnpm test             # Run tests in watch mode
-pnpm test:run         # Run tests once
+pnpm test:run         # Tests (single run)
 pnpm lint             # ESLint
-pnpm format           # Prettier formatting
+pnpm format           # Prettier
+pnpm runway:smoke     # Playwright smoke tests against runway.startround1.com
 
-# Database
-pnpm db:generate      # Generate migrations from schema changes
-pnpm db:migrate       # Run migrations (drizzle-kit push)
-pnpm db:studio        # Open Drizzle Studio GUI
+# Runway database (separate Turso instance, requires RUNWAY_DATABASE_URL in .env.local)
+pnpm runway:generate  # Generate migrations
+pnpm runway:push      # Push schema to Turso
+pnpm runway:studio    # Open Drizzle Studio
+pnpm runway:pull      # Pull prod data to local
+pnpm runway:gantt     # Render Gantt CLI
 ```
 
-## Testing
+## Working agreements
 
-**Stack:** Vitest, @testing-library/react, happy-dom
+### Branch + PR
 
-**Test location:** Co-located with source files as `*.test.ts` (e.g., `src/lib/utils.test.ts`)
+- All upstream PRs target `Hunt-Gather-Create:runway`, NEVER `main`. (D-06)
+- Cross-repo issue auto-close: include `Fixes jasonburks23/_R1#<n>` in PR body when applicable. (D-07)
+- Branch naming: `fix/<issue>-...`, `feat/<issue>-...`, `chore/...`.
 
-**Running tests:**
-
-- `pnpm test` - Watch mode for development
-- `pnpm test:run` - Single run for CI
-
-**Patterns:**
-
-- Use `describe` blocks to group related tests
-- Create factory helpers (e.g., `createIssue()`) for mock data
-- Test pure functions in `src/lib/` directly without mocking
-
-## Architecture
-
-### Data Flow
-
-```
-User Action → Component → BoardContext (optimistic update) → Server Action → Database → revalidatePath()
-```
-
-The app uses React 19's `useOptimistic` for instant UI feedback while server actions run in the background.
-
-### Key Contexts
-
-- **AppShell** (`src/components/layout/AppShell.tsx`) - Global UI state: current view, sidebar, detail panel, command palette
-- **BoardProvider** (`src/components/board/context/BoardProvider.tsx`) - Board data, issue CRUD with optimistic updates, selected issue
-- **IssueContext** (`src/components/board/context/IssueContext.tsx`) - Lower-level issue reducer and optimistic actions
-
-### Component Hierarchy
-
-```
-AppShell (UI state)
-  └── BoardProvider (data + operations)
-        └── MainContent
-              ├── BoardView / ListView (view rendering)
-              ├── IssueDetailPanel (side panel)
-              └── CommandPalette
-```
-
-### Database Schema
-
-Main tables: `boards`, `columns`, `issues`, `labels`, `issueLabels`, `cycles`, `comments`, `activities`
-
-- Issues belong to columns (kanban lanes)
-- Issues have many-to-many relationship with labels via `issueLabels`
-- Activities track all changes for audit history
-
-### Server Actions
-
-Located in `src/lib/actions/`:
-
-- `board.ts` - `getOrCreateDefaultBoardWithIssues()`
-- `issues.ts` - `createIssue()`, `updateIssue()`, `deleteIssue()`, `moveIssue()`, label/comment operations
-
-### Design Tokens
-
-`src/lib/design-tokens.ts` defines constants used throughout:
-
-- `STATUS` - backlog, todo, in_progress, done, canceled
-- `PRIORITY` - 0 (urgent) to 4 (none)
-- `VIEW` - board, list, timeline
-- `SHORTCUTS` - keyboard shortcuts (Cmd+K, C, [, etc.)
-
-### Drag and Drop
-
-Uses @dnd-kit with custom collision detection in `src/lib/collision-detection.ts`. The `columnAwareCollisionDetection` function prioritizes column drops over item sorting.
-
-### Type Definitions
-
-`src/lib/types.ts` - Key types are inferred from Drizzle schema:
-
-- `BoardWithColumnsAndIssues` - Full board with nested columns and issues
-- `IssueWithLabels` - Issue with its labels array
-- `CreateIssueInput` / `UpdateIssueInput` - Mutation input types
-
-## AI Model Selection (CRITICAL)
-
-**Always use Claude Haiku by default.** Only use more expensive models when explicitly requested by the user.
-
-| Use Case | Model | Model ID |
-|----------|-------|----------|
-| Background tasks | Haiku | `claude-haiku-4-5-20251001` |
-| AI task execution | Haiku | `claude-haiku-4-5-20251001` |
-| Chat (default) | Haiku | `claude-haiku-4-5-20251001` |
-| Complex reasoning (user requested) | Sonnet | `claude-sonnet-4-6` |
-
-**Cost comparison (per 1M tokens):**
-- Haiku: $0.25 input / $1.25 output
-- Sonnet: $3.00 input / $15.00 output (12× more expensive)
-
-**Rules:**
-1. Default to Haiku for all AI features unless the user explicitly requests a different model
-2. When implementing new AI features, use `claude-haiku-4-5-20251001`
-3. Always implement prompt caching to reduce costs (see `src/lib/chat/index.ts` for patterns)
-4. Limit tool usage with `maxUses` to prevent runaway agentic loops
-5. Track token usage via `recordTokenUsage()` for cost monitoring
-
-## React & Next.js Best Practices
-
-**Always follow the Vercel React best practices** documented in `.claude/skills/vercel-react-best-practices/`. Reference `AGENTS.md` for detailed explanations and code examples.
-
-### 1. Eliminating Waterfalls (CRITICAL)
-- `async-defer-await` - Move await into branches where actually used
-- `async-parallel` - Use Promise.all() for independent operations
-- `async-dependencies` - Use better-all for partial dependencies
-- `async-api-routes` - Start promises early, await late in API routes
-- `async-suspense-boundaries` - Use Suspense to stream content
-
-### 2. Bundle Size Optimization (CRITICAL)
-- `bundle-barrel-imports` - Import directly, avoid barrel files (configured via `optimizePackageImports`)
-- `bundle-dynamic-imports` - Use next/dynamic for heavy components
-- `bundle-defer-third-party` - Load analytics/logging after hydration
-- `bundle-conditional` - Load modules only when feature is activated
-- `bundle-preload` - Preload on hover/focus for perceived speed
-
-### 3. Server-Side Performance (HIGH)
-- `server-auth-actions` - Authenticate server actions like API routes (use `requireWorkspaceAccess()`)
-- `server-cache-react` - Use React.cache() for per-request deduplication
-- `server-cache-lru` - Use LRU cache for cross-request caching
-- `server-dedup-props` - Avoid duplicate serialization in RSC props
-- `server-serialization` - Minimize data passed to client components
-- `server-parallel-fetching` - Restructure components to parallelize fetches
-- `server-after-nonblocking` - Use after() for non-blocking operations
-
-### 4. Client-Side Data Fetching (MEDIUM-HIGH)
-- `client-swr-dedup` - Use SWR for automatic request deduplication
-- `client-event-listeners` - Deduplicate global event listeners
-- `client-passive-event-listeners` - Use passive listeners for scroll
-- `client-localstorage-schema` - Version and minimize localStorage data
-
-### 5. Re-render Optimization (MEDIUM)
-- `rerender-defer-reads` - Don't subscribe to state only used in callbacks
-- `rerender-memo` - Extract expensive work into memoized components
-- `rerender-memo-with-default-value` - Hoist default non-primitive props
-- `rerender-dependencies` - Use primitive dependencies in effects
-- `rerender-derived-state` - Subscribe to derived booleans, not raw values
-- `rerender-derived-state-no-effect` - Derive state during render, not effects
-- `rerender-functional-setstate` - Use functional setState for stable callbacks
-- `rerender-lazy-state-init` - Pass function to useState for expensive values
-- `rerender-simple-expression-in-memo` - Avoid memo for simple primitives
-- `rerender-move-effect-to-event` - Put interaction logic in event handlers
-- `rerender-transitions` - Use startTransition for non-urgent updates
-- `rerender-use-ref-transient-values` - Use refs for transient frequent values
-
-### 6. Rendering Performance (MEDIUM)
-- `rendering-animate-svg-wrapper` - Animate div wrapper, not SVG element
-- `rendering-content-visibility` - Use content-visibility for long lists (use `.issue-item` class)
-- `rendering-hoist-jsx` - Extract static JSX outside components
-- `rendering-svg-precision` - Reduce SVG coordinate precision
-- `rendering-hydration-no-flicker` - Use inline script for client-only data
-- `rendering-hydration-suppress-warning` - Suppress expected mismatches
-- `rendering-activity` - Use Activity component for show/hide
-- `rendering-conditional-render` - Use ternary, not && for conditionals
-- `rendering-usetransition-loading` - Prefer useTransition for loading state
-
-### 7. JavaScript Performance (LOW-MEDIUM)
-- `js-batch-dom-css` - Group CSS changes via classes or cssText
-- `js-index-maps` - Build Map for repeated lookups
-- `js-cache-property-access` - Cache object properties in loops
-- `js-cache-function-results` - Cache function results in module-level Map
-- `js-cache-storage` - Cache localStorage/sessionStorage reads
-- `js-combine-iterations` - Combine multiple filter/map into one loop
-- `js-length-check-first` - Check array length before expensive comparison
-- `js-early-exit` - Return early from functions
-- `js-hoist-regexp` - Hoist RegExp creation outside loops
-- `js-min-max-loop` - Use loop for min/max instead of sort
-- `js-set-map-lookups` - Use Set/Map for O(1) lookups
-- `js-tosorted-immutable` - Use toSorted() for immutability
-
-### 8. Advanced Patterns (LOW)
-- `advanced-event-handler-refs` - Store event handlers in refs
-- `advanced-init-once` - Initialize app once per app load
-- `advanced-use-latest` - useLatest for stable callback refs
-
-## Deployment
-
-### Cross-fork Vercel canary procedure
-
-When a PR is from a fork (e.g., `jasonburks23/_R1` → `Hunt-Gather-Create/_R1:runway`), Vercel does NOT auto-fire a preview deploy for the PR. The merge into `runway` IS the deploy test. To validate before pushing to upstream, run `/canary` — see `.claude/skills/canary/SKILL.md`.
-
-**One-time setup** (run once per machine — provisions the canary project on Vercel's side):
-
-1. Bump local Vercel CLI to latest. If installed via Homebrew: `brew upgrade vercel-cli`. If installed via pnpm/npm: `pnpm add -g vercel@latest`.
-2. From any single worktree, link a personal-scope canary project: `vercel link` (interactive — pick your personal scope, name the project e.g. `runway-canary`). **Do NOT pass `--scope=<personal-account>`** — Vercel CLI v52 rejects personal accounts as a scope flag value (only team scopes are valid there). The link binds the worktree to the project; subsequent commands inherit it.
-3. Seed env vars on the new canary project. Either copy values from your `.env.local` to the canary project via the Vercel dashboard, or script it:
-   ```bash
-   while IFS= read -r line; do
-     [ -z "$line" ] && continue
-     case "$line" in '#'*) continue ;; esac
-     key="${line%%=*}"; value="${line#*=}"
-     value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
-     for env in production development; do
-       printf '%s' "$value" | vercel env add "$key" "$env"
-     done
-   done < .env.local
-   ```
-   Note: `.env.local` must end with a newline or the last line gets dropped by the read loop. Check with `tail -c 1 .env.local | xxd`.
-4. Pull project config + env: `vercel pull --environment=production --yes`
-
-After this is done in any one worktree, the `.vercel/project.json` it produces is the source of truth `/canary` will copy from for new worktrees.
-
-**Per-PR canary deploy:** run `/canary` from any worktree. The skill auto-links the worktree on first run by copying `projectName` from any sibling worktree's `.vercel/project.json` (no manual `vercel link` needed per worktree — `.vercel/project.json` is gitignored). Then it handles pre-flight gates (branch, CLI, auth, link state, dirty tree), build, deploy, and reporting. If the canary deploys green (READY status), push the PR for upstream review. If red, iterate locally without burning upstream review cycles.
-
-The canary uses prod credentials and points at the prod Turso DB. **Do not interact with the canary URL like a normal user** (clicking toggles, etc.) — those clicks write to prod. The canary's purpose is verifying Vercel build + deploy succeed, not full functional testing. WorkOS auth on the canary URL will fail because `NEXT_PUBLIC_WORKOS_REDIRECT_URI` doesn't include the canary domain — that's expected and not a deploy failure.
-
-### Build output vs. deploy success
-
-`pnpm build` exit 0 does not guarantee a successful Vercel deploy. Some failures (e.g., `DYNAMIC_SERVER_USAGE`, failed session decryption) are swallowed in certain Next.js versions and only surface at runtime. The preflight skill's grep gate (`/preflight` → Step 2) catches these. Run `/preflight` before every PR push to a runway-targeted branch.
-
-## Plan Execution Workflow
-
-**Full workflow documented in [`docs/ai-development-workflow.md`](docs/ai-development-workflow.md).** Read it before your first code change in any session. The summary below is not a substitute.
-
-When executing a plan that involves code changes:
-
-### Before Starting
-
-1. **Create a new branch** before making any code changes:
-   - Use a descriptive branch name based on the task (e.g., `feature/add-user-auth`, `fix/login-bug`, `refactor/board-context`)
-   - Run `git checkout -b <branch-name>` from the main branch
-   - If already on a feature branch for this task, continue on that branch
-
-### During Development
-
-1. **Tests are part of each step, not a separate step.** If you're building `operations.ts`, the plan includes `operations.test.ts` in the same step. Not "Step 7: write tests for everything."
-2. **Cross-check data consistency** — types, enums, and status values must match across all files that reference them. If a bot prompt lists a status value the type system doesn't include, that's a bug.
-3. **If you can't state the full workflow from memory after reading these rules, you haven't internalized them.** Go back and re-read.
-
-### Post-build pipeline (run in this order before pushing)
-
-After the code is written, run these skills in order. Each is its own step — do not collapse or skip:
+### Post-build pipeline (run in order before pushing)
 
 1. `/code-review` — DRY, prop drilling, hooks/context, test coverage
-2. `/update-docs` — sync `/docs` knowledge base if patterns/versions changed
+2. `/update-docs` — sync `/docs` if patterns/versions changed
 3. `/pr-ready` — debug statements, unused imports, final cleanup
-4. `/preflight` — build + grep gate + tests + lint (and `vercel build` on runway-tracked branches)
-5. `/canary` — cross-fork Vercel preview deploy (runway-targeted PRs only); auto-links new worktrees and replaces the old manual `vercel build && vercel deploy --prebuilt` two-liner
-6. `/atomic-commits` — split working tree into focused commits
-7. Push the branch and open the PR (operator runs this; do NOT auto-push)
+4. `/preflight` — build + grep gate + tests + lint
+5. `/canary` — cross-fork Vercel preview (runway-targeted PRs only)
+6. `/atomic-commits` — split tree into focused commits
+7. Push + open PR (operator runs this; do NOT auto-push)
 
-### Common Failure Modes
+### Roles + safety
 
-These are real failures that have occurred in this codebase. Check yourself against each one.
+- TP coordinates and drafts; CC executes code. TP never writes code.
+- All Runway prod writes go through `data-integrity-tp` skill. No ad-hoc mutations from CC or operator. (D-10)
+- Tests are part of each build step, not a separate step at the end.
+- Don't enter plan mode as TP — write pre-plans as `docs/plans/<feature>.md` for CC handoff.
+- Don't auto-push to upstream.
 
-- **"I'll write tests later"** — Tests are not a separate step. If your plan has a "write tests" step at the end, your plan is wrong. Rewrite it with tests woven into each build step.
-- **"I read the rules"** — Reading is not synthesizing. If you read a skill file and came away with a summary instead of a multi-step methodology, you skimmed.
-- **Cherry-picking from skills** — Each skill has a defined number of steps. `/code-review` has 5. `/pr-ready` has 7. Run all of them or you haven't run the skill.
-- **"The code works, ship it"** — Working code that duplicates logic, lacks tests, has unused imports, and bypasses the project's architectural patterns is not done. Functionality is necessary but not sufficient.
-- **Inconsistent data across files** — Types defined in one file, status values in another, enum-like strings in a third. Cross-check them before considering anything complete.
+### AI
+
+- Default model: Claude Haiku. Sonnet only on explicit operator request. (D-05)
+- Always implement prompt caching. Cap tool usage with `maxUses`. Track tokens via `recordTokenUsage()`.
+
+## Memory rules
+
+`@.claude/MEMORY.md` is the KNOWLEDGE layer (observed patterns, gotchas). Locked decisions go in `DECISIONS.md`, not MEMORY.
+
+When you discover a non-obvious pattern or gotcha:
+- Add it to MEMORY under existing Scripts / Patterns / Gotchas headings (1-2 lines each).
+- If it's a LOCKED architectural decision, add a `DECISIONS.md` entry instead and reference it.
+- Remove entries that become outdated.
+
+## Plan execution
+
+Read `docs/ai-development-workflow.md` before your first code change in any session. Tests are woven into each step. Cross-check enums, status values, and types across all files that reference them.
