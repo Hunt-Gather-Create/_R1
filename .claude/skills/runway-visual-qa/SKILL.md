@@ -2,7 +2,16 @@
 
 Run a Playwright smoke pass against `runway.startround1.com` to verify a runway-targeted PR's UI behavior post-merge (or against the canary if you've authed cookies there).
 
-This skill is **local-only durable infra** — it lives on `main` and never ships to upstream. Use it whenever a PR touches the runway dashboard's render layer and you want a second pair of eyes (screenshots + DOM assertions) before declaring the deploy verified.
+Use it whenever a PR touches the runway dashboard's render layer and you want a second pair of eyes (screenshots + DOM assertions) before declaring the deploy verified.
+
+## First-time setup (per machine)
+
+```bash
+pnpm install                              # installs @playwright/test
+pnpm exec playwright install chromium     # downloads the Chromium binary (~150MB, one-time)
+```
+
+The `@playwright/test` devDep does NOT bundle the browser binary — `pnpm install` alone is not enough. Skipping the second step causes `chromium not found` on first `pnpm runway:smoke` run.
 
 ## When to use
 
@@ -31,7 +40,7 @@ If WorkOS is ever re-enabled on the production deployment, this setup will need 
 
 ## Running
 
-From the `runway-visual-qa` worktree (or any worktree off `main` that has the install):
+From any worktree (the skill ships on `runway` per DECISIONS.md D-04):
 
 ```bash
 # One-time per shell session
@@ -71,7 +80,7 @@ pnpm exec playwright show-report
 - Does not run unit/component tests (use `pnpm test:run`)
 - Does not deploy or build the app
 - Does not write to prod data — assertions and tab navigation only; **never click toggles, edit forms, or other write paths** in a spec
-- Does not ship to upstream — the install lives on jasonburks23/main and stays there
+- Does not run on every Vercel build — Playwright is a devDep; Tim's CI installs it but never invokes `pnpm runway:smoke`. Local operator-driven only.
 
 ## Failure modes
 
