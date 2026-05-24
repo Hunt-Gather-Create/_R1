@@ -59,3 +59,12 @@ docs/brain/
 docs/reference/
 docs/tmp/
 /sources
+
+# playwright visual-qa artifacts (never commit)
+/playwright/.auth/
+/playwright-report/
+/test-results/
+/screenshots/
+
+# session pointer archives (per-session snapshots, not for the repo)
+.claude/sessions/archive/
