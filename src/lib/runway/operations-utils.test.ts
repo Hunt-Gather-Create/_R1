@@ -497,25 +497,36 @@ describe("client cache", () => {
 
 // ── Batch Mode ────────────────────────────────────────────
 
-describe("setBatchId / getBatchId", () => {
-  it("sets and reads batch ID", async () => {
-    const { setBatchId, getBatchId } = await import("./operations-utils");
-    setBatchId("test-batch-1");
-    expect(getBatchId()).toBe("test-batch-1");
-    setBatchId(null);
-  });
+describe("setBatchId / getBatchId — post-#17", () => {
+  // Issue #17: setBatchId is a no-op shim under per-request batch scoping.
+  // getBatchId reads from AsyncLocalStorage (see runway-als.ts). New callers
+  // use withBatchId(id, fn). These tests pin the new shim contract; the
+  // ALS surface itself is covered in runway-als.test.ts.
 
-  it("returns null when not set", async () => {
-    const { setBatchId, getBatchId } = await import("./operations-utils");
-    setBatchId(null);
+  it("getBatchId returns null when called outside a withBatchId scope", async () => {
+    const { getBatchId } = await import("./operations-utils");
     expect(getBatchId()).toBeNull();
   });
 
-  it("clears batch ID with null", async () => {
+  it("setBatchId is a no-op — does not affect what getBatchId returns", async () => {
     const { setBatchId, getBatchId } = await import("./operations-utils");
-    setBatchId("batch-abc");
-    expect(getBatchId()).toBe("batch-abc");
-    setBatchId(null);
+    // Silence the one-time deprecation warning so test output stays clean.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      setBatchId("test-batch-shim");
+      expect(getBatchId()).toBeNull();
+      setBatchId(null);
+      expect(getBatchId()).toBeNull();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("getBatchId reflects the batch id active in the surrounding withBatchId scope", async () => {
+    const { getBatchId } = await import("./operations-utils");
+    const { withBatchId } = await import("./runway-als");
+    const observed = await withBatchId("batch-via-als", async () => getBatchId());
+    expect(observed).toBe("batch-via-als");
     expect(getBatchId()).toBeNull();
   });
 });

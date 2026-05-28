@@ -18,6 +18,7 @@ import {
 import { eq, asc } from "drizzle-orm";
 import { createHash } from "crypto";
 import { withRunwayRetry } from "@/lib/runway/retry";
+import { getCurrentBatchId } from "@/lib/runway/runway-als";
 
 // ── Constants ────────────────────────────────────────────
 
@@ -441,14 +442,35 @@ export type OperationResult =
   | { ok: false; error: string; available?: string[] };
 
 // ── Batch Mode ────────────────────────────────────────────
+// Issue #17: batch id moved to AsyncLocalStorage (src/lib/runway/runway-als.ts)
+// so concurrent requests on Fluid Compute don't bleed into each other's audit
+// rows or Slack-suppression checks. `getBatchId` is the read surface and now
+// reads from ALS. `setBatchId` is a deprecated no-op shim kept only so legacy
+// test sites compile; new callers use `withBatchId(id, fn)` directly. Removal
+// tracked as a follow-up.
 
-let _currentBatchId: string | null = null;
+let _setBatchIdWarned = false;
 
-/** Set the current batch ID. All subsequent audit records will be tagged with this ID. */
-export function setBatchId(id: string | null): void { _currentBatchId = id; }
+/**
+ * Deprecated. Use `withBatchId(id, fn)` from `@/lib/runway/runway-als` to
+ * scope a batch id to an async callback. This shim is a no-op retained so
+ * legacy tests compile; it emits a one-time per-process warning.
+ *
+ * @deprecated Use `withBatchId` from `runway-als.ts`.
+ */
+export function setBatchId(_id: string | null): void {
+  if (!_setBatchIdWarned) {
+    _setBatchIdWarned = true;
+    console.warn(
+      "[runway] setBatchId() is deprecated and is now a no-op under per-request batch scoping. Use withBatchId(id, fn) from @/lib/runway/runway-als instead.",
+    );
+  }
+}
 
-/** Get the current batch ID (null if not in batch mode). */
-export function getBatchId(): string | null { return _currentBatchId; }
+/** Get the current batch id from the active AsyncLocalStorage scope (null if not in batch mode). */
+export function getBatchId(): string | null {
+  return getCurrentBatchId();
+}
 
 export interface AuditRecordParams {
   /** Optional: pre-generated id. Useful when the caller needs to link child records
@@ -487,7 +509,7 @@ export async function insertAuditRecord(params: AuditRecordParams): Promise<stri
     newValue: params.newValue ?? null,
     summary: params.summary,
     metadata: params.metadata,
-    batchId: params.batchId ?? _currentBatchId ?? null,
+    batchId: params.batchId ?? getCurrentBatchId() ?? null,
     triggeredByUpdateId: params.triggeredByUpdateId ?? null,
     source: params.source ?? null,
   });
