@@ -13,7 +13,7 @@ import { createClient } from "@libsql/client";
 import { resolve, basename, extname } from "path";
 import { createInterface } from "readline";
 import { runIfDirect } from "./lib/run-script";
-import { setBatchId } from "@/lib/runway/operations-utils";
+import { withBatchId } from "@/lib/runway/runway-als";
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -160,26 +160,30 @@ async function run() {
   // Derive batchId from migration filename for audit tagging
   const migrationBatchId = deriveMigrationBatchId(migrationPath);
 
-  // Run migration
+  // Run migration. #17: when applying, scope the migration batchId to the
+  // migration callback via AsyncLocalStorage so audit rows are tagged.
+  // Dry-runs skip the scope — they're side-effect-free and don't write audit.
   const ctx = createMigrationContext(db, !shouldApply);
 
-  if (shouldApply) {
-    setBatchId(migrationBatchId);
-  }
-
-  try {
-    await migration.up(ctx);
-    console.log(`\n${shouldApply ? "Migration applied." : "Dry-run complete. Use --apply to execute."}`);
-    console.log(`${ctx.logs.length} operation(s) logged.`);
-    if (shouldApply) {
-      console.log(`\nTo publish changes to Slack, run:`);
-      console.log(`  pnpm runway:publish-updates --batch "${migrationBatchId}"`);
+  const runMigration = async () => {
+    try {
+      await migration.up(ctx);
+      console.log(`\n${shouldApply ? "Migration applied." : "Dry-run complete. Use --apply to execute."}`);
+      console.log(`${ctx.logs.length} operation(s) logged.`);
+      if (shouldApply) {
+        console.log(`\nTo publish changes to Slack, run:`);
+        console.log(`  pnpm runway:publish-updates --batch "${migrationBatchId}"`);
+      }
+    } catch (err) {
+      console.error("\nMigration failed:", err);
+      process.exit(1);
     }
-  } catch (err) {
-    console.error("\nMigration failed:", err);
-    process.exit(1);
-  } finally {
-    setBatchId(null);
+  };
+
+  if (shouldApply) {
+    await withBatchId(migrationBatchId, runMigration);
+  } else {
+    await runMigration();
   }
 }
 

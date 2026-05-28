@@ -41,7 +41,6 @@ import {
   updateClientField,
   createTeamMember,
   updateTeamMember,
-  setBatchId,
   getBatchId,
   validateEngagementType,
   validateIsoDateShape,
@@ -51,6 +50,7 @@ import {
 import { getRetainerTeam } from "@/lib/runway/operations-reads-retainers";
 import { postMutationUpdate } from "@/lib/slack/updates-channel";
 import { generateGanttShare } from "@/lib/runway/gantt/share-orchestrator";
+import { withBatchId } from "@/lib/runway/runway-als";
 
 function textResult(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
@@ -821,12 +821,18 @@ export function registerRunwayTools(server: McpServer) {
 
   // ── Batch mode ──────────────────────────────────────────
 
-  server.tool("set_batch_mode", "Enable/disable batch mode. When active, Slack notifications are suppressed and audit records are tagged with the batchId.", {
-    batchId: z.string().nullable().describe("Batch ID to set, or null to clear"),
-  }, async ({ batchId }) => {
-    setBatchId(batchId);
-    return textMessage(batchId ? `Batch mode enabled: ${batchId}` : "Batch mode disabled");
-  });
+  server.tool(
+    "set_batch_mode",
+    "Deprecated under #17 per-request batch scoping. The standalone 'set the flag, fire separate calls, clear the flag' model cannot survive AsyncLocalStorage — separate MCP calls run in separate async contexts. Use `batch_apply` with a batchId to scope multiple ops under one batch.",
+    {
+      batchId: z.string().nullable().describe("Ignored. Retained for schema compatibility."),
+    },
+    async (_args) => {
+      return textMessage(
+        "set_batch_mode is deprecated under #17 per-request batch scoping. Use `batch_apply` with a `batchId` to scope multiple ops under one batch.",
+      );
+    },
+  );
 
   // ── Date override (raw drizzle past PROJECT_FIELDS whitelist) ──────────
 
@@ -970,7 +976,7 @@ export function registerRunwayTools(server: McpServer) {
 
   // Dispatch table: tool name → underlying helper. Calls go through helpers,
   // so semantic invariants (parentProjectId validators, contract-date
-  // invariant, recompute guard) all run. setBatchId tags audit rows; Slack
+  // invariant, recompute guard) all run. withBatchId tags audit rows; Slack
   // updates are suppressed for ops in this batch because helpers do not
   // post (only the MCP wrapper does, and we bypass it here).
   type BatchOpHandler = (args: Record<string, unknown>) => Promise<{
@@ -1029,8 +1035,10 @@ export function registerRunwayTools(server: McpServer) {
         error?: string;
         data?: unknown;
       }> = [];
-      setBatchId(batchId);
-      try {
+      // #17: scope the batch id to this async chain via AsyncLocalStorage.
+      // Concurrent batch_apply requests on Fluid Compute no longer leak into
+      // each other's audit rows or Slack-suppression checks.
+      await withBatchId(batchId, async () => {
         for (const op of ops) {
           const handler = BATCH_DISPATCH[op.tool];
           if (!handler) {
@@ -1064,9 +1072,7 @@ export function registerRunwayTools(server: McpServer) {
           });
           if (!r.ok && haltOnError) break;
         }
-      } finally {
-        setBatchId(null);
-      }
+      });
       const allOk = results.length > 0 && results.every((r) => r.ok);
       const failureCount = results.filter((r) => !r.ok).length;
       const payload = {
