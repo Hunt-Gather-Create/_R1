@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockOps, mockGenerateGanttShare, registeredTools, registeredDescriptions } = vi.hoisted(() => {
+const { mockOps, mockGenerateGanttShare, mockWithBatchId, registeredTools, registeredDescriptions } = vi.hoisted(() => {
   const mockGenerateGanttShare = vi.fn();
+  // #17: spy on withBatchId. Implementation still invokes the callback so
+  // dispatched ops actually run; the spy records the batchId arg for assertions.
+  const mockWithBatchId = vi.fn(<T,>(_id: string, fn: () => Promise<T>) => fn());
   const mockOps = {
     getClientsWithCounts: vi.fn().mockResolvedValue([{ name: "Convergix", projectCount: 3 }]),
     getClientDetail: vi.fn().mockResolvedValue({
@@ -66,7 +69,7 @@ const { mockOps, mockGenerateGanttShare, registeredTools, registeredDescriptions
   type ToolHandler = (params: Record<string, unknown>) => Promise<unknown>;
   const registeredTools = new Map<string, ToolHandler>();
   const registeredDescriptions = new Map<string, string>();
-  return { mockOps, mockGenerateGanttShare, registeredTools, registeredDescriptions };
+  return { mockOps, mockGenerateGanttShare, mockWithBatchId, registeredTools, registeredDescriptions };
 });
 
 // Mock the operations barrel: real shared validators come through via
@@ -92,6 +95,10 @@ vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
 }));
 vi.mock("@/lib/runway/gantt/share-orchestrator", () => ({
   generateGanttShare: (...args: unknown[]) => mockGenerateGanttShare(...args),
+}));
+vi.mock("@/lib/runway/runway-als", () => ({
+  withBatchId: mockWithBatchId,
+  getCurrentBatchId: vi.fn().mockReturnValue(null),
 }));
 
 import { registerRunwayTools } from "./runway-tools";
@@ -784,12 +791,19 @@ describe("registerRunwayTools", () => {
     expect(result).toEqual({ content: [{ type: "text", text: "Updated" }] });
   });
 
-  it("set_batch_mode sets and clears batchId", async () => {
-    await registeredTools.get("set_batch_mode")!({ batchId: "batch-2026-04-18" });
-    expect(mockOps.setBatchId).toHaveBeenCalledWith("batch-2026-04-18");
+  it("set_batch_mode returns the #17 deprecation message without mutating state", async () => {
+    mockOps.setBatchId.mockClear();
+    const enable = await registeredTools.get("set_batch_mode")!({ batchId: "batch-2026-04-18" });
+    const enableText = (enable as { content: [{ text: string }] }).content[0].text;
+    expect(enableText).toMatch(/deprecated.*per-request batch scoping/);
 
-    await registeredTools.get("set_batch_mode")!({ batchId: null });
-    expect(mockOps.setBatchId).toHaveBeenCalledWith(null);
+    const disable = await registeredTools.get("set_batch_mode")!({ batchId: null });
+    const disableText = (disable as { content: [{ text: string }] }).content[0].text;
+    expect(disableText).toMatch(/deprecated.*per-request batch scoping/);
+
+    // No production-state mutation — the shim in operations-utils is not even
+    // reached; the rewritten tool just returns the message.
+    expect(mockOps.setBatchId).not.toHaveBeenCalled();
   });
 
   it("mutation tools post to Slack when not in batch mode", async () => {
@@ -1053,8 +1067,8 @@ describe("registerRunwayTools", () => {
     expect(mockOps.setProjectParent).toHaveBeenCalledWith(params);
   });
 
-  it("batch_apply runs ops sequentially via dispatch table", async () => {
-    mockOps.setBatchId.mockClear();
+  it("batch_apply runs ops sequentially under withBatchId scope", async () => {
+    mockWithBatchId.mockClear();
     const result = await registeredTools.get("batch_apply")!({
       batchId: "test-batch-001",
       updatedBy: "tester",
@@ -1064,9 +1078,8 @@ describe("registerRunwayTools", () => {
         { tool: "update_project_status", args: { clientSlug: "convergix", projectName: "CDS", newStatus: "completed" } },
       ],
     });
-    // setBatchId called twice: once with batchId, once with null on cleanup
-    expect(mockOps.setBatchId).toHaveBeenCalledWith("test-batch-001");
-    expect(mockOps.setBatchId).toHaveBeenCalledWith(null);
+    // #17: batchId is scoped via withBatchId (AsyncLocalStorage), not module state.
+    expect(mockWithBatchId).toHaveBeenCalledWith("test-batch-001", expect.any(Function));
     expect(mockOps.updateProjectField).toHaveBeenCalled();
     expect(mockOps.createWeekItem).toHaveBeenCalled();
     expect(mockOps.updateProjectStatus).toHaveBeenCalled();
@@ -1139,8 +1152,8 @@ describe("registerRunwayTools", () => {
     expect(parsed.data.results[0].error).toMatch(/Unknown tool/);
   });
 
-  it("batch_apply clears setBatchId in finally even when a handler throws", async () => {
-    mockOps.setBatchId.mockClear();
+  it("batch_apply unwinds the withBatchId scope even when a handler throws", async () => {
+    mockWithBatchId.mockClear();
     mockOps.updateProjectField.mockRejectedValueOnce(new Error("kaboom"));
     const result = await registeredTools.get("batch_apply")!({
       batchId: "test-batch-throw",
@@ -1149,8 +1162,9 @@ describe("registerRunwayTools", () => {
         { tool: "update_project_field", args: { clientSlug: "convergix", projectName: "CDS", field: "owner", newValue: "A" } },
       ],
     });
-    expect(mockOps.setBatchId).toHaveBeenCalledWith("test-batch-throw");
-    expect(mockOps.setBatchId).toHaveBeenCalledWith(null);
+    // The async chain returns to the caller after withBatchId's promise resolves;
+    // AsyncLocalStorage unwinds the store automatically — no manual finally needed.
+    expect(mockWithBatchId).toHaveBeenCalledWith("test-batch-throw", expect.any(Function));
     const text = (result as { content: [{ text: string }] }).content[0].text;
     const parsed = JSON.parse(text);
     expect(parsed.data.results[0].ok).toBe(false);

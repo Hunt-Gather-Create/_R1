@@ -13,7 +13,8 @@ import {
   cleanupTestDb,
   type TestDb,
 } from "./test-db";
-import { invalidateClientCache, setBatchId } from "./operations-utils";
+import { invalidateClientCache } from "./operations-utils";
+import { withBatchId } from "./runway-als";
 
 let testDb: TestDb;
 let libsqlClient: Client;
@@ -63,12 +64,13 @@ beforeEach(async () => {
   dbPath = created.dbPath;
   await seedTestDb(libsqlClient);
   invalidateClientCache();
-  setBatchId(null); // reset between tests
+  // #17: per-request batch scoping via AsyncLocalStorage. No process-wide
+  // reset needed — tests that need an active batch wrap the assertion in
+  // `withBatchId(...)`; everything else sees a null batch by default.
 });
 
 afterEach(() => {
   cleanupTestDb(dbPath);
-  setBatchId(null);
 });
 
 describe("getDataHealth", () => {
@@ -152,11 +154,10 @@ describe("getDataHealth", () => {
     expect(health.stale.pastEndL2s).toBe(1);
   });
 
-  it("reports active batch id from in-memory setBatchId", async () => {
+  it("reports active batch id from the surrounding withBatchId scope", async () => {
     const { getDataHealth } = await import("./operations-reads-health");
 
-    setBatchId("batch-xyz");
-    const health = await getDataHealth();
+    const health = await withBatchId("batch-xyz", () => getDataHealth());
     expect(health.batch.activeBatchId).toBe("batch-xyz");
   });
 
@@ -210,9 +211,8 @@ describe("getCurrentBatch", () => {
 
   it("returns batch details when a batch is active with no audit rows yet", async () => {
     const { getCurrentBatch } = await import("./operations-reads-health");
-    setBatchId("batch-empty");
 
-    const result = await getCurrentBatch();
+    const result = await withBatchId("batch-empty", () => getCurrentBatch());
     expect(result.active).toBe(true);
     if (!result.active) throw new Error("unreachable");
     expect(result.batchId).toBe("batch-empty");
@@ -224,7 +224,6 @@ describe("getCurrentBatch", () => {
 
   it("counts audit rows and derives startedAt/startedBy from the earliest row", async () => {
     const { getCurrentBatch } = await import("./operations-reads-health");
-    setBatchId("batch-live");
 
     const earliest = Math.floor(Date.now() / 1000) - 3600;
     const middle = Math.floor(Date.now() / 1000) - 1800;
@@ -256,7 +255,7 @@ describe("getCurrentBatch", () => {
       createdAtSeconds: latest,
     });
 
-    const result = await getCurrentBatch();
+    const result = await withBatchId("batch-live", () => getCurrentBatch());
     expect(result.active).toBe(true);
     if (!result.active) throw new Error("unreachable");
     expect(result.batchId).toBe("batch-live");

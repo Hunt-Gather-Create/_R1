@@ -6,8 +6,9 @@
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
-import { projects, weekItems } from "@/lib/db/runway-schema";
-import { eq } from "drizzle-orm";
+import { projects, updates, weekItems } from "@/lib/db/runway-schema";
+import { and, eq, sql } from "drizzle-orm";
+import { getCurrentBatchId } from "./runway-als";
 import {
   WEEK_ITEM_FIELDS,
   WEEK_ITEM_FIELD_TO_COLUMN,
@@ -153,12 +154,51 @@ export async function recomputeProjectDatesWith(
     return { startDate: minStart, endDate: maxEnd };
   }
 
+  // Issue #16: in-batch override guard. If `overrideProjectDate` ran on this
+  // project earlier in the same batch (AsyncLocalStorage scope) and pinned
+  // start_date or end_date, do not let the child-derived MIN/MAX clobber it.
+  // Per-field granularity — an override on startDate does not protect endDate.
+  // Outside a batch, the guard is a no-op and the existing clobber stays
+  // (cross-batch overrides are intentionally not pinned — see plan §3).
+  const currentBatchId = getCurrentBatchId();
+  let effectiveStart: string | null = minStart;
+  let effectiveEnd: string | null = maxEnd;
+  if (currentBatchId && current) {
+    const overriddenRows = await executor
+      .select({
+        field: sql<string | null>`json_extract(${updates.metadata}, '$.field')`,
+      })
+      .from(updates)
+      .where(
+        and(
+          eq(updates.projectId, projectId),
+          eq(updates.updateType, "date-override"),
+          eq(updates.batchId, currentBatchId),
+        ),
+      );
+    const overridden = new Set<string>();
+    for (const row of overriddenRows) {
+      if (row.field === "startDate" || row.field === "endDate") {
+        overridden.add(row.field);
+      }
+    }
+    if (overridden.has("startDate")) effectiveStart = current.startDate;
+    if (overridden.has("endDate")) effectiveEnd = current.endDate;
+    if (
+      effectiveStart === current.startDate &&
+      effectiveEnd === current.endDate
+    ) {
+      // Both fields preserved by overrides — nothing to write.
+      return { startDate: current.startDate, endDate: current.endDate };
+    }
+  }
+
   await executor
     .update(projects)
-    .set({ startDate: minStart, endDate: maxEnd, updatedAt: new Date() })
+    .set({ startDate: effectiveStart, endDate: effectiveEnd, updatedAt: new Date() })
     .where(eq(projects.id, projectId));
 
-  return { startDate: minStart, endDate: maxEnd };
+  return { startDate: effectiveStart, endDate: effectiveEnd };
 }
 
 // ── Create Week Item ─────────────────────────────────────

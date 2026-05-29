@@ -1458,16 +1458,18 @@ Reverted last change: Convergix CDS Refresh status → in-production.
 
 ### `set_batch_mode`
 
-**Description:** Enable or disable batch mode. When active, Slack notifications are suppressed and audit records are tagged with the `batchId`.
+**Status:** Deprecated under issue #17. Returns an error message pointing callers to `batch_apply`.
+
+**Why deprecated:** The standalone "set the flag, fire separate MCP calls, clear the flag" model cannot survive per-request batch scoping. After #17, the batch id lives in an AsyncLocalStorage scope owned by the request that creates it — separate MCP HTTP requests run in separate async contexts by design, so a flag set in one request is invisible to the next. To scope multiple ops under one batch, use [`batch_apply`](#batch_apply).
 
 **Params:**
 | Name | Type | Required | Description |
 |---|---|---|---|
-| `batchId` | string \| null | yes | Batch id to set, or `null` to clear. |
+| `batchId` | string \| null | yes | Ignored. Retained for schema compatibility. |
 
-**Returns:** Plain text confirmation — `Batch mode enabled: <batchId>` or `Batch mode disabled`.
+**Returns:** Plain text deprecation message.
 
-**Notes:** See [Appendix C](#c-batch-mode) for the full batch model.
+**Notes:** See [Appendix C](#c-batch-mode) for the post-#17 batch model.
 
 ---
 
@@ -1527,7 +1529,7 @@ Reverted last change: Convergix CDS Refresh status → in-production.
 
 **Returns:** Always returns the structured payload `{ ok, message, data: { results } }`. Each `results[i]` carries `{ tool, ok, message?, error?, data? }`. `ok` at the top level is `true` only when every op succeeded.
 
-**Notes:** `setBatchId(batchId)` runs at entry; `setBatchId(null)` runs in `finally` (cleared even when a handler throws). Exceptions inside an op handler are caught and recorded as `{ ok: false, error: <message> }` for that op. Tool-boundary format validation (the engagement/ISO checks at MCP entry) does NOT run for batch-dispatched ops; helpers enforce semantic invariants (parentProjectId validators, contract-date invariant, recompute guard).
+**Notes:** Under issue #17 the batch id is scoped via `withBatchId(batchId, ...)` (AsyncLocalStorage) — the dispatch loop runs inside that scope so `getBatchId()` returns the active id for every helper call without any module-level state. The scope unwinds automatically after the loop resolves or throws, so no manual `finally` cleanup is required. Exceptions inside an op handler are caught and recorded as `{ ok: false, error: <message> }` for that op. Tool-boundary format validation (the engagement/ISO checks at MCP entry) does NOT run for batch-dispatched ops; helpers enforce semantic invariants (parentProjectId validators, contract-date invariant, recompute guard, in-batch override guard).
 
 ---
 
@@ -1607,17 +1609,21 @@ All other mutations (`add_project`, `delete_project`, `create_week_item`, `delet
 
 Batch mode tags a run of mutations with a `batchId` and suppresses per-mutation Slack notifications so a cleanup run doesn't spam the updates channel.
 
-**Lifecycle:**
+**Post-#17: batch id is request-scoped.** Before issue #17 the batch id lived in module-level memory (`setBatchId` / `getBatchId`), which leaked across concurrent requests on Fluid Compute. The batch id now lives in an `AsyncLocalStorage` store entered via `withBatchId(id, fn)`. The standalone `set_batch_mode` tool is deprecated as a result — the "set, fire separate calls, clear" pattern cannot survive per-request scoping. The supported entry points are:
 
-1. Call [`set_batch_mode`](#set_batch_mode) with a `batchId` (e.g. `cleanup-2026-04-19`). Batch id is stored in module memory for the current process.
-2. Run whatever writes the batch needs — `update_project_status`, `update_week_item`, etc. Every audit row written during this window carries `updates.batch_id = <batchId>`, and Slack posting is skipped.
-3. Inspect the result with [`get_current_batch`](#get_current_batch) (still active) or [`get_batch_contents`](#get_batch_contents) (any batch, active or past).
-4. Call [`set_batch_mode`](#set_batch_mode) with `null` to clear. Subsequent writes resume untagged + publish to Slack as usual.
-5. When satisfied, run `scripts/runway-publish-updates.ts` to group and post the batch to Slack in a single message.
+- **MCP callers:** use [`batch_apply`](#batch_apply). The dispatcher wraps the entire op loop in a single `withBatchId(batchId, …)` scope, so every helper called from the loop sees the active id and Slack posting is suppressed.
+- **Migration scripts:** `pnpm runway:migrate <file> --apply` wraps `migration.up(ctx)` in `withBatchId(<filename-derived-id>, …)` automatically. Dry-runs skip the scope (no audit writes).
+
+**Lifecycle (via `batch_apply`):**
+
+1. Call [`batch_apply`](#batch_apply) with a `batchId` (e.g. `cleanup-2026-04-19`) and an `ops[]` sequence.
+2. Each op runs sequentially under the scope. Every audit row carries `updates.batch_id = <batchId>`, and Slack posting is skipped.
+3. After the call returns, inspect with [`get_current_batch`](#get_current_batch) (only meaningful while the scope is active — i.e. mid-call from another caller in the same async chain, which is rare) or [`get_batch_contents`](#get_batch_contents) (any batch, active or past — queries by `updates.batch_id`).
+4. When satisfied, run `scripts/runway-publish-updates.ts` to group and post the batch to Slack in a single message.
 
 **Caveats:**
 
-- Batch state is per-process, not DB-persisted. A different MCP process / script will not see the batch state set elsewhere.
+- Batch state is async-scoped, not DB-persisted. A second MCP process / script cannot see another scope's active id; you must invoke its own `batch_apply` or `withBatchId` to participate.
 - Batch mode does not suppress cascade logic — cascades still fire and still write audit rows (they inherit the batch tag).
 - `undo_last_change` ignores batch mode.
 
