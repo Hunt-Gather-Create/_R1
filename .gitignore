@@ -75,3 +75,6 @@ docs/tmp/
 
 # session pointer archives (per-session snapshots, not for the repo)
 .claude/sessions/archive/
+
+# GSD plugin auto-managed handoff pointer (per-developer state)
+.planning/HANDOFF.json
