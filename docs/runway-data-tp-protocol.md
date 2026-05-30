@@ -17,8 +17,10 @@ Project-specific adaptation of the TP↔CC two-session brief, scoped to Runway d
 
 ## Launch sequence
 
+Replace `<repo-root>` with your local checkout of `_R1` (e.g. `/Users/<you>/Documents/_AI_/_R1`):
+
 ```bash
-cd /Users/jasonburks/Documents/_AI_/_R1
+cd <repo-root>
 export TP_ROLE=data-integrity
 claude
 ```
