@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // Smoke harness for runway.startround1.com. Tests live in tests/runway/.
-// Requires `RUNWAY_SMOKE_PASSWORD` in the shell or .env.local at run time.
+// Requires `PLAYWRIGHT_RUNWAY_PASSWORD` in the shell or .env.local at run time.
 
 export default defineConfig({
   testDir: "./tests/runway",
