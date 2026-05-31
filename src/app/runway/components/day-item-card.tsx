@@ -5,6 +5,7 @@ import { getOwnerResourcesDisplay } from "./display-utils";
 import { TYPE_INDICATORS, MetadataLabel } from "./status-badge";
 import { DatesLine } from "./dates-line";
 import { pastEndRedNote, pastEndNoteText } from "@/lib/runway/plate-summary";
+import { CompleteCheckbox } from "./complete-checkbox";
 
 const HOLD_PATTERN = /\b(hold[s]?\s+until|on\s+hold|blocked|not\s+starting\s+until)\b/i;
 const RISK_PATTERN = /\(Risk:\s*([^)]+)\)/;
@@ -151,13 +152,20 @@ export function DayItemCard({ item, size = "sm" }: DayItemCardProps) {
             </div>
           ) : null}
         </div>
-        <span
-          className={`mt-0.5 shrink-0 text-xs font-medium uppercase tracking-wider ${
-            TYPE_INDICATORS[displayType] ?? "text-muted-foreground"
-          }`}
-        >
-          {displayType}
-        </span>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <CompleteCheckbox
+            weekItemId={item.id}
+            title={item.title}
+            status={item.status ?? null}
+          />
+          <span
+            className={`mt-0.5 text-xs font-medium uppercase tracking-wider ${
+              TYPE_INDICATORS[displayType] ?? "text-muted-foreground"
+            }`}
+          >
+            {displayType}
+          </span>
+        </div>
       </div>
     </div>
   );
