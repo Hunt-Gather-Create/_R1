@@ -82,3 +82,6 @@ docs/tmp/
 # GSD plugin auto-managed handoff pointer (per-developer state)
 .planning/HANDOFF.json
 .planning/STATE.md
+
+# gstack tooling output (per-developer cache)
+.gstack/
