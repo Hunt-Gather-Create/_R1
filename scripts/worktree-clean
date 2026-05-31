@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Clean up worktrees whose branches have been merged into main.
+# Clean up worktrees whose branches have been merged into upstream/runway.
 # Usage:
 #   scripts/worktree-clean.sh          # dry-run (show what would be removed)
 #   scripts/worktree-clean.sh --force  # actually remove them
@@ -13,7 +13,7 @@ for arg in "$@"; do
     --help|-h)
       echo "Usage: scripts/worktree-clean.sh [--force]"
       echo ""
-      echo "Finds worktrees whose branches have been merged into main and removes them."
+      echo "Finds worktrees whose branches have been merged into upstream/runway and removes them."
       echo "Without --force, runs in dry-run mode (shows what would be removed)."
       exit 0
       ;;
@@ -30,10 +30,10 @@ removed_count=0
 merged_count=0
 
 git worktree list --porcelain | grep "^branch " | sed 's|branch refs/heads/||' | while read -r branch; do
-  # Skip main itself
-  [ "$branch" = "main" ] && continue
+  # Skip runway itself
+  [ "$branch" = "runway" ] && continue
 
-  if git branch --merged main | grep -qw "$branch"; then
+  if git branch --merged upstream/runway | grep -qw "$branch"; then
     merged_count=$((merged_count + 1))
 
     # Find the worktree path for this branch

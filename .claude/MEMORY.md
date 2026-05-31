@@ -7,7 +7,7 @@ For LOCKED architectural decisions, see `DECISIONS.md` at repo root.
 ## Scripts
 
 - `scripts/worktree <name>` - Create a worktree at `.worktrees/<name>` with branch `feature/<name>`, install deps, run migrations, launch Claude
-- `scripts/worktree-clean` - Dry-run check for worktrees with branches merged into main; use `--force` to remove them
+- `scripts/worktree-clean` - Dry-run check for worktrees with branches merged into upstream/runway; use `--force` to remove them
 
 ## Patterns
 
