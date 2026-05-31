@@ -76,5 +76,8 @@ docs/tmp/
 # session pointer archives (per-session snapshots, not for the repo)
 .claude/sessions/archive/
 
+# ephemeral subagent worktrees (per-CC spawns, not for the repo)
+.claude/worktrees/
+
 # GSD plugin auto-managed handoff pointer (per-developer state)
 .planning/HANDOFF.json
