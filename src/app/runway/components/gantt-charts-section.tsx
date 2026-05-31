@@ -21,7 +21,7 @@ import type { ReactNode } from "react";
 import type { Account } from "../types";
 import type { UnifiedAccount } from "../unified-view";
 import type { SeverityCounts } from "@/lib/runway/gantt/types";
-import { AuditBadge } from "./audit-badge";
+import { AuditBadge, type AuditIssue } from "./audit-badge";
 import {
   GanttChartsChevron,
   GanttChartsChevronStyle,
@@ -31,6 +31,7 @@ import styles from "./gantt-dark-embed.module.css";
 type AccountWithGantt = (Account | UnifiedAccount) & {
   ganttContent?: ReactNode;
   ganttSeverity?: SeverityCounts;
+  ganttAuditIssues?: AuditIssue[];
 };
 
 export function GanttChartsSection({
@@ -73,7 +74,10 @@ export function GanttChartsSection({
               </h2>
             </span>
             {account.ganttSeverity ? (
-              <AuditBadge severity={account.ganttSeverity} />
+              <AuditBadge
+                severity={account.ganttSeverity}
+                issues={account.ganttAuditIssues}
+              />
             ) : null}
           </summary>
           <div className="mt-3">{account.ganttContent}</div>

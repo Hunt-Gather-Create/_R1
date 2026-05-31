@@ -15,6 +15,7 @@ import { withRunwayRetry } from "@/lib/runway/retry";
 import { RundownContentRSC } from "../components/rundown-content-rsc";
 import { TERMINAL_ITEM_STATUSES } from "@/lib/runway/operations-utils";
 import type { ClientRundownData, RundownSection } from "@/lib/runway/gantt/types";
+import type { AuditIssue } from "../components/audit-badge";
 
 /**
  * Track 3 Wave 5: precompute the set of L1 ids that are "ready to close"
@@ -46,6 +47,52 @@ function computeReadyToCloseIds(
     }
   }
   return ids;
+}
+
+/**
+ * #66 — collect the contributing critical + warning issues that feed the
+ * account's severity rollup, mirroring the static Gantt DataIntegrityPanel
+ * but flattened for the dashboard's pop-out audit panel. Each section's
+ * chart issues are emitted first (high-signal context), then row-grouped
+ * codes from the per-section `byCode` rollup are appended so the panel
+ * can also surface "5 rows with wi-overdue" type entries. Info-level
+ * codes are dropped — the pill never highlights them, so the panel
+ * shouldn't either.
+ */
+function collectAuditIssues(
+  sections: readonly RundownSection[],
+): AuditIssue[] {
+  const out: AuditIssue[] = [];
+  for (const section of sections) {
+    const sectionTitle = section.title;
+    const summary = section.data.summary;
+    // Production GanttData always carries a summary; guard for tests that
+    // construct partial fixtures via `as unknown` casts.
+    if (!summary) continue;
+    const chartCodes = new Set<string>();
+    for (const issue of summary.chartIssues ?? []) {
+      if (issue.severity === "info") continue;
+      chartCodes.add(issue.code);
+      out.push({
+        sectionTitle,
+        severity: issue.severity,
+        code: issue.code,
+        message: issue.message,
+      });
+    }
+    for (const [code, refs] of Object.entries(summary.byCode ?? {})) {
+      if (chartCodes.has(code)) continue;
+      const sev = summary.codeSeverity?.[code];
+      if (sev !== "critical" && sev !== "warn") continue;
+      out.push({
+        sectionTitle,
+        severity: sev,
+        code,
+        refs,
+      });
+    }
+  }
+  return out;
 }
 
 /**
@@ -299,6 +346,11 @@ export default async function RunwayPage() {
         )
         : undefined;
       const ganttSeverity = filtered?.overallSeverity;
+      // #66 — flat list of contributing issues feeds the Gantt Charts tab's
+      // expanding audit pill. Empty list when the rundown is clean.
+      const ganttAuditIssues: AuditIssue[] = filtered
+        ? collectAuditIssues(filtered.sections)
+        : [];
       // Track 4 Wave 4.3: also carry the raw filtered rundown so the new
       // By Account tier (`<AccountTier ...>`) can iterate it directly. The
       // Gantt Charts tab continues to read `ganttContent` (a ReactNode);
@@ -308,6 +360,7 @@ export default async function RunwayPage() {
         rundown: filtered,
         ganttContent,
         ganttSeverity,
+        ganttAuditIssues,
         readyToCloseIds,
       };
     });
