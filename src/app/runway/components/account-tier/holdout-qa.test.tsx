@@ -238,9 +238,10 @@ describe("Holdout — failure injection", () => {
     expect(screen.getByText("Acme Corp")).toBeTruthy();
   });
 
-  it("AccountTier handles a wrapper with zero child L1s without throwing", () => {
-    // Per spec, filterActiveRundown drops empty wrappers upstream. This test
-    // verifies the AccountTier code path is still safe if one slips through.
+  it("AccountTier skips rendering a wrapper section with zero renderable child L1s (#42)", () => {
+    // Pre-#42: wrapper with all-hidden L1 children + zero or only direct WIs
+    // rendered an empty WrapperHeader → visual dead zone. AccountTier now
+    // skips the wrapper entirely when groupSections reports zero children.
     const account = mockAccountForTier();
     const rundown = mockRundown([
       mockSection("wrapper", "Lonely Wrapper", [], undefined, "wrap-empty"),
@@ -254,8 +255,9 @@ describe("Holdout — failure injection", () => {
         />,
       ),
     ).not.toThrow();
-    expect(screen.getByText("Lonely Wrapper")).toBeTruthy();
-    // Wave 4.6 correction #2: tag chips are removed entirely.
+    // Dead-zone wrapper header is now suppressed.
+    expect(screen.queryByText("Lonely Wrapper")).toBeNull();
+    // Tag chips were removed entirely in Wave 4.6 — still absent.
     expect(screen.queryByTestId("l1-tag")).toBeNull();
     expect(screen.queryByTestId("wrapper-tag")).toBeNull();
   });
