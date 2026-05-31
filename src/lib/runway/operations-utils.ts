@@ -37,6 +37,23 @@ import { getCurrentBatchId } from "@/lib/runway/runway-als";
 export const CASCADE_STATUSES = ["completed", "blocked", "on-hold"] as const;
 
 /**
+ * Explicit L1→L2 mapping for cascade writes. The L1 status enum is wider than
+ * the L2 enum: `on-hold` is a valid L1 value but NOT in `WEEK_ITEM_STATUSES`.
+ * Writing the raw L1 string into the L2 status column silently corrupts the
+ * row (no validator on the cascade write path). This map collapses the L1
+ * value into the closest valid L2 enum member at the cascade boundary.
+ *
+ * Every member of `CASCADE_STATUSES` MUST appear here. Adding to
+ * `CASCADE_STATUSES` without a paired entry will throw at the cascade site
+ * (issue #5).
+ */
+export const CASCADE_STATUS_MAP: Record<string, WeekItemStatus> = {
+  "completed": "completed",
+  "blocked":   "blocked",
+  "on-hold":   "blocked", // L2 has no on-hold; blocked is the closest semantic match
+};
+
+/**
  * Week item statuses that should not be overwritten by cascade.
  * Items already in a terminal state are left alone.
  */
@@ -494,9 +511,23 @@ export interface AuditRecordParams {
   source?: AuditSource | null;
 }
 
-/** Insert an audit record into the updates table. Returns the inserted row's id. */
-export async function insertAuditRecord(params: AuditRecordParams): Promise<string> {
-  const db = getRunwayDb();
+/**
+ * Insert an audit record into the updates table. Returns the inserted row's id.
+ *
+ * Optional `executor` parameter accepts a transaction object (the `tx`
+ * argument of `db.transaction(async (tx) => ...)`) so callers can include
+ * the audit write in the same atomic boundary as the underlying mutation.
+ * When omitted, defaults to a fresh `getRunwayDb()` handle — the historical
+ * behavior every pre-#62 caller relies on. Used by `runwayAutoPromote` to
+ * keep the L2 status flip and its audit row in one transaction.
+ */
+type AuditExecutor = Pick<ReturnType<typeof getRunwayDb>, "insert">;
+
+export async function insertAuditRecord(
+  params: AuditRecordParams,
+  executor?: AuditExecutor,
+): Promise<string> {
+  const db = executor ?? getRunwayDb();
   const id = params.id ?? generateId();
   await db.insert(updates).values({
     id,

@@ -28,7 +28,7 @@ The `@playwright/test` devDep does NOT bundle the browser binary — `pnpm insta
 
 - Node + pnpm installed (already present on this machine)
 - Chromium browser binary downloaded by Playwright (`pnpm exec playwright install chromium`)
-- `RUNWAY_SMOKE_PASSWORD` set as an env var. Put it in `.env.local` (gitignored) on the worktree you're running from, or `export RUNWAY_SMOKE_PASSWORD=...` in your shell. **Never commit the password.**
+- `PLAYWRIGHT_RUNWAY_PASSWORD` set as an env var. Put it in `.env.local` (gitignored) on the worktree you're running from, or `export PLAYWRIGHT_RUNWAY_PASSWORD=...` in your shell. **Never commit the password.**
 
 ## How auth works
 
@@ -44,7 +44,7 @@ From any worktree (the skill ships on `runway` per DECISIONS.md D-04):
 
 ```bash
 # One-time per shell session
-export RUNWAY_SMOKE_PASSWORD='<paste-from-1password>'
+export PLAYWRIGHT_RUNWAY_PASSWORD='<paste-from-1password>'
 
 # Run all specs
 pnpm runway:smoke
@@ -86,7 +86,7 @@ pnpm exec playwright show-report
 
 | Symptom | Remediation |
 |---|---|
-| `RUNWAY_SMOKE_PASSWORD env var is required` | Set it in `.env.local` or `export` in shell |
+| `PLAYWRIGHT_RUNWAY_PASSWORD env var is required` | Set it in `.env.local` or `export` in shell |
 | Auth setup fails at `waitForURL` | Password wrong, or the auth form's selectors changed. Run headed (`--headed`) to watch it. |
 | `chromium not found` | Run `pnpm exec playwright install chromium` |
 | Spec passes but screenshot looks broken | DOM assertions can't catch CSS. Capture the screenshot, report visually, file a regression issue. |

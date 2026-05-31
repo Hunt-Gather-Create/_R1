@@ -4,10 +4,10 @@ import path from "node:path";
 const AUTH_FILE = path.join(__dirname, "../../playwright/.auth/runway.json");
 
 setup("authenticate against runway password gate", async ({ page }) => {
-  const password = process.env.RUNWAY_SMOKE_PASSWORD;
+  const password = process.env.PLAYWRIGHT_RUNWAY_PASSWORD;
   if (!password) {
     throw new Error(
-      "RUNWAY_SMOKE_PASSWORD env var is required. Set it in .env.local or export it before running.",
+      "PLAYWRIGHT_RUNWAY_PASSWORD env var is required. Set it in .env.local or export it before running.",
     );
   }
 

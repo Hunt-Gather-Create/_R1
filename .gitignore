@@ -54,11 +54,11 @@ next-env.d.ts
 # local scratch dir (per-worktree working files, not for the repo)
 scripts/worktree-scratch/
 
-# thought-partner local state (per-developer, not for the repo)
-# Keep TP-STATE.md tracked (durable long-form state); ignore everything
-# else (TP-HANDOFF.json, etc. — auto-managed by PreCompact hook).
-.tp/*
-!.tp/TP-STATE.md
+# thought-partner local state (per-developer, not for the repo).
+# Whole directory ignored — TP-STATE.md is per-developer too and lives
+# locally only. Split into a shared canonical artifact tracked separately
+# if the team needs it (see backlogged GH issue).
+.tp/
 
 
 # brain docs, reference docs, scratch/tmp docs, and inspiration sources (local working files)

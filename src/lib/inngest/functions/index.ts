@@ -11,4 +11,5 @@ export { generateAudienceMembers } from "./audience-generation";
 export { generateSoul } from "./soul-generation";
 export { processRunwaySlackMessage } from "./runway-slack-message";
 export { sweepExpiredProposals } from "./proposal-expiry-sweep";
+export { runwayAutoPromote } from "./runway-auto-promote";
 export { slackModalSubmit } from "./slack-modal-submit";
