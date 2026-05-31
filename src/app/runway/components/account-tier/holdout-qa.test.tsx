@@ -102,7 +102,7 @@ function mockGanttData(
           entity: { id: entityId, title: entityTitle, ...entityExtras } as never,
           client: {} as never,
           children: [] as never[],
-          orphanWeekItems: [] as { id: string; title: string }[],
+          directWeekItems: [] as never[],
         }
       : {
           kind: "l1" as const,

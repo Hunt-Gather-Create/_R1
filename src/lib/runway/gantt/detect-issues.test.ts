@@ -827,26 +827,26 @@ describe("detectWrapperIssues", () => {
   }
 
   it("fires no issues for a clean wrapper with in-range children", () => {
-    expect(detectWrapperIssues(cleanWrapper, [child()], [])).toEqual([]);
+    expect(detectWrapperIssues(cleanWrapper, [child()])).toEqual([]);
   });
 
   it("fires wrapper-null-contract", () => {
     const w = makeProject({ ...cleanWrapper, contractStart: null });
-    expect(codes(detectWrapperIssues(w, [child()], []))).toContain("wrapper-null-contract");
+    expect(codes(detectWrapperIssues(w, [child()]))).toContain("wrapper-null-contract");
   });
 
   it("fires wrapper-no-children when children list is empty", () => {
-    expect(codes(detectWrapperIssues(cleanWrapper, [], []))).toContain("wrapper-no-children");
+    expect(codes(detectWrapperIssues(cleanWrapper, []))).toContain("wrapper-no-children");
   });
 
   it("fires wrapper-bad-engagement-type for non-retainer", () => {
     const w = makeProject({ ...cleanWrapper, engagementType: "project" });
-    expect(codes(detectWrapperIssues(w, [child()], []))).toContain("wrapper-bad-engagement-type");
+    expect(codes(detectWrapperIssues(w, [child()]))).toContain("wrapper-bad-engagement-type");
   });
 
   it("fires wrapper-range-misses-children when child startDate is before wrapper", () => {
     const c = child({ startDate: "2026-03-01" });
-    const result = detectWrapperIssues(cleanWrapper, [c], []);
+    const result = detectWrapperIssues(cleanWrapper, [c]);
     expect(codes(result)).toContain("wrapper-range-misses-children");
     const issue = result.find((i) => i.code === "wrapper-range-misses-children");
     expect(issue?.message).toMatch(/starts 2026-03-01/);
@@ -854,48 +854,24 @@ describe("detectWrapperIssues", () => {
 
   it("fires wrapper-child-contract-mismatch when child contract dates differ", () => {
     const c = child({ contractStart: "2026-01-01" });
-    expect(codes(detectWrapperIssues(cleanWrapper, [c], []))).toContain(
+    expect(codes(detectWrapperIssues(cleanWrapper, [c]))).toContain(
       "wrapper-child-contract-mismatch",
     );
   });
 
-  it("fires wrapper-has-orphan-weekitems with id list when orphans exist", () => {
-    const orphans = [
-      { id: "w-o1", title: "Stray Item" },
-      { id: "w-o2", title: "Another Stray" },
-    ];
-    const result = detectWrapperIssues(cleanWrapper, [child()], orphans);
-    expect(codes(result)).toContain("wrapper-has-orphan-weekitems");
-    const issue = result.find((i) => i.code === "wrapper-has-orphan-weekitems");
-    expect(issue?.message).toContain("w-o1 (Stray Item)");
-    expect(issue?.message).toContain("w-o2 (Another Stray)");
-    expect(issue?.message).toContain("only child project rows are rendered");
-    // Plural noun for count > 1, no "(s)" fallback.
-    expect(issue?.message).toContain("2 weekItems attached");
-    expect(issue?.message).not.toContain("(s)");
-  });
-
-  it("uses singular noun when there is exactly 1 orphan weekItem", () => {
-    const result = detectWrapperIssues(
-      cleanWrapper,
-      [child()],
-      [{ id: "w-only", title: "Lone" }],
-    );
-    const issue = result.find((i) => i.code === "wrapper-has-orphan-weekitems");
-    expect(issue?.message).toContain("1 weekItem attached");
-    expect(issue?.message).not.toContain("weekItems attached");
-    expect(issue?.message).not.toContain("(s)");
-  });
-
-  it("does not fire wrapper-has-orphan-weekitems when orphans list is empty", () => {
-    expect(codes(detectWrapperIssues(cleanWrapper, [child()], []))).not.toContain(
-      "wrapper-has-orphan-weekitems",
+  it("does not flag direct weekItems as a wrapper issue (#65 makes them legitimate rows)", () => {
+    // Pre-#65 fix this scenario fired `wrapper-has-orphan-weekitems` because
+    // direct WIs were invisible on the chart. Now they render as rows and
+    // the rule has been removed entirely.
+    const result = detectWrapperIssues(cleanWrapper, [child()]);
+    expect(result.map((i) => i.code)).not.toContain(
+      "wrapper-has-orphan-weekitems" as never,
     );
   });
 
   it("fires wrapper-null-dates when wrapper has children but its own startDate is null", () => {
     const w = makeProject({ ...cleanWrapper, startDate: null });
-    const result = detectWrapperIssues(w, [child()], []);
+    const result = detectWrapperIssues(w, [child()]);
     expect(codes(result)).toContain("wrapper-null-dates");
     const issue = result.find((i) => i.code === "wrapper-null-dates");
     expect(issue?.severity).toBe("critical");
@@ -905,7 +881,7 @@ describe("detectWrapperIssues", () => {
 
   it("does NOT fire wrapper-null-dates when wrapper has no children (degenerate retainer)", () => {
     const w = makeProject({ ...cleanWrapper, startDate: null, endDate: null });
-    expect(codes(detectWrapperIssues(w, [], []))).not.toContain("wrapper-null-dates");
+    expect(codes(detectWrapperIssues(w, []))).not.toContain("wrapper-null-dates");
   });
 });
 
@@ -934,19 +910,28 @@ describe("detectAllIssues", () => {
       category: "active",
       owner: null, // → child-active-null-owner
     });
+    const directWi = makeWeekItem({
+      id: "w-direct",
+      projectId: "p-wrap",
+      title: "Direct retainer WI",
+      startDate: "2026-05-20",
+      endDate: "2026-05-20",
+    });
     const raw: RawData = {
       kind: "wrapper",
       entity: wrapper,
       client,
       children: [childA],
-      orphanWeekItems: [{ id: "w-o", title: "Stray" }],
+      directWeekItems: [directWi],
     };
     const rows = transformRows(raw);
     const out = detectAllIssues(raw, rows, NOW);
-    expect(codes(out.chartIssues)).toContain("wrapper-has-orphan-weekitems");
-    expect(out.rows).toHaveLength(1);
-    expect(out.rows[0].kind).toBe("project");
-    expect(codes(out.rows[0].subRow)).toContain("child-active-null-owner");
+    // Direct WI renders as a row alongside the child L1 (#65 — pre-fix only
+    // the L2 child rendered and direct WIs vanished).
+    expect(out.rows).toHaveLength(2);
+    const childRow = out.rows.find((r) => r.kind === "project");
+    expect(childRow).toBeDefined();
+    expect(codes(childRow!.subRow)).toContain("child-active-null-owner");
   });
 
   it("routes l1 raw to L1 detectors and weekItem detector", () => {
@@ -1048,7 +1033,7 @@ describe("detectAllIssues", () => {
       entity: wrapper,
       client,
       children: [childA, childB],
-      orphanWeekItems: [],
+      directWeekItems: [],
     };
     const rows = transformRows(raw);
     const out = detectAllIssues(raw, rows, NOW);

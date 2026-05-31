@@ -334,7 +334,7 @@ describe("renderGantt", () => {
       entity: wrapper,
       client: makeClient(),
       children: [child],
-      orphanWeekItems: [],
+      directWeekItems: [],
     };
     const data: GanttData = {
       raw: wrapperRaw,

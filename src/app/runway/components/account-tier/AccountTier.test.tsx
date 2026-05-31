@@ -67,7 +67,7 @@ function makeGanttData(
           entity: { id: entityId, title: entityTitle } as never,
           client: {} as never,
           children: [] as never[],
-          orphanWeekItems: [] as { id: string; title: string }[],
+          directWeekItems: [] as never[],
         }
       : {
           kind: "l1" as const,

@@ -68,15 +68,17 @@ export function buildL1SectionData(
 }
 
 /**
- * Wrapper rollup section — chart issues are wrapper-level only. Rows show
- * the children L1s as visual Gantt rows but with NO per-row inline or
- * sub-row alerts (those move to each child's drill-in section).
+ * Wrapper rollup section — chart issues are wrapper-level only. Rows render
+ * children L1s AND directly-attached weekItems (Hopdoddy 2026-05-28: direct
+ * WIs were silently hidden when a wrapper gained any L2 child). Per-row
+ * inline / sub-row alerts on the rollup are suppressed — those move to each
+ * child's drill-in section.
  */
 export function buildWrapperSectionData(
   wrapper: ProjectRow,
   client: ClientRow,
   childProjects: ProjectRow[],
-  orphanWeekItems: { id: string; title: string }[],
+  directWeekItems: WeekItemRow[],
   generatedAt: string,
   todayISO: string,
 ): GanttData {
@@ -85,7 +87,7 @@ export function buildWrapperSectionData(
     entity: wrapper,
     client,
     children: childProjects,
-    orphanWeekItems,
+    directWeekItems,
   };
   const baseRows: GanttRow[] = transformRows(raw);
   const axis = computeAxis(raw, baseRows, new Date(`${todayISO}T00:00:00Z`));
@@ -95,7 +97,7 @@ export function buildWrapperSectionData(
     inline: [],
     subRow: [],
   }));
-  const chartIssues = detectWrapperIssues(wrapper, childProjects, orphanWeekItems);
+  const chartIssues = detectWrapperIssues(wrapper, childProjects);
   const headerRange = formatDateRange(wrapper.startDate, wrapper.endDate);
   return {
     raw,

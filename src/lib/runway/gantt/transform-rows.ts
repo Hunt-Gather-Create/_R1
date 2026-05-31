@@ -80,7 +80,10 @@ function compareByStart(a: GanttRow, b: GanttRow): number {
 export function transformRows(raw: RawData): GanttRow[] {
   const mapped =
     raw.kind === "wrapper"
-      ? raw.children.map(projectToRow)
+      ? [
+          ...raw.children.map(projectToRow),
+          ...raw.directWeekItems.map(weekItemToRow),
+        ]
       : raw.children.map(weekItemToRow);
   return [...mapped].sort(compareByStart);
 }

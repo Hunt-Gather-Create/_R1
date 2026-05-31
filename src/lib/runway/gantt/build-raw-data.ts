@@ -15,9 +15,11 @@ import type {
 } from "./types";
 
 /**
- * Pure: assemble RawData from already-fetched inputs. The same fetched
- * `weekItemsForEntity` is treated as orphans for a wrapper subject and as
- * the rendered child rows for an L1 subject.
+ * Pure: assemble RawData from already-fetched inputs. For a wrapper subject
+ * the fetched `weekItemsForEntity` are surfaced as `directWeekItems` and
+ * render alongside child L1 rows (Hopdoddy 2026-05-28: previously the L2
+ * sub-projects rendered while the wrapper's direct WIs went invisible). For
+ * an L1 subject the items render directly as rows.
  */
 export function buildRawData(
   subject: ResolvedSubject,
@@ -30,7 +32,7 @@ export function buildRawData(
       entity: subject.project,
       client,
       children: subject.childProjects,
-      orphanWeekItems: weekItemsForEntity.map((w) => ({ id: w.id, title: w.title })),
+      directWeekItems: weekItemsForEntity,
     };
   }
   return {

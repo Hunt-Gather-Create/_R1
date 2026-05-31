@@ -105,7 +105,7 @@ describe("transformRows", () => {
       entity: wrapper,
       client,
       children: [childA, childB],
-      orphanWeekItems: [],
+      directWeekItems: [],
     };
     const rows = transformRows(raw);
     expect(rows.map((r) => r.id)).toEqual(["p-b", "p-a"]); // sorted by startDate asc
@@ -114,6 +114,57 @@ describe("transformRows", () => {
       expect(rows[0].title).toBe("Child B");
       expect(rows[1].owner).toBe("Lane");
     }
+  });
+
+  it("interleaves wrapper directWeekItems with child L1 rows, sorted by startDate (#65)", () => {
+    // Hopdoddy-pattern: retainer wrapper with 1 L2 child + 3 direct WIs. All
+    // four must render as rows; pre-fix only the L2 child rendered and the
+    // 3 direct WIs vanished.
+    const wrapper = makeProject({ id: "p-wrap", engagementType: "retainer" });
+    const child = makeProject({
+      id: "p-child",
+      name: "Brand Refresh",
+      parentProjectId: "p-wrap",
+      startDate: "2026-05-10",
+      endDate: "2026-05-20",
+    });
+    const wiEarly = makeWeekItem({
+      id: "w-early",
+      projectId: "p-wrap",
+      title: "Maintenance early",
+      startDate: "2026-05-05",
+      endDate: "2026-05-05",
+    });
+    const wiMid = makeWeekItem({
+      id: "w-mid",
+      projectId: "p-wrap",
+      title: "Maintenance mid",
+      startDate: "2026-05-12",
+      endDate: "2026-05-12",
+    });
+    const wiLate = makeWeekItem({
+      id: "w-late",
+      projectId: "p-wrap",
+      title: "Maintenance late",
+      startDate: "2026-05-25",
+      endDate: "2026-05-25",
+    });
+    const raw: RawData = {
+      kind: "wrapper",
+      entity: wrapper,
+      client,
+      children: [child],
+      directWeekItems: [wiEarly, wiMid, wiLate],
+    };
+    const rows = transformRows(raw);
+    // 1 L2 child + 3 direct WIs = 4 rows, chronological by startDate.
+    expect(rows.map((r) => r.id)).toEqual(["w-early", "p-child", "w-mid", "w-late"]);
+    expect(rows.map((r) => r.kind)).toEqual([
+      "weekitem",
+      "project",
+      "weekitem",
+      "weekitem",
+    ]);
   });
 
   it("maps L1-view children to weekitem rows", () => {

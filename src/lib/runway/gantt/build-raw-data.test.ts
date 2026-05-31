@@ -154,39 +154,39 @@ describe("buildRawData (wrapper view)", () => {
     if (data.kind === "wrapper") {
       expect(data.children).toHaveLength(2);
       expect(data.children.map((c) => c.id)).toEqual(["p-child-a", "p-child-b"]);
-      expect(data.orphanWeekItems).toEqual([]);
+      expect(data.directWeekItems).toEqual([]);
     }
   });
 
-  it("treats weekItems attached to the wrapper as orphans (not as rendered rows)", () => {
-    const orphanItems = [
-      makeWeekItem({ id: "w-orphan-1", projectId: "p-wrap", title: "Stray Item" }),
-      makeWeekItem({ id: "w-orphan-2", projectId: "p-wrap", title: "Another Stray" }),
+  it("surfaces weekItems attached to the wrapper as directWeekItems with full row data", () => {
+    const directItems = [
+      makeWeekItem({
+        id: "w-direct-1",
+        projectId: "p-wrap",
+        title: "Direct Item",
+        startDate: "2026-05-10",
+        endDate: "2026-05-10",
+        owner: "Lane",
+        status: "scheduled",
+      }),
+      makeWeekItem({
+        id: "w-direct-2",
+        projectId: "p-wrap",
+        title: "Another Direct",
+        startDate: "2026-05-12",
+        endDate: "2026-05-12",
+      }),
     ];
-    const data = buildRawData(subject, client, orphanItems);
+    const data = buildRawData(subject, client, directItems);
     expect(data.kind).toBe("wrapper");
     if (data.kind === "wrapper") {
       expect(data.children).toHaveLength(2);
-      expect(data.orphanWeekItems).toEqual([
-        { id: "w-orphan-1", title: "Stray Item" },
-        { id: "w-orphan-2", title: "Another Stray" },
-      ]);
-    }
-  });
-
-  it("strips weekItem fields beyond id+title for orphanWeekItems", () => {
-    const orphan = makeWeekItem({
-      id: "w-orphan",
-      projectId: "p-wrap",
-      title: "Stray",
-      owner: "Lane",
-      status: "in-progress",
-    });
-    const data = buildRawData(subject, client, [orphan]);
-    if (data.kind === "wrapper") {
-      // Only id + title carried — detector consumers don't need other fields.
-      expect(data.orphanWeekItems[0]).toEqual({ id: "w-orphan", title: "Stray" });
-      expect(Object.keys(data.orphanWeekItems[0]).sort()).toEqual(["id", "title"]);
+      expect(data.directWeekItems).toHaveLength(2);
+      expect(data.directWeekItems[0].id).toBe("w-direct-1");
+      // Full WeekItemRow shape — owner/status/dates carried for rendering.
+      expect(data.directWeekItems[0].owner).toBe("Lane");
+      expect(data.directWeekItems[0].status).toBe("scheduled");
+      expect(data.directWeekItems[0].startDate).toBe("2026-05-10");
     }
   });
 });

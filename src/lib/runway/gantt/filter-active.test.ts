@@ -103,14 +103,14 @@ function makeL1Data(entity: ProjectRow): GanttData {
 function makeWrapperData(
   entity: ProjectRow,
   children: ProjectRow[],
-  orphanWeekItems: { id: string; title: string }[] = [],
+  directWeekItems: WeekItemRow[] = [],
 ): GanttData {
   const raw: RawData = {
     kind: "wrapper",
     entity,
     client: makeClient(),
     children,
-    orphanWeekItems,
+    directWeekItems,
   };
   return { raw } as unknown as GanttData;
 }
@@ -687,21 +687,22 @@ describe("filterActiveRundown", () => {
     ]);
   });
 
-  it("conservatively keeps wrapper when it has any orphan weekItems (status not carried in rundown)", () => {
+  it("conservatively keeps wrapper when it has any direct weekItems", () => {
     const wrapper = makeProject({ id: "p-wrap", name: "Wrapper" });
     const child = makeProject({
       id: "p-c",
       parentProjectId: "p-wrap",
       status: "completed",
     });
-    // Orphan presence (status not carried at rundown layer) → wrapper kept.
+    // Any direct WI keeps the wrapper visible — the status-aware dead-zone
+    // logic ships in a follow-up commit (#42).
     const sections: RundownSection[] = [
       makeSection({
         anchor: "p-wrap",
         kind: "wrapper",
         title: "Wrapper",
         data: makeWrapperData(wrapper, [child], [
-          { id: "w-orphan", title: "Stray" },
+          makeWeekItem({ id: "w-direct", title: "Direct", status: "scheduled" }),
         ]),
       }),
       makeSection({

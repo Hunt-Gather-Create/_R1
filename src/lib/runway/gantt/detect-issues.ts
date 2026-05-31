@@ -5,7 +5,7 @@
  * for one scope:
  *
  *   detectL1Issues(entity, weekItemCount)            → chart-level L1 alerts
- *   detectWrapperIssues(wrapper, children, orphans)  → chart-level wrapper alerts
+ *   detectWrapperIssues(wrapper, children)           → chart-level wrapper alerts
  *   detectChildProjectIssues(child, wrapper)         → wrapper-view row issues
  *   detectWeekItemIssues(item, parent, todayISO)     → L1-view row issues
  *   detectAllIssues(raw, rows, today)                → top-level dispatcher
@@ -62,7 +62,6 @@ const SEVERITY: Record<IssueCode, Severity> = {
   "wrapper-range-misses-children": "warn",
   "wrapper-bad-engagement-type": "critical",
   "wrapper-child-contract-mismatch": "critical",
-  "wrapper-has-orphan-weekitems": "critical",
   // Wrapper-view row (project)
   "row-both-dates-null": "warn",
   "row-only-start-null": "warn",
@@ -453,7 +452,6 @@ export function detectL1Issues(entity: ProjectRow, weekItemCount: number): Issue
 export function detectWrapperIssues(
   wrapper: ProjectRow,
   children: ProjectRow[],
-  orphanWeekItems: { id: string; title: string }[],
 ): Issue[] {
   const issues: Issue[] = [];
 
@@ -539,17 +537,6 @@ export function detectWrapperIssues(
     }
   }
 
-  if (orphanWeekItems.length > 0) {
-    const idList = orphanWeekItems.map((w) => `${w.id} (${w.title})`).join(", ");
-    const noun = orphanWeekItems.length === 1 ? "weekItem" : "weekItems";
-    issues.push(
-      issue(
-        "wrapper-has-orphan-weekitems",
-        `Wrapper has ${orphanWeekItems.length} ${noun} attached directly — only child project rows are rendered. Move or delete: ${idList}`,
-      ),
-    );
-  }
-
   return issues;
 }
 
@@ -563,7 +550,7 @@ export function detectAllIssues(
   const todayISO = today.toISOString().slice(0, 10);
 
   if (raw.kind === "wrapper") {
-    const chartIssues = detectWrapperIssues(raw.entity, raw.children, raw.orphanWeekItems);
+    const chartIssues = detectWrapperIssues(raw.entity, raw.children);
     const childById = new Map(raw.children.map((c) => [c.id, c]));
     const annotated: AnnotatedRow[] = rows.map((row) => {
       if (row.kind !== "project") {
