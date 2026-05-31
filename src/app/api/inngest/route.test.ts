@@ -24,6 +24,7 @@ vi.mock("@/lib/inngest/functions", () => ({
   generateSoul: { id: "soul-gen" },
   processRunwaySlackMessage: { id: "runway-slack" },
   sweepExpiredProposals: { id: "sweep-expired-proposals" },
+  runwayAutoPromote: { id: "runway-auto-promote-scheduled" },
   slackModalSubmit: { id: "slack-modal-submit" },
 }));
 
@@ -46,15 +47,16 @@ describe("inngest route", () => {
           expect.objectContaining({ id: "hello-world" }),
           expect.objectContaining({ id: "runway-slack" }),
           expect.objectContaining({ id: "sweep-expired-proposals" }),
+          expect.objectContaining({ id: "runway-auto-promote-scheduled" }),
           expect.objectContaining({ id: "slack-modal-submit" }),
         ]),
       })
     );
   });
 
-  it("registers exactly 12 functions", async () => {
+  it("registers exactly 13 functions", async () => {
     await import("./route");
     const call = vi.mocked(serve).mock.calls[0][0];
-    expect(call.functions).toHaveLength(12);
+    expect(call.functions).toHaveLength(13);
   });
 });

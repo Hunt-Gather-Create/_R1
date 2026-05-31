@@ -12,6 +12,7 @@ import {
   generateSoul,
   processRunwaySlackMessage,
   sweepExpiredProposals,
+  runwayAutoPromote,
   slackModalSubmit,
 } from "@/lib/inngest/functions";
 
@@ -29,6 +30,7 @@ export const { GET, POST, PUT } = serve({
     generateSoul,
     processRunwaySlackMessage,
     sweepExpiredProposals,
+    runwayAutoPromote,
     slackModalSubmit,
   ],
 });

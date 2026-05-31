@@ -15,6 +15,7 @@ describe("inngest functions barrel export", () => {
       "generateSoul",
       "processRunwaySlackMessage",
       "sweepExpiredProposals",
+      "runwayAutoPromote",
       "slackModalSubmit",
     ];
     for (const name of expected) {
@@ -22,8 +23,8 @@ describe("inngest functions barrel export", () => {
     }
   });
 
-  it("exports exactly 12 functions", () => {
+  it("exports exactly 13 functions", () => {
     const exportCount = Object.keys(functions).length;
-    expect(exportCount).toBe(12);
+    expect(exportCount).toBe(13);
   });
 });
