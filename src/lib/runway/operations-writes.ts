@@ -12,6 +12,7 @@ import { projects, weekItems } from "@/lib/db/runway-schema";
 import { eq } from "drizzle-orm";
 import {
   CASCADE_STATUSES,
+  CASCADE_STATUS_MAP,
   L1_PROJECT_STATUSES_ARR,
   TERMINAL_ITEM_STATUSES,
   generateIdempotencyKey,
@@ -132,20 +133,36 @@ export async function updateProjectStatus(
   const cascaded: Array<{ id: string; title: string; previousStatus: string | null }> = [];
   const shouldCascade = (CASCADE_STATUSES as readonly string[]).includes(newStatus);
 
+  // Issue #5: collapse the L1 status to the L2 enum at the cascade boundary.
+  // Without this, `on-hold` (a valid L1 value, NOT in WEEK_ITEM_STATUSES) was
+  // written verbatim to L2 rows, silently corrupting the column. A throw
+  // catches the case where a future L1 status is added to CASCADE_STATUSES
+  // without a paired CASCADE_STATUS_MAP entry, making the drift loud.
+  let cascadedStatus: string | undefined;
+  if (shouldCascade) {
+    cascadedStatus = CASCADE_STATUS_MAP[newStatus];
+    if (!cascadedStatus) {
+      throw new Error(
+        `CASCADE_STATUSES violation: L1 status "${newStatus}" cascades but is not in CASCADE_STATUS_MAP. ` +
+        `Add a mapping or remove from CASCADE_STATUSES.`
+      );
+    }
+  }
+
   await db.transaction(async (tx) => {
     await tx
       .update(projects)
       .set({ status: newStatus, updatedAt: new Date() })
       .where(eq(projects.id, project.id));
 
-    if (shouldCascade) {
+    if (shouldCascade && cascadedStatus) {
       const linkedItems = await getLinkedWeekItems(project.id);
       for (const item of linkedItems) {
         const itemAlreadyTerminal = (TERMINAL_ITEM_STATUSES as readonly string[]).includes(item.status ?? "");
         if (!itemAlreadyTerminal) {
           await tx
             .update(weekItems)
-            .set({ status: newStatus, updatedAt: new Date() })
+            .set({ status: cascadedStatus, updatedAt: new Date() })
             .where(eq(weekItems.id, item.id));
           cascaded.push({
             id: item.id,
@@ -184,6 +201,11 @@ export async function updateProjectStatus(
       itemId,
       newStatus
     );
+    // Issue #5: child audit row + cascadeDetail report the L2 truth
+    // (cascadedStatus), not the raw L1 value. The parent audit row above
+    // still records the L1 transition (previousStatus -> newStatus). This
+    // keeps the audit trail unambiguous: L1 went to `on-hold`, L2s went to
+    // `blocked` because that is what the cascade rule writes.
     const childAuditId = await insertAuditRecord({
       idempotencyKey: childIdemKey,
       projectId: project.id,
@@ -191,8 +213,8 @@ export async function updateProjectStatus(
       updatedBy,
       updateType: "cascade-status",
       previousValue: null,
-      newValue: newStatus,
-      summary: `Cascaded from ${project.name} status change: ${title} → ${newStatus}`,
+      newValue: cascadedStatus ?? newStatus,
+      summary: `Cascaded from ${project.name} status change: ${title} → ${cascadedStatus ?? newStatus}`,
       metadata: JSON.stringify({ weekItemId: itemId, field: "status" }),
       triggeredByUpdateId: parentAuditId,
       source: source ?? null,
@@ -202,7 +224,7 @@ export async function updateProjectStatus(
       itemTitle: title,
       field: "status",
       previousValue: itemPrev,
-      newValue: newStatus,
+      newValue: cascadedStatus ?? newStatus,
       auditId: childAuditId,
     });
   }

@@ -49,6 +49,11 @@ const mockGetLinkedWeekItems = vi.fn();
 let _idCounter = 0;
 vi.mock("./operations-utils", () => ({
   CASCADE_STATUSES: ["completed", "blocked", "on-hold"],
+  CASCADE_STATUS_MAP: {
+    "completed": "completed",
+    "blocked": "blocked",
+    "on-hold": "blocked",
+  },
   TERMINAL_ITEM_STATUSES: ["completed", "canceled"],
   L1_PROJECT_STATUSES_ARR: [
     "in-production",
@@ -422,7 +427,11 @@ describe("updateProjectStatus", () => {
     }
   });
 
-  it("cascades on-hold status to linked active week items", async () => {
+  // Issue #5: on-hold is a valid L1 status but NOT a valid L2 enum value.
+  // CASCADE_STATUS_MAP collapses it to `blocked` (the closest L2 semantic
+  // match) at the cascade boundary. Pre-fix, the raw "on-hold" string was
+  // written into the L2 status column — silent corruption.
+  it("cascades on-hold L1 status to linked active week items as L2 'blocked' (#5)", async () => {
     mockGetClientBySlug.mockResolvedValue(client);
     mockFindProjectByFuzzyName.mockResolvedValue(project);
     mockGetLinkedWeekItems.mockResolvedValue([
@@ -440,8 +449,52 @@ describe("updateProjectStatus", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data?.cascadedItems).toEqual(["Paused Item"]);
+      // cascadeDetail reports the L2 truth, not the raw L1 value.
+      expect(result.data?.cascadeDetail?.[0]?.newValue).toBe("blocked");
     }
+
+    // L1 update writes the L1 value; L2 update writes the mapped value.
+    // Call order in the transaction: projects.set, then weekItems.set per item.
+    const setCalls = mockUpdateSet.mock.calls.map((c) => c[0]);
+    expect(setCalls[0]).toMatchObject({ status: "on-hold" }); // L1
+    expect(setCalls[1]).toMatchObject({ status: "blocked" }); // L2 (mapped)
   });
+
+  // Issue #5: child cascade audit rows report the L2 mapped value so the
+  // audit trail is internally consistent with what landed in the L2 column.
+  it("emits child cascade audit row with L2-mapped newValue when L1 is on-hold (#5)", async () => {
+    mockGetClientBySlug.mockResolvedValue(client);
+    mockFindProjectByFuzzyName.mockResolvedValue(project);
+    mockGetLinkedWeekItems.mockResolvedValue([
+      { id: "wi1", title: "Paused Item", status: "in-progress" },
+    ]);
+
+    const { updateProjectStatus } = await import("./operations-writes");
+    await updateProjectStatus({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      newStatus: "on-hold",
+      updatedBy: "kathy",
+    });
+
+    const calls = mockInsertValues.mock.calls.map((c) => c[0]);
+    // Parent audit: L1 transition (in-production -> on-hold).
+    const parent = calls.find((c) => c.updateType === "status-change");
+    expect(parent?.newValue).toBe("on-hold");
+    // Child cascade audit: L2 truth (blocked), summary reflects it.
+    const child = calls.find((c) => c.updateType === "cascade-status");
+    expect(child?.newValue).toBe("blocked");
+    expect(child?.summary).toBe(
+      "Cascaded from CDS Messaging status change: Paused Item → blocked"
+    );
+  });
+
+  // Issue #5: enum-drift defense (`CASCADE_STATUSES` adds a value without a
+  // paired `CASCADE_STATUS_MAP` entry → cascade body throws) is covered in
+  // a sibling file with isolated mocks: operations-writes-cascade-drift.test.ts.
+  // It lives apart because the test needs to re-mock operations-utils with a
+  // wider enum, which would pollute the module cache shared by tests in this
+  // file.
 
   it("does not cascade awaiting-client status", async () => {
     mockGetClientBySlug.mockResolvedValue(client);
