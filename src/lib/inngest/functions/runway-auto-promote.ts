@@ -28,7 +28,7 @@
  * AsyncLocalStorage automatically without per-call boilerplate.
  */
 
-import { and, eq, gte, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
 
 import { getRunwayDb } from "@/lib/db/runway";
 import { weekItems } from "@/lib/db/runway-schema";
@@ -37,7 +37,7 @@ import { withBatchId } from "@/lib/runway/runway-als";
 
 import { inngest } from "../client";
 
-const PROMOTABLE_STATUS_VALUES = ["scheduled"] as const;
+const PROMOTABLE_STATUSES = ["scheduled"] as const;
 
 export const runwayAutoPromote = inngest.createFunction(
   {
@@ -72,7 +72,7 @@ export const runwayAutoPromote = inngest.createFunction(
           .where(
             and(
               or(
-                eq(weekItems.status, PROMOTABLE_STATUS_VALUES[0]),
+                inArray(weekItems.status, [...PROMOTABLE_STATUSES]),
                 isNull(weekItems.status),
               ),
               isNotNull(weekItems.startDate),
@@ -91,25 +91,32 @@ export const runwayAutoPromote = inngest.createFunction(
               .update(weekItems)
               .set({ status: "in-progress", updatedAt: new Date() })
               .where(eq(weekItems.id, item.id));
-            await insertAuditRecord({
-              idempotencyKey: `auto-promote|${batchId}|${item.id}`,
-              clientId: item.clientId ?? null,
-              projectId: item.projectId ?? null,
-              updatedBy: "auto-promote",
-              updateType: "auto-promote-status",
-              previousValue: item.status ?? null,
-              newValue: "in-progress",
-              summary: `Auto-promote: ${item.title} (date window contains ${today})`,
-              metadata: JSON.stringify({
-                weekItemId: item.id,
-                field: "status",
-                trigger: "cron",
-                startDate: item.startDate,
-                endDate: item.endDate,
-              }),
-              // batchId pulled from ALS via insertAuditRecord — no explicit pass.
-              source: null,
-            });
+            // Insert the audit row through the same transaction so the
+            // status flip and its audit row are atomic. Pre-fix this used
+            // the global db handle and could leave the row promoted with
+            // no audit trail (or vice versa) on a mid-pair failure.
+            await insertAuditRecord(
+              {
+                idempotencyKey: `auto-promote|${batchId}|${item.id}`,
+                clientId: item.clientId ?? null,
+                projectId: item.projectId ?? null,
+                updatedBy: "auto-promote",
+                updateType: "auto-promote-status",
+                previousValue: item.status ?? null,
+                newValue: "in-progress",
+                summary: `Auto-promote: ${item.title} (date window contains ${today})`,
+                metadata: JSON.stringify({
+                  weekItemId: item.id,
+                  field: "status",
+                  trigger: "cron",
+                  startDate: item.startDate,
+                  endDate: item.endDate,
+                }),
+                // batchId pulled from ALS via insertAuditRecord — no explicit pass.
+                source: null,
+              },
+              tx,
+            );
           });
           promoted++;
         }

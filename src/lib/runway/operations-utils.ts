@@ -511,9 +511,23 @@ export interface AuditRecordParams {
   source?: AuditSource | null;
 }
 
-/** Insert an audit record into the updates table. Returns the inserted row's id. */
-export async function insertAuditRecord(params: AuditRecordParams): Promise<string> {
-  const db = getRunwayDb();
+/**
+ * Insert an audit record into the updates table. Returns the inserted row's id.
+ *
+ * Optional `executor` parameter accepts a transaction object (the `tx`
+ * argument of `db.transaction(async (tx) => ...)`) so callers can include
+ * the audit write in the same atomic boundary as the underlying mutation.
+ * When omitted, defaults to a fresh `getRunwayDb()` handle — the historical
+ * behavior every pre-#62 caller relies on. Used by `runwayAutoPromote` to
+ * keep the L2 status flip and its audit row in one transaction.
+ */
+type AuditExecutor = Pick<ReturnType<typeof getRunwayDb>, "insert">;
+
+export async function insertAuditRecord(
+  params: AuditRecordParams,
+  executor?: AuditExecutor,
+): Promise<string> {
+  const db = executor ?? getRunwayDb();
   const id = params.id ?? generateId();
   await db.insert(updates).values({
     id,

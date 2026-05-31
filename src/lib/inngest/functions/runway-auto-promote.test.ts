@@ -69,6 +69,7 @@ const gteSpy = vi.fn((col: unknown, val: unknown) => ({ __op: "gte", col, val })
 const isNullSpy = vi.fn((col: unknown) => ({ __op: "isNull", col }));
 const isNotNullSpy = vi.fn((col: unknown) => ({ __op: "isNotNull", col }));
 const orSpy = vi.fn((...args: unknown[]) => ({ __op: "or", args }));
+const inArraySpy = vi.fn((col: unknown, vals: unknown) => ({ __op: "inArray", col, vals }));
 
 vi.mock("drizzle-orm", () => ({
   and: (...args: unknown[]) => andSpy(...args),
@@ -78,6 +79,7 @@ vi.mock("drizzle-orm", () => ({
   isNull: (col: unknown) => isNullSpy(col),
   isNotNull: (col: unknown) => isNotNullSpy(col),
   or: (...args: unknown[]) => orSpy(...args),
+  inArray: (col: unknown, vals: unknown) => inArraySpy(col, vals),
 }));
 
 // ---------------------------------------------------------------------------
@@ -86,7 +88,7 @@ vi.mock("drizzle-orm", () => ({
 // batchId for assertion.
 // ---------------------------------------------------------------------------
 
-const mockInsertAuditRecord = vi.fn(async () => "audit-id");
+const mockInsertAuditRecord = vi.fn(async (_params: unknown, _executor?: unknown) => "audit-id");
 const mockWithBatchId = vi.fn(async <T>(batchId: string, fn: () => Promise<T>) => {
   capturedBatchIds.push(batchId);
   return fn();
@@ -94,7 +96,8 @@ const mockWithBatchId = vi.fn(async <T>(batchId: string, fn: () => Promise<T>) =
 const capturedBatchIds: string[] = [];
 
 vi.mock("@/lib/runway/operations-utils", () => ({
-  insertAuditRecord: (params: unknown) => mockInsertAuditRecord(params),
+  insertAuditRecord: (params: unknown, executor?: unknown) =>
+    mockInsertAuditRecord(params, executor),
 }));
 vi.mock("@/lib/runway/runway-als", () => ({
   withBatchId: <T>(batchId: string, fn: () => Promise<T>) =>
@@ -145,6 +148,7 @@ describe("runwayAutoPromote (cron)", () => {
     isNullSpy.mockClear();
     isNotNullSpy.mockClear();
     orSpy.mockClear();
+    inArraySpy.mockClear();
     mockStepRun.mockClear();
   });
 
@@ -206,14 +210,18 @@ describe("runwayAutoPromote (cron)", () => {
     expect(result.promotedCount).toBe(0);
   });
 
-  it("query predicate includes scheduled-or-null status, non-null startDate, and start<=today<=end window", async () => {
+  it("query predicate includes scheduled-or-null status (via inArray), non-null startDate, and start<=today<=end window", async () => {
     mockSelectWhere.mockResolvedValueOnce([]);
     await handler({ step: { run: mockStepRun } });
 
-    // status='scheduled' OR status IS NULL: one eq call should target
-    // 'scheduled'; one isNull call should target the status column.
-    const eqStatusCall = eqSpy.mock.calls.find(([, val]) => val === "scheduled");
-    expect(eqStatusCall).toBeDefined();
+    // status IN ('scheduled') via inArray, OR status IS NULL.
+    // Using inArray instead of eq keeps the predicate forward-compatible
+    // if more promotable statuses are added to PROMOTABLE_STATUSES.
+    const inArrayCall = inArraySpy.mock.calls.find(
+      ([col]) => col === "status",
+    );
+    expect(inArrayCall).toBeDefined();
+    expect(inArrayCall?.[1]).toEqual(["scheduled"]);
     expect(isNullSpy.mock.calls.some(([col]) => col === "status")).toBe(true);
 
     // startDate IS NOT NULL — bracket the cron against rows where the
@@ -228,6 +236,33 @@ describe("runwayAutoPromote (cron)", () => {
     // end_date IS NULL OR end_date >= today
     expect(isNullSpy.mock.calls.some(([col]) => col === "end_date")).toBe(true);
     expect(gteSpy.mock.calls.some(([col]) => col === "end_date")).toBe(true);
+  });
+
+  // LlamaPReview thread 1 (PR #109): audit insert must share the transaction
+  // with the status flip so a mid-pair failure can't leave the row promoted
+  // with no audit trail (or audit-without-promotion). This test asserts the
+  // tx parameter is threaded through insertAuditRecord.
+  it("threads the tx executor into insertAuditRecord so the flip+audit pair is atomic", async () => {
+    mockSelectWhere.mockResolvedValueOnce([
+      {
+        id: "wi-tx",
+        title: "Tx Item",
+        projectId: "p1",
+        clientId: "c1",
+        status: "scheduled",
+        startDate: "2026-05-30",
+        endDate: "2026-06-05",
+      },
+    ]);
+
+    await handler({ step: { run: mockStepRun } });
+
+    expect(mockInsertAuditRecord).toHaveBeenCalledTimes(1);
+    // The mock signature is (params, executor?). Second arg should be the
+    // captured tx object so the audit insert participates in the same tx
+    // as the status flip.
+    const [, executor] = mockInsertAuditRecord.mock.calls[0];
+    expect(executor).toBe(tx);
   });
 
   it("promotes a candidate whose status is null (legacy sentinel for scheduled)", async () => {
