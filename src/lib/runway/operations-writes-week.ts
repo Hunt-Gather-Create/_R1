@@ -93,11 +93,18 @@ export async function recomputeProjectDatesWith(
   executor: RecomputeExecutor,
   projectId: string
 ): Promise<{ startDate: string | null; endDate: string | null }> {
-  // Retainer-wrapper guard: a retainer L1 with at least one L1 child pointing
-  // at it acts as a SOW-window wrapper. Its start_date / end_date are pinned
-  // to the contract dates the operator set, NOT recomputed from L2 widths.
+  // Retainer-wrapper guard: a retainer L1 with at least one child — L1 OR L2
+  // — acts as a SOW-window wrapper. Its start_date / end_date are pinned to
+  // the contract dates the operator set, NOT recomputed from child widths.
   // Children L1s under it still recompute normally because they're visited
   // with their own projectId by L2 writes on those children.
+  //
+  // Issue #8: pre-fix, the guard only counted L1 children. A retainer with
+  // only L2 children (BP Email Templates pattern) fell through to L2-derived
+  // recompute and silently collapsed the SOW envelope to whatever L2 window
+  // was current. Migrations had to paper over this with paired
+  // `overrideProjectDate` calls after every L2 insert. Counting L2 children
+  // here removes that workaround.
   const projectRows = await executor
     .select({
       engagementType: projects.engagementType,
@@ -115,6 +122,17 @@ export async function recomputeProjectDatesWith(
     if (childProjects.length > 0) {
       return { startDate: project.startDate, endDate: project.endDate };
     }
+    const childWeekItems = await executor
+      .select({ id: weekItems.id })
+      .from(weekItems)
+      .where(eq(weekItems.projectId, projectId));
+    if (childWeekItems.length > 0) {
+      return { startDate: project.startDate, endDate: project.endDate };
+    }
+    // Truly empty retainer (no L1 + no L2 children): fall through to the
+    // shared recompute path below. With no children to derive from, that
+    // path writes {null, null}. In practice a fully-childless retainer is
+    // a migration bootstrap edge case, not a steady state.
   }
 
   const children = await executor

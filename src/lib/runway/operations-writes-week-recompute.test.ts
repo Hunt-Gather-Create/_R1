@@ -323,8 +323,11 @@ describe("recomputeProjectDates — retainer wrapper guard", () => {
     });
   }
 
-  it("recomputes a retainer L1 that has zero L1 children (not a wrapper)", async () => {
-    // pj-cds is retainer, no L1 children point at it. L2 write should drive recompute.
+  it("freezes a retainer L1 with only L2 children (L2-only wrapper) on L2 write (#8)", async () => {
+    // Issue #8: pre-fix, this test asserted that an L2-only retainer fell
+    // through to L2-derived recompute and overwrote stored SOW dates. The
+    // guard now counts L2 children too — a retainer with any child (L1 or
+    // L2) acts as a wrapper.
     await setEngagementType("pj-cds", "retainer");
     await setProjectDates("pj-cds", "2026-05-01", "2026-05-31");
     await clearChildren("pj-cds");
@@ -339,10 +342,36 @@ describe("recomputeProjectDates — retainer wrapper guard", () => {
     const { recomputeProjectDates } = await import("./operations-writes-week");
     const result = await recomputeProjectDates("pj-cds");
 
-    expect(result).toEqual({ startDate: "2026-06-10", endDate: "2026-06-15" });
+    // Stored SOW dates win over the L2 window.
+    expect(result).toEqual({ startDate: "2026-05-01", endDate: "2026-05-31" });
     const row = await getProject(testDb, "pj-cds");
-    expect(row?.startDate).toBe("2026-06-10");
-    expect(row?.endDate).toBe("2026-06-15");
+    expect(row?.startDate).toBe("2026-05-01");
+    expect(row?.endDate).toBe("2026-05-31");
+  });
+
+  it("falls through to recompute for a truly empty retainer (no L1 + no L2 children) (#8)", async () => {
+    // Issue #8: the guard wraps any retainer that has at least one child
+    // (L1 or L2). A retainer with zero children of either kind falls
+    // through to the shared recompute path. With no children to derive
+    // from, MIN/MAX is null/null and the row gets updated accordingly.
+    // This documents pre-existing recompute behavior — #8 does not change
+    // it. In practice a fully-childless retainer is a migration-time edge
+    // case, not a steady state.
+    await setEngagementType("pj-cds", "retainer");
+    await setProjectDates("pj-cds", "2026-05-01", "2026-05-31");
+    await clearChildren("pj-cds");
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET parent_project_id = NULL WHERE parent_project_id = 'pj-cds'`,
+      args: [],
+    });
+
+    const { recomputeProjectDates } = await import("./operations-writes-week");
+    const result = await recomputeProjectDates("pj-cds");
+
+    expect(result).toEqual({ startDate: null, endDate: null });
+    const row = await getProject(testDb, "pj-cds");
+    expect(row?.startDate).toBeNull();
+    expect(row?.endDate).toBeNull();
   });
 
   it("freezes a retainer wrapper L1 (engagementType=retainer + L1 children) on direct L2 write", async () => {
@@ -400,10 +429,14 @@ describe("recomputeProjectDates — retainer wrapper guard", () => {
     expect(wrapperRow?.endDate).toBe("2026-07-31");
   });
 
-  it("recomputes a retainer L1 that has a parent itself (it is a wrapper child, not a wrapper)", async () => {
-    // pj-social-cgx is retainer + has parent_project_id set, but no children
-    // point at IT. So it's a child-of-wrapper, not a wrapper itself.
-    // Recompute must still fire on its own L2 writes.
+  it("freezes a retainer-with-parent that has L2 children (still treated as wrapper) (#8)", async () => {
+    // Issue #8: under Option B, the wrap rule is "retainer + any child (L1
+    // or L2) = wrapper". Parent-link status doesn't change the wrap decision
+    // (current production code at the retainer guard never read
+    // parent_project_id on `project`). Pre-#8, this test asserted that a
+    // retainer-with-parent fell through to L2-derived recompute; post-#8 it
+    // wraps to stored dates (which are null/null here because the test
+    // intentionally clears them before insert).
     await setEngagementType("pj-cds", "retainer");
     await setEngagementType("pj-social-cgx", "retainer");
     await setParent("pj-social-cgx", "pj-cds");
@@ -420,9 +453,9 @@ describe("recomputeProjectDates — retainer wrapper guard", () => {
     const { recomputeProjectDates } = await import("./operations-writes-week");
     const result = await recomputeProjectDates("pj-social-cgx");
 
-    expect(result).toEqual({ startDate: "2026-04-15", endDate: "2026-04-20" });
+    expect(result).toEqual({ startDate: null, endDate: null });
     const row = await getProject(testDb, "pj-social-cgx");
-    expect(row?.startDate).toBe("2026-04-15");
-    expect(row?.endDate).toBe("2026-04-20");
+    expect(row?.startDate).toBeNull();
+    expect(row?.endDate).toBeNull();
   });
 });
