@@ -68,6 +68,16 @@ export async function setWeekItemStatusAction(input: {
   if (!row) {
     return { ok: false, error: `Week item '${input.weekItemId}' not found.` };
   }
+  // weekOf is nullable in the schema but updateWeekItemField requires a
+  // non-null composite key. Any week item reachable from the dashboard
+  // checkbox is anchored on a Monday, so this should never fire in prod —
+  // it's here purely so TS strict-check is satisfied without the cast.
+  if (!row.weekOf) {
+    return {
+      ok: false,
+      error: `Week item '${input.weekItemId}' has no weekOf anchor.`,
+    };
+  }
   const previousStatus = row.status;
   const result = await updateWeekItemField({
     weekOf: row.weekOf,
