@@ -6,11 +6,15 @@ const toast = vi.hoisted(() => Object.assign(vi.fn(), {
   error: vi.fn(),
   success: vi.fn(),
 }));
+const routerRefresh = vi.hoisted(() => vi.fn());
 
 vi.mock("../actions", () => ({
   setWeekItemStatusAction: (input: unknown) => setWeekItemStatusAction(input),
 }));
 vi.mock("sonner", () => ({ toast }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: routerRefresh }),
+}));
 
 import { CompleteCheckbox } from "./complete-checkbox";
 
@@ -20,6 +24,7 @@ describe("CompleteCheckbox", () => {
     toast.mockReset();
     toast.error.mockReset();
     toast.success.mockReset();
+    routerRefresh.mockReset();
   });
 
   it("renders null when weekItemId is missing", () => {
@@ -168,6 +173,75 @@ describe("CompleteCheckbox", () => {
     // through the optimistic-completed guard, so no phantom-undo toast
     // gets queued behind the real one.
     expect(setWeekItemStatusAction).toHaveBeenCalledTimes(1);
+  });
+
+  // #79 — checkbox undo visual stuck because revalidatePath only marks the
+  // RSC cache stale on the server; without router.refresh() the client never
+  // refetches and the card stays visually checked even after Undo writes back.
+  it("does NOT call router.refresh on initial click (preserves the 8s undo window without flickering the card out of view)", async () => {
+    setWeekItemStatusAction.mockResolvedValue({
+      ok: true,
+      previousStatus: "in-progress",
+    });
+    render(
+      <CompleteCheckbox weekItemId="w1" title="Design comps" status="in-progress" />,
+    );
+    fireEvent.click(screen.getByTestId("complete-checkbox"));
+    await waitFor(() => expect(toast).toHaveBeenCalled());
+    expect(routerRefresh).not.toHaveBeenCalled();
+  });
+
+  it("calls router.refresh after a successful Undo so prop-derived state catches up to the optimistic state", async () => {
+    setWeekItemStatusAction.mockResolvedValue({
+      ok: true,
+      previousStatus: "at-risk",
+    });
+    render(
+      <CompleteCheckbox weekItemId="w1" title="Design comps" status="at-risk" />,
+    );
+    fireEvent.click(screen.getByTestId("complete-checkbox"));
+    await waitFor(() => expect(toast).toHaveBeenCalled());
+    const [, options] = toast.mock.calls[0] as [string, { action: { onClick: () => void } }];
+    setWeekItemStatusAction.mockClear();
+    setWeekItemStatusAction.mockResolvedValue({ ok: true, previousStatus: "completed" });
+    options.action.onClick();
+    await waitFor(() => expect(routerRefresh).toHaveBeenCalledTimes(1));
+  });
+
+  it("calls router.refresh on toast onAutoClose so the card leaves In Flight when the 8s window expires without Undo", async () => {
+    setWeekItemStatusAction.mockResolvedValue({
+      ok: true,
+      previousStatus: "in-progress",
+    });
+    render(
+      <CompleteCheckbox weekItemId="w1" title="Design comps" status="in-progress" />,
+    );
+    fireEvent.click(screen.getByTestId("complete-checkbox"));
+    await waitFor(() => expect(toast).toHaveBeenCalled());
+    const [, options] = toast.mock.calls[0] as [string, { onAutoClose?: () => void }];
+    expect(typeof options.onAutoClose).toBe("function");
+    options.onAutoClose!();
+    expect(routerRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT call router.refresh when Undo's server write itself fails (visual stays checked to match DB)", async () => {
+    setWeekItemStatusAction.mockResolvedValue({
+      ok: true,
+      previousStatus: "in-progress",
+    });
+    render(
+      <CompleteCheckbox weekItemId="w1" title="Design comps" status="in-progress" />,
+    );
+    fireEvent.click(screen.getByTestId("complete-checkbox"));
+    await waitFor(() => expect(toast).toHaveBeenCalled());
+    const [, options] = toast.mock.calls[0] as [string, { action: { onClick: () => void } }];
+    setWeekItemStatusAction.mockClear();
+    setWeekItemStatusAction.mockResolvedValue({ ok: false, error: "validator rejected" });
+    options.action.onClick();
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Could not undo: validator rejected"),
+    );
+    expect(routerRefresh).not.toHaveBeenCalled();
   });
 
   it("stops click propagation so the surrounding card doesn't open a modal", () => {
