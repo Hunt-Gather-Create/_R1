@@ -18,6 +18,16 @@ vi.mock("next/navigation", () => ({
 
 import { CompleteCheckbox } from "./complete-checkbox";
 
+const NAME_COOKIE = "runway_editor_name";
+
+function seedEditorName(name: string) {
+  document.cookie = `${NAME_COOKIE}=${encodeURIComponent(name)}; Path=/`;
+}
+
+function clearEditorName() {
+  document.cookie = `${NAME_COOKIE}=; Path=/; Max-Age=0`;
+}
+
 describe("CompleteCheckbox", () => {
   beforeEach(() => {
     setWeekItemStatusAction.mockReset();
@@ -25,6 +35,10 @@ describe("CompleteCheckbox", () => {
     toast.error.mockReset();
     toast.success.mockReset();
     routerRefresh.mockReset();
+    // Default each test to a seeded name so the existing assertions stay
+    // single-step (click → action fires). The name-prompt branch has its
+    // own dedicated tests below that clear the cookie first.
+    seedEditorName("Jason");
   });
 
   it("renders null when weekItemId is missing", () => {
@@ -58,7 +72,7 @@ describe("CompleteCheckbox", () => {
     expect(box).toHaveAttribute("role", "checkbox");
   });
 
-  it("optimistically flips to checked on click and fires the server action with newStatus=completed", async () => {
+  it("optimistically flips to checked on click and fires the server action with editorName + newStatus=completed", async () => {
     setWeekItemStatusAction.mockResolvedValue({
       ok: true,
       previousStatus: "in-progress",
@@ -73,6 +87,7 @@ describe("CompleteCheckbox", () => {
       expect(setWeekItemStatusAction).toHaveBeenCalledWith({
         weekItemId: "w1",
         newStatus: "completed",
+        editorName: "Jason",
       });
     });
   });
@@ -94,7 +109,7 @@ describe("CompleteCheckbox", () => {
     expect(options.action?.label).toBe("Undo");
   });
 
-  it("Undo invokes the server action with newStatus=previousStatus", async () => {
+  it("Undo invokes the server action with newStatus=previousStatus and threads the same editorName", async () => {
     setWeekItemStatusAction.mockResolvedValue({
       ok: true,
       previousStatus: "at-risk",
@@ -112,6 +127,7 @@ describe("CompleteCheckbox", () => {
       expect(setWeekItemStatusAction).toHaveBeenLastCalledWith({
         weekItemId: "w1",
         newStatus: "at-risk",
+        editorName: "Jason",
       });
     });
     // Visual reverts to unchecked.
@@ -257,5 +273,78 @@ describe("CompleteCheckbox", () => {
     );
     fireEvent.click(screen.getByTestId("complete-checkbox"));
     expect(cardClick).not.toHaveBeenCalled();
+  });
+
+  // #80 — editor-name gate. The dashboard checkbox now mirrors the pencil's
+  // useEditorName flow so updateWeekItemField's idem-key is unique per
+  // operator + click and doesn't collide on the second click of the same row.
+  describe("editor-name gate (#80)", () => {
+    it("opens the name prompt instead of firing the action when the cookie is empty", () => {
+      clearEditorName();
+      setWeekItemStatusAction.mockResolvedValue({
+        ok: true,
+        previousStatus: "in-progress",
+      });
+      render(
+        <CompleteCheckbox weekItemId="w1" title="Design comps" status="in-progress" />,
+      );
+      fireEvent.click(screen.getByTestId("complete-checkbox"));
+      expect(screen.getByTestId("name-prompt-dialog")).toBeInTheDocument();
+      expect(setWeekItemStatusAction).not.toHaveBeenCalled();
+      // Visual state stays unchecked until the user actually submits.
+      expect(screen.getByTestId("complete-checkbox")).toHaveAttribute(
+        "aria-checked",
+        "false",
+      );
+    });
+
+    it("fires the action with the submitted name once the operator submits the prompt", async () => {
+      clearEditorName();
+      setWeekItemStatusAction.mockResolvedValue({
+        ok: true,
+        previousStatus: "in-progress",
+      });
+      render(
+        <CompleteCheckbox weekItemId="w1" title="Design comps" status="in-progress" />,
+      );
+      fireEvent.click(screen.getByTestId("complete-checkbox"));
+      const input = screen.getByTestId("name-prompt-input");
+      fireEvent.change(input, { target: { value: "Alice" } });
+      fireEvent.click(screen.getByTestId("name-prompt-submit"));
+      await waitFor(() => {
+        expect(setWeekItemStatusAction).toHaveBeenCalledWith({
+          weekItemId: "w1",
+          newStatus: "completed",
+          editorName: "Alice",
+        });
+      });
+      // The optimistic flip happens after the prompt resolves, not on the
+      // initial click.
+      expect(screen.getByTestId("complete-checkbox")).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+    });
+
+    it("skips the prompt on subsequent clicks once the cookie is populated", async () => {
+      seedEditorName("Bob");
+      setWeekItemStatusAction.mockResolvedValue({
+        ok: true,
+        previousStatus: "in-progress",
+      });
+      render(
+        <CompleteCheckbox weekItemId="w1" title="Design comps" status="in-progress" />,
+      );
+      fireEvent.click(screen.getByTestId("complete-checkbox"));
+      // No prompt rendered; action fires directly with the cookie's value.
+      expect(screen.queryByTestId("name-prompt-dialog")).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(setWeekItemStatusAction).toHaveBeenCalledWith({
+          weekItemId: "w1",
+          newStatus: "completed",
+          editorName: "Bob",
+        });
+      });
+    });
   });
 });

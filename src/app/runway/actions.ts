@@ -67,7 +67,23 @@ export async function toggleNeedsUpdateAction(
 export async function setWeekItemStatusAction(input: {
   weekItemId: string;
   newStatus: string | null;
+  editorName: string;
 }): Promise<SetWeekItemStatusResult> {
+  // #80 — `updateWeekItemField`'s idempotency key includes `updatedBy`. When
+  // every dashboard click wrote `"runway:dashboard"`, the second click on
+  // the same (row, field, value) collided with the audit row left by the
+  // first and short-circuited as a no-op. Threading the operator's
+  // display name into `updatedBy` mirrors the modal-save path
+  // (`updateWeekItemFieldsAction`) where this collision never showed up
+  // because the modal already plumbs `input.updatedBy` from the editor-name
+  // cookie. The client (`complete-checkbox.tsx`) guarantees non-empty via
+  // the same name-prompt UI the pencil uses; the trim check here is a
+  // defensive boundary, not a UX path.
+  const editorName = input.editorName?.trim() ?? "";
+  if (!editorName) {
+    return { ok: false, error: "Editor name is required." };
+  }
+
   const db = getRunwayDb();
   const rows = await db
     .select()
@@ -94,7 +110,7 @@ export async function setWeekItemStatusAction(input: {
     weekItemTitle: row.title,
     field: "status",
     newValue: input.newStatus,
-    updatedBy: "runway:dashboard",
+    updatedBy: `runway:dashboard:${editorName}`,
     source: "dashboard",
   });
   if (!result.ok) return { ok: false, error: result.error };

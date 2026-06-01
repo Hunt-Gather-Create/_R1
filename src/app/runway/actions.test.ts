@@ -103,11 +103,45 @@ describe("toggleNeedsUpdateAction", () => {
 });
 
 describe("setWeekItemStatusAction", () => {
+  it("returns an error result when editorName is empty (defensive boundary, client gates via name prompt)", async () => {
+    mockedRow = {
+      id: "wi-x",
+      title: "Anything",
+      weekOf: "2026-06-01",
+      status: "in-progress",
+    };
+    const result = await setWeekItemStatusAction({
+      weekItemId: "wi-x",
+      newStatus: "completed",
+      editorName: "",
+    });
+    expect(result).toEqual({ ok: false, error: "Editor name is required." });
+    expect(mockedUpdate).not.toHaveBeenCalled();
+    expect(mockedRevalidate).not.toHaveBeenCalled();
+  });
+
+  it("trims whitespace from editorName and rejects if blank after trim", async () => {
+    mockedRow = {
+      id: "wi-x",
+      title: "Anything",
+      weekOf: "2026-06-01",
+      status: "in-progress",
+    };
+    const result = await setWeekItemStatusAction({
+      weekItemId: "wi-x",
+      newStatus: "completed",
+      editorName: "   ",
+    });
+    expect(result).toEqual({ ok: false, error: "Editor name is required." });
+    expect(mockedUpdate).not.toHaveBeenCalled();
+  });
+
   it("returns an error result when the row is not found", async () => {
     mockedRow = undefined;
     const result = await setWeekItemStatusAction({
       weekItemId: "missing",
       newStatus: "completed",
+      editorName: "Jason",
     });
     expect(result).toEqual({
       ok: false,
@@ -127,6 +161,7 @@ describe("setWeekItemStatusAction", () => {
     const result = await setWeekItemStatusAction({
       weekItemId: "wi-1",
       newStatus: "completed",
+      editorName: "Jason",
     });
     expect(result).toEqual({
       ok: false,
@@ -150,12 +185,13 @@ describe("setWeekItemStatusAction", () => {
     const result = await setWeekItemStatusAction({
       weekItemId: "wi-2",
       newStatus: "bogus",
+      editorName: "Jason",
     });
     expect(result).toEqual({ ok: false, error: "status enum invalid" });
     expect(mockedRevalidate).not.toHaveBeenCalled();
   });
 
-  it("delegates to updateWeekItemField with the row's composite key and returns previousStatus", async () => {
+  it("delegates to updateWeekItemField with editorName-suffixed updatedBy and returns previousStatus", async () => {
     mockedRow = {
       id: "wi-3",
       title: "Brand: Hero",
@@ -165,17 +201,49 @@ describe("setWeekItemStatusAction", () => {
     const result = await setWeekItemStatusAction({
       weekItemId: "wi-3",
       newStatus: "completed",
+      editorName: "Jason",
     });
     expect(mockedUpdate).toHaveBeenCalledWith({
       weekOf: "2026-06-01",
       weekItemTitle: "Brand: Hero",
       field: "status",
       newValue: "completed",
-      updatedBy: "runway:dashboard",
+      updatedBy: "runway:dashboard:Jason",
       source: "dashboard",
     });
     expect(mockedRevalidate).toHaveBeenCalledWith("/runway");
     expect(result).toEqual({ ok: true, previousStatus: "in-progress" });
+  });
+
+  // #80 — the round-trip per-operator suffix is what makes the
+  // updateWeekItemField idem-key distinct per operator+click. Without it,
+  // two different operators clicking the same row would still collide
+  // because both writes share (updateType, weekItemId, field, value).
+  it("threads a distinct editorName suffix per operator so idem-key fingerprints don't collide", async () => {
+    mockedRow = {
+      id: "wi-3",
+      title: "Brand: Hero",
+      weekOf: "2026-06-01",
+      status: "in-progress",
+    };
+    await setWeekItemStatusAction({
+      weekItemId: "wi-3",
+      newStatus: "completed",
+      editorName: "Alice",
+    });
+    await setWeekItemStatusAction({
+      weekItemId: "wi-3",
+      newStatus: "completed",
+      editorName: "Bob",
+    });
+    expect(mockedUpdate).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ updatedBy: "runway:dashboard:Alice" }),
+    );
+    expect(mockedUpdate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ updatedBy: "runway:dashboard:Bob" }),
+    );
   });
 
   it("replays with newStatus=null for undo and propagates the previous status as captured", async () => {
@@ -188,6 +256,7 @@ describe("setWeekItemStatusAction", () => {
     const result = await setWeekItemStatusAction({
       weekItemId: "wi-4",
       newStatus: null,
+      editorName: "Jason",
     });
     expect(mockedUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ newValue: null }),

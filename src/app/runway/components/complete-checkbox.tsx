@@ -17,6 +17,15 @@
  * Used by `L2MiniCard` (By Account + Status View) and `DayItemCard` (This
  * Week). Both surfaces pass the same shape; this component owns the
  * optimistic state + toast lifecycle in one place.
+ *
+ * Editor-name gate (#80): the underlying `updateWeekItemField` idempotency
+ * key is `(updateType, weekItemId, field, newValue, updatedBy)`. Before
+ * #80, every dashboard click wrote a fixed `updatedBy="runway:dashboard"`,
+ * so the second click on the same row+value collided with the audit row
+ * left by the first and silently no-op'd. We now mirror the pencil's
+ * `useEditorName` + name-prompt flow: first click in a session opens the
+ * intro prompt, subsequent clicks reuse the cookie-stored name and pass
+ * it through to the server action so the idem-key is unique per operator.
  */
 
 import {
@@ -30,6 +39,8 @@ import {
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { setWeekItemStatusAction } from "../actions";
+import { useEditorName } from "./use-editor-name";
+import { NamePromptDialog } from "./name-prompt-dialog";
 
 const TERMINAL = new Set(["completed", "canceled"]);
 
@@ -49,6 +60,12 @@ export function CompleteCheckbox({
     status === "completed" ? "completed" : "idle",
   );
   const [pending, startTransition] = useTransition();
+  // Name-prompt phase. The first click in a session with no editor-name
+  // cookie opens the intro prompt; the action only fires after the operator
+  // submits a name. Cancelling the prompt leaves the visual state untouched
+  // (we don't flip optimistic until the action is actually queued).
+  const [phase, setPhase] = useState<"idle" | "name-prompt">("idle");
+  const { name, setName } = useEditorName();
   const router = useRouter();
   // LlamaPReview P2 (PR #110): the undo callback in the toast closure
   // captured `weekItemId` as a prop value at toast-creation time. If the
@@ -67,19 +84,28 @@ export function CompleteCheckbox({
   // anyway, so this is a defensive guard for any view that doesn't.
   if (status != null && TERMINAL.has(status)) return null;
 
-  function complete() {
+  function requestComplete() {
     if (pending) return;
     // Re-clicking the box after it's already flipped optimistic-completed
     // would refire the server action and then surface an Undo toast whose
     // `previousStatus` is itself "completed" — silent no-op on click,
     // operator sees a toast that doesn't do anything. Skip.
     if (optimistic === "completed") return;
+    if (!name) {
+      setPhase("name-prompt");
+      return;
+    }
+    complete(name);
+  }
+
+  function complete(editorName: string) {
     const previousVisualStatus = status ?? null;
     setOptimistic("completed");
     startTransition(async () => {
       const result = await setWeekItemStatusAction({
         weekItemId: idRef.current!,
         newStatus: "completed",
+        editorName,
       });
       if (!result.ok) {
         setOptimistic("idle");
@@ -100,18 +126,19 @@ export function CompleteCheckbox({
         onAutoClose: () => router.refresh(),
         action: {
           label: "Undo",
-          onClick: () => revertTo(undoTarget),
+          onClick: () => revertTo(undoTarget, editorName),
         },
       });
     });
   }
 
-  function revertTo(target: string | null) {
+  function revertTo(target: string | null, editorName: string) {
     setOptimistic("idle");
     startTransition(async () => {
       const result = await setWeekItemStatusAction({
         weekItemId: idRef.current!,
         newStatus: target,
+        editorName,
       });
       if (!result.ok) {
         // Couldn't revert server-side — re-flip optimistic to completed
@@ -132,14 +159,14 @@ export function CompleteCheckbox({
   function onClick(event: MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
-    complete();
+    requestComplete();
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key === " " || event.key === "Enter") {
       event.preventDefault();
       event.stopPropagation();
-      complete();
+      requestComplete();
     }
   }
 
@@ -148,32 +175,43 @@ export function CompleteCheckbox({
     ? `${title} marked complete`
     : `Mark ${title} complete`;
   return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={checked}
-      aria-label={ariaLabel}
-      data-testid="complete-checkbox"
-      data-checked={checked ? "true" : "false"}
-      disabled={pending && !checked}
-      onClick={onClick}
-      onKeyDown={onKeyDown}
-      className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/40 ${
-        checked
-          ? "border-emerald-500 bg-emerald-500/20 text-emerald-300"
-          : "border-border bg-background/60 text-transparent hover:border-emerald-500/60 hover:text-emerald-400"
-      } ${className ?? ""}`}
-    >
-      <svg
-        viewBox="0 0 12 12"
-        aria-hidden="true"
-        className="h-3 w-3"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
+    <>
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={checked}
+        aria-label={ariaLabel}
+        data-testid="complete-checkbox"
+        data-checked={checked ? "true" : "false"}
+        disabled={pending && !checked}
+        onClick={onClick}
+        onKeyDown={onKeyDown}
+        className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/40 ${
+          checked
+            ? "border-emerald-500 bg-emerald-500/20 text-emerald-300"
+            : "border-border bg-background/60 text-transparent hover:border-emerald-500/60 hover:text-emerald-400"
+        } ${className ?? ""}`}
       >
-        <path d="M2 6.5 L5 9 L10 3" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </button>
+        <svg
+          viewBox="0 0 12 12"
+          aria-hidden="true"
+          className="h-3 w-3"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path d="M2 6.5 L5 9 L10 3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <NamePromptDialog
+        open={phase === "name-prompt"}
+        onCancel={() => setPhase("idle")}
+        onSubmit={(submitted) => {
+          setName(submitted);
+          setPhase("idle");
+          complete(submitted);
+        }}
+      />
+    </>
   );
 }
