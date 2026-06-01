@@ -283,6 +283,14 @@ function validateFieldsServerSide(
 ): ValidateFieldsResult {
   const out: WeekItemEditPatch = { ...fields };
 
+  // P0 (TP code-review on 856b7dd): explicit null is the "restore to
+  // historical null" path used by Undo. capturePreviousValue returns
+  // null for any field that was null on the row pre-edit; rejecting
+  // null here would brick Undo for those rows. Empty-string ("") still
+  // rejects — that's the typo case on a NEW edit. Title is special:
+  // schema is NOT NULL so undo can't legitimately produce title=null,
+  // and the (weekOf, title) lookup key would break anyway.
+
   if (Object.prototype.hasOwnProperty.call(out, "title")) {
     const v = out.title;
     if (typeof v !== "string" || v.trim() === "") {
@@ -292,29 +300,33 @@ function validateFieldsServerSide(
   }
   if (Object.prototype.hasOwnProperty.call(out, "owner")) {
     const v = out.owner;
-    if (typeof v !== "string" || v.trim() === "") {
-      return { ok: false, error: "Owner is required." };
+    if (v !== null) {
+      if (typeof v !== "string" || v.trim() === "") {
+        return { ok: false, error: "Owner is required." };
+      }
+      out.owner = v.trim();
     }
-    out.owner = v.trim();
   }
   if (Object.prototype.hasOwnProperty.call(out, "dayOfWeek")) {
     const raw = out.dayOfWeek;
-    if (typeof raw !== "string" || raw.trim() === "") {
-      return {
-        ok: false,
-        error: `dayOfWeek must be one of: ${[...ALLOWED_DAYS_OF_WEEK].join(", ")}.`,
-      };
+    if (raw !== null) {
+      if (typeof raw !== "string" || raw.trim() === "") {
+        return {
+          ok: false,
+          error: `dayOfWeek must be one of: ${[...ALLOWED_DAYS_OF_WEEK].join(", ")}.`,
+        };
+      }
+      // Normalize per `feedback_dayofweek_lowercase` — drafters frequently
+      // title-case from spec prose; no existing validator catches the drift.
+      const normalized = raw.trim().toLowerCase();
+      if (!ALLOWED_DAYS_OF_WEEK.has(normalized)) {
+        return {
+          ok: false,
+          error: `dayOfWeek must be one of: ${[...ALLOWED_DAYS_OF_WEEK].join(", ")}.`,
+        };
+      }
+      out.dayOfWeek = normalized;
     }
-    // Normalize per `feedback_dayofweek_lowercase` — drafters frequently
-    // title-case from spec prose; no existing validator catches the drift.
-    const normalized = raw.trim().toLowerCase();
-    if (!ALLOWED_DAYS_OF_WEEK.has(normalized)) {
-      return {
-        ok: false,
-        error: `dayOfWeek must be one of: ${[...ALLOWED_DAYS_OF_WEEK].join(", ")}.`,
-      };
-    }
-    out.dayOfWeek = normalized;
   }
   return { ok: true, fields: out };
 }
@@ -366,11 +378,19 @@ function moveFirst<T>(arr: T[], first: T, second: T): T[] {
  * so passing a stale or wrong-client id here can't bypass it — this action
  * is purely a UX convenience that mirrors Slack's project picker.
  *
- * Filter: drops terminal-status projects (`completed`, `canceled`) since
- * re-parenting an active week item to a closed project would be a category
- * mismatch the cross-field validator would reject downstream. Wrappers stay
- * in the list — Hopdoddy-pattern week items can attach directly to a
- * retainer wrapper (2026-05-28 fix).
+ * Filters:
+ *   - parentProjectId === null — only top-level projects (standalone L1s
+ *     + retainer wrappers) are valid week-item parents from this picker.
+ *     Wrapper-children + other parented sub-projects are L2-equivalents
+ *     and not valid hosts. P1.2 from TP code-review on 856b7dd:
+ *     linkWeekItemToProject has no L1-only guard, so the picker is the
+ *     enforcement point.
+ *   - status not in (completed, canceled) — re-parenting an active week
+ *     item to a closed project would be a category mismatch the
+ *     cross-field validator rejects downstream. ProjectPicker on the
+ *     client surfaces a disabled "(current — closed)" option when the
+ *     row's existing parent is terminal so the operator still sees the
+ *     true state.
  *
  * Ordering: preserves whatever `getProjectsForClient` returns
  * (`asc(projects.sortOrder)`) so the picker matches the operator's
@@ -397,6 +417,7 @@ export async function listProjectsForWeekItemAction(input: {
   }
   const allProjects = await getProjectsForClient(row.clientId);
   const projects: ProjectOption[] = allProjects
+    .filter((p) => p.parentProjectId === null)
     .filter((p) => p.status !== "completed" && p.status !== "canceled")
     .map((p) => ({
       id: p.id,

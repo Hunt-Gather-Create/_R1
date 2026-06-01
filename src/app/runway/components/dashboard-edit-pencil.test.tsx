@@ -10,13 +10,15 @@ import {
 const updateWeekItemFieldsAction = vi.hoisted(() =>
   vi.fn(async (_input: unknown) => ({ ok: true, previousValues: {} })),
 );
+// Default mock: top-level L1s only. Action filters wrapper-children out
+// per P1.2 (TP code-review on 856b7dd); fixture must match the contract
+// or it would silently encode the bug.
 const listProjectsForWeekItemAction = vi.hoisted(() =>
   vi.fn(async (_input: unknown) => ({
     ok: true as const,
     projects: [
       { id: "p-1", name: "Brand Refresh", parentProjectId: null },
       { id: "p-2", name: "Burger Day LP", parentProjectId: null },
-      { id: "p-3", name: "Rewards Build", parentProjectId: "p-1" },
     ],
   })),
 );
@@ -193,7 +195,6 @@ describe("EditPencil", () => {
       expect(options).toEqual([
         { value: "p-1", label: "Brand Refresh" },
         { value: "p-2", label: "Burger Day LP" },
-        { value: "p-3", label: "Rewards Build" },
       ]);
     });
 
@@ -207,6 +208,45 @@ describe("EditPencil", () => {
       const proj = screen.getByTestId("edit-field-project") as HTMLSelectElement;
       expect(proj).toBeDisabled();
       expect(proj.querySelector("option")?.textContent).toMatch(/Loading/i);
+    });
+
+    // P1.3 from TP code-review on 856b7dd: when the WI's current parent
+    // is terminal-status, the server action filters it out. Without
+    // surfacing the current parent as a visible (disabled) option, the
+    // <select> visually shows the first loaded option while state stays
+    // on the missing id — the operator sees a lie. Picker prepends the
+    // current parent as a disabled "(current — closed)" option.
+    it("includes the current parent as a disabled option when it isn't in the loaded list (terminal status case)", async () => {
+      listProjectsForWeekItemAction.mockResolvedValueOnce({
+        ok: true as const,
+        projects: [
+          { id: "p-2", name: "Burger Day LP", parentProjectId: null },
+        ],
+      });
+      render(
+        <EditPencil
+          item={makeItem({
+            projectId: "p-old",
+            parentProjectName: "Closed Project",
+          })}
+        />,
+      );
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const proj = screen.getByTestId("edit-field-project") as HTMLSelectElement;
+      const options = Array.from(proj.querySelectorAll("option")).map((o) => ({
+        value: o.value,
+        label: o.textContent ?? "",
+        disabled: o.hasAttribute("disabled"),
+      }));
+      expect(options[0]).toEqual({
+        value: "p-old",
+        label: expect.stringMatching(/Closed Project/),
+        disabled: true,
+      });
+      expect(proj.value).toBe("p-old");
     });
 
     it("save passes projectId separately from fields when the user picks a different project", async () => {

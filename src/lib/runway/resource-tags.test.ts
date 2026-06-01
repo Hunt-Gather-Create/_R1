@@ -60,6 +60,18 @@ describe("parseResourceChips", () => {
     expect(parseResourceChips("Jill")).toEqual([]);
     expect(parseResourceChips("AM: Jill, Mark")).toEqual([]);
   });
+
+  // P1.4 from TP code-review on 856b7dd: if the existing value has a
+  // role outside ROLE_TAGS (e.g. "Designer: Lane"), the chip <select>
+  // would coerce display to "AM" but state.role would keep the original
+  // string — save would silently emit the original non-canonical role.
+  // Fix: parser refuses to chip-parse such values; caller falls back to
+  // textarea so the operator sees the raw string and can fix it.
+  it("returns an empty list when any entry uses a role outside ROLE_TAGS (operator sees the raw string in textarea fallback)", () => {
+    expect(parseResourceChips("Designer: Lane")).toEqual([]);
+    expect(parseResourceChips("AM: Jill, QA: Sam")).toEqual([]);
+    expect(parseResourceChips("Owner: Jane")).toEqual([]);
+  });
 });
 
 describe("serializeResourceChips", () => {

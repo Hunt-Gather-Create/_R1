@@ -488,6 +488,63 @@ describe("updateWeekItemFieldsAction", () => {
     });
   });
 
+  // P0 from TP code-review on 856b7dd: capturePreviousValue returns null
+  // for any field that was historically null on the row. The dashboard
+  // modal's Undo replays previousValues — if a WI had owner: null and the
+  // operator sets owner: "Jill" then clicks Undo, the patch carries
+  // { owner: null } and the validator must accept it (restoring the
+  // historical state). Empty string still rejects (typo on a NEW edit).
+  it("validator permits explicit null on owner (restores historical null via undo)", async () => {
+    mockedRow = {
+      id: "wi-1",
+      title: "T",
+      weekOf: "2026-06-01",
+      owner: "Jill",
+    };
+    const result = await updateWeekItemFieldsAction({
+      weekItemId: "wi-1",
+      updatedBy: "Jason",
+      fields: { owner: null },
+    });
+    expect(result.ok).toBe(true);
+    expect(mockedUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ field: "owner", newValue: null }),
+    );
+  });
+
+  it("validator rejects empty-string owner (typo on a NEW edit, not undo)", async () => {
+    mockedRow = {
+      id: "wi-1",
+      title: "T",
+      weekOf: "2026-06-01",
+      owner: "Jill",
+    };
+    const result = await updateWeekItemFieldsAction({
+      weekItemId: "wi-1",
+      updatedBy: "Jason",
+      fields: { owner: "" },
+    });
+    expect(result).toEqual({ ok: false, error: "Owner is required." });
+  });
+
+  it("validator permits explicit null on dayOfWeek (restores historical null via undo)", async () => {
+    mockedRow = {
+      id: "wi-1",
+      title: "T",
+      weekOf: "2026-06-01",
+      dayOfWeek: "monday",
+    };
+    const result = await updateWeekItemFieldsAction({
+      weekItemId: "wi-1",
+      updatedBy: "Jason",
+      fields: { dayOfWeek: null },
+    });
+    expect(result.ok).toBe(true);
+    expect(mockedUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ field: "dayOfWeek", newValue: null }),
+    );
+  });
+
   it("writes string fields BEFORE re-parenting (a field-write failure short-circuits before the project move)", async () => {
     mockedRow = {
       id: "wi-1",
@@ -550,5 +607,21 @@ describe("listProjectsForWeekItemAction", () => {
     const result = await listProjectsForWeekItemAction({ weekItemId: "wi-1" });
     if (!result.ok) throw new Error("expected ok");
     expect(result.projects.map((p) => p.id)).toEqual(["p-z", "p-a"]);
+  });
+
+  // P1.2 from TP code-review on 856b7dd: wrapper-children + L2-equivalent
+  // sub-projects (parentProjectId != null) are NOT valid weekItem parents
+  // from this picker. linkWeekItemToProject was previously relying on the
+  // picker to filter; the only L2-host candidates are top-level projects.
+  it("filters out projects with a parentProjectId (only top-level L1s + wrappers reach the picker)", async () => {
+    mockedRow = { id: "wi-1", clientId: "c-1", weekOf: "2026-06-01", title: "T" };
+    mockedProjectsForClient = [
+      { id: "p-1", name: "Brand Refresh (L1)", parentProjectId: null, status: "in-production" },
+      { id: "p-2", name: "Rewards Build (L2-equivalent)", parentProjectId: "p-1", status: "in-production" },
+      { id: "p-3", name: "Burger Day LP (L1)", parentProjectId: null, status: "not-started" },
+    ];
+    const result = await listProjectsForWeekItemAction({ weekItemId: "wi-1" });
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.projects.map((p) => p.id)).toEqual(["p-1", "p-3"]);
   });
 });

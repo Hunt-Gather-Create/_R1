@@ -793,6 +793,13 @@ function ProjectPicker({
     );
   }
 
+  // P1.3 (TP code-review on 856b7dd): if the WI's current parent is
+  // terminal-status, the server action filters it out — but the
+  // operator should still see the truth, not the first loaded option.
+  // Prepend the current parent as a disabled "(current — closed)" entry
+  // so the <select> value matches what's in state.
+  const currentInList = state.projects.some((p) => p.id === value);
+  const showTerminalCurrent = value !== "" && !currentInList;
   return (
     <select
       data-testid="edit-field-project"
@@ -800,6 +807,13 @@ function ProjectPicker({
       onChange={(e) => onChange(e.target.value)}
       className={inputClasses}
     >
+      {showTerminalCurrent ? (
+        <option value={value} disabled>
+          {fallbackName
+            ? `${fallbackName} (current — closed)`
+            : "(current — closed)"}
+        </option>
+      ) : null}
       {state.projects.map((p) => (
         <option key={p.id} value={p.id}>
           {p.name}

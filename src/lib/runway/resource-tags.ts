@@ -33,10 +33,21 @@ export type ResourceChip = {
 
 /**
  * Parse a resources string into chips. Returns an empty list when the input
- * is null/empty, contains an arrow sequence (`->` or `→`), or any entry
- * lacks a role prefix — the caller treats empty-return-from-non-empty-input
- * as "fall back to free-text mode."
+ * is null/empty, contains an arrow sequence (`->` or `→`), any entry lacks
+ * a role prefix, or any entry uses a role outside the canonical
+ * `ROLE_TAGS` set. The caller treats empty-return-from-non-empty-input as
+ * "fall back to free-text mode" — operator sees the raw string in a
+ * textarea so they can fix non-canonical roles by hand before chip mode
+ * unlocks.
+ *
+ * Non-canonical role rejection (P1.4, TP code-review on 856b7dd): without
+ * this guard, the chip <select> coerces display to "AM" when the parsed
+ * role isn't in ROLE_TAGS but state.role keeps the original string —
+ * serialize-on-save would silently emit the original (non-canonical) role.
+ * Falling back to textarea is the operator's chance to see + fix it.
  */
+const ROLE_TAG_SET: ReadonlySet<string> = new Set(ROLE_TAGS);
+
 export function parseResourceChips(
   raw: string | null | undefined,
 ): ResourceChip[] {
@@ -57,6 +68,7 @@ export function parseResourceChips(
     const role = part.slice(0, colonIdx).trim();
     const name = part.slice(colonIdx + 1).trim();
     if (!role) return [];
+    if (!ROLE_TAG_SET.has(role)) return []; // non-canonical → caller falls back
     chips.push({ role, name });
   }
   return chips;
