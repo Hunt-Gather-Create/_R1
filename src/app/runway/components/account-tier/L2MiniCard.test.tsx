@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, describe, it, expect } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { L2MiniCard } from "./L2MiniCard";
 
 const baseItem = {
@@ -116,5 +116,34 @@ describe("L2MiniCard", () => {
     expect(card!.className).toContain("rounded-xl");
     expect(card!.className).toContain("border-sky-500/30");
     expect(card!.className).toContain("bg-sky-500/5");
+  });
+
+  describe("threading into EditPencil (P1.3)", () => {
+    afterEach(() => {
+      // Reset editor-name cookie set in the test below so it doesn't leak
+      // into unrelated suites that share document.cookie via happy-dom.
+      document.cookie = "runway_editor_name=; Max-Age=0; Path=/";
+      cleanup();
+    });
+
+    it("passes parentProjectName and notes into the edit modal pre-fill", () => {
+      document.cookie = `runway_editor_name=${encodeURIComponent("Jason")}; Path=/`;
+      render(
+        <L2MiniCard
+          weekItem={{
+            ...baseItem,
+            notes: "blocked on client feedback",
+            parentProjectName: "Brand Refresh",
+          }}
+        />,
+      );
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      expect(screen.getByTestId("edit-field-notes")).toHaveValue(
+        "blocked on client feedback",
+      );
+      expect(screen.getByTestId("edit-field-project")).toHaveValue(
+        "Brand Refresh",
+      );
+    });
   });
 });

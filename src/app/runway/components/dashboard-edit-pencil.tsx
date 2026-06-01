@@ -30,7 +30,6 @@
 
 import {
   useCallback,
-  useEffect,
   useId,
   useMemo,
   useState,
@@ -144,8 +143,26 @@ function PencilGlyph() {
   );
 }
 
+// ─── Frozen-initial helper ────────────────────────────────────────────────
+
+/**
+ * Returns the result of `compute()` exactly once per mount and never
+ * updates. P2 nit per TP review on b7c89f3 — `useState(() => ...)[0]`
+ * reads as a frozen-state code smell; this helper makes the
+ * "this never updates" contract explicit at the call site.
+ */
+function useFrozenInitial<T>(compute: () => T): T {
+  return useState(compute)[0];
+}
+
 // ─── Name prompt ───────────────────────────────────────────────────────────
 
+/**
+ * Outer Radix Dialog shell — same content-split pattern EditDialog uses.
+ * The inner form only mounts when `open=true`, so the input value resets
+ * naturally on the open→closed→open cycle without a useEffect (P2 nit
+ * per TP review on b7c89f3).
+ */
 function NamePromptDialog({
   open,
   onCancel,
@@ -155,26 +172,6 @@ function NamePromptDialog({
   onCancel: () => void;
   onSubmit: (name: string) => void;
 }) {
-  const [value, setValue] = useState("");
-  const inputId = useId();
-
-  // Reset the input when the dialog closes so the next open starts fresh.
-  // NamePromptDialog stays mounted across open/close; without this the
-  // typed-but-not-submitted value would persist. Syncing the external
-  // `open` prop to local input state on close is the intended effect —
-  // not a render-cycle cascade — so the lint rule is overridden here.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!open) setValue("");
-  }, [open]);
-
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    onSubmit(trimmed);
-  }
-
   return (
     <Dialog.Root
       open={open}
@@ -188,54 +185,80 @@ function NamePromptDialog({
           data-testid="name-prompt-dialog"
           className="fixed left-1/2 top-1/2 z-50 w-[90vw] max-w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-background p-5 text-foreground shadow-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
         >
-          <Dialog.Title className="font-display text-lg font-semibold">
-            Quick intro
-          </Dialog.Title>
-          <Dialog.Description className="mt-1 text-sm text-muted-foreground">
-            Your name shows up in the audit log next to anything you edit
-            from the dashboard. We&apos;ll remember it on this browser.
-          </Dialog.Description>
-          <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-            <div>
-              <label
-                htmlFor={inputId}
-                className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
-              >
-                Name
-              </label>
-              <input
-                id={inputId}
-                data-testid="name-prompt-input"
-                autoFocus
-                value={value}
-                onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                  setValue(e.target.value)
-                }
-                className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/40"
-                placeholder="e.g. Jason Burks"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={onCancel}
-                className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted/30"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={!value.trim()}
-                data-testid="name-prompt-submit"
-                className="rounded-md bg-sky-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Continue
-              </button>
-            </div>
-          </form>
+          {open ? (
+            <NamePromptContent onCancel={onCancel} onSubmit={onSubmit} />
+          ) : null}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+function NamePromptContent({
+  onCancel,
+  onSubmit,
+}: {
+  onCancel: () => void;
+  onSubmit: (name: string) => void;
+}) {
+  const [value, setValue] = useState("");
+  const inputId = useId();
+
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    onSubmit(trimmed);
+  }
+
+  return (
+    <>
+      <Dialog.Title className="font-display text-lg font-semibold">
+        Quick intro
+      </Dialog.Title>
+      <Dialog.Description className="mt-1 text-sm text-muted-foreground">
+        Your name shows up in the audit log next to anything you edit
+        from the dashboard. We&apos;ll remember it on this browser.
+      </Dialog.Description>
+      <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+        <div>
+          <label
+            htmlFor={inputId}
+            className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          >
+            Name
+          </label>
+          <input
+            id={inputId}
+            data-testid="name-prompt-input"
+            autoFocus
+            value={value}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              setValue(e.target.value)
+            }
+            className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+            placeholder="e.g. Jason Burks"
+          />
+        </div>
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted/30"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!value.trim()}
+            data-testid="name-prompt-submit"
+            className="rounded-md bg-sky-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Continue
+          </button>
+        </div>
+      </form>
+    </>
   );
 }
 
@@ -358,9 +381,9 @@ function EditDialogContent({
   onClose: () => void;
 }) {
   // Mounted only when the dialog is open, unmounted on close — so the
-  // initial snapshot is naturally fresh per open. No ref-during-render
-  // workaround needed.
-  const initial = useState(() => initialEditState(item))[0];
+  // initial snapshot is naturally fresh per open. `useFrozenInitial`
+  // makes the "this never updates" contract explicit (P2 nit, TP review).
+  const initial = useFrozenInitial(() => initialEditState(item));
   const [state, setState] = useState<EditState>(initial);
   const router = useRouter();
 

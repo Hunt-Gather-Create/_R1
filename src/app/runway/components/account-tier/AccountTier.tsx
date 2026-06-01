@@ -330,6 +330,12 @@ function L1Section({
               endDate: wi.endDate,
               status: wi.status,
               category: wi.category,
+              // P1.3 (TP review on b7c89f3): notes flows through the
+              // GanttRow weekitem variant + AnnotatedRow; parent project
+              // name is the section title — every L1Section's items are
+              // children of the project the section represents.
+              notes: wi.kind === "weekitem" ? wi.notes : null,
+              parentProjectName: section.title,
             }}
           />
         ))}

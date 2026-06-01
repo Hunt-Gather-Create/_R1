@@ -67,6 +67,7 @@ function weekItemToRow(w: WeekItemRow): GanttRow {
     status: w.status,
     category: w.category,
     weekOf: w.weekOf,
+    notes: w.notes,
   };
 }
 

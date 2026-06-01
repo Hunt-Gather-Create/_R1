@@ -13,6 +13,7 @@ import {
 } from "@/lib/runway/view-preferences";
 import { getRunwayDb } from "@/lib/db/runway";
 import { weekItems } from "@/lib/db/runway-schema";
+import type { WeekItemRow } from "@/lib/runway/gantt/types";
 import {
   updateWeekItemField,
   linkWeekItemToProject,
@@ -226,12 +227,34 @@ export async function updateWeekItemFieldsAction(
     : { ok: true, previousValues };
 }
 
+/**
+ * Typed per-field snapshot used to capture pre-write values for the
+ * modal's undo toast. The switch is exhaustive over
+ * `WeekItemEditableField` — adding a new editable field surfaces here
+ * at compile time (P2 nit per TP review on b7c89f3).
+ */
 function capturePreviousValue(
-  row: Record<string, unknown>,
+  row: WeekItemRow,
   field: WeekItemEditableField,
 ): string | null {
-  const cur = row[field];
-  return cur == null ? null : String(cur);
+  switch (field) {
+    case "title":
+      return row.title;
+    case "owner":
+      return row.owner ?? null;
+    case "resources":
+      return row.resources ?? null;
+    case "startDate":
+      return row.startDate ?? null;
+    case "endDate":
+      return row.endDate ?? null;
+    case "dayOfWeek":
+      return row.dayOfWeek ?? null;
+    case "status":
+      return row.status ?? null;
+    case "notes":
+      return row.notes ?? null;
+  }
 }
 
 /**

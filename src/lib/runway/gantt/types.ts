@@ -78,6 +78,7 @@ export type GanttRow =
       status: string | null;
       category: string | null;
       weekOf: string | null;
+      notes: string | null;
     };
 
 export type AxisColumn = { date: string; label: string };

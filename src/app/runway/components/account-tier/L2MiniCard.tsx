@@ -13,8 +13,7 @@
  *   - Warning / critical alert badges near the category indicator
  *
  * Design tokens replace explicit slate scales — `text-foreground`,
- * `text-muted-foreground`, `border-border`. The `theme` prop stays on the
- * signature for downstream API stability but no longer drives colors.
+ * `text-muted-foreground`, `border-border`.
  *
  * Status filtering: completed/canceled L2s never reach this card — they
  * are filtered upstream in `AccountTier.tsx` (correction #1). The opacity
@@ -31,8 +30,6 @@ import { DatesLine } from "../dates-line";
 import { CompleteCheckbox } from "../complete-checkbox";
 import { EditPencil } from "../dashboard-edit-pencil";
 
-type Theme = "light" | "dark";
-
 type WeekItemForCard = {
   id: string;
   title: string;
@@ -42,6 +39,12 @@ type WeekItemForCard = {
   endDate: string | null;
   status: string | null;
   category: string | null;
+  // P1.3 (TP review on b7c89f3): threaded through so the dashboard edit
+  // modal pre-fills the read-only Project field + the Notes textarea when
+  // opened from the By Account view. Optional — older callers that haven't
+  // started passing them yet just get an empty modal value.
+  notes?: string | null;
+  parentProjectName?: string | null;
 };
 
 const ACCOUNT_CLASS =
@@ -56,17 +59,21 @@ export function L2MiniCard({
 }: {
   weekItem: WeekItemForCard;
   accountName?: string;
-  /**
-   * Kept on the signature for API stability — downstream consumers may
-   * still pass it. Color decisions now flow through design tokens, so
-   * this value is unused in render output.
-   */
-  theme?: Theme;
   warningCount?: number;
   criticalCount?: number;
 }) {
-  const { id, title, owner, resources, startDate, endDate, status, category } =
-    weekItem;
+  const {
+    id,
+    title,
+    owner,
+    resources,
+    startDate,
+    endDate,
+    status,
+    category,
+    notes,
+    parentProjectName,
+  } = weekItem;
 
   const categoryClass =
     category && TYPE_INDICATORS[category]
@@ -88,6 +95,8 @@ export function L2MiniCard({
           endDate,
           status,
           category,
+          notes,
+          parentProjectName,
         }}
       />
       <div className="flex items-start justify-between gap-3">

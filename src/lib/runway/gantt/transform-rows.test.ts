@@ -211,6 +211,21 @@ describe("transformRows", () => {
       expect(rows[0].weekOf).toBe("2026-04-20");
     }
   });
+
+  it("preserves notes on weekitem rows so the dashboard edit modal can pre-fill them", () => {
+    const project = makeProject({ id: "p-l1" });
+    const w = makeWeekItem({
+      id: "w-notes",
+      title: "Draft copy",
+      notes: "blocked on client feedback",
+    });
+    const raw: RawData = { kind: "l1", entity: project, client, children: [w] };
+    const rows = transformRows(raw);
+    expect(rows[0].kind).toBe("weekitem");
+    if (rows[0].kind === "weekitem") {
+      expect(rows[0].notes).toBe("blocked on client feedback");
+    }
+  });
 });
 
 describe("computeAxis", () => {
