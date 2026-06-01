@@ -688,7 +688,12 @@ async function fireSave(
   toast.success(`Saved ${item.title}`, {
     id: toastId,
     duration: 8000,
-    onAutoClose: () => router.refresh(),
+    // PR #111 Llama F1: don't register `router.refresh()` on onAutoClose
+    // — the immediate call at the end of this function already covers the
+    // post-save RSC re-fetch. Registering it again would fire a second
+    // refresh 8s later when the toast auto-closes without action. The
+    // `complete-checkbox` path is different (modal stays unmounted during
+    // its undo window, so its onAutoClose IS the only refresh trigger).
     action: {
       label: "Undo",
       // #83 — capture the operator's pre-Undo edits in closure so the
