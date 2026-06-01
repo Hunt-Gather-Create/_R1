@@ -25,6 +25,7 @@ import type {
   SeverityCounts,
 } from "@/lib/runway/gantt/types";
 import { AccountTier, type AccountForTier } from "./account-tier/AccountTier";
+import type { AuditIssue } from "./audit-badge";
 
 type AccountWithWiring = Account & {
   rundown?: ClientRundownData | null;
@@ -34,8 +35,16 @@ type AccountWithWiring = Account & {
    * (counts of critical / warn / info issues across the active-filtered
    * Gantt rundown). The Track 4 audit fix threads this through into the
    * tier's `severity` prop so the client header chips render correctly.
+   * #78 also threads it raw into the tier so the AuditBadge pill renders
+   * on the By Account header (alongside the existing SeverityBadge chip).
    */
   ganttSeverity?: SeverityCounts;
+  /**
+   * #78 — page.tsx already attaches per-account audit issues (see
+   * (gated)/page.tsx:351). Threading them here makes the AuditBadge
+   * interactive so the issue panel opens on click.
+   */
+  ganttAuditIssues?: AuditIssue[];
 };
 
 /**
@@ -86,6 +95,10 @@ function toAccountForTier(account: AccountWithWiring): AccountForTier {
     sowSigned: account.contractStatus === "signed",
     contractStart: account.contractStart ?? null,
     contractEnd: account.contractEnd ?? null,
+    // #78 — pass through the raw rollup + issue list so ClientHeader can
+    // render the interactive AuditBadge pill.
+    ganttSeverity: account.ganttSeverity,
+    ganttAuditIssues: account.ganttAuditIssues,
   };
 }
 

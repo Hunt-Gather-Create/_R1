@@ -18,7 +18,10 @@ type AccountForTier = {
   sowSigned: boolean | null;
   contractStart: string | null;
   contractEnd: string | null;
-  ganttSeverity?: "critical" | "warning" | null;
+  // #78 — schema mirrors src AccountForTier; tests don't exercise these
+  // fields directly (account-section.test.tsx covers the AuditBadge path).
+  ganttSeverity?: { critical: number; warn: number; info: number };
+  ganttAuditIssues?: unknown[];
 };
 
 function mockAccount(overrides: Partial<AccountForTier> = {}): AccountForTier {
