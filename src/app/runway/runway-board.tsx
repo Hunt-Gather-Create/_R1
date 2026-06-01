@@ -17,10 +17,11 @@ import { PipelineRow } from "./components/pipeline-row";
 import { FlagsPanel } from "./components/flags-panel";
 import { NeedsUpdateSection } from "./components/needs-update-section";
 import { InFlightSection } from "./components/in-flight-section";
+import { StatusView } from "./components/status-view";
 import { toggleInFlightAction, toggleNeedsUpdateAction } from "./actions";
 import { useVersionPoll } from "./use-version-poll";
 
-type View = "triage" | "accounts" | "gantt-charts" | "pipeline";
+type View = "triage" | "status" | "accounts" | "gantt-charts" | "pipeline";
 
 interface RunwayBoardProps {
   thisWeek: DayItem[];
@@ -74,6 +75,7 @@ interface RunwayBoardProps {
 
 const TABS = [
   { key: "triage", label: "This Week" },
+  { key: "status", label: "Status View" },
   { key: "accounts", label: "By Account" },
   { key: "gantt-charts", label: "Gantt Charts" },
   { key: "pipeline", label: "Pipeline" },
@@ -230,6 +232,14 @@ export function RunwayBoard({
               </div>
             ) : null}
 
+            {view === "status" ? (
+              <StatusView
+                staleItems={staleItems}
+                todayColumn={todayColumn}
+                inFlightSource={inFlightSource}
+              />
+            ) : null}
+
             {view === "accounts" ? (
               <div className="space-y-6">
                 {accounts.map((account) => (
@@ -267,7 +277,9 @@ export function RunwayBoard({
             ) : null}
           </div>
 
-          {view !== "accounts" && view !== "gantt-charts" && <FlagsPanel flags={flags} />}
+          {view !== "accounts" && view !== "gantt-charts" && view !== "status" && (
+            <FlagsPanel flags={flags} />
+          )}
         </div>
       </main>
     </div>
