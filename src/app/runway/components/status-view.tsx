@@ -7,14 +7,15 @@
  * Card (date ASC), with a bottom-banner color indicating which bucket the
  * card inherits from:
  *
- *   - Red   → Needs Update (past-due) or Blocked
- *   - White → Today
- *   - Blue  → In Flight
+ *   - Red    → Needs Update (past-due) or Blocked
+ *   - White  → Today
+ *   - Yellow → Kicks Off This Week (#71 — Tue-Fri startDate inside this work week)
+ *   - Blue   → In Flight
  *
- * Source data is the same three predicates already routed by the
- * dashboard (filterSpanningFromDayCells guarantees mutual exclusion in
- * production), so this view doesn't introduce new precedence logic — it
- * just re-projects the existing buckets by Account/Project.
+ * Source data is the same predicates already routed by the dashboard
+ * (filterSpanningFromDayCells guarantees mutual exclusion in production),
+ * so this view doesn't introduce new precedence logic — it just
+ * re-projects the existing buckets by Account/Project.
  *
  * Cards reuse `DayItemCard` with `size="lg"` and the new `bottomBanner`
  * accent so checkbox + (future) pencil affordances behave identically to
@@ -38,6 +39,13 @@ type StatusViewProps = {
   staleItems: DayItem[];
   /** Day-column matching today's date — Today bucket source. */
   todayColumn: DayItem | null;
+  /**
+   * Non-today day-columns of THIS work week (Tue-Fri when today is Mon).
+   * #71 Kicks Off This Week bucket source — items matching the predicate
+   * (`startDate > today AND startDate <= endOfWorkWeek AND status not in
+   * {completed, canceled, blocked}`) get the yellow banner.
+   */
+  kicksOffSource: DayItem[];
   /** Full unfiltered day-bucket source — In Flight bucket via filterInFlight. */
   inFlightSource: DayItem[];
   /** Override for tests; production uses today's UTC date. */
@@ -45,18 +53,35 @@ type StatusViewProps = {
 };
 
 const BLOCKED_PLACEHOLDER_KEY = "9999-12-31";
+const KICKS_OFF_EXCLUDED_STATUSES = new Set(["completed", "canceled", "blocked"]);
 
 /**
- * Bucket every active card into exactly one of the three Status View
- * buckets. Iteration order matches plan precedence: Needs Update first,
- * then Today, then In Flight. Items already bucketed are skipped on
- * later passes so a row never double-counts. Blocked items are pulled
- * into Needs Update (red banner) regardless of their original bucket —
- * plan: blocked is always a stop signal.
+ * End-of-work-week ISO date (Friday inclusive) relative to a given ISO
+ * weekday. Mon-Fri returns this week's Friday; Sat-Sun returns next
+ * Friday so the kicks-off window always anchors to the upcoming work
+ * week. Used by the #71 Kicks Off This Week predicate.
+ */
+export function endOfWorkWeekISO(todayISO: string): string {
+  // Parse as UTC midnight so addDays arithmetic doesn't drift across DST.
+  const base = new Date(`${todayISO}T00:00:00Z`);
+  const dayOfWeek = base.getUTCDay(); // 0 = Sun, 1 = Mon, ... 5 = Fri, 6 = Sat
+  const daysToFriday = (5 - dayOfWeek + 7) % 7;
+  base.setUTCDate(base.getUTCDate() + daysToFriday);
+  return base.toISOString().slice(0, 10);
+}
+
+/**
+ * Bucket every active card into exactly one of the four Status View
+ * buckets. Iteration order matches plan precedence: Needs Update → Today
+ * → Kicks Off → In Flight. Items already bucketed are skipped on later
+ * passes so a row never double-counts. Blocked items are pulled into
+ * Needs Update (red banner) regardless of their original bucket — plan:
+ * blocked is always a stop signal.
  */
 export function computeStatusItems(
   staleItems: DayItem[],
   todayColumn: DayItem | null,
+  kicksOffSource: DayItem[],
   inFlightSource: DayItem[],
   nowISO: string,
 ): StatusItem[] {
@@ -75,6 +100,17 @@ export function computeStatusItems(
 
   for (const day of staleItems) consume(day.items, "needs-update");
   if (todayColumn) consume(todayColumn.items, "today");
+
+  // #71 Kicks Off This Week — predicate run against the non-today days of
+  // this work week. Source items come from runway-board's `restOfWeek`
+  // (already filterSpanningFromDayCells'd), so they're anchored on their
+  // startDate; the predicate just confirms the date window + status gate.
+  const eowISO = endOfWorkWeekISO(nowISO);
+  const kicksOff = kicksOffSource
+    .flatMap((d) => d.items)
+    .filter((item) => isKicksOffCandidate(item, nowISO, eowISO));
+  consume(kicksOff, "kicks-off");
+
   const flat = inFlightSource.flatMap((d) => d.items);
   consume(filterInFlight(flat, nowISO), "in-flight");
 
@@ -83,6 +119,19 @@ export function computeStatusItems(
   }
 
   return out;
+}
+
+function isKicksOffCandidate(
+  item: DayItemEntry,
+  todayISO: string,
+  eowISO: string,
+): boolean {
+  if (!item.startDate) return false;
+  if (item.startDate <= todayISO) return false;
+  if (item.startDate > eowISO) return false;
+  const status = item.status ?? "";
+  if (KICKS_OFF_EXCLUDED_STATUSES.has(status)) return false;
+  return true;
 }
 
 /**
@@ -166,14 +215,21 @@ export function groupStatusItems(items: StatusItem[]): AccountGroup[] {
 export function StatusView({
   staleItems,
   todayColumn,
+  kicksOffSource,
   inFlightSource,
   nowISO,
 }: StatusViewProps) {
   const groups = useMemo(() => {
     const today = nowISO ?? new Date().toISOString().slice(0, 10);
-    const items = computeStatusItems(staleItems, todayColumn, inFlightSource, today);
+    const items = computeStatusItems(
+      staleItems,
+      todayColumn,
+      kicksOffSource,
+      inFlightSource,
+      today,
+    );
     return groupStatusItems(items);
-  }, [staleItems, todayColumn, inFlightSource, nowISO]);
+  }, [staleItems, todayColumn, kicksOffSource, inFlightSource, nowISO]);
 
   if (groups.length === 0) {
     return (

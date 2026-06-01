@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { AccountSection, deriveSeverity } from "./account-section";
 import type { Account } from "../types";
 import type {
@@ -44,6 +44,8 @@ function makeWeekItemRow(overrides: Partial<AnnotatedRow> = {}): AnnotatedRow {
     status: "in-progress",
     category: "delivery",
     weekOf: "2026-05-04",
+    notes: null,
+    projectId: null,
     inline: [],
     subRow: [],
   } as AnnotatedRow;
@@ -322,6 +324,86 @@ describe("AccountSection — tier branch (rundown attached)", () => {
     expect(screen.getByText("Q2 Retainer")).toBeInTheDocument();
     expect(screen.getByText("Sub A")).toBeInTheDocument();
     expect(screen.getByText("Solo L1")).toBeInTheDocument();
+  });
+
+  // #78 — Audit pill (#66) was wired into the Gantt-Charts section header in
+  // PR #110 but missed the By Account header. These tests pin the
+  // wire-through from page.tsx → AccountSection → AccountTier → ClientHeader.
+  it("renders the AuditBadge in the client header when ganttSeverity has critical or warn issues", () => {
+    const account = {
+      ...createAccount(),
+      rundown: makeRundown([
+        makeSection("standalone", "Solo L1", [makeWeekItemRow()], undefined, "l1-solo"),
+      ]),
+      ganttSeverity: { critical: 1, warn: 2, info: 0 },
+    };
+    render(<AccountSection account={account} />);
+    const badge = screen.getByTestId("audit-badge");
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveAttribute("data-severity", "critical");
+  });
+
+  it("renders the AuditBadge in warn tone when ganttSeverity has only warnings", () => {
+    const account = {
+      ...createAccount(),
+      rundown: makeRundown([
+        makeSection("standalone", "Solo L1", [makeWeekItemRow()], undefined, "l1-solo"),
+      ]),
+      ganttSeverity: { critical: 0, warn: 3, info: 0 },
+    };
+    render(<AccountSection account={account} />);
+    const badge = screen.getByTestId("audit-badge");
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveAttribute("data-severity", "warn");
+  });
+
+  it("does NOT render the AuditBadge when ganttSeverity is omitted", () => {
+    const account = {
+      ...createAccount(),
+      rundown: makeRundown([
+        makeSection("standalone", "Solo L1", [makeWeekItemRow()], undefined, "l1-solo"),
+      ]),
+    };
+    render(<AccountSection account={account} />);
+    expect(screen.queryByTestId("audit-badge")).not.toBeInTheDocument();
+  });
+
+  it("does NOT render the AuditBadge when ganttSeverity has zero critical+warn (info-only)", () => {
+    const account = {
+      ...createAccount(),
+      rundown: makeRundown([
+        makeSection("standalone", "Solo L1", [makeWeekItemRow()], undefined, "l1-solo"),
+      ]),
+      ganttSeverity: { critical: 0, warn: 0, info: 5 },
+    };
+    render(<AccountSection account={account} />);
+    expect(screen.queryByTestId("audit-badge")).not.toBeInTheDocument();
+  });
+
+  it("AuditBadge becomes interactive (click opens the issue panel) when ganttAuditIssues is threaded through", async () => {
+    const account = {
+      ...createAccount(),
+      rundown: makeRundown([
+        makeSection("standalone", "Solo L1", [makeWeekItemRow()], undefined, "l1-solo"),
+      ]),
+      ganttSeverity: { critical: 1, warn: 0, info: 0 },
+      ganttAuditIssues: [
+        {
+          severity: "critical" as const,
+          code: "cascade-clobber",
+          message: "L1 envelope collapsed",
+          sectionTitle: "Solo L1",
+        },
+      ],
+    };
+    render(<AccountSection account={account} />);
+    const badge = screen.getByTestId("audit-badge");
+    // The interactive variant is a <button>; static variant is a <span>.
+    expect(badge.tagName).toBe("BUTTON");
+    expect(screen.queryByTestId("audit-badge-panel")).not.toBeInTheDocument();
+    fireEvent.click(badge);
+    expect(screen.getByTestId("audit-badge-panel")).toBeInTheDocument();
+    expect(screen.getByText("cascade-clobber")).toBeInTheDocument();
   });
 });
 

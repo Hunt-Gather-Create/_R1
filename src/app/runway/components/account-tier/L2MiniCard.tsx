@@ -13,8 +13,7 @@
  *   - Warning / critical alert badges near the category indicator
  *
  * Design tokens replace explicit slate scales — `text-foreground`,
- * `text-muted-foreground`, `border-border`. The `theme` prop stays on the
- * signature for downstream API stability but no longer drives colors.
+ * `text-muted-foreground`, `border-border`.
  *
  * Status filtering: completed/canceled L2s never reach this card — they
  * are filtered upstream in `AccountTier.tsx` (correction #1). The opacity
@@ -29,8 +28,7 @@
 import { TYPE_INDICATORS, MetadataLabel } from "../status-badge";
 import { DatesLine } from "../dates-line";
 import { CompleteCheckbox } from "../complete-checkbox";
-
-type Theme = "light" | "dark";
+import { EditPencil } from "../dashboard-edit-pencil";
 
 type WeekItemForCard = {
   id: string;
@@ -41,6 +39,16 @@ type WeekItemForCard = {
   endDate: string | null;
   status: string | null;
   category: string | null;
+  // P1.3 (TP review on b7c89f3): threaded through so the dashboard edit
+  // modal pre-fills the read-only Project field + the Notes textarea when
+  // opened from the By Account view. Optional — older callers that haven't
+  // started passing them yet just get an empty modal value.
+  notes?: string | null;
+  parentProjectName?: string | null;
+  // #70 commit 8b — project id powers the modal's project picker.
+  // AnnotatedRow doesn't carry this directly (it's a query-time field on
+  // weekItems), so AccountTier looks it up alongside parentProjectName.
+  projectId?: string | null;
 };
 
 const ACCOUNT_CLASS =
@@ -55,17 +63,22 @@ export function L2MiniCard({
 }: {
   weekItem: WeekItemForCard;
   accountName?: string;
-  /**
-   * Kept on the signature for API stability — downstream consumers may
-   * still pass it. Color decisions now flow through design tokens, so
-   * this value is unused in render output.
-   */
-  theme?: Theme;
   warningCount?: number;
   criticalCount?: number;
 }) {
-  const { id, title, owner, resources, startDate, endDate, status, category } =
-    weekItem;
+  const {
+    id,
+    title,
+    owner,
+    resources,
+    startDate,
+    endDate,
+    status,
+    category,
+    notes,
+    parentProjectName,
+    projectId,
+  } = weekItem;
 
   const categoryClass =
     category && TYPE_INDICATORS[category]
@@ -75,8 +88,23 @@ export function L2MiniCard({
   return (
     <div
       data-testid="l2-mini-card"
-      className="w-full sm:w-[260px] sm:flex-shrink-0 rounded-xl border border-sky-500/30 bg-sky-500/5 p-4"
+      className="relative w-full sm:w-[260px] sm:flex-shrink-0 rounded-xl border border-sky-500/30 bg-sky-500/5 p-4"
     >
+      <EditPencil
+        item={{
+          id,
+          title,
+          owner,
+          resources,
+          startDate,
+          endDate,
+          status,
+          category,
+          notes,
+          parentProjectName,
+          projectId,
+        }}
+      />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           {accountName ? <p className={ACCOUNT_CLASS}>{accountName}</p> : null}

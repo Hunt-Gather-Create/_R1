@@ -36,11 +36,13 @@ import type {
   ClientRundownData,
   RundownSection,
   AnnotatedRow,
+  SeverityCounts,
 } from "@/lib/runway/gantt/types";
 import { groupSections } from "@/lib/runway/gantt/group-sections";
 import { weekItemsForSection, l1IdForSection } from "@/lib/runway/gantt/section-builders";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { L2MiniCard } from "./L2MiniCard";
+import { AuditBadge, type AuditIssue } from "../audit-badge";
 
 type Theme = "light" | "dark";
 
@@ -52,7 +54,19 @@ export type AccountForTier = {
   sowSigned: boolean | null;
   contractStart: string | null;
   contractEnd: string | null;
-  ganttSeverity?: "critical" | "warning" | null;
+  /**
+   * Per-account severity rollup (counts of critical / warn / info issues
+   * across the active-filtered Gantt rundown). When present, ClientHeader
+   * renders the interactive AuditBadge pill (#78) alongside the existing
+   * SeverityBadge chip. AuditBadge no-ops on all-zero / info-only counts.
+   */
+  ganttSeverity?: SeverityCounts;
+  /**
+   * Per-account issue list backing the AuditBadge expand panel. When
+   * present alongside `ganttSeverity`, the badge becomes a clickable
+   * button that opens an inline panel listing every contributing issue.
+   */
+  ganttAuditIssues?: AuditIssue[];
 };
 
 type AccountTierProps = {
@@ -173,6 +187,17 @@ function ClientHeader({ account }: { account: AccountForTier }) {
         <SeverityBadge severity={account.severity} />
       ) : null}
       {account.sowSigned === true ? <SowChip /> : null}
+      {/*
+        #78 — Audit pill. Same wire-up as gantt-charts-section.tsx; the
+        badge no-ops internally on all-zero / info-only counts, so the
+        outer guard is a no-op for those cases too.
+      */}
+      {account.ganttSeverity ? (
+        <AuditBadge
+          severity={account.ganttSeverity}
+          issues={account.ganttAuditIssues}
+        />
+      ) : null}
       {dates ? (
         <span className="text-xs text-muted-foreground">{dates}</span>
       ) : null}
@@ -305,6 +330,16 @@ function L1Section({
               endDate: wi.endDate,
               status: wi.status,
               category: wi.category,
+              // P1.3 (TP review on b7c89f3): notes flows through the
+              // GanttRow weekitem variant + AnnotatedRow; parent project
+              // name is the section title — every L1Section's items are
+              // children of the project the section represents.
+              notes: wi.kind === "weekitem" ? wi.notes : null,
+              parentProjectName: section.title,
+              // #70 commit 8b — projectId powers the modal's project
+              // picker. Same source as notes (per-row WeekItemRow field
+              // surfaced via the GanttRow weekitem variant).
+              projectId: wi.kind === "weekitem" ? wi.projectId : null,
             }}
           />
         ))}

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, describe, it, expect } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { L2MiniCard } from "./L2MiniCard";
 
 const baseItem = {
@@ -116,5 +116,40 @@ describe("L2MiniCard", () => {
     expect(card!.className).toContain("rounded-xl");
     expect(card!.className).toContain("border-sky-500/30");
     expect(card!.className).toContain("bg-sky-500/5");
+  });
+
+  describe("threading into EditPencil (P1.3)", () => {
+    afterEach(() => {
+      // Reset editor-name cookie set in the test below so it doesn't leak
+      // into unrelated suites that share document.cookie via happy-dom.
+      document.cookie = "runway_editor_name=; Max-Age=0; Path=/";
+      cleanup();
+    });
+
+    it("passes notes into the edit modal pre-fill and parentProjectName into the project picker loading placeholder", () => {
+      document.cookie = `runway_editor_name=${encodeURIComponent("Jason")}; Path=/`;
+      render(
+        <L2MiniCard
+          weekItem={{
+            ...baseItem,
+            notes: "blocked on client feedback",
+            parentProjectName: "Brand Refresh",
+          }}
+        />,
+      );
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      // Notes textarea pre-fills from the weekItem prop chain.
+      expect(screen.getByTestId("edit-field-notes")).toHaveValue(
+        "blocked on client feedback",
+      );
+      // Project picker shows the loading-state placeholder containing the
+      // current parent name so the operator sees context immediately. The
+      // <select> resolves to a real option once listProjectsForWeekItemAction
+      // returns — covered in dashboard-edit-pencil.test.tsx, where the action
+      // is mocked. Here the action is unmocked so the picker stays in its
+      // loading branch for the snapshot's lifetime.
+      const proj = screen.getByTestId("edit-field-project");
+      expect(proj.textContent ?? "").toMatch(/Brand Refresh/);
+    });
   });
 });

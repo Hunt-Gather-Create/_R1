@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { toast } from "sonner";
 import type { SeverityCounts } from "@/lib/runway/gantt/types";
 
 /**
@@ -28,6 +29,37 @@ const SEVERITY_LABEL: Record<AuditIssue["severity"], string> = {
   warn: "Warning",
   info: "Info",
 };
+
+const CLIPBOARD_SEVERITY_PREFIX: Record<AuditIssue["severity"], string> = {
+  critical: "[CRITICAL]",
+  warn: "[WARNING]",
+  info: "[INFO]",
+};
+
+/**
+ * #76 — serialize an issue list to a paste-friendly multi-line string.
+ * One line per issue, format:
+ *
+ *   [CRITICAL] <Section Title> — <rule code>: <message>
+ *
+ * Row-level issues (no `message`, one or more `refs`) use the joined ref
+ * titles as the trailing detail. Issues without a `sectionTitle` collapse
+ * to `[SEVERITY] <code>: <detail>` (no section prefix). Empty list → "".
+ */
+export function formatIssuesForClipboard(issues: AuditIssue[]): string {
+  return issues.map(formatIssueLine).join("\n");
+}
+
+function formatIssueLine(issue: AuditIssue): string {
+  const prefix = CLIPBOARD_SEVERITY_PREFIX[issue.severity];
+  const detail =
+    issue.message ??
+    (issue.refs?.length ? issue.refs.map((r) => r.title).join(", ") : "");
+  const head = issue.sectionTitle
+    ? `${prefix} ${issue.sectionTitle} — ${issue.code}`
+    : `${prefix} ${issue.code}`;
+  return detail ? `${head}: ${detail}` : head;
+}
 
 /**
  * Inline severity badge for the Gantt Charts account card. Renders amber
@@ -165,10 +197,88 @@ function AuditBadgeInteractive({
           data-testid="audit-badge-panel"
           className="absolute right-0 top-full z-20 mt-1 max-h-96 w-96 max-w-[90vw] overflow-y-auto rounded-md border border-slate-700 bg-slate-900 p-2 text-xs text-slate-200 shadow-lg"
         >
+          <CopyToClipboardButton issues={issues} />
           <AuditIssueList issues={issues} />
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * #76 — clipboard glyph in the top-right of the open panel. Click writes
+ * the formatted issue list (one issue per line) via the Clipboard API,
+ * flashes a checkmark for ~1s on success, surfaces a sonner error toast
+ * if the write rejects (rare — usually a permissions case in non-secure
+ * contexts).
+ */
+function CopyToClipboardButton({ issues }: { issues: AuditIssue[] }) {
+  const [state, setState] = useState<"idle" | "copied">("idle");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  async function handleClick(event: React.MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    const payload = formatIssuesForClipboard(issues);
+    try {
+      await navigator.clipboard.writeText(payload);
+    } catch {
+      toast.error("Copy failed — try again.");
+      return;
+    }
+    setState("copied");
+    if (timerRef.current !== null) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setState("idle"), 1000);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      data-testid="audit-badge-copy"
+      data-state={state}
+      aria-label="Copy issues to clipboard"
+      className="float-right mb-1 ml-1 inline-flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+    >
+      {state === "copied" ? <CheckGlyph /> : <ClipboardGlyph />}
+    </button>
+  );
+}
+
+function ClipboardGlyph() {
+  return (
+    <svg
+      viewBox="0 0 14 14"
+      aria-hidden="true"
+      className="h-3.5 w-3.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+    >
+      <rect x="3" y="2" width="7" height="9" rx="1" />
+      <rect x="5" y="4" width="7" height="9" rx="1" />
+    </svg>
+  );
+}
+
+function CheckGlyph() {
+  return (
+    <svg
+      viewBox="0 0 14 14"
+      aria-hidden="true"
+      className="h-3.5 w-3.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path d="M3 7.5 L6 10.5 L11 4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 

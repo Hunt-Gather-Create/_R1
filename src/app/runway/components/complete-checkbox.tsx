@@ -27,6 +27,7 @@ import {
   type MouseEvent,
   type KeyboardEvent,
 } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { setWeekItemStatusAction } from "../actions";
 
@@ -48,6 +49,7 @@ export function CompleteCheckbox({
     status === "completed" ? "completed" : "idle",
   );
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
   // LlamaPReview P2 (PR #110): the undo callback in the toast closure
   // captured `weekItemId` as a prop value at toast-creation time. If the
   // parent re-rendered the same React node with a different id before the
@@ -91,6 +93,11 @@ export function CompleteCheckbox({
       const undoTarget = result.previousStatus ?? previousVisualStatus;
       toast(`${title} marked complete`, {
         duration: 8000,
+        // #79: revalidatePath in the server action only marks the RSC cache
+        // stale on the server; the client never refetches without an explicit
+        // router.refresh(). Fire it when the undo window expires without
+        // action so the card drops out of In Flight as expected.
+        onAutoClose: () => router.refresh(),
         action: {
           label: "Undo",
           onClick: () => revertTo(undoTarget),
@@ -112,7 +119,13 @@ export function CompleteCheckbox({
         // the user the undo failed.
         setOptimistic("completed");
         toast.error(`Could not undo: ${result.error}`);
+        return;
       }
+      // #79: optimistic state is back to "idle" but the parent's RSC tree
+      // still has the row filtered out (it was in the "completed" window
+      // when the parent last rendered). router.refresh() refetches so the
+      // card reappears unchecked in In Flight.
+      router.refresh();
     });
   }
 

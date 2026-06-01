@@ -14,7 +14,10 @@ vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
 }));
 
-const TODAY = "2026-06-01";
+const TODAY = "2026-06-01"; // Monday — work week Mon-Fri = 6/1..6/5
+const TUE = "2026-06-02";
+const FRI = "2026-06-05";
+const NEXT_MON = "2026-06-08";
 
 function item(overrides: Partial<DayItemEntry> & { id: string; title: string; account: string }): DayItemEntry {
   return {
@@ -49,7 +52,7 @@ describe("computeStatusItems", () => {
         }),
       ]),
     ];
-    const out = computeStatusItems(stale, today, inFlight, TODAY);
+    const out = computeStatusItems(stale, today, [], inFlight, TODAY);
     const byId = new Map(out.map((e) => [e.item.id, e.bucket]));
     expect(byId.get("s1")).toBe("needs-update");
     expect(byId.get("t1")).toBe("today");
@@ -67,7 +70,7 @@ describe("computeStatusItems", () => {
     });
     const stale = [dayBucket("2026-05-28", [sharedItem])];
     const inFlight = [dayBucket("2026-05-25", [sharedItem])];
-    const out = computeStatusItems(stale, null, inFlight, TODAY);
+    const out = computeStatusItems(stale, null, [], inFlight, TODAY);
     expect(out).toHaveLength(1);
     expect(out[0].bucket).toBe("needs-update");
   });
@@ -83,7 +86,7 @@ describe("computeStatusItems", () => {
         endDate: TODAY,
       }),
     ]);
-    const out = computeStatusItems([], today, [], TODAY);
+    const out = computeStatusItems([], today, [], [], TODAY);
     expect(out).toHaveLength(1);
     expect(out[0].bucket).toBe("needs-update");
   });
@@ -92,7 +95,7 @@ describe("computeStatusItems", () => {
     const today = dayBucket(TODAY, [
       { type: "delivery", title: "No id", account: "Acme" } as DayItemEntry,
     ]);
-    const out = computeStatusItems([], today, [], TODAY);
+    const out = computeStatusItems([], today, [], [], TODAY);
     expect(out).toEqual([]);
   });
 
@@ -109,7 +112,157 @@ describe("computeStatusItems", () => {
         }),
       ]),
     ];
-    expect(computeStatusItems([], null, inFlight, TODAY)).toEqual([]);
+    expect(computeStatusItems([], null, [], inFlight, TODAY)).toEqual([]);
+  });
+
+  // #71 Kicks Off This Week — startDate Tue-Fri inside this work week,
+  // status not in {completed, canceled, blocked}. Precedence is Needs
+  // Update → Today → Kicks Off → In Flight; the new pass runs between
+  // Today and In Flight, so an item that would otherwise have been
+  // bucketed In Flight (currently rendering on a future day cell) gets
+  // pulled into the yellow Kicks Off bucket instead.
+  it("buckets a Tue-startDate item viewed Monday as kicks-off", () => {
+    const tueDay = dayBucket(TUE, [
+      item({
+        id: "k-tue",
+        title: "Tue Kickoff",
+        account: "Acme",
+        status: "scheduled",
+        startDate: TUE,
+        endDate: TUE,
+      }),
+    ]);
+    const out = computeStatusItems([], null, [tueDay], [], TODAY);
+    expect(out).toHaveLength(1);
+    expect(out[0].bucket).toBe("kicks-off");
+  });
+
+  it("buckets a Fri-startDate item viewed Monday as kicks-off (end of work week is inclusive)", () => {
+    const friDay = dayBucket(FRI, [
+      item({
+        id: "k-fri",
+        title: "Fri Kickoff",
+        account: "Acme",
+        status: "scheduled",
+        startDate: FRI,
+        endDate: FRI,
+      }),
+    ]);
+    const out = computeStatusItems([], null, [friDay], [], TODAY);
+    expect(out).toHaveLength(1);
+    expect(out[0].bucket).toBe("kicks-off");
+  });
+
+  it("does NOT bucket a Mon-next-week-startDate item viewed Friday as kicks-off (out of work week)", () => {
+    const nextMonDay = dayBucket(NEXT_MON, [
+      item({
+        id: "k-next-mon",
+        title: "Next Mon Kickoff",
+        account: "Acme",
+        status: "scheduled",
+        startDate: NEXT_MON,
+        endDate: NEXT_MON,
+      }),
+    ]);
+    // viewing date = Fri 6/5, EOW = Fri 6/5; Mon 6/8 > EOW → excluded.
+    const out = computeStatusItems([], null, [nextMonDay], [], FRI);
+    expect(out).toEqual([]);
+  });
+
+  it("does NOT bucket a blocked item with future startDate as kicks-off (blocked is a stop signal)", () => {
+    const tueDay = dayBucket(TUE, [
+      item({
+        id: "k-blocked",
+        title: "Blocked Tue",
+        account: "Acme",
+        status: "blocked",
+        startDate: TUE,
+        endDate: TUE,
+      }),
+    ]);
+    const out = computeStatusItems([], null, [tueDay], [], TODAY);
+    expect(out).toEqual([]);
+  });
+
+  it("does NOT bucket a completed or canceled item with future startDate as kicks-off", () => {
+    const tueDay = dayBucket(TUE, [
+      item({
+        id: "k-done",
+        title: "Done Tue",
+        account: "Acme",
+        status: "completed",
+        startDate: TUE,
+        endDate: TUE,
+      }),
+      item({
+        id: "k-canx",
+        title: "Canx Tue",
+        account: "Acme",
+        status: "canceled",
+        startDate: TUE,
+        endDate: TUE,
+      }),
+    ]);
+    const out = computeStatusItems([], null, [tueDay], [], TODAY);
+    expect(out).toEqual([]);
+  });
+
+  it("does NOT bucket an item with no startDate as kicks-off (predicate requires startDate)", () => {
+    const day = dayBucket(TUE, [
+      item({
+        id: "k-no-start",
+        title: "No start",
+        account: "Acme",
+        status: "scheduled",
+        endDate: TUE,
+      }),
+    ]);
+    const out = computeStatusItems([], null, [day], [], TODAY);
+    expect(out).toEqual([]);
+  });
+
+  it("today precedence wins over kicks-off when the same item appears in both sources", () => {
+    const todayDay = dayBucket(TODAY, [
+      item({
+        id: "k-today",
+        title: "Same item",
+        account: "Acme",
+        status: "scheduled",
+        startDate: TODAY,
+        endDate: TODAY,
+      }),
+    ]);
+    // Same item also appears in a kicks-off source (shouldn't happen in
+    // production but the seen-set guarantee should hold regardless).
+    const kicksOffDay = dayBucket(TUE, [
+      item({
+        id: "k-today",
+        title: "Same item",
+        account: "Acme",
+        status: "scheduled",
+        startDate: TUE,
+        endDate: TUE,
+      }),
+    ]);
+    const out = computeStatusItems([], todayDay, [kicksOffDay], [], TODAY);
+    expect(out).toHaveLength(1);
+    expect(out[0].bucket).toBe("today");
+  });
+
+  it("kicks-off precedence wins over in-flight when the same item is eligible for both", () => {
+    const sharedItem = item({
+      id: "k-shared",
+      title: "Shared",
+      account: "Acme",
+      status: "in-progress",
+      startDate: TUE,
+      endDate: "2026-06-10",
+    });
+    const kicksOffDay = dayBucket(TUE, [sharedItem]);
+    const inFlightDay = dayBucket(TUE, [sharedItem]);
+    const out = computeStatusItems([], null, [kicksOffDay], [inFlightDay], TODAY);
+    expect(out).toHaveLength(1);
+    expect(out[0].bucket).toBe("kicks-off");
   });
 });
 
@@ -225,6 +378,7 @@ describe("StatusView render", () => {
       <StatusView
         staleItems={[]}
         todayColumn={null}
+        kicksOffSource={[]}
         inFlightSource={[]}
         nowISO={TODAY}
       />,
@@ -258,6 +412,7 @@ describe("StatusView render", () => {
       <StatusView
         staleItems={stale}
         todayColumn={today}
+        kicksOffSource={[]}
         inFlightSource={[]}
         nowISO={TODAY}
       />,
@@ -308,6 +463,7 @@ describe("StatusView render", () => {
       <StatusView
         staleItems={stale}
         todayColumn={today}
+        kicksOffSource={[]}
         inFlightSource={inFlight}
         nowISO={TODAY}
       />,
@@ -332,6 +488,7 @@ describe("StatusView render", () => {
       <StatusView
         staleItems={[dayBucket("2026-05-28", [dupe])]}
         todayColumn={null}
+        kicksOffSource={[]}
         inFlightSource={[dayBucket("2026-05-25", [dupe])]}
         nowISO={TODAY}
       />,
@@ -364,6 +521,7 @@ describe("StatusView render", () => {
       <StatusView
         staleItems={[]}
         todayColumn={today}
+        kicksOffSource={[]}
         inFlightSource={[]}
         nowISO={TODAY}
       />,

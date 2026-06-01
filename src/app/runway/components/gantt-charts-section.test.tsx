@@ -29,6 +29,8 @@ function makeActiveAnnotatedWeekItem(): AnnotatedRow {
     status: "in-progress",
     category: "delivery",
     weekOf: "2026-05-04",
+    notes: null,
+    projectId: null,
     inline: [],
     subRow: [],
   } as AnnotatedRow;

@@ -989,16 +989,13 @@ export function validateIsoDateShape(
 /**
  * Allowed values for `week_items.status`. `""` clears (becomes null per the
  * v4 convention where NULL = scheduled).
+ *
+ * Re-exported from `week-item-statuses.ts` so client components can
+ * import the enum without dragging operations-utils (and its
+ * node:async_hooks transitive dep) into the browser bundle.
  */
-export const WEEK_ITEM_STATUSES = [
-  "scheduled",
-  "in-progress",
-  "blocked",
-  "at-risk",
-  "completed",
-  "canceled",
-] as const;
-export type WeekItemStatus = (typeof WEEK_ITEM_STATUSES)[number];
+export { WEEK_ITEM_STATUSES, type WeekItemStatus } from "./week-item-statuses";
+import { WEEK_ITEM_STATUSES, type WeekItemStatus } from "./week-item-statuses";
 
 export type WeekItemStatusValidationResult =
   | { ok: true; value: WeekItemStatus | null }
