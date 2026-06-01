@@ -135,9 +135,16 @@ describe("EditPencil", () => {
       fireEvent.click(screen.getByTestId("edit-pencil"));
       expect(screen.getByTestId("edit-field-title")).toHaveValue("Brand: Hero");
       expect(screen.getByTestId("edit-field-owner")).toHaveValue("Lane");
-      expect(screen.getByTestId("edit-field-resources")).toHaveValue(
-        "AM: Jill, CD: Mark",
-      );
+      // Resources now renders via ResourceChipEditor (chip mode for the
+      // canonical "AM: Jill, CD: Mark" form); assert the two chips read
+      // back the right role + name rather than a single input value.
+      const chipRoles = screen.getAllByTestId("resource-chip-role");
+      const chipNames = screen.getAllByTestId("resource-chip-name");
+      expect(chipRoles).toHaveLength(2);
+      expect((chipRoles[0] as HTMLSelectElement).value).toBe("AM");
+      expect((chipNames[0] as HTMLInputElement).value).toBe("Jill");
+      expect((chipRoles[1] as HTMLSelectElement).value).toBe("CD");
+      expect((chipNames[1] as HTMLInputElement).value).toBe("Mark");
       expect(screen.getByTestId("edit-field-startDate")).toHaveValue(
         "2026-06-01",
       );

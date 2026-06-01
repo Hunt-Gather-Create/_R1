@@ -46,6 +46,7 @@ import type {
 } from "../action-types";
 import { WEEK_ITEM_STATUSES } from "@/lib/runway/week-item-statuses";
 import { useEditorName } from "./use-editor-name";
+import { ResourceChipEditor } from "./resource-chip-editor";
 
 export type EditPencilItem = {
   id: string;
@@ -514,14 +515,13 @@ function EditDialogContent({
                 className={`${inputClasses} cursor-not-allowed bg-muted/30 text-muted-foreground`}
               />
             </Field>
-            <Field label="Resources (format: AM: Jill, CD: Mark)" colSpan={2}>
-              <input
-                value={state.resources}
-                onChange={(e) => onField("resources", e.target.value)}
-                data-testid="edit-field-resources"
-                className={inputClasses}
-                placeholder="AM: Jill, CD: Mark"
-              />
+            <Field label="Resources" colSpan={2}>
+              <div data-testid="edit-field-resources">
+                <ResourceChipEditor
+                  value={state.resources}
+                  onChange={(next) => onField("resources", next)}
+                />
+              </div>
             </Field>
             <Field label="Notes" colSpan={2}>
               <textarea
