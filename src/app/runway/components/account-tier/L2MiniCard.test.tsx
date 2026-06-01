@@ -151,5 +151,25 @@ describe("L2MiniCard", () => {
       const proj = screen.getByTestId("edit-field-project");
       expect(proj.textContent ?? "").toMatch(/Brand Refresh/);
     });
+
+    // #81 — the parent L1 project's category cascades through to the modal's
+    // read-only "Project category" field. AccountTier reads it off
+    // section.data.raw.entity.category and threads parentCategory through
+    // L2MiniCard → EditPencil → DashboardEditModal.
+    it("passes parentCategory into the edit modal's Project category field", () => {
+      document.cookie = `runway_editor_name=${encodeURIComponent("Jason")}; Path=/`;
+      render(
+        <L2MiniCard
+          weekItem={{
+            ...baseItem,
+            parentCategory: "active",
+          }}
+        />,
+      );
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      const pc = screen.getByTestId("edit-field-parentCategory");
+      expect(pc).toHaveAttribute("readonly");
+      expect(pc).toHaveValue("active");
+    });
   });
 });

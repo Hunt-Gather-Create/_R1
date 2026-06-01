@@ -77,6 +77,12 @@ export interface DayItemEntry {
   // Set when the weekItem's project has a parentProjectId (i.e. it is an
   // L2 nested under an L1 retainer or project). Absent for top-level L1 items.
   parentProjectName?: string | null;
+  // #81: parent project's category enum (`projects.category` — values like
+  // "active" / "pipeline" / "completed", distinct from `week_items.category`).
+  // Surfaced read-only beside the editable WI category in the dashboard
+  // edit modal so operators see the upstream context without conflating
+  // it with the chip enum.
+  parentCategory?: string | null;
 }
 
 export interface BlockedByRef {

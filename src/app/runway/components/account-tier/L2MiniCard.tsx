@@ -45,6 +45,11 @@ type WeekItemForCard = {
   // started passing them yet just get an empty modal value.
   notes?: string | null;
   parentProjectName?: string | null;
+  // #81 — parent project's category (`projects.category`). Surfaced
+  // read-only beside the editable WI chip category in the edit modal.
+  // Pulled at the AccountTier level from `section.data.raw.entity.category`
+  // when raw.kind === "l1".
+  parentCategory?: string | null;
   // #70 commit 8b — project id powers the modal's project picker.
   // AnnotatedRow doesn't carry this directly (it's a query-time field on
   // weekItems), so AccountTier looks it up alongside parentProjectName.
@@ -77,6 +82,7 @@ export function L2MiniCard({
     category,
     notes,
     parentProjectName,
+    parentCategory,
     projectId,
   } = weekItem;
 
@@ -102,6 +108,7 @@ export function L2MiniCard({
           category,
           notes,
           parentProjectName,
+          parentCategory,
           projectId,
         }}
       />
