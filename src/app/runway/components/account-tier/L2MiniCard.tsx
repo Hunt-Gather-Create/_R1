@@ -45,6 +45,10 @@ type WeekItemForCard = {
   // started passing them yet just get an empty modal value.
   notes?: string | null;
   parentProjectName?: string | null;
+  // #70 commit 8b — project id powers the modal's project picker.
+  // AnnotatedRow doesn't carry this directly (it's a query-time field on
+  // weekItems), so AccountTier looks it up alongside parentProjectName.
+  projectId?: string | null;
 };
 
 const ACCOUNT_CLASS =
@@ -73,6 +77,7 @@ export function L2MiniCard({
     category,
     notes,
     parentProjectName,
+    projectId,
   } = weekItem;
 
   const categoryClass =
@@ -97,6 +102,7 @@ export function L2MiniCard({
           category,
           notes,
           parentProjectName,
+          projectId,
         }}
       />
       <div className="flex items-start justify-between gap-3">

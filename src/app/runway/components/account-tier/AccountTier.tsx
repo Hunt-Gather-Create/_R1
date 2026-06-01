@@ -336,6 +336,10 @@ function L1Section({
               // children of the project the section represents.
               notes: wi.kind === "weekitem" ? wi.notes : null,
               parentProjectName: section.title,
+              // #70 commit 8b — projectId powers the modal's project
+              // picker. Same source as notes (per-row WeekItemRow field
+              // surfaced via the GanttRow weekitem variant).
+              projectId: wi.kind === "weekitem" ? wi.projectId : null,
             }}
           />
         ))}

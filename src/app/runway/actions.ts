@@ -18,7 +18,10 @@ import {
   updateWeekItemField,
   linkWeekItemToProject,
 } from "@/lib/runway/operations-writes-week";
+import { getProjectsForClient } from "@/lib/runway/operations-utils";
 import type {
+  ListProjectsForWeekItemResult,
+  ProjectOption,
   SetWeekItemStatusResult,
   UpdateWeekItemFieldsInput,
   UpdateWeekItemFieldsResult,
@@ -353,4 +356,52 @@ function orderFieldsForDashboardSave(
 function moveFirst<T>(arr: T[], first: T, second: T): T[] {
   const rest = arr.filter((x) => x !== first && x !== second);
   return [first, second, ...rest];
+}
+
+/**
+ * #70 commit 8b — project-picker option loader for the dashboard edit
+ * modal. Loads the same-client project list so the modal can render a
+ * <select> pre-filled to the row's current `projectId`. `linkWeekItemToProject`
+ * (where the actual re-parent happens) has its own client-mismatch guard,
+ * so passing a stale or wrong-client id here can't bypass it — this action
+ * is purely a UX convenience that mirrors Slack's project picker.
+ *
+ * Filter: drops terminal-status projects (`completed`, `canceled`) since
+ * re-parenting an active week item to a closed project would be a category
+ * mismatch the cross-field validator would reject downstream. Wrappers stay
+ * in the list — Hopdoddy-pattern week items can attach directly to a
+ * retainer wrapper (2026-05-28 fix).
+ *
+ * Ordering: preserves whatever `getProjectsForClient` returns
+ * (`asc(projects.sortOrder)`) so the picker matches the operator's
+ * mental order of work on the account.
+ */
+export async function listProjectsForWeekItemAction(input: {
+  weekItemId: string;
+}): Promise<ListProjectsForWeekItemResult> {
+  const db = getRunwayDb();
+  const rows = await db
+    .select()
+    .from(weekItems)
+    .where(eq(weekItems.id, input.weekItemId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) {
+    return { ok: false, error: `Week item '${input.weekItemId}' not found.` };
+  }
+  if (!row.clientId) {
+    return {
+      ok: false,
+      error: `Week item '${input.weekItemId}' has no clientId anchor.`,
+    };
+  }
+  const allProjects = await getProjectsForClient(row.clientId);
+  const projects: ProjectOption[] = allProjects
+    .filter((p) => p.status !== "completed" && p.status !== "canceled")
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      parentProjectId: p.parentProjectId,
+    }));
+  return { ok: true, projects };
 }

@@ -43,6 +43,10 @@ vi.mock("@/lib/runway/operations-writes-week", () => ({
     data: { previousProjectId: null, newProjectId: "p-new" },
   })),
 }));
+let mockedProjectsForClient: Array<Record<string, unknown>> = [];
+vi.mock("@/lib/runway/operations-utils", () => ({
+  getProjectsForClient: vi.fn(async () => mockedProjectsForClient),
+}));
 
 import { setViewPreferences } from "@/lib/runway/view-preferences";
 import { revalidatePath } from "next/cache";
@@ -55,6 +59,7 @@ import {
   toggleNeedsUpdateAction,
   setWeekItemStatusAction,
   updateWeekItemFieldsAction,
+  listProjectsForWeekItemAction,
 } from "./actions";
 
 const mockedSet = vi.mocked(setViewPreferences);
@@ -68,6 +73,7 @@ beforeEach(() => {
   mockedUpdate.mockClear();
   mockedLink.mockClear();
   mockedRow = undefined;
+  mockedProjectsForClient = [];
 });
 
 describe("toggleInFlightAction", () => {
@@ -502,5 +508,47 @@ describe("updateWeekItemFieldsAction", () => {
     });
     expect(result).toEqual({ ok: false, error: "owner validator rejected" });
     expect(mockedLink).not.toHaveBeenCalled();
+  });
+});
+
+// ─── listProjectsForWeekItemAction (commit 8b) ─────────────────────────────
+
+describe("listProjectsForWeekItemAction", () => {
+  it("returns ok:false when the week item row is not found", async () => {
+    mockedRow = undefined;
+    const result = await listProjectsForWeekItemAction({ weekItemId: "wi-1" });
+    expect(result).toEqual({
+      ok: false,
+      error: "Week item 'wi-1' not found.",
+    });
+  });
+
+  it("returns the client's projects filtered to non-terminal status, mapped to ProjectOption shape", async () => {
+    mockedRow = { id: "wi-1", clientId: "c-1", weekOf: "2026-06-01", title: "T" };
+    mockedProjectsForClient = [
+      { id: "p-1", name: "Brand Refresh", parentProjectId: null, status: "in-production" },
+      { id: "p-2", name: "Old Site", parentProjectId: null, status: "completed" },
+      { id: "p-3", name: "Done", parentProjectId: null, status: "canceled" },
+      { id: "p-4", name: "Hold", parentProjectId: null, status: "on-hold" },
+    ];
+    const result = await listProjectsForWeekItemAction({ weekItemId: "wi-1" });
+    expect(result).toEqual({
+      ok: true,
+      projects: [
+        { id: "p-1", name: "Brand Refresh", parentProjectId: null },
+        { id: "p-4", name: "Hold", parentProjectId: null },
+      ],
+    });
+  });
+
+  it("preserves the helper's sortOrder by not re-sorting the list", async () => {
+    mockedRow = { id: "wi-1", clientId: "c-1", weekOf: "2026-06-01", title: "T" };
+    mockedProjectsForClient = [
+      { id: "p-z", name: "Zeta", parentProjectId: null, status: "not-started" },
+      { id: "p-a", name: "Alpha", parentProjectId: null, status: "in-production" },
+    ];
+    const result = await listProjectsForWeekItemAction({ weekItemId: "wi-1" });
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.projects.map((p) => p.id)).toEqual(["p-z", "p-a"]);
   });
 });

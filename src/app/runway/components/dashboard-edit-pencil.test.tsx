@@ -8,7 +8,17 @@ import {
 } from "@testing-library/react";
 
 const updateWeekItemFieldsAction = vi.hoisted(() =>
-  vi.fn(async () => ({ ok: true, previousValues: {} })),
+  vi.fn(async (_input: unknown) => ({ ok: true, previousValues: {} })),
+);
+const listProjectsForWeekItemAction = vi.hoisted(() =>
+  vi.fn(async (_input: unknown) => ({
+    ok: true as const,
+    projects: [
+      { id: "p-1", name: "Brand Refresh", parentProjectId: null },
+      { id: "p-2", name: "Burger Day LP", parentProjectId: null },
+      { id: "p-3", name: "Rewards Build", parentProjectId: "p-1" },
+    ],
+  })),
 );
 const toastLoading = vi.hoisted(() => vi.fn(() => "toast-id"));
 const toastSuccess = vi.hoisted(() => vi.fn());
@@ -18,6 +28,8 @@ const routerRefresh = vi.hoisted(() => vi.fn());
 vi.mock("../actions", () => ({
   updateWeekItemFieldsAction: (input: unknown) =>
     updateWeekItemFieldsAction(input as never),
+  listProjectsForWeekItemAction: (input: unknown) =>
+    listProjectsForWeekItemAction(input as never),
 }));
 vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), {
@@ -54,6 +66,7 @@ function makeItem(overrides: Partial<EditPencilItem> = {}): EditPencilItem {
     notes: "ready for review",
     category: "delivery",
     parentProjectName: "Brand Refresh",
+    projectId: "p-1",
     ...overrides,
   };
 }
@@ -61,6 +74,7 @@ function makeItem(overrides: Partial<EditPencilItem> = {}): EditPencilItem {
 describe("EditPencil", () => {
   beforeEach(() => {
     updateWeekItemFieldsAction.mockClear();
+    listProjectsForWeekItemAction.mockClear();
     toastLoading.mockClear();
     toastSuccess.mockClear();
     toastError.mockClear();
@@ -155,15 +169,68 @@ describe("EditPencil", () => {
       );
     });
 
-    it("renders category and project as read-only inputs (cascades from project; edit defers to #11)", () => {
+    it("renders category as a read-only input (cascades from project — no edit affordance)", () => {
       render(<EditPencil item={makeItem()} />);
       fireEvent.click(screen.getByTestId("edit-pencil"));
       const cat = screen.getByTestId("edit-field-category");
-      const proj = screen.getByTestId("edit-field-project");
       expect(cat).toHaveAttribute("readonly");
-      expect(proj).toHaveAttribute("readonly");
       expect(cat).toHaveValue("delivery");
-      expect(proj).toHaveValue("Brand Refresh");
+    });
+
+    it("renders the project field as a <select> pre-filled to item.projectId once options load", async () => {
+      render(<EditPencil item={makeItem()} />);
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const proj = screen.getByTestId("edit-field-project") as HTMLSelectElement;
+      expect(proj.tagName).toBe("SELECT");
+      expect(proj.value).toBe("p-1");
+      const options = Array.from(proj.querySelectorAll("option")).map((o) => ({
+        value: o.value,
+        label: o.textContent,
+      }));
+      expect(options).toEqual([
+        { value: "p-1", label: "Brand Refresh" },
+        { value: "p-2", label: "Burger Day LP" },
+        { value: "p-3", label: "Rewards Build" },
+      ]);
+    });
+
+    it("disables the project <select> with a 'Loading projects…' placeholder while the action is in flight", () => {
+      // Make the list action stall so the loading state stays visible.
+      listProjectsForWeekItemAction.mockImplementationOnce(
+        () => new Promise(() => {}),
+      );
+      render(<EditPencil item={makeItem()} />);
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      const proj = screen.getByTestId("edit-field-project") as HTMLSelectElement;
+      expect(proj).toBeDisabled();
+      expect(proj.querySelector("option")?.textContent).toMatch(/Loading/i);
+    });
+
+    it("save passes projectId separately from fields when the user picks a different project", async () => {
+      render(<EditPencil item={makeItem()} />);
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      fireEvent.change(screen.getByTestId("edit-field-project"), {
+        target: { value: "p-2" },
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("edit-save"));
+        await Promise.resolve();
+      });
+      expect(updateWeekItemFieldsAction).toHaveBeenCalledTimes(1);
+      const call = updateWeekItemFieldsAction.mock.calls[0][0] as {
+        weekItemId: string;
+        updatedBy: string;
+        fields: Record<string, unknown>;
+        projectId?: string;
+      };
+      expect(call.fields).toEqual({});
+      expect(call.projectId).toBe("p-2");
     });
 
     it("Save button is disabled until a field is dirty", () => {

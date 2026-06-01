@@ -30,6 +30,7 @@
 
 import {
   useCallback,
+  useEffect,
   useId,
   useMemo,
   useState,
@@ -39,8 +40,12 @@ import {
 import * as Dialog from "@radix-ui/react-dialog";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { updateWeekItemFieldsAction } from "../actions";
+import {
+  listProjectsForWeekItemAction,
+  updateWeekItemFieldsAction,
+} from "../actions";
 import type {
+  ProjectOption,
   WeekItemEditableField,
   WeekItemEditPatch,
 } from "../action-types";
@@ -57,10 +62,19 @@ export type EditPencilItem = {
   endDate?: string | null;
   status?: string | null;
   notes?: string | null;
-  // Read-only display fields — category cascades from project; project
-  // edit defers to #11's cascading picker (TP-confirmed 2026-06-01).
+  // Category is still cascade-only on the modal — flips when the parent
+  // project's category changes, not edited here.
   category?: string | null;
+  // Used to render the current project name in the picker's pre-load
+  // placeholder so the operator sees context immediately even before
+  // the option list arrives.
   parentProjectName?: string | null;
+  // #70 commit 8b — current project id. When present, the modal renders
+  // an editable <select> that loads same-client options via
+  // listProjectsForWeekItemAction. Routing through linkWeekItemToProject
+  // (the split action's `projectId` arg) preserves the client-mismatch
+  // guard + cascading recompute.
+  projectId?: string | null;
 };
 
 const DAY_OF_WEEK_OPTIONS = [
@@ -275,6 +289,9 @@ type EditState = Required<
   dayOfWeek: string;
   status: string;
   notes: string;
+  // Tracked alongside the string-field state but emitted separately on
+  // save (routes through linkWeekItemToProject, not updateWeekItemField).
+  projectId: string;
 };
 
 function initialEditState(item: EditPencilItem): EditState {
@@ -287,6 +304,7 @@ function initialEditState(item: EditPencilItem): EditState {
     dayOfWeek: deriveDayOfWeek(item.startDate ?? "") ?? "",
     status: item.status ?? "",
     notes: item.notes ?? "",
+    projectId: item.projectId ?? "",
   };
 }
 
@@ -333,6 +351,20 @@ function diffEditState(
     }
   }
   return patch;
+}
+
+/**
+ * Returns the new projectId iff the picker selection differs from the
+ * initial value. Routes through the action's `projectId` arg
+ * (linkWeekItemToProject) rather than the string-field patch.
+ */
+function diffProjectId(
+  initial: EditState,
+  current: EditState,
+): string | undefined {
+  if (current.projectId === initial.projectId) return undefined;
+  if (current.projectId === "") return undefined; // clearing is not supported
+  return current.projectId;
 }
 
 function EditDialog({
@@ -390,7 +422,9 @@ function EditDialogContent({
 
   const validationError = useMemo(() => validateEditState(state), [state]);
   const dirty = useMemo(
-    () => Object.keys(diffEditState(initial, state)).length > 0,
+    () =>
+      Object.keys(diffEditState(initial, state)).length > 0 ||
+      diffProjectId(initial, state) !== undefined,
     [initial, state],
   );
 
@@ -413,12 +447,13 @@ function EditDialogContent({
     if (validationError) return;
     if (!editorName) return;
     const patch = diffEditState(initial, state);
-    if (Object.keys(patch).length === 0) {
+    const nextProjectId = diffProjectId(initial, state);
+    if (Object.keys(patch).length === 0 && nextProjectId === undefined) {
       onClose();
       return;
     }
     onClose();
-    fireSave(item, patch, editorName, router);
+    fireSave(item, patch, nextProjectId, editorName, router);
   }
 
   return (
@@ -507,12 +542,12 @@ function EditDialogContent({
                 className={`${inputClasses} cursor-not-allowed bg-muted/30 text-muted-foreground`}
               />
             </Field>
-            <Field label="Project (edit via cascading picker — see #11)" colSpan={2}>
-              <input
-                value={item.parentProjectName ?? ""}
-                readOnly
-                data-testid="edit-field-project"
-                className={`${inputClasses} cursor-not-allowed bg-muted/30 text-muted-foreground`}
+            <Field label="Project" colSpan={2}>
+              <ProjectPicker
+                weekItemId={item.id}
+                fallbackName={item.parentProjectName ?? ""}
+                value={state.projectId}
+                onChange={(next) => onField("projectId", next)}
               />
             </Field>
             <Field label="Resources" colSpan={2}>
@@ -608,6 +643,7 @@ function saveToastId(weekItemId: string): string {
 async function fireSave(
   item: EditPencilItem,
   patch: WeekItemEditPatch,
+  nextProjectId: string | undefined,
   updatedBy: string,
   router: ReturnType<typeof useRouter>,
 ): Promise<void> {
@@ -617,19 +653,23 @@ async function fireSave(
     weekItemId: item.id,
     updatedBy,
     fields: patch,
+    ...(nextProjectId !== undefined ? { projectId: nextProjectId } : {}),
   });
   if (!result.ok) {
     toast.error(`Save failed: ${result.error}`, { id: toastId });
     return;
   }
   const previousValues = result.previousValues;
+  const previousProjectId =
+    result.previousProjectId ?? null;
   toast.success(`Saved ${item.title}`, {
     id: toastId,
     duration: 8000,
     onAutoClose: () => router.refresh(),
     action: {
       label: "Undo",
-      onClick: () => fireUndo(item, previousValues, updatedBy, router),
+      onClick: () =>
+        fireUndo(item, previousValues, previousProjectId, updatedBy, router),
     },
   });
   router.refresh();
@@ -638,6 +678,7 @@ async function fireSave(
 async function fireUndo(
   item: EditPencilItem,
   previousValues: WeekItemEditPatch,
+  previousProjectId: string | null,
   updatedBy: string,
   router: ReturnType<typeof useRouter>,
 ): Promise<void> {
@@ -649,6 +690,10 @@ async function fireUndo(
     weekItemId: item.id,
     updatedBy,
     fields: previousValues,
+    // Only re-parent on undo when the original save changed the project
+    // AND there's a non-null previous to restore — clearing a week item's
+    // project isn't a supported operation through this action.
+    ...(previousProjectId ? { projectId: previousProjectId } : {}),
   });
   if (!result.ok) {
     toast.error(`Could not undo: ${result.error}`, { id: toastId });
@@ -656,4 +701,110 @@ async function fireUndo(
   }
   toast.success(`Reverted ${item.title}`, { id: toastId, duration: 4000 });
   router.refresh();
+}
+
+// ─── Project picker ───────────────────────────────────────────────────────
+
+/**
+ * Loads the same-client project list on mount and renders a <select>
+ * pre-filled to `value`. Mirrors the Slack flow's project picker:
+ * scope to the row's client, drop terminal-status projects, sort by
+ * the helper's existing `sortOrder`. The action layer enforces the
+ * client-mismatch guard + cascading recompute on save.
+ *
+ * Loading state: disabled <select> with a "Loading projects…" placeholder.
+ * Error state: disabled <select> showing the row's `fallbackName` so the
+ * operator still sees context. The split action lets them retry by
+ * cancelling + reopening the modal, or saving without touching the
+ * project (a no-op since the picker stayed disabled).
+ */
+function ProjectPicker({
+  weekItemId,
+  fallbackName,
+  value,
+  onChange,
+}: {
+  weekItemId: string;
+  fallbackName: string;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  type LoadState =
+    | { kind: "loading" }
+    | { kind: "ready"; projects: ProjectOption[] }
+    | { kind: "error"; message: string };
+
+  const [state, setState] = useState<LoadState>({ kind: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    listProjectsForWeekItemAction({ weekItemId }).then(
+      (result) => {
+        if (cancelled) return;
+        if (!result.ok) {
+          setState({ kind: "error", message: result.error });
+        } else {
+          setState({ kind: "ready", projects: result.projects });
+        }
+      },
+      (err: unknown) => {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : String(err);
+        setState({ kind: "error", message });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [weekItemId]);
+
+  if (state.kind === "loading") {
+    return (
+      <select
+        data-testid="edit-field-project"
+        disabled
+        value=""
+        onChange={() => {}}
+        className={`${inputClasses} cursor-wait bg-muted/30 text-muted-foreground`}
+      >
+        <option value="">
+          {fallbackName
+            ? `Loading projects… (current: ${fallbackName})`
+            : "Loading projects…"}
+        </option>
+      </select>
+    );
+  }
+
+  if (state.kind === "error") {
+    return (
+      <select
+        data-testid="edit-field-project"
+        disabled
+        value=""
+        onChange={() => {}}
+        className={`${inputClasses} cursor-not-allowed bg-muted/30 text-muted-foreground`}
+        title={state.message}
+      >
+        <option value="">
+          {fallbackName || "(project load failed)"}
+        </option>
+      </select>
+    );
+  }
+
+  return (
+    <select
+      data-testid="edit-field-project"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={inputClasses}
+    >
+      {state.projects.map((p) => (
+        <option key={p.id} value={p.id}>
+          {p.name}
+        </option>
+      ))}
+    </select>
+  );
 }

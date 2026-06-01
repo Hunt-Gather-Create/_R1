@@ -48,3 +48,19 @@ export type UpdateWeekItemFieldsResult =
 export type SetWeekItemStatusResult =
   | { ok: true; previousStatus: string | null }
   | { ok: false; error: string };
+
+/**
+ * Project-picker option for the dashboard edit modal (#70 commit 8b).
+ * Scoped to the same client as the source week item. `parentProjectId`
+ * is exposed so the UI can render an L1 / L2 hierarchy hint without
+ * a second round trip; the modal's first cut is a flat <select>.
+ */
+export type ProjectOption = {
+  id: string;
+  name: string;
+  parentProjectId: string | null;
+};
+
+export type ListProjectsForWeekItemResult =
+  | { ok: true; projects: ProjectOption[] }
+  | { ok: false; error: string };

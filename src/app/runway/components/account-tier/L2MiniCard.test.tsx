@@ -126,7 +126,7 @@ describe("L2MiniCard", () => {
       cleanup();
     });
 
-    it("passes parentProjectName and notes into the edit modal pre-fill", () => {
+    it("passes notes into the edit modal pre-fill and parentProjectName into the project picker loading placeholder", () => {
       document.cookie = `runway_editor_name=${encodeURIComponent("Jason")}; Path=/`;
       render(
         <L2MiniCard
@@ -138,12 +138,18 @@ describe("L2MiniCard", () => {
         />,
       );
       fireEvent.click(screen.getByTestId("edit-pencil"));
+      // Notes textarea pre-fills from the weekItem prop chain.
       expect(screen.getByTestId("edit-field-notes")).toHaveValue(
         "blocked on client feedback",
       );
-      expect(screen.getByTestId("edit-field-project")).toHaveValue(
-        "Brand Refresh",
-      );
+      // Project picker shows the loading-state placeholder containing the
+      // current parent name so the operator sees context immediately. The
+      // <select> resolves to a real option once listProjectsForWeekItemAction
+      // returns — covered in dashboard-edit-pencil.test.tsx, where the action
+      // is mocked. Here the action is unmocked so the picker stays in its
+      // loading branch for the snapshot's lifetime.
+      const proj = screen.getByTestId("edit-field-project");
+      expect(proj.textContent ?? "").toMatch(/Brand Refresh/);
     });
   });
 });
