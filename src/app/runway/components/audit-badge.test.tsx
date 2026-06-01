@@ -1,7 +1,16 @@
-import { describe, it, expect } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { AuditBadge, type AuditIssue } from "./audit-badge";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { fireEvent, render, screen, act } from "@testing-library/react";
+import {
+  AuditBadge,
+  formatIssuesForClipboard,
+  type AuditIssue,
+} from "./audit-badge";
 import type { SeverityCounts } from "@/lib/runway/gantt/types";
+
+const toastError = vi.hoisted(() => vi.fn());
+vi.mock("sonner", () => ({
+  toast: Object.assign(vi.fn(), { error: toastError, success: vi.fn() }),
+}));
 
 function counts(overrides: Partial<SeverityCounts> = {}): SeverityCounts {
   return { critical: 0, warn: 0, info: 0, ...overrides };
@@ -169,5 +178,160 @@ describe("AuditBadge — interactive (#66)", () => {
     expect(screen.getByTestId("audit-badge-panel")).toBeInTheDocument();
     fireEvent.mouseDown(screen.getByTestId("outside"));
     expect(screen.queryByTestId("audit-badge-panel")).toBeNull();
+  });
+});
+
+// #76 — Audit pill open-state: copy-to-clipboard for triage handoff.
+// Standup lead opens the panel, clicks the copy glyph, pastes the full
+// issue list into Slack / docs without manual transcription.
+describe("AuditBadge — clipboard copy (#76)", () => {
+  function makeIssues(): AuditIssue[] {
+    return [
+      {
+        sectionTitle: "Brand Refresh",
+        severity: "critical",
+        code: "wrapper-null-dates",
+        message: "Wrapper has children but startDate is null.",
+      },
+      {
+        sectionTitle: "Brand Refresh",
+        severity: "warn",
+        code: "child-active-null-owner",
+        refs: [
+          { id: "p-a", title: "Active Child A" },
+          { id: "p-b", title: "Active Child B" },
+        ],
+      },
+      {
+        sectionTitle: "Comms Retainer",
+        severity: "critical",
+        code: "row-end-before-start",
+        refs: [{ id: "w-1", title: "Bad Range Task" }],
+      },
+    ];
+  }
+
+  const writeText = vi.fn();
+  beforeEach(() => {
+    writeText.mockReset().mockResolvedValue(undefined);
+    toastError.mockReset();
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  describe("formatIssuesForClipboard helper", () => {
+    it("formats critical + warn issues with bracketed severity, section, code, and message/refs", () => {
+      const out = formatIssuesForClipboard(makeIssues());
+      expect(out).toBe(
+        [
+          "[CRITICAL] Brand Refresh — wrapper-null-dates: Wrapper has children but startDate is null.",
+          "[WARNING] Brand Refresh — child-active-null-owner: Active Child A, Active Child B",
+          "[CRITICAL] Comms Retainer — row-end-before-start: Bad Range Task",
+        ].join("\n"),
+      );
+    });
+
+    it("emits [INFO] prefix for info-level issues", () => {
+      expect(
+        formatIssuesForClipboard([
+          {
+            sectionTitle: "S",
+            severity: "info",
+            code: "noted",
+            message: "ok",
+          },
+        ]),
+      ).toBe("[INFO] S — noted: ok");
+    });
+
+    it("omits the section prefix when sectionTitle is empty", () => {
+      expect(
+        formatIssuesForClipboard([
+          { severity: "critical", code: "loose", message: "no anchor" },
+        ]),
+      ).toBe("[CRITICAL] loose: no anchor");
+    });
+
+    it("renders empty list as an empty string (no crash, no extra newlines)", () => {
+      expect(formatIssuesForClipboard([])).toBe("");
+    });
+  });
+
+  it("renders the copy button only when the panel is open", () => {
+    render(
+      <AuditBadge severity={counts({ critical: 1 })} issues={makeIssues()} />,
+    );
+    expect(screen.queryByTestId("audit-badge-copy")).toBeNull();
+    fireEvent.click(screen.getByTestId("audit-badge"));
+    expect(screen.getByTestId("audit-badge-copy")).toBeInTheDocument();
+  });
+
+  it("copy button has the documented aria-label and is a real <button>", () => {
+    render(
+      <AuditBadge severity={counts({ critical: 1 })} issues={makeIssues()} />,
+    );
+    fireEvent.click(screen.getByTestId("audit-badge"));
+    const copy = screen.getByTestId("audit-badge-copy");
+    expect(copy.tagName.toLowerCase()).toBe("button");
+    expect(copy).toHaveAttribute("aria-label", "Copy issues to clipboard");
+  });
+
+  it("clicking copy calls navigator.clipboard.writeText with the formatted multi-line payload", async () => {
+    render(
+      <AuditBadge severity={counts({ critical: 2, warn: 1 })} issues={makeIssues()} />,
+    );
+    fireEvent.click(screen.getByTestId("audit-badge"));
+    fireEvent.click(screen.getByTestId("audit-badge-copy"));
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const payload = writeText.mock.calls[0][0] as string;
+    expect(payload.split("\n")).toHaveLength(3);
+    expect(payload).toContain("[CRITICAL] Brand Refresh — wrapper-null-dates");
+    expect(payload).toContain("[WARNING] Brand Refresh — child-active-null-owner");
+    expect(payload).toContain("[CRITICAL] Comms Retainer — row-end-before-start");
+  });
+
+  it("flashes a checkmark glyph for ~1s on successful copy, then reverts to the clipboard glyph", async () => {
+    vi.useFakeTimers();
+    render(
+      <AuditBadge severity={counts({ critical: 1 })} issues={makeIssues()} />,
+    );
+    fireEvent.click(screen.getByTestId("audit-badge"));
+    const copy = screen.getByTestId("audit-badge-copy");
+    expect(copy).toHaveAttribute("data-state", "idle");
+    await act(async () => {
+      fireEvent.click(copy);
+      // Let the writeText promise resolve.
+      await Promise.resolve();
+    });
+    expect(copy).toHaveAttribute("data-state", "copied");
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(copy).toHaveAttribute("data-state", "idle");
+  });
+
+  it("surfaces a 'Copy failed' error toast and stays in idle state when writeText rejects", async () => {
+    writeText.mockRejectedValue(new Error("permission"));
+    render(
+      <AuditBadge severity={counts({ critical: 1 })} issues={makeIssues()} />,
+    );
+    fireEvent.click(screen.getByTestId("audit-badge"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("audit-badge-copy"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(toastError).toHaveBeenCalledWith("Copy failed — try again.");
+    expect(screen.getByTestId("audit-badge-copy")).toHaveAttribute(
+      "data-state",
+      "idle",
+    );
   });
 });
