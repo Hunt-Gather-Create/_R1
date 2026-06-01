@@ -236,6 +236,7 @@ export function RunwayBoard({
               <StatusView
                 staleItems={staleItems}
                 todayColumn={todayColumn}
+                kicksOffSource={restOfWeek}
                 inFlightSource={inFlightSource}
               />
             ) : null}

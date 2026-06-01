@@ -38,7 +38,11 @@ export function parseNotes(notes: string): { main: string; risk?: string; isNext
  * bucket the card inherited from. Card body stays clean. Omitted means no
  * stripe (default everywhere except the Status View tab).
  */
-export type CardBottomBanner = "needs-update" | "today" | "in-flight";
+export type CardBottomBanner =
+  | "needs-update"
+  | "today"
+  | "kicks-off"
+  | "in-flight";
 
 interface DayItemCardProps {
   item: DayItemEntry;
@@ -49,6 +53,9 @@ interface DayItemCardProps {
 const BOTTOM_BANNER_CLASS: Record<CardBottomBanner, string> = {
   "needs-update": "bg-red-500/70",
   today: "bg-white/80",
+  // #71 Kicks Off This Week — Tue-Fri startDate inside the work week.
+  // Yellow keeps the traffic-light feel alongside red / white / blue.
+  "kicks-off": "bg-yellow-400",
   "in-flight": "bg-sky-500/70",
 };
 
