@@ -146,7 +146,9 @@ export function L2MiniCard({
             </div>
           ) : null}
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
+        {/* #82 — pt-6 drops the checkbox below the absolute-positioned
+            EditPencil button at top-right so they don't visually collide. */}
+        <div className="flex shrink-0 flex-col items-end gap-1.5 pt-6">
           <CompleteCheckbox weekItemId={id} title={title} status={status} />
           {category ? (
             <span

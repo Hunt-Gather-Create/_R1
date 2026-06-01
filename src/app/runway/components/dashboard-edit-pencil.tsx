@@ -158,7 +158,12 @@ export function EditPencil({ item }: { item: EditPencilItem }) {
         onKeyDown={onPencilKey}
         aria-label={`Edit ${item.title}`}
         data-testid="edit-pencil"
-        className="absolute left-1.5 top-1.5 z-10 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground/40 transition-colors hover:bg-muted/40 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+        // #82 — pencil sits top-right (was top-left) so it no longer
+        // overlaps the account label that anchors each card header. Both
+        // L2MiniCard and day-item-card render a flex-column at the right
+        // edge (CompleteCheckbox + category chip); those columns add
+        // `pt-6` so the checkbox sits below this button.
+        className="absolute right-1.5 top-1.5 z-10 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground/40 transition-colors hover:bg-muted/40 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-sky-500/40"
       >
         <PencilGlyph />
       </button>

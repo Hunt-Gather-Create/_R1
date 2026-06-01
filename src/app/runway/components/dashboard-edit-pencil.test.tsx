@@ -93,6 +93,19 @@ describe("EditPencil", () => {
     expect(pencil.tagName).toBe("BUTTON");
   });
 
+  // #82 — pencil anchors top-right (was top-left, which overlapped the
+  // account label on every card). Card consumers (L2MiniCard,
+  // day-item-card) add `pt-6` to their right-column flex so the checkbox
+  // sits below this button.
+  it("anchors the pencil button at top-right of the card (no overlap with the account label)", () => {
+    render(<EditPencil item={makeItem()} />);
+    const pencil = screen.getByTestId("edit-pencil");
+    const cls = pencil.className;
+    expect(cls).toContain("right-1.5");
+    expect(cls).toContain("top-1.5");
+    expect(cls).not.toContain("left-");
+  });
+
   it("returns null when the item has no id (can't write back without a key)", () => {
     const { container } = render(
       <EditPencil item={{ ...makeItem(), id: "" }} />,
