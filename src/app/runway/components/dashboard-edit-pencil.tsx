@@ -571,13 +571,25 @@ function Field({
 // ─── Save side-effect (lives outside the component so the closure isn't
 // captured by render and the toast survives modal unmount) ────────────────
 
+/**
+ * P1.2 toast dedupe key. Sonner toasts with the same id collapse — a
+ * second edit on the same row replaces toast #1's "Saved" surface
+ * (including its stale `previousValues` Undo closure), so clicking Undo
+ * after a second save can't silently revert past the user's most recent
+ * intent. Matches the pattern complete-checkbox lands post-9699ab2.
+ */
+function saveToastId(weekItemId: string): string {
+  return `save-${weekItemId}`;
+}
+
 async function fireSave(
   item: EditPencilItem,
   patch: WeekItemEditPatch,
   updatedBy: string,
   router: ReturnType<typeof useRouter>,
 ): Promise<void> {
-  const toastId = toast.loading(`Saving ${item.title}…`);
+  const toastId = saveToastId(item.id);
+  toast.loading(`Saving ${item.title}…`, { id: toastId });
   const result = await updateWeekItemFieldsAction({
     weekItemId: item.id,
     updatedBy,
@@ -606,7 +618,10 @@ async function fireUndo(
   updatedBy: string,
   router: ReturnType<typeof useRouter>,
 ): Promise<void> {
-  const toastId = toast.loading(`Reverting ${item.title}…`);
+  // Reuse the same id as the originating save toast so the in-flight
+  // "Saved" surface is replaced rather than stacked.
+  const toastId = saveToastId(item.id);
+  toast.loading(`Reverting ${item.title}…`, { id: toastId });
   const result = await updateWeekItemFieldsAction({
     weekItemId: item.id,
     updatedBy,

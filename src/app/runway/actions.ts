@@ -13,9 +13,13 @@ import {
 } from "@/lib/runway/view-preferences";
 import { getRunwayDb } from "@/lib/db/runway";
 import { weekItems } from "@/lib/db/runway-schema";
-import { updateWeekItemField } from "@/lib/runway/operations-writes-week";
+import {
+  updateWeekItemField,
+  linkWeekItemToProject,
+} from "@/lib/runway/operations-writes-week";
 import type {
   SetWeekItemStatusResult,
+  UpdateWeekItemFieldsInput,
   UpdateWeekItemFieldsResult,
   WeekItemEditPatch,
   WeekItemEditableField,
@@ -97,26 +101,51 @@ export async function setWeekItemStatusAction(input: {
 /**
  * #70 — dashboard L2 edit modal save handler.
  *
- * Multi-field wrapper around updateWeekItemField. Looks up the row by id,
- * captures the pre-write value for every changed field (so the modal's
- * undo toast can replay the inverse), then applies each change via the
- * canonical helper one field at a time (so validators, status / category
- * compatibility, audit logging fire identically to the Slack + MCP paths).
+ * Two-track wrapper:
+ *   - String fields (title, owner, resources, startDate, endDate,
+ *     dayOfWeek, status, notes) route through `updateWeekItemField` one
+ *     field at a time so validators, status / category compatibility,
+ *     and audit logging fire identically to the Slack + MCP paths.
+ *   - `projectId` (re-parenting) routes through `linkWeekItemToProject`
+ *     instead — it carries a client-mismatch guard, a cascading recompute
+ *     of both source + destination project date envelopes, and its own
+ *     audit shape (`updateType: 'week-reparent'`). Routing it through
+ *     `updateWeekItemField` would either bypass those (correctness break)
+ *     or hit the field validators that don't accept it.
  *
- * Field ordering follows the slack-modal-submit pattern: when BOTH
- * startDate and endDate change, write the side compatible with the row's
- * current other side first so the per-field cross-date guard doesn't trip
- * on an intermediate state. `title` writes LAST when changed (it's a
- * lookup key — subsequent field writes inside this same call still need
- * the original title to resolve the row).
+ * Ordering: fields write FIRST, then projectId. A failure inside the
+ * field-write loop short-circuits before the project move; a failure
+ * inside `linkWeekItemToProject` leaves the field writes already
+ * applied. Partial-failure rollback is out of scope for v1 — the modal
+ * surfaces the error and the user retries.
  *
- * Returns `previousValues` so the modal can pin the inverse for undo.
+ * Field ordering inside the field-write loop follows the
+ * slack-modal-submit pattern: when BOTH startDate and endDate change,
+ * write the side compatible with the row's current other side first so
+ * the per-field cross-date guard doesn't trip on an intermediate state.
+ * `title` writes LAST when changed (it's a lookup key — subsequent field
+ * writes inside this same call still need the original title to resolve
+ * the row).
+ *
+ * Server-side validators (P1.1 from TP review on b7c89f3) defend against
+ * client-side drift: dayOfWeek must be one of the lowercase work-week
+ * values, title and owner must be non-empty when included. These mirror
+ * the modal's client-side guards but cannot trust the client per
+ * `feedback_sheet_authority_cuts_both_ways` + `feedback_dayofweek_lowercase`.
+ *
+ * Returns `previousValues` (per-field pre-write snapshot) and
+ * `previousProjectId` (when projectId was included) so the modal's undo
+ * toast can replay the inverse via a second call with the previous values.
  */
-export async function updateWeekItemFieldsAction(input: {
-  weekItemId: string;
-  updatedBy: string;
-  fields: WeekItemEditPatch;
-}): Promise<UpdateWeekItemFieldsResult> {
+export async function updateWeekItemFieldsAction(
+  input: UpdateWeekItemFieldsInput,
+): Promise<UpdateWeekItemFieldsResult> {
+  // P1.1 — server-side guardrails. The client modal validates these too
+  // but cannot be trusted (per `feedback_sheet_authority_cuts_both_ways`).
+  const guard = validateFieldsServerSide(input.fields);
+  if (!guard.ok) return guard;
+  const fields = guard.fields;
+
   const db = getRunwayDb();
   const rows = await db
     .select()
@@ -135,26 +164,32 @@ export async function updateWeekItemFieldsAction(input: {
   }
 
   const changed = (
-    Object.keys(input.fields) as WeekItemEditableField[]
-  ).filter((k) => input.fields[k] !== undefined);
-  if (changed.length === 0) {
+    Object.keys(fields) as WeekItemEditableField[]
+  ).filter((k) => fields[k] !== undefined);
+
+  const projectIdProvided = Object.prototype.hasOwnProperty.call(
+    input,
+    "projectId",
+  );
+  const newProjectId = input.projectId;
+
+  if (changed.length === 0 && !projectIdProvided) {
     return { ok: true, previousValues: {} };
   }
 
   const previousValues: WeekItemEditPatch = {};
   for (const field of changed) {
-    const cur = (row as Record<string, unknown>)[field];
-    previousValues[field] = cur == null ? null : String(cur);
+    previousValues[field] = capturePreviousValue(row, field);
   }
 
-  const ordered = orderFieldsForDashboardSave(changed, row, input.fields);
+  const ordered = orderFieldsForDashboardSave(changed, row, fields);
 
   // weekItemTitle is the lookup key — capture the title BEFORE any write
   // that might mutate it, then thread the in-flight title through subsequent
   // writes so the row keeps resolving even if title changed mid-batch.
   let currentTitle = row.title;
   for (const field of ordered) {
-    const newValue = input.fields[field] ?? null;
+    const newValue = fields[field] ?? null;
     const result = await updateWeekItemField({
       weekOf: row.weekOf,
       weekItemTitle: currentTitle,
@@ -168,8 +203,94 @@ export async function updateWeekItemFieldsAction(input: {
       currentTitle = newValue;
     }
   }
+
+  // Re-parenting runs last so a field-write failure short-circuits before
+  // touching the project. `linkWeekItemToProject` has its own client-mismatch
+  // guard + cascading recompute + idempotency check.
+  let previousProjectId: string | null | undefined;
+  if (projectIdProvided && newProjectId) {
+    previousProjectId = row.projectId ?? null;
+    if (previousProjectId !== newProjectId) {
+      const linkResult = await linkWeekItemToProject({
+        weekItemId: input.weekItemId,
+        projectId: newProjectId,
+        updatedBy: input.updatedBy,
+      });
+      if (!linkResult.ok) return { ok: false, error: linkResult.error };
+    }
+  }
+
   revalidatePath("/runway");
-  return { ok: true, previousValues };
+  return projectIdProvided
+    ? { ok: true, previousValues, previousProjectId }
+    : { ok: true, previousValues };
+}
+
+function capturePreviousValue(
+  row: Record<string, unknown>,
+  field: WeekItemEditableField,
+): string | null {
+  const cur = row[field];
+  return cur == null ? null : String(cur);
+}
+
+/**
+ * Lowercase work-week days the dashboard's day-of-week dropdown can
+ * write. Saturday + Sunday are intentionally excluded — Runway doesn't
+ * schedule weekend work and accepting them would let a typo bypass the
+ * UI's Mon-Fri options.
+ */
+const ALLOWED_DAYS_OF_WEEK = new Set([
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+]);
+
+type ValidateFieldsResult =
+  | { ok: true; fields: WeekItemEditPatch }
+  | { ok: false; error: string };
+
+function validateFieldsServerSide(
+  fields: WeekItemEditPatch,
+): ValidateFieldsResult {
+  const out: WeekItemEditPatch = { ...fields };
+
+  if (Object.prototype.hasOwnProperty.call(out, "title")) {
+    const v = out.title;
+    if (typeof v !== "string" || v.trim() === "") {
+      return { ok: false, error: "Title is required." };
+    }
+    out.title = v.trim();
+  }
+  if (Object.prototype.hasOwnProperty.call(out, "owner")) {
+    const v = out.owner;
+    if (typeof v !== "string" || v.trim() === "") {
+      return { ok: false, error: "Owner is required." };
+    }
+    out.owner = v.trim();
+  }
+  if (Object.prototype.hasOwnProperty.call(out, "dayOfWeek")) {
+    const raw = out.dayOfWeek;
+    if (typeof raw !== "string" || raw.trim() === "") {
+      return {
+        ok: false,
+        error: `dayOfWeek must be one of: ${[...ALLOWED_DAYS_OF_WEEK].join(", ")}.`,
+      };
+    }
+    // Normalize per `feedback_dayofweek_lowercase` — drafters frequently
+    // title-case from spec prose; no existing validator catches the drift.
+    const normalized = raw.trim().toLowerCase();
+    if (!ALLOWED_DAYS_OF_WEEK.has(normalized)) {
+      return {
+        ok: false,
+        error: `dayOfWeek must be one of: ${[...ALLOWED_DAYS_OF_WEEK].join(", ")}.`,
+      };
+    }
+    out.dayOfWeek = normalized;
+  }
+  return { ok: true, fields: out };
 }
 
 /**

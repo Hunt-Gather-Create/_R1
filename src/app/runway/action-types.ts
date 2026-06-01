@@ -21,8 +21,28 @@ export type WeekItemEditPatch = Partial<
   Record<WeekItemEditableField, string | null>
 >;
 
+export type UpdateWeekItemFieldsInput = {
+  weekItemId: string;
+  updatedBy: string;
+  /** String fields routed through `updateWeekItemField`. */
+  fields: WeekItemEditPatch;
+  /**
+   * Project re-parenting routes through `linkWeekItemToProject` instead
+   * (separate helper with a client-mismatch guard + cascading recompute).
+   * Omitted = no project change. `null` is not a valid value — the helper
+   * requires a real projectId; clearing a week item's project isn't a
+   * supported operation from the dashboard.
+   */
+  projectId?: string;
+};
+
 export type UpdateWeekItemFieldsResult =
-  | { ok: true; previousValues: WeekItemEditPatch }
+  | {
+      ok: true;
+      previousValues: WeekItemEditPatch;
+      /** Present iff the input included `projectId`. */
+      previousProjectId?: string | null;
+    }
   | { ok: false; error: string };
 
 export type SetWeekItemStatusResult =

@@ -38,11 +38,18 @@ vi.mock("drizzle-orm", () => ({
 }));
 vi.mock("@/lib/runway/operations-writes-week", () => ({
   updateWeekItemField: vi.fn(async () => ({ ok: true })),
+  linkWeekItemToProject: vi.fn(async () => ({
+    ok: true,
+    data: { previousProjectId: null, newProjectId: "p-new" },
+  })),
 }));
 
 import { setViewPreferences } from "@/lib/runway/view-preferences";
 import { revalidatePath } from "next/cache";
-import { updateWeekItemField } from "@/lib/runway/operations-writes-week";
+import {
+  updateWeekItemField,
+  linkWeekItemToProject,
+} from "@/lib/runway/operations-writes-week";
 import {
   toggleInFlightAction,
   toggleNeedsUpdateAction,
@@ -53,11 +60,13 @@ import {
 const mockedSet = vi.mocked(setViewPreferences);
 const mockedRevalidate = vi.mocked(revalidatePath);
 const mockedUpdate = vi.mocked(updateWeekItemField);
+const mockedLink = vi.mocked(linkWeekItemToProject);
 
 beforeEach(() => {
   mockedSet.mockClear();
   mockedRevalidate.mockClear();
   mockedUpdate.mockClear();
+  mockedLink.mockClear();
   mockedRow = undefined;
 });
 
@@ -376,5 +385,122 @@ describe("updateWeekItemFieldsAction", () => {
       error: "validator rejected: notes too long",
     });
     expect(mockedRevalidate).not.toHaveBeenCalled();
+  });
+
+  // P1.1 server validators (TP review on b7c89f3). Client modal is the
+  // primary gate but cannot be trusted — drafters frequently title-case
+  // dayOfWeek (`feedback_dayofweek_lowercase`); per
+  // `feedback_sheet_authority_cuts_both_ways` server must enforce.
+  it("rejects an empty title with a clear error before touching the DB", async () => {
+    mockedRow = { id: "wi-1", title: "T", weekOf: "2026-06-01" };
+    const result = await updateWeekItemFieldsAction({
+      weekItemId: "wi-1",
+      updatedBy: "Jason",
+      fields: { title: "   " },
+    });
+    expect(result).toEqual({ ok: false, error: "Title is required." });
+    expect(mockedUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty owner before touching the DB", async () => {
+    mockedRow = { id: "wi-1", title: "T", weekOf: "2026-06-01" };
+    const result = await updateWeekItemFieldsAction({
+      weekItemId: "wi-1",
+      updatedBy: "Jason",
+      fields: { owner: "" },
+    });
+    expect(result).toEqual({ ok: false, error: "Owner is required." });
+    expect(mockedUpdate).not.toHaveBeenCalled();
+  });
+
+  it("normalizes title-cased dayOfWeek to lowercase before writing", async () => {
+    mockedRow = { id: "wi-1", title: "T", weekOf: "2026-06-01" };
+    await updateWeekItemFieldsAction({
+      weekItemId: "wi-1",
+      updatedBy: "Jason",
+      fields: { dayOfWeek: "Tuesday" },
+    });
+    expect(mockedUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ field: "dayOfWeek", newValue: "tuesday" }),
+    );
+  });
+
+  it("rejects a weekend dayOfWeek (Saturday / Sunday are not work-week values)", async () => {
+    mockedRow = { id: "wi-1", title: "T", weekOf: "2026-06-01" };
+    const result = await updateWeekItemFieldsAction({
+      weekItemId: "wi-1",
+      updatedBy: "Jason",
+      fields: { dayOfWeek: "saturday" },
+    });
+    expect(result.ok).toBe(false);
+    expect(mockedUpdate).not.toHaveBeenCalled();
+  });
+
+  it("routes projectId through linkWeekItemToProject (NOT updateWeekItemField) and returns previousProjectId", async () => {
+    mockedRow = {
+      id: "wi-1",
+      title: "T",
+      weekOf: "2026-06-01",
+      projectId: "p-old",
+    };
+    const result = await updateWeekItemFieldsAction({
+      weekItemId: "wi-1",
+      updatedBy: "Jason",
+      fields: {},
+      projectId: "p-new",
+    });
+    expect(mockedLink).toHaveBeenCalledWith({
+      weekItemId: "wi-1",
+      projectId: "p-new",
+      updatedBy: "Jason",
+    });
+    expect(result).toEqual({
+      ok: true,
+      previousValues: {},
+      previousProjectId: "p-old",
+    });
+  });
+
+  it("skips linkWeekItemToProject when the requested projectId matches the current one", async () => {
+    mockedRow = {
+      id: "wi-1",
+      title: "T",
+      weekOf: "2026-06-01",
+      projectId: "p-same",
+    };
+    const result = await updateWeekItemFieldsAction({
+      weekItemId: "wi-1",
+      updatedBy: "Jason",
+      fields: {},
+      projectId: "p-same",
+    });
+    expect(mockedLink).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      ok: true,
+      previousValues: {},
+      previousProjectId: "p-same",
+    });
+  });
+
+  it("writes string fields BEFORE re-parenting (a field-write failure short-circuits before the project move)", async () => {
+    mockedRow = {
+      id: "wi-1",
+      title: "T",
+      weekOf: "2026-06-01",
+      owner: "X",
+      projectId: "p-old",
+    };
+    mockedUpdate.mockResolvedValueOnce({
+      ok: false,
+      error: "owner validator rejected",
+    });
+    const result = await updateWeekItemFieldsAction({
+      weekItemId: "wi-1",
+      updatedBy: "Jason",
+      fields: { owner: "Jill" },
+      projectId: "p-new",
+    });
+    expect(result).toEqual({ ok: false, error: "owner validator rejected" });
+    expect(mockedLink).not.toHaveBeenCalled();
   });
 });
