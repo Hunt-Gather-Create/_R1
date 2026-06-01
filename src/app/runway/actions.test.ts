@@ -350,6 +350,54 @@ describe("updateWeekItemFieldsAction", () => {
     });
   });
 
+  // #84 — `category` is editable from the dashboard. The action routes it
+  // through `updateWeekItemField` like any other string field and captures
+  // the row's prior category so the modal's Undo can replay the inverse.
+  it("routes category writes through updateWeekItemField and captures the prior category for Undo", async () => {
+    mockedRow = {
+      id: "wi-1",
+      title: "Brand: Hero",
+      weekOf: "2026-06-01",
+      owner: "Lane",
+      category: "delivery",
+    };
+    const result = await updateWeekItemFieldsAction({
+      weekItemId: "wi-1",
+      updatedBy: "Jason",
+      fields: { category: "review" },
+    });
+    expect(mockedUpdate).toHaveBeenCalledWith({
+      weekOf: "2026-06-01",
+      weekItemTitle: "Brand: Hero",
+      field: "category",
+      newValue: "review",
+      updatedBy: "Jason",
+      source: "dashboard",
+    });
+    expect(result).toEqual({
+      ok: true,
+      previousValues: { category: "delivery" },
+    });
+  });
+
+  it("category clear writes null through updateWeekItemField (the dropdown's (clear) option)", async () => {
+    mockedRow = {
+      id: "wi-1",
+      title: "Brand: Hero",
+      weekOf: "2026-06-01",
+      owner: "Lane",
+      category: "delivery",
+    };
+    await updateWeekItemFieldsAction({
+      weekItemId: "wi-1",
+      updatedBy: "Jason",
+      fields: { category: null },
+    });
+    expect(mockedUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ field: "category", newValue: null }),
+    );
+  });
+
   it("writes each changed field with updatedBy + source='dashboard'", async () => {
     mockedRow = {
       id: "wi-1",

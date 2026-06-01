@@ -271,6 +271,8 @@ function capturePreviousValue(
       return row.dayOfWeek ?? null;
     case "status":
       return row.status ?? null;
+    case "category":
+      return row.category ?? null;
     case "notes":
       return row.notes ?? null;
   }

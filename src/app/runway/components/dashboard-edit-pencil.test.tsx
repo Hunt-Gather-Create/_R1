@@ -171,12 +171,81 @@ describe("EditPencil", () => {
       );
     });
 
-    it("renders category as a read-only input (cascades from project — no edit affordance)", () => {
+    // #84 — `week_items.category` (chip enum: delivery / review / etc.)
+    // is editable in the modal. Pre-#84 it was a read-only field mislabeled
+    // as a cascade from the parent project; the new field is a select
+    // dropdown over WEEK_ITEM_CATEGORIES with a (clear) option.
+    it("renders category as an editable <select> pre-filled from the WI's category with a (clear) option", () => {
       render(<EditPencil item={makeItem()} />);
       fireEvent.click(screen.getByTestId("edit-pencil"));
-      const cat = screen.getByTestId("edit-field-category");
-      expect(cat).toHaveAttribute("readonly");
-      expect(cat).toHaveValue("delivery");
+      const cat = screen.getByTestId("edit-field-category") as HTMLSelectElement;
+      expect(cat.tagName).toBe("SELECT");
+      expect(cat.value).toBe("delivery");
+      const options = Array.from(cat.querySelectorAll("option")).map((o) => o.value);
+      expect(options).toEqual([
+        "",
+        "delivery",
+        "review",
+        "kickoff",
+        "deadline",
+        "approval",
+        "launch",
+      ]);
+    });
+
+    it("changing the category dropdown + saving patches the category field through the action", async () => {
+      render(<EditPencil item={makeItem()} />);
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      fireEvent.change(screen.getByTestId("edit-field-category"), {
+        target: { value: "review" },
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("edit-save"));
+        await Promise.resolve();
+      });
+      expect(updateWeekItemFieldsAction).toHaveBeenCalledTimes(1);
+      const call = updateWeekItemFieldsAction.mock.calls[0][0] as {
+        fields: Record<string, unknown>;
+      };
+      expect(call.fields).toEqual({ category: "review" });
+    });
+
+    it("selecting (clear) writes null on the patch so the column resets", async () => {
+      render(<EditPencil item={makeItem()} />);
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      fireEvent.change(screen.getByTestId("edit-field-category"), {
+        target: { value: "" },
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("edit-save"));
+        await Promise.resolve();
+      });
+      expect(updateWeekItemFieldsAction).toHaveBeenCalledTimes(1);
+      const call = updateWeekItemFieldsAction.mock.calls[0][0] as {
+        fields: Record<string, unknown>;
+      };
+      expect(call.fields).toEqual({ category: null });
+    });
+
+    it("project category field renders read-only beside the editable Category and pre-fills from item.parentCategory", () => {
+      // commit 4 (#81) threads parentCategory through; this test pins
+      // the read-only contract now so the empty-on-undefined path doesn't
+      // regress while the data wiring lands.
+      render(
+        <EditPencil item={makeItem({ parentCategory: "active" })} />,
+      );
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      const pc = screen.getByTestId("edit-field-parentCategory");
+      expect(pc).toHaveAttribute("readonly");
+      expect(pc).toHaveValue("active");
+    });
+
+    it("project category field renders empty when parentCategory is undefined (graceful pre-commit-4 state)", () => {
+      render(<EditPencil item={makeItem()} />);
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      const pc = screen.getByTestId("edit-field-parentCategory");
+      expect(pc).toHaveAttribute("readonly");
+      expect(pc).toHaveValue("");
     });
 
     it("renders the project field as a <select> pre-filled to item.projectId once options load", async () => {

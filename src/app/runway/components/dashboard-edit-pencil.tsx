@@ -48,6 +48,7 @@ import type {
   WeekItemEditPatch,
 } from "../action-types";
 import { WEEK_ITEM_STATUSES } from "@/lib/runway/week-item-statuses";
+import { WEEK_ITEM_CATEGORIES } from "@/lib/runway/operations-utils";
 import { useEditorName } from "./use-editor-name";
 import { NamePromptDialog } from "./name-prompt-dialog";
 import { ResourceChipEditor } from "./resource-chip-editor";
@@ -61,9 +62,16 @@ export type EditPencilItem = {
   endDate?: string | null;
   status?: string | null;
   notes?: string | null;
-  // Category is still cascade-only on the modal — flips when the parent
-  // project's category changes, not edited here.
+  // #84 — the week item's own category (`week_items.category`, the
+  // chip enum: delivery / review / kickoff / deadline / approval / launch).
+  // Editable from this modal via the Category dropdown; pre-#84 the field
+  // was read-only and mislabeled as a cascade from the parent project.
   category?: string | null;
+  // #81 — the parent project's category value (`projects.category`,
+  // surfaced read-only beside the WI category so operators see the
+  // upstream context without conflating it with the editable WI chip).
+  // Threaded in by commit 4; renders empty when undefined.
+  parentCategory?: string | null;
   // Used to render the current project name in the picker's pre-load
   // placeholder so the operator sees context immediately even before
   // the option list arrives.
@@ -180,6 +188,9 @@ type EditState = Required<
   endDate: string;
   dayOfWeek: string;
   status: string;
+  // #84 — the WI's own category (`week_items.category`). "" = clear, written
+  // to the DB as null via the diffEditState empty-to-null normalization.
+  category: string;
   notes: string;
   // Tracked alongside the string-field state but emitted separately on
   // save (routes through linkWeekItemToProject, not updateWeekItemField).
@@ -195,6 +206,7 @@ function initialEditState(item: EditPencilItem): EditState {
     endDate: item.endDate ?? "",
     dayOfWeek: deriveDayOfWeek(item.startDate ?? "") ?? "",
     status: item.status ?? "",
+    category: item.category ?? "",
     notes: item.notes ?? "",
     projectId: item.projectId ?? "",
   };
@@ -218,6 +230,17 @@ function validateEditState(state: EditState): string | null {
   if (state.status && !WEEK_ITEM_STATUSES.includes(state.status as never)) {
     return `Status must be one of: ${WEEK_ITEM_STATUSES.join(", ")}.`;
   }
+  // #84 — empty string is the (clear) sentinel and passes through to
+  // diffEditState which collapses it to null. Any other value must be
+  // a known WI category enum member. The dropdown can't produce drift
+  // on its own, but a forged DOM mutation would; the helper also
+  // validates server-side as a second line of defense.
+  if (
+    state.category &&
+    !WEEK_ITEM_CATEGORIES.includes(state.category as never)
+  ) {
+    return `Category must be one of: ${WEEK_ITEM_CATEGORIES.join(", ")}.`;
+  }
   return null;
 }
 
@@ -234,6 +257,7 @@ function diffEditState(
     "endDate",
     "dayOfWeek",
     "status",
+    "category",
     "notes",
   ];
   for (const f of fields) {
@@ -426,11 +450,26 @@ function EditDialogContent({
                 ))}
               </select>
             </Field>
-            <Field label="Category (cascades from project)">
-              <input
-                value={item.category ?? ""}
-                readOnly
+            <Field label="Category">
+              <select
+                value={state.category}
+                onChange={(e) => onField("category", e.target.value)}
                 data-testid="edit-field-category"
+                className={inputClasses}
+              >
+                <option value="">(clear)</option>
+                {WEEK_ITEM_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Project category">
+              <input
+                value={item.parentCategory ?? ""}
+                readOnly
+                data-testid="edit-field-parentCategory"
                 className={`${inputClasses} cursor-not-allowed bg-muted/30 text-muted-foreground`}
               />
             </Field>
