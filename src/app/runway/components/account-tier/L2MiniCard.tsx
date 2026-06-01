@@ -29,6 +29,7 @@
 import { TYPE_INDICATORS, MetadataLabel } from "../status-badge";
 import { DatesLine } from "../dates-line";
 import { CompleteCheckbox } from "../complete-checkbox";
+import { EditPencil } from "../dashboard-edit-pencil";
 
 type Theme = "light" | "dark";
 
@@ -75,8 +76,20 @@ export function L2MiniCard({
   return (
     <div
       data-testid="l2-mini-card"
-      className="w-full sm:w-[260px] sm:flex-shrink-0 rounded-xl border border-sky-500/30 bg-sky-500/5 p-4"
+      className="relative w-full sm:w-[260px] sm:flex-shrink-0 rounded-xl border border-sky-500/30 bg-sky-500/5 p-4"
     >
+      <EditPencil
+        item={{
+          id,
+          title,
+          owner,
+          resources,
+          startDate,
+          endDate,
+          status,
+          category,
+        }}
+      />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           {accountName ? <p className={ACCOUNT_CLASS}>{accountName}</p> : null}

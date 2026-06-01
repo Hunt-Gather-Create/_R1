@@ -6,6 +6,7 @@ import { TYPE_INDICATORS, MetadataLabel } from "./status-badge";
 import { DatesLine } from "./dates-line";
 import { pastEndRedNote, pastEndNoteText } from "@/lib/runway/plate-summary";
 import { CompleteCheckbox } from "./complete-checkbox";
+import { EditPencil } from "./dashboard-edit-pencil";
 
 const HOLD_PATTERN = /\b(hold[s]?\s+until|on\s+hold|blocked|not\s+starting\s+until)\b/i;
 const RISK_PATTERN = /\(Risk:\s*([^)]+)\)/;
@@ -103,9 +104,25 @@ export function DayItemCard({ item, size = "sm", bottomBanner }: DayItemCardProp
 
   return (
     <div
-      className={`${s.card} ${bottomBanner ? "relative overflow-hidden pb-5" : ""}`}
+      className={`${s.card} relative ${bottomBanner ? "overflow-hidden pb-5" : ""}`}
       data-testid="day-item-card"
     >
+      {item.id ? (
+        <EditPencil
+          item={{
+            id: item.id,
+            title: item.title,
+            owner: item.owner ?? null,
+            resources: item.resources ?? null,
+            startDate: item.startDate ?? null,
+            endDate: item.endDate ?? null,
+            status: item.status ?? null,
+            notes: item.notes ?? null,
+            category: null,
+            parentProjectName: item.parentProjectName ?? null,
+          }}
+        />
+      ) : null}
       <div className={`flex items-start justify-between ${s.gap}`}>
         <div className="min-w-0 flex-1">
           <p className={ACCOUNT_CLASS}>{item.account}</p>
