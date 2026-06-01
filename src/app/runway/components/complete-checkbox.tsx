@@ -67,6 +67,11 @@ export function CompleteCheckbox({
 
   function complete() {
     if (pending) return;
+    // Re-clicking the box after it's already flipped optimistic-completed
+    // would refire the server action and then surface an Undo toast whose
+    // `previousStatus` is itself "completed" — silent no-op on click,
+    // operator sees a toast that doesn't do anything. Skip.
+    if (optimistic === "completed") return;
     const previousVisualStatus = status ?? null;
     setOptimistic("completed");
     startTransition(async () => {

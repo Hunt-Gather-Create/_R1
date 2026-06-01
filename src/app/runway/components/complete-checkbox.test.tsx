@@ -149,6 +149,27 @@ describe("CompleteCheckbox", () => {
     );
   });
 
+  it("ignores re-clicks once the box is optimistically completed (no phantom undo)", async () => {
+    setWeekItemStatusAction.mockResolvedValue({
+      ok: true,
+      previousStatus: "in-progress",
+    });
+    render(
+      <CompleteCheckbox weekItemId="w1" title="Design comps" status="in-progress" />,
+    );
+    const box = screen.getByTestId("complete-checkbox");
+    fireEvent.click(box);
+    await waitFor(() =>
+      expect(setWeekItemStatusAction).toHaveBeenCalledTimes(1),
+    );
+    fireEvent.click(box);
+    fireEvent.click(box);
+    // Still exactly one server call — the second + third clicks fall
+    // through the optimistic-completed guard, so no phantom-undo toast
+    // gets queued behind the real one.
+    expect(setWeekItemStatusAction).toHaveBeenCalledTimes(1);
+  });
+
   it("stops click propagation so the surrounding card doesn't open a modal", () => {
     setWeekItemStatusAction.mockResolvedValue({
       ok: true,
