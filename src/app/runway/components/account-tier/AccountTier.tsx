@@ -357,6 +357,11 @@ export function AccountTier({
       <div className="space-y-3 pt-2">
         {blocks.map((block) => {
           if (block.kind === "wrapper") {
+            // #42 — a wrapper section with zero renderable L1 children is a
+            // visual dead zone (only the WrapperHeader renders). Skip it.
+            // The Gantt embed still renders the wrapper rollup including
+            // any direct WIs (#65); this filter is AccountTier-local.
+            if (block.children.length === 0) return null;
             return (
               <WrapperBlock
                 key={block.wrapper.anchor}

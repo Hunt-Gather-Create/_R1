@@ -127,15 +127,13 @@ export async function extractClientRundown(
 
   for (const c of classified) {
     if (c.kind === "wrapper") {
-      const orphanItems = (wiByProject.get(c.project.id) ?? []).map((w) => ({
-        id: w.id,
-        title: w.title,
-      }));
+      // Direct WIs render as rows alongside child L1s (Hopdoddy 2026-05-28).
+      const directItems = wiByProject.get(c.project.id) ?? [];
       const wrapperData = buildWrapperSectionData(
         c.project,
         client,
         c.children,
-        orphanItems,
+        directItems,
         generatedAt,
         todayISO,
       );

@@ -1341,6 +1341,10 @@ export type AuditSource =
   | "bot-direct"
   | "migration"
   | "cli"
+  // #9 / partial #67: in-app card checkbox + undo (Runway dashboard).
+  // Same audit-stream shape as the other surfaces; tagged separately so
+  // future audits can trace UI-driven writes.
+  | "dashboard"
   | null;
 
 export interface AuditEvent {

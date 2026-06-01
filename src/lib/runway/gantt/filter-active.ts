@@ -16,11 +16,11 @@
  *  - L1 with all weekItems completed but L1.status NOT terminal ->
  *    NOT hidden + flagged via isReadyToClose() as "ready to close?".
  *  - Wrapper with no kids and no orphans -> NOT hidden (degenerate).
- *  - Wrapper-level: at the rundown layer, orphan weekItem statuses are
- *    NOT carried in `RawData.orphanWeekItems` (only id+title). Therefore
- *    `filterActiveRundown` is conservative -- any orphans present keep the
- *    wrapper visible. Callers with full WeekItemRow data can still use
- *    `isWrapperHidden()` directly for precise evaluation.
+ *  - Wrapper-level: direct weekItem statuses are now carried in
+ *    `RawData.directWeekItems` as full rows. `filterActiveRundown` still
+ *    uses the conservative "any direct WIs keep the wrapper visible" rule
+ *    until the dead-zone fix lands in a follow-up commit; pure callers can
+ *    use `isWrapperHidden()` directly for precise status-aware evaluation.
  *  - "canceled" is treated identically to "completed" for hide rules.
  *  - WeekItem `status === null` is treated as "scheduled" (non-terminal).
  */
@@ -123,11 +123,10 @@ export function isReadyToClose(
  * render time (kind === "wrapper-child" && rows.length === 0). This
  * function adds the active-status filter on top.
  *
- * Conservative wrapper rule: at the rundown layer, orphan weekItem
- * statuses are not carried in `RawData.orphanWeekItems`. We therefore
- * keep any wrapper that has orphans, because we cannot prove they are
- * all terminal. Pure callers with full WeekItemRow data should use
- * `isWrapperHidden()` directly for precise evaluation.
+ * Conservative wrapper rule: while we now carry full status data in
+ * `directWeekItems`, this filter still keeps any wrapper that has direct
+ * WIs. The status-aware dead-zone fix lands in a follow-up commit; pure
+ * callers needing precise evaluation should call `isWrapperHidden()`.
  *
  * Returns a new ClientRundownData with hidden sections removed.
  * Does not mutate the input.
@@ -145,9 +144,8 @@ export function filterActiveRundown(
     const raw = section.data.raw;
     if (raw.kind !== "wrapper") continue;
 
-    // Conservative: any orphans present keep the wrapper visible (status
-    // not carried at this layer).
-    if (raw.orphanWeekItems.length > 0) continue;
+    // Conservative: any direct WIs present keep the wrapper visible.
+    if (raw.directWeekItems.length > 0) continue;
 
     // Empty children + no orphans = degenerate hollow wrapper, leave it
     // alone so it remains a data-integrity surface.

@@ -67,7 +67,7 @@ function makeGanttData(
           entity: { id: entityId, title: entityTitle } as never,
           client: {} as never,
           children: [] as never[],
-          orphanWeekItems: [] as { id: string; title: string }[],
+          directWeekItems: [] as never[],
         }
       : {
           kind: "l1" as const,
@@ -538,5 +538,29 @@ describe("AccountTier", () => {
     const idxBeta = text.indexOf("Wrapper Beta");
     expect(idxAlpha).toBeLessThan(idxStandalone);
     expect(idxStandalone).toBeLessThan(idxBeta);
+  });
+
+  it("hides a wrapper block whose children all filtered out, alongside live siblings (#42)", () => {
+    const account = mockAccount();
+    // Wrapper Alpha has zero surviving children (dead zone). Wrapper Beta
+    // has one live child. Standalone X is unrelated. AccountTier should
+    // render Beta + Standalone but suppress Alpha entirely.
+    const rundown = mockRundown([
+      makeSection("wrapper", "Wrapper Alpha", [], undefined, "wrap-a"),
+      makeSection("wrapper", "Wrapper Beta", [], undefined, "wrap-b"),
+      makeSection("wrapper-child", "Sub B1", [makeWeekItemRow()], "Wrapper Beta", "l1-b1"),
+      makeSection("standalone", "Standalone X", [makeWeekItemRow()], undefined, "l1-x"),
+    ]);
+    render(
+      <AccountTier
+        account={account}
+        rundown={rundown}
+        readyToCloseIds={new Set()}
+      />,
+    );
+    expect(screen.queryByText("Wrapper Alpha")).toBeNull();
+    expect(screen.getByText("Wrapper Beta")).toBeTruthy();
+    expect(screen.getByText("Sub B1")).toBeTruthy();
+    expect(screen.getByText("Standalone X")).toBeTruthy();
   });
 });

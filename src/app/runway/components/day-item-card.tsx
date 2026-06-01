@@ -5,6 +5,7 @@ import { getOwnerResourcesDisplay } from "./display-utils";
 import { TYPE_INDICATORS, MetadataLabel } from "./status-badge";
 import { DatesLine } from "./dates-line";
 import { pastEndRedNote, pastEndNoteText } from "@/lib/runway/plate-summary";
+import { CompleteCheckbox } from "./complete-checkbox";
 
 const HOLD_PATTERN = /\b(hold[s]?\s+until|on\s+hold|blocked|not\s+starting\s+until)\b/i;
 const RISK_PATTERN = /\(Risk:\s*([^)]+)\)/;
@@ -31,10 +32,25 @@ export function parseNotes(notes: string): { main: string; risk?: string; isNext
   return { main, risk, isNextStep };
 }
 
+/**
+ * #64 Status View — bottom-banner accent. The banner is a ~6 px stripe
+ * inside the card, flush with the bottom edge, signaling which Status View
+ * bucket the card inherited from. Card body stays clean. Omitted means no
+ * stripe (default everywhere except the Status View tab).
+ */
+export type CardBottomBanner = "needs-update" | "today" | "in-flight";
+
 interface DayItemCardProps {
   item: DayItemEntry;
   size?: "sm" | "lg";
+  bottomBanner?: CardBottomBanner;
 }
+
+const BOTTOM_BANNER_CLASS: Record<CardBottomBanner, string> = {
+  "needs-update": "bg-red-500/70",
+  today: "bg-white/80",
+  "in-flight": "bg-sky-500/70",
+};
 
 const ACCOUNT_CLASS = "text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 
@@ -63,7 +79,7 @@ function nowHelpers(): { iso: string; ms: number } {
   return { iso: d.toISOString().slice(0, 10), ms: d.getTime() };
 }
 
-export function DayItemCard({ item, size = "sm" }: DayItemCardProps) {
+export function DayItemCard({ item, size = "sm", bottomBanner }: DayItemCardProps) {
   const s = SIZE_CLASSES[size];
   const displayType = getEffectiveType(item);
   const { showOwnerSeparately, displayResources } = getOwnerResourcesDisplay(item);
@@ -79,7 +95,10 @@ export function DayItemCard({ item, size = "sm" }: DayItemCardProps) {
   const blockers = item.blockedBy ?? [];
 
   return (
-    <div className={s.card} data-testid="day-item-card">
+    <div
+      className={`${s.card} ${bottomBanner ? "relative overflow-hidden pb-5" : ""}`}
+      data-testid="day-item-card"
+    >
       <div className={`flex items-start justify-between ${s.gap}`}>
         <div className="min-w-0 flex-1">
           <p className={ACCOUNT_CLASS}>{item.account}</p>
@@ -151,14 +170,29 @@ export function DayItemCard({ item, size = "sm" }: DayItemCardProps) {
             </div>
           ) : null}
         </div>
-        <span
-          className={`mt-0.5 shrink-0 text-xs font-medium uppercase tracking-wider ${
-            TYPE_INDICATORS[displayType] ?? "text-muted-foreground"
-          }`}
-        >
-          {displayType}
-        </span>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <CompleteCheckbox
+            weekItemId={item.id}
+            title={item.title}
+            status={item.status ?? null}
+          />
+          <span
+            className={`mt-0.5 text-xs font-medium uppercase tracking-wider ${
+              TYPE_INDICATORS[displayType] ?? "text-muted-foreground"
+            }`}
+          >
+            {displayType}
+          </span>
+        </div>
       </div>
+      {bottomBanner ? (
+        <div
+          data-testid="bottom-banner"
+          data-bucket={bottomBanner}
+          aria-hidden="true"
+          className={`absolute inset-x-0 bottom-0 h-1.5 ${BOTTOM_BANNER_CLASS[bottomBanner]}`}
+        />
+      ) : null}
     </div>
   );
 }

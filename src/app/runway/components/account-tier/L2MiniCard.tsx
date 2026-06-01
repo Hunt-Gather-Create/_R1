@@ -28,6 +28,7 @@
 
 import { TYPE_INDICATORS, MetadataLabel } from "../status-badge";
 import { DatesLine } from "../dates-line";
+import { CompleteCheckbox } from "../complete-checkbox";
 
 type Theme = "light" | "dark";
 
@@ -63,7 +64,8 @@ export function L2MiniCard({
   warningCount?: number;
   criticalCount?: number;
 }) {
-  const { title, owner, resources, startDate, endDate, category } = weekItem;
+  const { id, title, owner, resources, startDate, endDate, status, category } =
+    weekItem;
 
   const categoryClass =
     category && TYPE_INDICATORS[category]
@@ -109,7 +111,8 @@ export function L2MiniCard({
             </div>
           ) : null}
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <CompleteCheckbox weekItemId={id} title={title} status={status} />
           {category ? (
             <span
               data-testid="category-chip"

@@ -28,9 +28,9 @@ export type ResolveClientResult =
 
 /**
  * The classified, query-ready dataset for one Gantt render. Discriminated by
- * which view applies: a wrapper renders child L1 projects (and surfaces any
- * weekItems attached directly to the wrapper as orphans); an L1 view renders
- * its own weekItems.
+ * which view applies: a wrapper renders child L1 projects plus any weekItems
+ * attached directly to the wrapper (legitimate retainer-level work); an L1
+ * view renders its own weekItems.
  */
 export type RawData =
   | {
@@ -38,7 +38,7 @@ export type RawData =
       entity: ProjectRow;
       client: ClientRow;
       children: ProjectRow[];
-      orphanWeekItems: { id: string; title: string }[];
+      directWeekItems: WeekItemRow[];
     }
   | {
       kind: "l1";
@@ -139,7 +139,6 @@ export type IssueCode =
   | "wrapper-range-misses-children"
   | "wrapper-bad-engagement-type"
   | "wrapper-child-contract-mismatch"
-  | "wrapper-has-orphan-weekitems"
   // Row-level — wrapper view rows (deliverable L1 projects)
   | "row-both-dates-null"
   | "row-only-start-null"
