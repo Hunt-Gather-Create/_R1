@@ -19,7 +19,14 @@
  * optimistic state + toast lifecycle in one place.
  */
 
-import { useState, useTransition, type MouseEvent, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+  type MouseEvent,
+  type KeyboardEvent,
+} from "react";
 import { toast } from "sonner";
 import { setWeekItemStatusAction } from "../actions";
 
@@ -41,6 +48,16 @@ export function CompleteCheckbox({
     status === "completed" ? "completed" : "idle",
   );
   const [pending, startTransition] = useTransition();
+  // LlamaPReview P2 (PR #110): the undo callback in the toast closure
+  // captured `weekItemId` as a prop value at toast-creation time. If the
+  // parent re-rendered the same React node with a different id before the
+  // user clicked Undo, the closure would target the stale id. The card key
+  // upstream is `item.id`, so this is theoretical — but a ref is cheap and
+  // makes the guarantee structural rather than positional.
+  const idRef = useRef(weekItemId);
+  useEffect(() => {
+    idRef.current = weekItemId;
+  }, [weekItemId]);
 
   if (!weekItemId) return null;
   // Don't render the affordance once the row is already terminal —
@@ -54,7 +71,7 @@ export function CompleteCheckbox({
     setOptimistic("completed");
     startTransition(async () => {
       const result = await setWeekItemStatusAction({
-        weekItemId: weekItemId!,
+        weekItemId: idRef.current!,
         newStatus: "completed",
       });
       if (!result.ok) {
@@ -81,7 +98,7 @@ export function CompleteCheckbox({
     setOptimistic("idle");
     startTransition(async () => {
       const result = await setWeekItemStatusAction({
-        weekItemId: weekItemId!,
+        weekItemId: idRef.current!,
         newStatus: target,
       });
       if (!result.ok) {
