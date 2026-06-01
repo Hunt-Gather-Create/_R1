@@ -419,4 +419,104 @@ describe("EditPencil", () => {
       expect(screen.getByTestId("edit-field-dayOfWeek")).toHaveValue("wednesday");
     });
   });
+
+  // #83 — Save → Undo round-trip reopens the modal with the operator's
+  // captured edits pre-applied. Plain success cycle: the save action
+  // resolves; the success toast surfaces an Undo action; clicking Undo
+  // sends the reverse patch; on success the modal remounts with the
+  // pre-Undo edits filled in so the operator can tweak / re-save / close.
+  describe("Save → Undo reopens the modal with captured edits (#83)", () => {
+    beforeEach(() => {
+      document.cookie = `runway_editor_name=${encodeURIComponent("Jason")}; Path=/`;
+    });
+
+    async function openEditChangeOwnerAndSave() {
+      // Save flow uses the previousValues from the action response to
+      // build the Undo payload; mock once-per-cycle.
+      updateWeekItemFieldsAction.mockResolvedValueOnce({
+        ok: true as const,
+        previousValues: { owner: "Lane" },
+      });
+      render(<EditPencil item={makeItem()} />);
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      fireEvent.change(screen.getByTestId("edit-field-owner"), {
+        target: { value: "Jill" },
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("edit-save"));
+        await Promise.resolve();
+      });
+    }
+
+    it("Undo click reopens the modal pre-populated with the pre-Undo edits", async () => {
+      await openEditChangeOwnerAndSave();
+      // Save toast wired with Undo action; invoke it.
+      const successCall = toastSuccess.mock.calls.at(-1) as
+        | [string, { action: { onClick: () => void } }]
+        | undefined;
+      expect(successCall).toBeDefined();
+      // Modal is closed at this point (Save closes it synchronously).
+      expect(screen.queryByTestId("edit-dialog")).toBeNull();
+      // Mock the Undo revert call.
+      updateWeekItemFieldsAction.mockResolvedValueOnce({
+        ok: true as const,
+        previousValues: { owner: "Jill" },
+      });
+      await act(async () => {
+        successCall![1].action.onClick();
+        await Promise.resolve();
+      });
+      // Modal reopens with the captured owner value pre-applied.
+      expect(screen.getByTestId("edit-dialog")).toBeInTheDocument();
+      expect(screen.getByTestId("edit-field-owner")).toHaveValue("Jill");
+      // Save stays enabled because state still diffs against the (now-reverted)
+      // row: state.owner="Jill" vs initial.owner="Lane".
+      expect(screen.getByTestId("edit-save")).not.toBeDisabled();
+    });
+
+    it("Undo failure leaves the modal closed (DB still holds the saved value)", async () => {
+      await openEditChangeOwnerAndSave();
+      const successCall = toastSuccess.mock.calls.at(-1) as
+        | [string, { action: { onClick: () => void } }]
+        | undefined;
+      updateWeekItemFieldsAction.mockResolvedValueOnce({
+        ok: false,
+        error: "revert blocked",
+      } as never);
+      await act(async () => {
+        successCall![1].action.onClick();
+        await Promise.resolve();
+      });
+      // Modal stays closed; toast surfaces the failure.
+      expect(screen.queryByTestId("edit-dialog")).toBeNull();
+      expect(toastError).toHaveBeenCalledWith(
+        "Could not undo: revert blocked",
+        expect.objectContaining({ id: expect.stringContaining("save-") }),
+      );
+    });
+
+    it("subsequent fresh pencil click clears the restored state (no leak from prior Undo)", async () => {
+      await openEditChangeOwnerAndSave();
+      const successCall = toastSuccess.mock.calls.at(-1) as
+        | [string, { action: { onClick: () => void } }]
+        | undefined;
+      updateWeekItemFieldsAction.mockResolvedValueOnce({
+        ok: true as const,
+        previousValues: { owner: "Jill" },
+      });
+      await act(async () => {
+        successCall![1].action.onClick();
+        await Promise.resolve();
+      });
+      // Modal is open with the Undo-restored state. Close it via Cancel,
+      // then click the pencil again — should reopen with the pristine row
+      // values, not the prior session's edits.
+      fireEvent.click(screen.getByTestId("edit-cancel"));
+      expect(screen.queryByTestId("edit-dialog")).toBeNull();
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      expect(screen.getByTestId("edit-field-owner")).toHaveValue("Lane");
+      // Pristine — Save disabled until a fresh field is dirty.
+      expect(screen.getByTestId("edit-save")).toBeDisabled();
+    });
+  });
 });

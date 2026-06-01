@@ -94,26 +94,60 @@ const DAY_OF_WEEK_OPTIONS = [
   "sunday",
 ] as const;
 
+/**
+ * #83 — when Undo fires from a save toast, the modal needs to reopen with
+ * the operator's pre-Undo edits already applied so they can tweak + re-save
+ * (or close without saving). `RestoreEdits` is what the parent EditPencil
+ * passes back into the next mount of `EditDialogContent` so the form state
+ * comes up populated with what was just saved+reverted, not the pristine
+ * row values.
+ */
+type RestoreEdits = {
+  edits: WeekItemEditPatch;
+  /**
+   * `undefined` = no project change was part of the original save (and we
+   * don't restore one). A real string = restore to that selection. We never
+   * restore to "" / null because clearing a week item's project isn't a
+   * supported operation through the save action.
+   */
+  projectId: string | undefined;
+};
+
 export function EditPencil({ item }: { item: EditPencilItem }) {
   const [phase, setPhase] = useState<"closed" | "name-prompt" | "editing">(
     "closed",
   );
+  // #83 — `null` for a fresh pencil click; populated when fireUndo's
+  // onSuccess callback asks us to reopen with the captured payload.
+  // Cleared on every fresh pencil click so a previous Undo's restore can't
+  // leak into an unrelated edit session.
+  const [restore, setRestore] = useState<RestoreEdits | null>(null);
   const { name, setName } = useEditorName();
 
   if (!item.id) return null;
 
+  function openEdit() {
+    setRestore(null);
+    setPhase(name ? "editing" : "name-prompt");
+  }
+
   function onPencilClick(event: React.MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
-    setPhase(name ? "editing" : "name-prompt");
+    openEdit();
   }
 
   function onPencilKey(event: React.KeyboardEvent<HTMLButtonElement>) {
     if (event.key === " " || event.key === "Enter") {
       event.preventDefault();
       event.stopPropagation();
-      setPhase(name ? "editing" : "name-prompt");
+      openEdit();
     }
+  }
+
+  function reopenWithRestore(next: RestoreEdits) {
+    setRestore(next);
+    setPhase("editing");
   }
 
   return (
@@ -140,7 +174,9 @@ export function EditPencil({ item }: { item: EditPencilItem }) {
         open={phase === "editing"}
         item={item}
         editorName={name}
+        restore={restore}
         onClose={() => setPhase("closed")}
+        onUndoSuccess={reopenWithRestore}
       />
     </>
   );
@@ -287,12 +323,16 @@ function EditDialog({
   open,
   item,
   editorName,
+  restore,
   onClose,
+  onUndoSuccess,
 }: {
   open: boolean;
   item: EditPencilItem;
   editorName: string | null;
+  restore: RestoreEdits | null;
   onClose: () => void;
+  onUndoSuccess: (next: RestoreEdits) => void;
 }) {
   return (
     <Dialog.Root
@@ -311,7 +351,9 @@ function EditDialog({
             <EditDialogContent
               item={item}
               editorName={editorName}
+              restore={restore}
               onClose={onClose}
+              onUndoSuccess={onUndoSuccess}
             />
           ) : null}
         </Dialog.Content>
@@ -320,20 +362,64 @@ function EditDialog({
   );
 }
 
+/**
+ * #83 — overlay the captured patch onto the row-derived initial state so
+ * the form starts pre-populated with the operator's pre-Undo edits.
+ * Defined-but-null in the patch maps to "" (the EditState shape uses ""
+ * for the clear sentinel; diffEditState collapses "" back to null on
+ * the next Save).
+ */
+function applyRestoreEdits(
+  base: EditState,
+  restore: RestoreEdits | null,
+): EditState {
+  if (!restore) return base;
+  const next: EditState = { ...base };
+  const fields: WeekItemEditableField[] = [
+    "title",
+    "owner",
+    "resources",
+    "startDate",
+    "endDate",
+    "dayOfWeek",
+    "status",
+    "category",
+    "notes",
+  ];
+  for (const f of fields) {
+    if (Object.prototype.hasOwnProperty.call(restore.edits, f)) {
+      next[f] = (restore.edits[f] ?? "") as string;
+    }
+  }
+  if (restore.projectId !== undefined) {
+    next.projectId = restore.projectId;
+  }
+  return next;
+}
+
 function EditDialogContent({
   item,
   editorName,
+  restore,
   onClose,
+  onUndoSuccess,
 }: {
   item: EditPencilItem;
   editorName: string | null;
+  restore: RestoreEdits | null;
   onClose: () => void;
+  onUndoSuccess: (next: RestoreEdits) => void;
 }) {
   // Mounted only when the dialog is open, unmounted on close — so the
   // initial snapshot is naturally fresh per open. `useFrozenInitial`
   // makes the "this never updates" contract explicit (P2 nit, TP review).
+  // `initial` always reflects the row's actual stored values; `state` may
+  // start pre-populated with restored edits (#83) so dirty-detection still
+  // works against the row, not against the pre-Undo save.
   const initial = useFrozenInitial(() => initialEditState(item));
-  const [state, setState] = useState<EditState>(initial);
+  const [state, setState] = useState<EditState>(() =>
+    applyRestoreEdits(initial, restore),
+  );
   const router = useRouter();
 
   const validationError = useMemo(() => validateEditState(state), [state]);
@@ -369,7 +455,7 @@ function EditDialogContent({
       return;
     }
     onClose();
-    fireSave(item, patch, nextProjectId, editorName, router);
+    fireSave(item, patch, nextProjectId, editorName, router, onUndoSuccess);
   }
 
   return (
@@ -577,6 +663,7 @@ async function fireSave(
   nextProjectId: string | undefined,
   updatedBy: string,
   router: ReturnType<typeof useRouter>,
+  onUndoSuccess: (next: RestoreEdits) => void,
 ): Promise<void> {
   const toastId = saveToastId(item.id);
   toast.loading(`Saving ${item.title}…`, { id: toastId });
@@ -599,8 +686,20 @@ async function fireSave(
     onAutoClose: () => router.refresh(),
     action: {
       label: "Undo",
+      // #83 — capture the operator's pre-Undo edits in closure so the
+      // post-revert `onUndoSuccess` callback can reopen the modal with
+      // them pre-applied. The captured payload is exactly what the
+      // user just submitted; combined with the post-revert row state
+      // it produces the same form the user was looking at before Save.
       onClick: () =>
-        fireUndo(item, previousValues, previousProjectId, updatedBy, router),
+        fireUndo(
+          item,
+          previousValues,
+          previousProjectId,
+          updatedBy,
+          router,
+          () => onUndoSuccess({ edits: patch, projectId: nextProjectId }),
+        ),
     },
   });
   router.refresh();
@@ -612,6 +711,7 @@ async function fireUndo(
   previousProjectId: string | null,
   updatedBy: string,
   router: ReturnType<typeof useRouter>,
+  onSuccess: () => void,
 ): Promise<void> {
   // Reuse the same id as the originating save toast so the in-flight
   // "Saved" surface is replaced rather than stacked.
@@ -627,11 +727,15 @@ async function fireUndo(
     ...(previousProjectId ? { projectId: previousProjectId } : {}),
   });
   if (!result.ok) {
+    // #83 — leave the modal closed on Undo failure. The DB still holds
+    // the saved value, so reopening with pre-Undo edits would mislead
+    // the operator about what state the row is in.
     toast.error(`Could not undo: ${result.error}`, { id: toastId });
     return;
   }
   toast.success(`Reverted ${item.title}`, { id: toastId, duration: 4000 });
   router.refresh();
+  onSuccess();
 }
 
 // ─── Project picker ───────────────────────────────────────────────────────
