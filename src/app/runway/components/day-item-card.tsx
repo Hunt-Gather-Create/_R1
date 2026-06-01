@@ -118,7 +118,7 @@ export function DayItemCard({ item, size = "sm", bottomBanner }: DayItemCardProp
             endDate: item.endDate ?? null,
             status: item.status ?? null,
             notes: item.notes ?? null,
-            category: null,
+            category: item.category ?? null,
             parentProjectName: item.parentProjectName ?? null,
             parentCategory: item.parentCategory ?? null,
             projectId: item.projectId ?? null,

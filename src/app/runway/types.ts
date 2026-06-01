@@ -61,6 +61,13 @@ export interface DayItemEntry {
   owner?: string;
   resources?: string;
   type: DayItemType;
+  // #84 — the WI's own category (raw `week_items.category` value, e.g.
+  // "delivery" / "review"). Distinct from `type`, which defaults to
+  // "delivery" for null storage so the chip render never blanks. The
+  // dashboard edit modal pre-fills its editable Category dropdown from
+  // this raw value so opening from This Week shows the actual stored
+  // value, not the display default.
+  category?: string | null;
   notes?: string;
   // v4: L2 status enables status-aware filters in flag detectors.
   // null/undefined = not-started; "in-progress" | "blocked" | "completed".

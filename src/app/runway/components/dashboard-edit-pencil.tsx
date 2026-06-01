@@ -48,7 +48,7 @@ import type {
   WeekItemEditPatch,
 } from "../action-types";
 import { WEEK_ITEM_STATUSES } from "@/lib/runway/week-item-statuses";
-import { WEEK_ITEM_CATEGORIES } from "@/lib/runway/operations-utils";
+import { WEEK_ITEM_CATEGORIES } from "@/lib/runway/week-item-categories";
 import { useEditorName } from "./use-editor-name";
 import { NamePromptDialog } from "./name-prompt-dialog";
 import { ResourceChipEditor } from "./resource-chip-editor";

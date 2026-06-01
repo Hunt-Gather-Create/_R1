@@ -91,6 +91,10 @@ function mapWeekItemToEntry(
     ...(item.owner ? { owner: item.owner } : {}),
     ...(item.resources ? { resources: item.resources } : {}),
     type: (item.category ?? "delivery") as DayItemType,
+    // #84 — surface the raw stored category (not the display-defaulted
+    // `type`) so the dashboard edit modal's Category dropdown opens
+    // pre-filled with the actual value, including the null/clear case.
+    ...(item.category != null ? { category: item.category } : {}),
     ...(item.notes ? { notes: item.notes } : {}),
     // v4: pass L2 status through so flag detectors can filter active items.
     ...(item.status != null ? { status: item.status } : {}),
