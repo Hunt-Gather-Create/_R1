@@ -1,7 +1,28 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { DayItemCard, getEffectiveType, parseNotes } from "./day-item-card";
 import type { DayItemEntry } from "../types";
+
+// The day-item-card mounts EditPencil which calls listProjectsForWeekItemAction
+// on first render of the edit dialog. We don't exercise the save path here,
+// so a no-op mock keeps the action import happy.
+vi.mock("../actions", () => ({
+  listProjectsForWeekItemAction: vi.fn(async () => ({
+    ok: true as const,
+    projects: [],
+  })),
+  updateWeekItemFieldsAction: vi.fn(),
+}));
+vi.mock("sonner", () => ({
+  toast: Object.assign(vi.fn(), {
+    loading: vi.fn(),
+    success: vi.fn(),
+    error: vi.fn(),
+  }),
+}));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 
 function createEntry(overrides: Partial<DayItemEntry> = {}): DayItemEntry {
   return {
@@ -245,6 +266,35 @@ describe("DayItemCard", () => {
   it("does not render parent project name when parentProjectName is null", () => {
     render(<DayItemCard item={createEntry({ parentProjectName: null })} />);
     expect(screen.queryByTestId("parent-project-name")).not.toBeInTheDocument();
+  });
+
+  // #84 follow-up — opening the edit modal from a DayItemCard surfaces the
+  // WI's actual category in the editable dropdown (was hardcoded to null
+  // pre-fix, which left the dropdown reading "(clear)" even for cards with
+  // a real category set). Seeded cookie skips the name prompt.
+  it("opens the edit modal with the WI category dropdown pre-filled from entry.category", () => {
+    document.cookie = `runway_editor_name=${encodeURIComponent("Jason")}; Path=/`;
+    render(
+      <DayItemCard
+        item={createEntry({
+          id: "wi-day-1",
+          category: "review",
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("edit-pencil"));
+    const cat = screen.getByTestId("edit-field-category") as HTMLSelectElement;
+    expect(cat.value).toBe("review");
+    document.cookie = "runway_editor_name=; Max-Age=0; Path=/";
+  });
+
+  it("opens the edit modal with the Category dropdown cleared when entry.category is absent", () => {
+    document.cookie = `runway_editor_name=${encodeURIComponent("Jason")}; Path=/`;
+    render(<DayItemCard item={createEntry({ id: "wi-day-2" })} />);
+    fireEvent.click(screen.getByTestId("edit-pencil"));
+    const cat = screen.getByTestId("edit-field-category") as HTMLSelectElement;
+    expect(cat.value).toBe("");
+    document.cookie = "runway_editor_name=; Max-Age=0; Path=/";
   });
 });
 

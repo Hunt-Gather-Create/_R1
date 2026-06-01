@@ -64,20 +64,24 @@ function resolveBlockedByRefs(
   return refs;
 }
 
+type ParentProjectAttrs = { name: string; category: string | null };
+
 function mapWeekItemToEntry(
   item: WeekItemRow,
   clientNameById: Map<string, string>,
   weekItemById: Map<string, WeekItemRow>,
-  parentProjectNameById: Map<string, string>,
+  parentProjectAttrsById: Map<string, ParentProjectAttrs>,
 ): WeekDay["items"][number] {
   const blockedByRefs = resolveBlockedByRefs(item.blockedBy, weekItemById);
   const updatedMs = item.updatedAt ? item.updatedAt.getTime() : null;
-  // dashboard-cleanup item 1: resolve parent project name for L2 week items.
-  // A weekItem is an L2 when its project has a parentProjectId. The map
-  // parentProjectNameById is keyed by project id -> parent project name,
+  // dashboard-cleanup item 1: resolve parent project name + category for L2
+  // week items. A weekItem is an L2 when its project has a parentProjectId.
+  // The map parentProjectAttrsById is keyed by project id -> { name, category },
   // pre-built at call site via a batched projects query (no N+1).
-  const parentProjectName = item.projectId
-    ? (parentProjectNameById.get(item.projectId) ?? null)
+  // #81: category is surfaced read-only beside the editable WI category in
+  // the dashboard edit modal so operators can see the upstream context.
+  const parentAttrs = item.projectId
+    ? (parentProjectAttrsById.get(item.projectId) ?? null)
     : null;
   return {
     id: item.id,
@@ -87,6 +91,10 @@ function mapWeekItemToEntry(
     ...(item.owner ? { owner: item.owner } : {}),
     ...(item.resources ? { resources: item.resources } : {}),
     type: (item.category ?? "delivery") as DayItemType,
+    // #84 — surface the raw stored category (not the display-defaulted
+    // `type`) so the dashboard edit modal's Category dropdown opens
+    // pre-filled with the actual value, including the null/clear case.
+    ...(item.category != null ? { category: item.category } : {}),
     ...(item.notes ? { notes: item.notes } : {}),
     // v4: pass L2 status through so flag detectors can filter active items.
     ...(item.status != null ? { status: item.status } : {}),
@@ -94,7 +102,10 @@ function mapWeekItemToEntry(
     ...(item.endDate != null ? { endDate: item.endDate } : {}),
     ...(updatedMs != null ? { updatedAtMs: updatedMs } : {}),
     ...(blockedByRefs.length > 0 ? { blockedBy: blockedByRefs } : {}),
-    ...(parentProjectName != null ? { parentProjectName } : {}),
+    ...(parentAttrs?.name != null ? { parentProjectName: parentAttrs.name } : {}),
+    ...(parentAttrs?.category != null
+      ? { parentCategory: parentAttrs.category }
+      : {}),
   };
 }
 
@@ -106,7 +117,7 @@ function groupWeekItemsIntoDays(
   items: WeekItemRow[],
   clientNameById: Map<string, string>,
   keyFn: (item: WeekItemRow) => string = (item) => item.startDate ?? item.date ?? "",
-  parentProjectNameById: Map<string, string> = new Map(),
+  parentProjectAttrsById: Map<string, ParentProjectAttrs> = new Map(),
 ): WeekDay[] {
   const grouped = groupBy(items, keyFn);
   const sortedDates = [...grouped.keys()].sort();
@@ -118,7 +129,7 @@ function groupWeekItemsIntoDays(
     date: dateStr,
     label: formatDayLabel(dateStr),
     items: (grouped.get(dateStr) ?? []).map((item) =>
-      mapWeekItemToEntry(item, clientNameById, weekItemById, parentProjectNameById)
+      mapWeekItemToEntry(item, clientNameById, weekItemById, parentProjectAttrsById)
     ),
   }));
 }
@@ -150,7 +161,8 @@ export async function getClientsWithProjects(): Promise<ClientWithProjects[]> {
 
 // weekOf is indexed (idx_week_items_week_of) — see runway-schema.ts
 /**
- * Build a map from a weekItem's projectId -> the L1 project's display name.
+ * Build a map from a weekItem's projectId -> the L1 project's display
+ * attributes (name + category).
  *
  * Item 1 QA fix 2026-05-07: previously this map only emitted entries when
  * the L1 itself had a parentProjectId (i.e. wrapper-child L1). That made
@@ -159,11 +171,16 @@ export async function getClientsWithProjects(): Promise<ClientWithProjects[]> {
  * (e.g. Pencils Down under "Website Revamp"). Operator wants the immediate
  * L1 name on every L2 card uniformly so users can disambiguate when an
  * account has multiple projects in flight. Now: one batched query, returns
- * `projectId -> projects.name` for every project referenced by a weekItem.
+ * `projectId -> { name, category }` for every project referenced by a
+ * weekItem.
+ *
+ * #81: category is included in the same query so the dashboard edit
+ * modal's read-only "Project category" field pre-fills with the parent
+ * project's category value (e.g. "active") without a separate round trip.
  */
-async function buildParentProjectNameMap(
+async function buildParentProjectAttrsMap(
   items: WeekItemRow[],
-): Promise<Map<string, string>> {
+): Promise<Map<string, ParentProjectAttrs>> {
   const db = getRunwayDb();
 
   const projectIds = [...new Set(
@@ -174,13 +191,17 @@ async function buildParentProjectNameMap(
   const rows = await withRunwayRetry(
     () =>
       db
-        .select({ id: projects.id, name: projects.name })
+        .select({
+          id: projects.id,
+          name: projects.name,
+          category: projects.category,
+        })
         .from(projects)
         .where(inArray(projects.id, projectIds)),
-    "buildParentProjectNameMap",
+    "buildParentProjectAttrsMap",
   );
 
-  return new Map(rows.map((r) => [r.id, r.name]));
+  return new Map(rows.map((r) => [r.id, { name: r.name, category: r.category }]));
 }
 
 export async function getWeekItems(weekOf?: string): Promise<WeekDay[]> {
@@ -203,11 +224,11 @@ export async function getWeekItems(weekOf?: string): Promise<WeekDay[]> {
     "getWeekItems",
   );
 
-  // dashboard-cleanup item 1: resolve parent project names for L2 week items
-  // (those whose project has a parentProjectId). Two batched queries, no N+1.
-  const parentProjectNameById = await buildParentProjectNameMap(items);
+  // dashboard-cleanup item 1: resolve parent project attrs (name + category)
+  // for L2 week items. Two batched queries, no N+1.
+  const parentProjectAttrsById = await buildParentProjectAttrsMap(items);
 
-  return groupWeekItemsIntoDays(items, clientNameById, undefined, parentProjectNameById);
+  return groupWeekItemsIntoDays(items, clientNameById, undefined, parentProjectAttrsById);
 }
 
 export async function getPipeline(): Promise<PipelineRow[]> {
@@ -312,11 +333,11 @@ export async function getStaleWeekItems(): Promise<WeekDay[]> {
   //
   // Bucket on endDate (due day) so day-group labels read "when did this go
   // red" -- overrides the default startDate-first keying used elsewhere.
-  const parentProjectNameById = await buildParentProjectNameMap(pastItems);
+  const parentProjectAttrsById = await buildParentProjectAttrsMap(pastItems);
   return groupWeekItemsIntoDays(
     pastItems,
     clientNameById,
     (item) => item.endDate ?? item.date ?? "",
-    parentProjectNameById,
+    parentProjectAttrsById,
   );
 }

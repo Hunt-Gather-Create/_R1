@@ -15,6 +15,7 @@ export type WeekItemEditableField =
   | "endDate"
   | "dayOfWeek"
   | "status"
+  | "category"
   | "notes";
 
 export type WeekItemEditPatch = Partial<

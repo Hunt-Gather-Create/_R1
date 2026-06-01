@@ -93,6 +93,19 @@ describe("EditPencil", () => {
     expect(pencil.tagName).toBe("BUTTON");
   });
 
+  // #82 — pencil anchors top-right (was top-left, which overlapped the
+  // account label on every card). Card consumers (L2MiniCard,
+  // day-item-card) add `pt-6` to their right-column flex so the checkbox
+  // sits below this button.
+  it("anchors the pencil button at top-right of the card (no overlap with the account label)", () => {
+    render(<EditPencil item={makeItem()} />);
+    const pencil = screen.getByTestId("edit-pencil");
+    const cls = pencil.className;
+    expect(cls).toContain("right-1.5");
+    expect(cls).toContain("top-1.5");
+    expect(cls).not.toContain("left-");
+  });
+
   it("returns null when the item has no id (can't write back without a key)", () => {
     const { container } = render(
       <EditPencil item={{ ...makeItem(), id: "" }} />,
@@ -171,12 +184,81 @@ describe("EditPencil", () => {
       );
     });
 
-    it("renders category as a read-only input (cascades from project — no edit affordance)", () => {
+    // #84 — `week_items.category` (chip enum: delivery / review / etc.)
+    // is editable in the modal. Pre-#84 it was a read-only field mislabeled
+    // as a cascade from the parent project; the new field is a select
+    // dropdown over WEEK_ITEM_CATEGORIES with a (clear) option.
+    it("renders category as an editable <select> pre-filled from the WI's category with a (clear) option", () => {
       render(<EditPencil item={makeItem()} />);
       fireEvent.click(screen.getByTestId("edit-pencil"));
-      const cat = screen.getByTestId("edit-field-category");
-      expect(cat).toHaveAttribute("readonly");
-      expect(cat).toHaveValue("delivery");
+      const cat = screen.getByTestId("edit-field-category") as HTMLSelectElement;
+      expect(cat.tagName).toBe("SELECT");
+      expect(cat.value).toBe("delivery");
+      const options = Array.from(cat.querySelectorAll("option")).map((o) => o.value);
+      expect(options).toEqual([
+        "",
+        "delivery",
+        "review",
+        "kickoff",
+        "deadline",
+        "approval",
+        "launch",
+      ]);
+    });
+
+    it("changing the category dropdown + saving patches the category field through the action", async () => {
+      render(<EditPencil item={makeItem()} />);
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      fireEvent.change(screen.getByTestId("edit-field-category"), {
+        target: { value: "review" },
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("edit-save"));
+        await Promise.resolve();
+      });
+      expect(updateWeekItemFieldsAction).toHaveBeenCalledTimes(1);
+      const call = updateWeekItemFieldsAction.mock.calls[0][0] as {
+        fields: Record<string, unknown>;
+      };
+      expect(call.fields).toEqual({ category: "review" });
+    });
+
+    it("selecting (clear) writes null on the patch so the column resets", async () => {
+      render(<EditPencil item={makeItem()} />);
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      fireEvent.change(screen.getByTestId("edit-field-category"), {
+        target: { value: "" },
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("edit-save"));
+        await Promise.resolve();
+      });
+      expect(updateWeekItemFieldsAction).toHaveBeenCalledTimes(1);
+      const call = updateWeekItemFieldsAction.mock.calls[0][0] as {
+        fields: Record<string, unknown>;
+      };
+      expect(call.fields).toEqual({ category: null });
+    });
+
+    it("project category field renders read-only beside the editable Category and pre-fills from item.parentCategory", () => {
+      // commit 4 (#81) threads parentCategory through; this test pins
+      // the read-only contract now so the empty-on-undefined path doesn't
+      // regress while the data wiring lands.
+      render(
+        <EditPencil item={makeItem({ parentCategory: "active" })} />,
+      );
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      const pc = screen.getByTestId("edit-field-parentCategory");
+      expect(pc).toHaveAttribute("readonly");
+      expect(pc).toHaveValue("active");
+    });
+
+    it("project category field renders empty when parentCategory is undefined (graceful pre-commit-4 state)", () => {
+      render(<EditPencil item={makeItem()} />);
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      const pc = screen.getByTestId("edit-field-parentCategory");
+      expect(pc).toHaveAttribute("readonly");
+      expect(pc).toHaveValue("");
     });
 
     it("renders the project field as a <select> pre-filled to item.projectId once options load", async () => {
@@ -348,6 +430,106 @@ describe("EditPencil", () => {
         target: { value: "2026-06-03" },
       });
       expect(screen.getByTestId("edit-field-dayOfWeek")).toHaveValue("wednesday");
+    });
+  });
+
+  // #83 — Save → Undo round-trip reopens the modal with the operator's
+  // captured edits pre-applied. Plain success cycle: the save action
+  // resolves; the success toast surfaces an Undo action; clicking Undo
+  // sends the reverse patch; on success the modal remounts with the
+  // pre-Undo edits filled in so the operator can tweak / re-save / close.
+  describe("Save → Undo reopens the modal with captured edits (#83)", () => {
+    beforeEach(() => {
+      document.cookie = `runway_editor_name=${encodeURIComponent("Jason")}; Path=/`;
+    });
+
+    async function openEditChangeOwnerAndSave() {
+      // Save flow uses the previousValues from the action response to
+      // build the Undo payload; mock once-per-cycle.
+      updateWeekItemFieldsAction.mockResolvedValueOnce({
+        ok: true as const,
+        previousValues: { owner: "Lane" },
+      });
+      render(<EditPencil item={makeItem()} />);
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      fireEvent.change(screen.getByTestId("edit-field-owner"), {
+        target: { value: "Jill" },
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("edit-save"));
+        await Promise.resolve();
+      });
+    }
+
+    it("Undo click reopens the modal pre-populated with the pre-Undo edits", async () => {
+      await openEditChangeOwnerAndSave();
+      // Save toast wired with Undo action; invoke it.
+      const successCall = toastSuccess.mock.calls.at(-1) as
+        | [string, { action: { onClick: () => void } }]
+        | undefined;
+      expect(successCall).toBeDefined();
+      // Modal is closed at this point (Save closes it synchronously).
+      expect(screen.queryByTestId("edit-dialog")).toBeNull();
+      // Mock the Undo revert call.
+      updateWeekItemFieldsAction.mockResolvedValueOnce({
+        ok: true as const,
+        previousValues: { owner: "Jill" },
+      });
+      await act(async () => {
+        successCall![1].action.onClick();
+        await Promise.resolve();
+      });
+      // Modal reopens with the captured owner value pre-applied.
+      expect(screen.getByTestId("edit-dialog")).toBeInTheDocument();
+      expect(screen.getByTestId("edit-field-owner")).toHaveValue("Jill");
+      // Save stays enabled because state still diffs against the (now-reverted)
+      // row: state.owner="Jill" vs initial.owner="Lane".
+      expect(screen.getByTestId("edit-save")).not.toBeDisabled();
+    });
+
+    it("Undo failure leaves the modal closed (DB still holds the saved value)", async () => {
+      await openEditChangeOwnerAndSave();
+      const successCall = toastSuccess.mock.calls.at(-1) as
+        | [string, { action: { onClick: () => void } }]
+        | undefined;
+      updateWeekItemFieldsAction.mockResolvedValueOnce({
+        ok: false,
+        error: "revert blocked",
+      } as never);
+      await act(async () => {
+        successCall![1].action.onClick();
+        await Promise.resolve();
+      });
+      // Modal stays closed; toast surfaces the failure.
+      expect(screen.queryByTestId("edit-dialog")).toBeNull();
+      expect(toastError).toHaveBeenCalledWith(
+        "Could not undo: revert blocked",
+        expect.objectContaining({ id: expect.stringContaining("save-") }),
+      );
+    });
+
+    it("subsequent fresh pencil click clears the restored state (no leak from prior Undo)", async () => {
+      await openEditChangeOwnerAndSave();
+      const successCall = toastSuccess.mock.calls.at(-1) as
+        | [string, { action: { onClick: () => void } }]
+        | undefined;
+      updateWeekItemFieldsAction.mockResolvedValueOnce({
+        ok: true as const,
+        previousValues: { owner: "Jill" },
+      });
+      await act(async () => {
+        successCall![1].action.onClick();
+        await Promise.resolve();
+      });
+      // Modal is open with the Undo-restored state. Close it via Cancel,
+      // then click the pencil again — should reopen with the pristine row
+      // values, not the prior session's edits.
+      fireEvent.click(screen.getByTestId("edit-cancel"));
+      expect(screen.queryByTestId("edit-dialog")).toBeNull();
+      fireEvent.click(screen.getByTestId("edit-pencil"));
+      expect(screen.getByTestId("edit-field-owner")).toHaveValue("Lane");
+      // Pristine — Save disabled until a fresh field is dirty.
+      expect(screen.getByTestId("edit-save")).toBeDisabled();
     });
   });
 });

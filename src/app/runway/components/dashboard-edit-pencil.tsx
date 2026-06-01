@@ -31,10 +31,8 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useMemo,
   useState,
-  type ChangeEvent,
   type FormEvent,
 } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -50,7 +48,9 @@ import type {
   WeekItemEditPatch,
 } from "../action-types";
 import { WEEK_ITEM_STATUSES } from "@/lib/runway/week-item-statuses";
+import { WEEK_ITEM_CATEGORIES } from "@/lib/runway/week-item-categories";
 import { useEditorName } from "./use-editor-name";
+import { NamePromptDialog } from "./name-prompt-dialog";
 import { ResourceChipEditor } from "./resource-chip-editor";
 
 export type EditPencilItem = {
@@ -62,9 +62,16 @@ export type EditPencilItem = {
   endDate?: string | null;
   status?: string | null;
   notes?: string | null;
-  // Category is still cascade-only on the modal — flips when the parent
-  // project's category changes, not edited here.
+  // #84 — the week item's own category (`week_items.category`, the
+  // chip enum: delivery / review / kickoff / deadline / approval / launch).
+  // Editable from this modal via the Category dropdown; pre-#84 the field
+  // was read-only and mislabeled as a cascade from the parent project.
   category?: string | null;
+  // #81 — the parent project's category value (`projects.category`,
+  // surfaced read-only beside the WI category so operators see the
+  // upstream context without conflating it with the editable WI chip).
+  // Threaded in by commit 4; renders empty when undefined.
+  parentCategory?: string | null;
   // Used to render the current project name in the picker's pre-load
   // placeholder so the operator sees context immediately even before
   // the option list arrives.
@@ -87,26 +94,60 @@ const DAY_OF_WEEK_OPTIONS = [
   "sunday",
 ] as const;
 
+/**
+ * #83 — when Undo fires from a save toast, the modal needs to reopen with
+ * the operator's pre-Undo edits already applied so they can tweak + re-save
+ * (or close without saving). `RestoreEdits` is what the parent EditPencil
+ * passes back into the next mount of `EditDialogContent` so the form state
+ * comes up populated with what was just saved+reverted, not the pristine
+ * row values.
+ */
+type RestoreEdits = {
+  edits: WeekItemEditPatch;
+  /**
+   * `undefined` = no project change was part of the original save (and we
+   * don't restore one). A real string = restore to that selection. We never
+   * restore to "" / null because clearing a week item's project isn't a
+   * supported operation through the save action.
+   */
+  projectId: string | undefined;
+};
+
 export function EditPencil({ item }: { item: EditPencilItem }) {
   const [phase, setPhase] = useState<"closed" | "name-prompt" | "editing">(
     "closed",
   );
+  // #83 — `null` for a fresh pencil click; populated when fireUndo's
+  // onSuccess callback asks us to reopen with the captured payload.
+  // Cleared on every fresh pencil click so a previous Undo's restore can't
+  // leak into an unrelated edit session.
+  const [restore, setRestore] = useState<RestoreEdits | null>(null);
   const { name, setName } = useEditorName();
 
   if (!item.id) return null;
 
+  function openEdit() {
+    setRestore(null);
+    setPhase(name ? "editing" : "name-prompt");
+  }
+
   function onPencilClick(event: React.MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
-    setPhase(name ? "editing" : "name-prompt");
+    openEdit();
   }
 
   function onPencilKey(event: React.KeyboardEvent<HTMLButtonElement>) {
     if (event.key === " " || event.key === "Enter") {
       event.preventDefault();
       event.stopPropagation();
-      setPhase(name ? "editing" : "name-prompt");
+      openEdit();
     }
+  }
+
+  function reopenWithRestore(next: RestoreEdits) {
+    setRestore(next);
+    setPhase("editing");
   }
 
   return (
@@ -117,7 +158,12 @@ export function EditPencil({ item }: { item: EditPencilItem }) {
         onKeyDown={onPencilKey}
         aria-label={`Edit ${item.title}`}
         data-testid="edit-pencil"
-        className="absolute left-1.5 top-1.5 z-10 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground/40 transition-colors hover:bg-muted/40 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+        // #82 — pencil sits top-right (was top-left) so it no longer
+        // overlaps the account label that anchors each card header. Both
+        // L2MiniCard and day-item-card render a flex-column at the right
+        // edge (CompleteCheckbox + category chip); those columns add
+        // `pt-6` so the checkbox sits below this button.
+        className="absolute right-1.5 top-1.5 z-10 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground/40 transition-colors hover:bg-muted/40 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-sky-500/40"
       >
         <PencilGlyph />
       </button>
@@ -133,7 +179,9 @@ export function EditPencil({ item }: { item: EditPencilItem }) {
         open={phase === "editing"}
         item={item}
         editorName={name}
+        restore={restore}
         onClose={() => setPhase("closed")}
+        onUndoSuccess={reopenWithRestore}
       />
     </>
   );
@@ -170,113 +218,6 @@ function useFrozenInitial<T>(compute: () => T): T {
   return useState(compute)[0];
 }
 
-// ─── Name prompt ───────────────────────────────────────────────────────────
-
-/**
- * Outer Radix Dialog shell — same content-split pattern EditDialog uses.
- * The inner form only mounts when `open=true`, so the input value resets
- * naturally on the open→closed→open cycle without a useEffect (P2 nit
- * per TP review on b7c89f3).
- */
-function NamePromptDialog({
-  open,
-  onCancel,
-  onSubmit,
-}: {
-  open: boolean;
-  onCancel: () => void;
-  onSubmit: (name: string) => void;
-}) {
-  return (
-    <Dialog.Root
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) onCancel();
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-        <Dialog.Content
-          data-testid="name-prompt-dialog"
-          className="fixed left-1/2 top-1/2 z-50 w-[90vw] max-w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-background p-5 text-foreground shadow-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
-        >
-          {open ? (
-            <NamePromptContent onCancel={onCancel} onSubmit={onSubmit} />
-          ) : null}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
-  );
-}
-
-function NamePromptContent({
-  onCancel,
-  onSubmit,
-}: {
-  onCancel: () => void;
-  onSubmit: (name: string) => void;
-}) {
-  const [value, setValue] = useState("");
-  const inputId = useId();
-
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    onSubmit(trimmed);
-  }
-
-  return (
-    <>
-      <Dialog.Title className="font-display text-lg font-semibold">
-        Quick intro
-      </Dialog.Title>
-      <Dialog.Description className="mt-1 text-sm text-muted-foreground">
-        Your name shows up in the audit log next to anything you edit
-        from the dashboard. We&apos;ll remember it on this browser.
-      </Dialog.Description>
-      <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-        <div>
-          <label
-            htmlFor={inputId}
-            className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
-          >
-            Name
-          </label>
-          <input
-            id={inputId}
-            data-testid="name-prompt-input"
-            autoFocus
-            value={value}
-            onChange={(e: ChangeEvent<HTMLInputElement>) =>
-              setValue(e.target.value)
-            }
-            className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/40"
-            placeholder="e.g. Jason Burks"
-          />
-        </div>
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted/30"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={!value.trim()}
-            data-testid="name-prompt-submit"
-            className="rounded-md bg-sky-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Continue
-          </button>
-        </div>
-      </form>
-    </>
-  );
-}
-
 // ─── Edit modal ────────────────────────────────────────────────────────────
 
 type EditState = Required<
@@ -288,6 +229,9 @@ type EditState = Required<
   endDate: string;
   dayOfWeek: string;
   status: string;
+  // #84 — the WI's own category (`week_items.category`). "" = clear, written
+  // to the DB as null via the diffEditState empty-to-null normalization.
+  category: string;
   notes: string;
   // Tracked alongside the string-field state but emitted separately on
   // save (routes through linkWeekItemToProject, not updateWeekItemField).
@@ -303,6 +247,7 @@ function initialEditState(item: EditPencilItem): EditState {
     endDate: item.endDate ?? "",
     dayOfWeek: deriveDayOfWeek(item.startDate ?? "") ?? "",
     status: item.status ?? "",
+    category: item.category ?? "",
     notes: item.notes ?? "",
     projectId: item.projectId ?? "",
   };
@@ -326,6 +271,17 @@ function validateEditState(state: EditState): string | null {
   if (state.status && !WEEK_ITEM_STATUSES.includes(state.status as never)) {
     return `Status must be one of: ${WEEK_ITEM_STATUSES.join(", ")}.`;
   }
+  // #84 — empty string is the (clear) sentinel and passes through to
+  // diffEditState which collapses it to null. Any other value must be
+  // a known WI category enum member. The dropdown can't produce drift
+  // on its own, but a forged DOM mutation would; the helper also
+  // validates server-side as a second line of defense.
+  if (
+    state.category &&
+    !WEEK_ITEM_CATEGORIES.includes(state.category as never)
+  ) {
+    return `Category must be one of: ${WEEK_ITEM_CATEGORIES.join(", ")}.`;
+  }
   return null;
 }
 
@@ -342,6 +298,7 @@ function diffEditState(
     "endDate",
     "dayOfWeek",
     "status",
+    "category",
     "notes",
   ];
   for (const f of fields) {
@@ -371,12 +328,16 @@ function EditDialog({
   open,
   item,
   editorName,
+  restore,
   onClose,
+  onUndoSuccess,
 }: {
   open: boolean;
   item: EditPencilItem;
   editorName: string | null;
+  restore: RestoreEdits | null;
   onClose: () => void;
+  onUndoSuccess: (next: RestoreEdits) => void;
 }) {
   return (
     <Dialog.Root
@@ -395,7 +356,9 @@ function EditDialog({
             <EditDialogContent
               item={item}
               editorName={editorName}
+              restore={restore}
               onClose={onClose}
+              onUndoSuccess={onUndoSuccess}
             />
           ) : null}
         </Dialog.Content>
@@ -404,20 +367,64 @@ function EditDialog({
   );
 }
 
+/**
+ * #83 — overlay the captured patch onto the row-derived initial state so
+ * the form starts pre-populated with the operator's pre-Undo edits.
+ * Defined-but-null in the patch maps to "" (the EditState shape uses ""
+ * for the clear sentinel; diffEditState collapses "" back to null on
+ * the next Save).
+ */
+function applyRestoreEdits(
+  base: EditState,
+  restore: RestoreEdits | null,
+): EditState {
+  if (!restore) return base;
+  const next: EditState = { ...base };
+  const fields: WeekItemEditableField[] = [
+    "title",
+    "owner",
+    "resources",
+    "startDate",
+    "endDate",
+    "dayOfWeek",
+    "status",
+    "category",
+    "notes",
+  ];
+  for (const f of fields) {
+    if (Object.prototype.hasOwnProperty.call(restore.edits, f)) {
+      next[f] = (restore.edits[f] ?? "") as string;
+    }
+  }
+  if (restore.projectId !== undefined) {
+    next.projectId = restore.projectId;
+  }
+  return next;
+}
+
 function EditDialogContent({
   item,
   editorName,
+  restore,
   onClose,
+  onUndoSuccess,
 }: {
   item: EditPencilItem;
   editorName: string | null;
+  restore: RestoreEdits | null;
   onClose: () => void;
+  onUndoSuccess: (next: RestoreEdits) => void;
 }) {
   // Mounted only when the dialog is open, unmounted on close — so the
   // initial snapshot is naturally fresh per open. `useFrozenInitial`
   // makes the "this never updates" contract explicit (P2 nit, TP review).
+  // `initial` always reflects the row's actual stored values; `state` may
+  // start pre-populated with restored edits (#83) so dirty-detection still
+  // works against the row, not against the pre-Undo save.
   const initial = useFrozenInitial(() => initialEditState(item));
-  const [state, setState] = useState<EditState>(initial);
+  const [state, setState] = useState<EditState>(() =>
+    applyRestoreEdits(initial, restore),
+  );
   const router = useRouter();
 
   const validationError = useMemo(() => validateEditState(state), [state]);
@@ -445,7 +452,13 @@ function EditDialogContent({
   function handleSave(event: FormEvent) {
     event.preventDefault();
     if (validationError) return;
-    if (!editorName) return;
+    // Save button is disabled when editorName is empty (see Save's
+    // `disabled={... || !editorName}` predicate). If this handler ever fires
+    // with a null editorName, the disabled invariant has regressed — fail
+    // loud instead of silently bailing.
+    if (!editorName) {
+      throw new Error("handleSave fired with null editorName; Save-disabled invariant regressed");
+    }
     const patch = diffEditState(initial, state);
     const nextProjectId = diffProjectId(initial, state);
     if (Object.keys(patch).length === 0 && nextProjectId === undefined) {
@@ -453,7 +466,7 @@ function EditDialogContent({
       return;
     }
     onClose();
-    fireSave(item, patch, nextProjectId, editorName, router);
+    fireSave(item, patch, nextProjectId, editorName, router, onUndoSuccess);
   }
 
   return (
@@ -534,11 +547,26 @@ function EditDialogContent({
                 ))}
               </select>
             </Field>
-            <Field label="Category (cascades from project)">
-              <input
-                value={item.category ?? ""}
-                readOnly
+            <Field label="Category">
+              <select
+                value={state.category}
+                onChange={(e) => onField("category", e.target.value)}
                 data-testid="edit-field-category"
+                className={inputClasses}
+              >
+                <option value="">(clear)</option>
+                {WEEK_ITEM_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Project category">
+              <input
+                value={item.parentCategory ?? ""}
+                readOnly
+                data-testid="edit-field-parentCategory"
                 className={`${inputClasses} cursor-not-allowed bg-muted/30 text-muted-foreground`}
               />
             </Field>
@@ -646,6 +674,7 @@ async function fireSave(
   nextProjectId: string | undefined,
   updatedBy: string,
   router: ReturnType<typeof useRouter>,
+  onUndoSuccess: (next: RestoreEdits) => void,
 ): Promise<void> {
   const toastId = saveToastId(item.id);
   toast.loading(`Saving ${item.title}…`, { id: toastId });
@@ -665,11 +694,28 @@ async function fireSave(
   toast.success(`Saved ${item.title}`, {
     id: toastId,
     duration: 8000,
-    onAutoClose: () => router.refresh(),
+    // PR #111 Llama F1: don't register `router.refresh()` on onAutoClose
+    // — the immediate call at the end of this function already covers the
+    // post-save RSC re-fetch. Registering it again would fire a second
+    // refresh 8s later when the toast auto-closes without action. The
+    // `complete-checkbox` path is different (modal stays unmounted during
+    // its undo window, so its onAutoClose IS the only refresh trigger).
     action: {
       label: "Undo",
+      // #83 — capture the operator's pre-Undo edits in closure so the
+      // post-revert `onUndoSuccess` callback can reopen the modal with
+      // them pre-applied. The captured payload is exactly what the
+      // user just submitted; combined with the post-revert row state
+      // it produces the same form the user was looking at before Save.
       onClick: () =>
-        fireUndo(item, previousValues, previousProjectId, updatedBy, router),
+        fireUndo(
+          item,
+          previousValues,
+          previousProjectId,
+          updatedBy,
+          router,
+          () => onUndoSuccess({ edits: patch, projectId: nextProjectId }),
+        ),
     },
   });
   router.refresh();
@@ -681,6 +727,7 @@ async function fireUndo(
   previousProjectId: string | null,
   updatedBy: string,
   router: ReturnType<typeof useRouter>,
+  onSuccess: () => void,
 ): Promise<void> {
   // Reuse the same id as the originating save toast so the in-flight
   // "Saved" surface is replaced rather than stacked.
@@ -696,11 +743,15 @@ async function fireUndo(
     ...(previousProjectId ? { projectId: previousProjectId } : {}),
   });
   if (!result.ok) {
+    // #83 — leave the modal closed on Undo failure. The DB still holds
+    // the saved value, so reopening with pre-Undo edits would mislead
+    // the operator about what state the row is in.
     toast.error(`Could not undo: ${result.error}`, { id: toastId });
     return;
   }
   toast.success(`Reverted ${item.title}`, { id: toastId, duration: 4000 });
   router.refresh();
+  onSuccess();
 }
 
 // ─── Project picker ───────────────────────────────────────────────────────

@@ -277,6 +277,15 @@ function L1Section({
   const items = weekItemsForSection(section).slice().sort(byStartDateNullsLast);
   const id = l1IdForSection(section);
   const ready = id !== null && readyToCloseIds.has(id);
+  // #81 — surface the parent L1 project's category to each child card so
+  // the dashboard edit modal's read-only "Project category" field can
+  // pre-fill from upstream context. Only the "l1" raw shape carries the
+  // entity row directly; wrapper sections render their own child sections
+  // recursively and pick up parentCategory from their own L1Section pass.
+  const l1Category =
+    section.data.raw.kind === "l1"
+      ? (section.data.raw.entity.category ?? null)
+      : null;
 
   // Empty L1 (no scheduled L2s after status filter): header-only flat row
   // with the inline "No Scheduled Tasks" chip, no <details>.
@@ -336,6 +345,7 @@ function L1Section({
               // children of the project the section represents.
               notes: wi.kind === "weekitem" ? wi.notes : null,
               parentProjectName: section.title,
+              parentCategory: l1Category,
               // #70 commit 8b — projectId powers the modal's project
               // picker. Same source as notes (per-row WeekItemRow field
               // surfaced via the GanttRow weekitem variant).

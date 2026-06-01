@@ -1018,16 +1018,20 @@ export function validateWeekItemStatus(
 
 /**
  * Allowed values for `week_items.category`. `""` clears (becomes null).
+ *
+ * Canonical definition lives in `./week-item-categories.ts` so client
+ * components (the dashboard edit modal's #84 Category dropdown) can
+ * import the enum without pulling drizzle / `node:async_hooks` into the
+ * client bundle. Same split as `WEEK_ITEM_STATUSES` above.
  */
-export const WEEK_ITEM_CATEGORIES = [
-  "delivery",
-  "review",
-  "kickoff",
-  "deadline",
-  "approval",
-  "launch",
-] as const;
-export type WeekItemCategory = (typeof WEEK_ITEM_CATEGORIES)[number];
+export {
+  WEEK_ITEM_CATEGORIES,
+  type WeekItemCategory,
+} from "./week-item-categories";
+import {
+  WEEK_ITEM_CATEGORIES,
+  type WeekItemCategory,
+} from "./week-item-categories";
 
 export type WeekItemCategoryValidationResult =
   | { ok: true; value: WeekItemCategory | null }
