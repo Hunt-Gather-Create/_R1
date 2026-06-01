@@ -251,6 +251,10 @@ function CopyToClipboardButton({ issues }: { issues: AuditIssue[] }) {
   );
 }
 
+// DI-TP round 2 polish: prior glyph stacked two full overlapping rounded
+// rects — visually dense, the operator's reference was a cleaner Lucide
+// `Copy`-style outline where the back square is only an L-corner.
+// Same affordance + same h-3.5 w-3.5 sizing; just less ink at small sizes.
 function ClipboardGlyph() {
   return (
     <svg
@@ -261,8 +265,8 @@ function ClipboardGlyph() {
       stroke="currentColor"
       strokeWidth={1.5}
     >
-      <rect x="3" y="2" width="7" height="9" rx="1" />
-      <rect x="5" y="4" width="7" height="9" rx="1" />
+      <rect x="5" y="5" width="7" height="7" rx="1.2" />
+      <path d="M3 9 V3 H9" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

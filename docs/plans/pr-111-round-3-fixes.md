@@ -262,5 +262,4 @@ Standard per `docs/plans/status-view-followups.md` §"Signal cadence":
 
 ## Out of scope
 
-- Audit pill copy icon glyph polish (DI-TP round-2 item 4 — surface only, file separately if not already)
-- Anything not in the 6 commits above. New bugs surfaced during build go in NEW GH issues, not folded silently.
+- Anything not in the 8 commits above. New bugs surfaced during build go in NEW GH issues, not folded silently.
