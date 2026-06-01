@@ -150,6 +150,7 @@ describe("CompleteCheckbox", () => {
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith(
         "Could not mark complete: validator rejected",
+        { id: "checkbox-w1" },
       );
     });
     expect(box).toHaveAttribute("aria-checked", "false");
@@ -255,7 +256,9 @@ describe("CompleteCheckbox", () => {
     setWeekItemStatusAction.mockResolvedValue({ ok: false, error: "validator rejected" });
     options.action.onClick();
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("Could not undo: validator rejected"),
+      expect(toast.error).toHaveBeenCalledWith("Could not undo: validator rejected", {
+        id: "checkbox-w1",
+      }),
     );
     expect(routerRefresh).not.toHaveBeenCalled();
   });

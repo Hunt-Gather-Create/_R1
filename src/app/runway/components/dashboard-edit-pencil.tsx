@@ -452,7 +452,13 @@ function EditDialogContent({
   function handleSave(event: FormEvent) {
     event.preventDefault();
     if (validationError) return;
-    if (!editorName) return;
+    // Save button is disabled when editorName is empty (see Save's
+    // `disabled={... || !editorName}` predicate). If this handler ever fires
+    // with a null editorName, the disabled invariant has regressed — fail
+    // loud instead of silently bailing.
+    if (!editorName) {
+      throw new Error("handleSave fired with null editorName; Save-disabled invariant regressed");
+    }
     const patch = diffEditState(initial, state);
     const nextProjectId = diffProjectId(initial, state);
     if (Object.keys(patch).length === 0 && nextProjectId === undefined) {

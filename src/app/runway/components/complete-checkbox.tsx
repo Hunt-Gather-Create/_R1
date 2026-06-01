@@ -44,6 +44,13 @@ import { NamePromptDialog } from "./name-prompt-dialog";
 
 const TERMINAL = new Set(["completed", "canceled"]);
 
+// Per-row sonner id. Same pattern as the modal's `saveToastId` — keeps a
+// failure toast from stacking on top of the row's existing complete/Undo
+// surface (sonner replaces any in-flight toast carrying the same id).
+function checkboxToastId(weekItemId: string): string {
+  return `checkbox-${weekItemId}`;
+}
+
 export function CompleteCheckbox({
   weekItemId,
   title,
@@ -101,6 +108,7 @@ export function CompleteCheckbox({
   function complete(editorName: string) {
     const previousVisualStatus = status ?? null;
     setOptimistic("completed");
+    const toastId = checkboxToastId(idRef.current!);
     startTransition(async () => {
       const result = await setWeekItemStatusAction({
         weekItemId: idRef.current!,
@@ -109,7 +117,7 @@ export function CompleteCheckbox({
       });
       if (!result.ok) {
         setOptimistic("idle");
-        toast.error(`Could not mark complete: ${result.error}`);
+        toast.error(`Could not mark complete: ${result.error}`, { id: toastId });
         return;
       }
       // Server returns the row's previous status. If for any reason it
@@ -118,6 +126,7 @@ export function CompleteCheckbox({
       // value for undo so we don't re-toggle into a stale state.
       const undoTarget = result.previousStatus ?? previousVisualStatus;
       toast(`${title} marked complete`, {
+        id: toastId,
         duration: 8000,
         // #79: revalidatePath in the server action only marks the RSC cache
         // stale on the server; the client never refetches without an explicit
@@ -134,6 +143,7 @@ export function CompleteCheckbox({
 
   function revertTo(target: string | null, editorName: string) {
     setOptimistic("idle");
+    const toastId = checkboxToastId(idRef.current!);
     startTransition(async () => {
       const result = await setWeekItemStatusAction({
         weekItemId: idRef.current!,
@@ -145,7 +155,7 @@ export function CompleteCheckbox({
         // so the visual state matches what the DB still holds, and tell
         // the user the undo failed.
         setOptimistic("completed");
-        toast.error(`Could not undo: ${result.error}`);
+        toast.error(`Could not undo: ${result.error}`, { id: toastId });
         return;
       }
       // #79: optimistic state is back to "idle" but the parent's RSC tree
