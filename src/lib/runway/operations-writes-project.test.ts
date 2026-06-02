@@ -345,8 +345,11 @@ describe("updateProjectField", () => {
     if (result.ok) {
       expect(result.data?.cascadedItems).toEqual(["Code handoff", "Go live"]);
     }
-    // project update + 2 week item updates = 3 calls to mockUpdateSet
-    expect(mockUpdateSet).toHaveBeenCalledTimes(3);
+    // #22: cascade is now direction-aware. With no current startDate on the
+    // mock items, every cascade is treated as FORWARD which splits into 2
+    // tx.update calls per item (endDate first, then startDate+date+dayOfWeek).
+    // So: 1 project update + 2 items × 2 writes = 5 mockUpdateSet calls.
+    expect(mockUpdateSet).toHaveBeenCalledTimes(5);
     expect(mockUpdateSet).toHaveBeenCalledWith(
       expect.objectContaining({ date: "2026-04-28" })
     );
@@ -516,6 +519,185 @@ describe("updateProjectField", () => {
       expect(result.data?.cascadeDetail).toEqual([]);
       expect(result.data?.auditId).toBeTruthy();
       expect(mockGetLinkedDeadlineItems).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── #22: cascade-duedate also syncs startDate / endDate / dayOfWeek
+  describe("cascade-duedate full date sync (#22)", () => {
+    it("skips deadline L2s in terminal status (completed)", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+      mockGetLinkedDeadlineItems.mockResolvedValue([
+        { id: "wi-done", title: "Code handoff", category: "deadline", status: "completed", date: "2026-04-10" },
+      ]);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "dueDate",
+        newValue: "2026-04-28",
+        updatedBy: "kathy",
+      });
+
+      expect(result.ok).toBe(true);
+      // Project update only — the completed L2 is skipped, no L2 writes.
+      expect(mockUpdateSet).toHaveBeenCalledTimes(1);
+      // cascadedItems should be empty since we skipped.
+      if (result.ok) {
+        expect(result.data?.cascadedItems).toEqual([]);
+      }
+      // And no cascade audit row should emit for the skipped L2.
+      const calls = mockInsertValues.mock.calls.map((c) => c[0]);
+      expect(calls.filter((c) => c.updateType === "cascade-duedate")).toHaveLength(0);
+    });
+
+    it("skips deadline L2s in terminal status (canceled)", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+      mockGetLinkedDeadlineItems.mockResolvedValue([
+        { id: "wi-cx", title: "Go live", category: "deadline", status: "canceled", date: "2026-04-10" },
+      ]);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      const result = await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "dueDate",
+        newValue: "2026-04-28",
+        updatedBy: "kathy",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdateSet).toHaveBeenCalledTimes(1);
+      if (result.ok) expect(result.data?.cascadedItems).toEqual([]);
+    });
+
+    it("FORWARD direction: writes endDate first, then startDate + date + dayOfWeek (lowercase)", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+      mockGetLinkedDeadlineItems.mockResolvedValue([
+        // Current item lives at 2026-04-10. Cascade pulls it forward to 2026-04-28.
+        { id: "wi-f", title: "Code handoff", category: "deadline", status: "in-progress", date: "2026-04-10", startDate: "2026-04-10", endDate: "2026-04-10" },
+      ]);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "dueDate",
+        newValue: "2026-04-28",
+        updatedBy: "kathy",
+      });
+
+      // calls[0] = the project field-change update.
+      // calls[1] = L2 endDate write (forward leading).
+      // calls[2] = L2 startDate+date+dayOfWeek combined write.
+      const calls = mockUpdateSet.mock.calls.map((c) => c[0]);
+      expect(calls).toHaveLength(3);
+      // First L2 write: endDate only.
+      expect(calls[1]).toMatchObject({ endDate: "2026-04-28" });
+      expect(calls[1]).not.toHaveProperty("startDate");
+      expect(calls[1]).not.toHaveProperty("date");
+      // Second L2 write: startDate + date + dayOfWeek (lowercase).
+      expect(calls[2]).toMatchObject({
+        startDate: "2026-04-28",
+        date: "2026-04-28",
+        dayOfWeek: "tuesday", // 2026-04-28 is Tuesday
+      });
+    });
+
+    it("BACKWARD direction: writes startDate first, then endDate + date + dayOfWeek (lowercase)", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+      mockGetLinkedDeadlineItems.mockResolvedValue([
+        // Current item at 2026-05-15. Cascade pulls back to 2026-04-28.
+        { id: "wi-b", title: "Code handoff", category: "deadline", status: "in-progress", date: "2026-05-15", startDate: "2026-05-15", endDate: "2026-05-15" },
+      ]);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "dueDate",
+        newValue: "2026-04-28",
+        updatedBy: "kathy",
+      });
+
+      const calls = mockUpdateSet.mock.calls.map((c) => c[0]);
+      expect(calls).toHaveLength(3);
+      // First L2 write: startDate only (backward leading).
+      expect(calls[1]).toMatchObject({ startDate: "2026-04-28" });
+      expect(calls[1]).not.toHaveProperty("endDate");
+      // Second L2 write: endDate + date + dayOfWeek.
+      expect(calls[2]).toMatchObject({
+        endDate: "2026-04-28",
+        date: "2026-04-28",
+        dayOfWeek: "tuesday",
+      });
+    });
+
+    it("computes lowercase dayOfWeek across the week", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+
+      const cases: Array<{ date: string; expected: string }> = [
+        // 2026-04-26 = Sunday, 2026-04-27 = Monday, ..., 2026-05-02 = Saturday
+        { date: "2026-04-26", expected: "sunday" },
+        { date: "2026-04-27", expected: "monday" },
+        { date: "2026-04-28", expected: "tuesday" },
+        { date: "2026-04-29", expected: "wednesday" },
+        { date: "2026-04-30", expected: "thursday" },
+        { date: "2026-05-01", expected: "friday" },
+        { date: "2026-05-02", expected: "saturday" },
+      ];
+
+      for (const { date, expected } of cases) {
+        vi.clearAllMocks();
+        _idCounter = 0;
+        mockCheckIdempotency.mockResolvedValue(false);
+        mockGetClientBySlug.mockResolvedValue(client);
+        mockFindProjectByFuzzyName.mockResolvedValue(project);
+        mockGetLinkedDeadlineItems.mockResolvedValue([
+          { id: `wi-${date}`, title: "Item", category: "deadline", status: "in-progress", date: "2026-04-10", startDate: "2026-04-10", endDate: "2026-04-10" },
+        ]);
+
+        const { updateProjectField } = await import("./operations-writes-project");
+        await updateProjectField({
+          clientSlug: "convergix",
+          projectName: "CDS Messaging",
+          field: "dueDate",
+          newValue: date,
+          updatedBy: "kathy",
+        });
+
+        const calls = mockUpdateSet.mock.calls.map((c) => c[0]);
+        const combined = calls.find((c) => "dayOfWeek" in c);
+        expect(combined?.dayOfWeek).toBe(expected);
+      }
+    });
+
+    it("when new dueDate is null, writes only date=null on the L2 (legacy behavior preserved)", async () => {
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+      mockGetLinkedDeadlineItems.mockResolvedValue([
+        { id: "wi-clear", title: "Code handoff", category: "deadline", status: "in-progress", date: "2026-04-10", startDate: "2026-04-10", endDate: "2026-04-10" },
+      ]);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "dueDate",
+        newValue: null,
+        updatedBy: "kathy",
+      });
+
+      const calls = mockUpdateSet.mock.calls.map((c) => c[0]);
+      // 1 project update + 1 L2 date=null write — no extra start/end/dayOfWeek
+      // when there's no defensible value to sync to.
+      expect(calls).toHaveLength(2);
+      expect(calls[1]).toEqual({ date: null, updatedAt: expect.any(Date) });
     });
   });
 

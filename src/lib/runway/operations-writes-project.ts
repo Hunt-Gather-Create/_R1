@@ -38,6 +38,26 @@ import type {
   UpdateProjectFieldData,
 } from "./mutation-response";
 
+/**
+ * Compute the lowercase weekday name (monday..sunday) for an ISO date.
+ * Prod stores weekItem.dayOfWeek lowercase (feedback_dayofweek_lowercase) —
+ * any title-case write silently breaks downstream case-sensitive filters.
+ * Used by the deadline-L2 cascade in updateProjectField (#22).
+ */
+const DAYS_OF_WEEK = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+] as const;
+function computeDayOfWeekLowercase(isoDate: string): string {
+  const day = new Date(isoDate + "T00:00:00Z").getUTCDay();
+  return DAYS_OF_WEEK[day];
+}
+
 // ── Delete Project ──────────────────────────────────────
 
 export interface DeleteProjectParams {
@@ -287,14 +307,78 @@ export async function updateProjectField(
       .set({ [columnKey]: persistedValue, updatedAt: new Date() })
       .where(eq(projects.id, project.id));
 
-    // Cascade dueDate changes to linked deadline week items
+    // Cascade dueDate changes to linked deadline week items.
+    //
+    // Issue #22 + #22 acceptance:
+    //   (a) Skip terminal-status L2s (completed / canceled). Those represent
+    //       shipped work; bumping their dates from an envelope move drifts
+    //       the audit trail away from what actually happened.
+    //   (b) When the new dueDate is non-null, sync the full date set
+    //       (`date`, `startDate`, `endDate`, `dayOfWeek`) so deadline L2s
+    //       stay internally consistent with their parent envelope. Pre-fix,
+    //       only `date` was written and start/end/dayOfWeek drifted
+    //       (Convergix Events Page Staging L2 e896... was the canonical
+    //       example). dayOfWeek is lowercased per prod convention
+    //       (feedback_dayofweek_lowercase).
+    //   (c) Direction-aware write order per feedback_l2_date_write_ordering:
+    //       FORWARD moves write endDate first; BACKWARD moves write
+    //       startDate first. Direct tx.update bypasses the helper's
+    //       cross-field validator today, but mirroring the rule keeps this
+    //       cascade safe under any future DB-level CHECK constraint.
+    //   (d) When the new value is null (L1 dueDate cleared) preserve the
+    //       legacy date-only write so we don't introduce a wider behavior
+    //       change. Only sync the extra fields when there's a real new
+    //       date to anchor on.
     if (typedField === "dueDate") {
       const linkedDeadlines = await getLinkedDeadlineItems(project.id);
       for (const item of linkedDeadlines) {
-        await tx
-          .update(weekItems)
-          .set({ date: effectiveNewValue, updatedAt: new Date() })
-          .where(eq(weekItems.id, item.id));
+        if (item.status === "completed" || item.status === "canceled") {
+          continue;
+        }
+        if (effectiveNewValue === null) {
+          await tx
+            .update(weekItems)
+            .set({ date: null, updatedAt: new Date() })
+            .where(eq(weekItems.id, item.id));
+        } else {
+          const dayOfWeek = computeDayOfWeekLowercase(effectiveNewValue);
+          const currentStart = item.startDate ?? item.date ?? null;
+          const moveForward =
+            currentStart === null || effectiveNewValue > currentStart;
+          if (moveForward) {
+            // FORWARD: extend the trailing edge first so startDate write
+            // never sees `newStart > storedEnd`.
+            await tx
+              .update(weekItems)
+              .set({ endDate: effectiveNewValue, updatedAt: new Date() })
+              .where(eq(weekItems.id, item.id));
+            await tx
+              .update(weekItems)
+              .set({
+                startDate: effectiveNewValue,
+                date: effectiveNewValue,
+                dayOfWeek,
+                updatedAt: new Date(),
+              })
+              .where(eq(weekItems.id, item.id));
+          } else {
+            // BACKWARD: pull the leading edge in first so endDate write
+            // never sees `newEnd < storedStart`.
+            await tx
+              .update(weekItems)
+              .set({ startDate: effectiveNewValue, updatedAt: new Date() })
+              .where(eq(weekItems.id, item.id));
+            await tx
+              .update(weekItems)
+              .set({
+                endDate: effectiveNewValue,
+                date: effectiveNewValue,
+                dayOfWeek,
+                updatedAt: new Date(),
+              })
+              .where(eq(weekItems.id, item.id));
+          }
+        }
         cascadedItems.push(item.title);
         cascadedIds.push(item.id);
         // v4 / PR #86: capture prior `date` so cascadeDetail can surface
