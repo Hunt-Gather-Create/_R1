@@ -79,6 +79,9 @@ docs/tmp/
 # ephemeral subagent worktrees (per-CC spawns, not for the repo)
 .claude/worktrees/
 
+# Claude Code harness lock files (per-session ephemeral)
+.claude/*.lock
+
 # GSD plugin auto-managed handoff pointer (per-developer state)
 .planning/HANDOFF.json
 .planning/STATE.md
