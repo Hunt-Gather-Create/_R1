@@ -278,3 +278,140 @@ describe("setProjectParent", () => {
     if (!result.ok) expect(result.error).toMatch(/Cycle detected/);
   });
 });
+
+// ── #20: linkWeekItemToProject wrapper-clobber guard ────────────────────
+//
+// Issue #20 reported that linkWeekItemToProject re-parenting an L2 onto a
+// retainer wrapper with no L1 children silently collapsed the wrapper's
+// startDate/endDate to the linked L2's date.
+//
+// Structurally fixed in recomputeProjectDatesWith as part of issue #8 —
+// the retainer-guard now short-circuits when the L1 has any child (L1 OR
+// L2). After link, the destination wrapper has the just-linked L2 as a
+// child, so the guard fires and pinned dates are preserved.
+//
+// These tests lock that behavior in for the link path specifically and
+// confirm the issue #20 acceptance criteria.
+describe("linkWeekItemToProject — wrapper-clobber guard (#20)", () => {
+  async function clearChildren(projectId: string): Promise<void> {
+    await libsqlClient.execute({
+      sql: `DELETE FROM week_items WHERE project_id = ?`,
+      args: [projectId],
+    });
+    await libsqlClient.execute({
+      sql: `UPDATE projects SET parent_project_id = NULL WHERE parent_project_id = ?`,
+      args: [projectId],
+    });
+  }
+
+  it("does NOT collapse the wrapper envelope when linking an L2 to a retainer-wrapper-with-no-L1-children", async () => {
+    // Set up pj-cds as a retainer wrapper with pinned envelope dates and
+    // zero children. wi-other-week is an orphan L2 (its current parent
+    // pj-map will lose it on link).
+    await setEngagementType("pj-cds", "retainer");
+    await setProjectDates("pj-cds", "2026-02-01", "2026-07-31");
+    await clearChildren("pj-cds");
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "wi-other-week", // currently parented to pj-map (different client)
+      projectId: "pj-cds",
+      updatedBy: "tester",
+    });
+
+    // Cross-client mismatch is rejected at the API gate. Use an
+    // already-same-client L2 instead.
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/client mismatch/);
+  });
+
+  it("preserves wrapper envelope when re-parenting a same-client L2 into a retainer-wrapper-with-no-L1-children", async () => {
+    // pj-cds: retainer wrapper, pinned 2026-02-01..2026-07-31, no children.
+    await setEngagementType("pj-cds", "retainer");
+    await setProjectDates("pj-cds", "2026-02-01", "2026-07-31");
+    await clearChildren("pj-cds");
+    // wi-completed lives in pj-cds via the seed; we just deleted it. Re-seed
+    // an orphan L2 for the same client (Convergix) so the link succeeds.
+    await libsqlClient.execute({
+      sql: `INSERT INTO week_items (id, project_id, client_id, week_of, date, start_date, end_date, title, sort_order, created_at, updated_at)
+            VALUES ('wi-orphan-cgx', NULL, 'cl-convergix', '2026-04-13', '2026-04-15', '2026-04-15', '2026-04-15', 'Orphan L2', 0, ${Math.floor(Date.now() / 1000)}, ${Math.floor(Date.now() / 1000)})`,
+      args: [],
+    });
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "wi-orphan-cgx",
+      projectId: "pj-cds",
+      updatedBy: "tester",
+    });
+
+    expect(result.ok).toBe(true);
+
+    // The wrapper envelope must be unchanged — NOT collapsed to 2026-04-15.
+    const wrapper = await getProject(testDb, "pj-cds");
+    expect(wrapper?.startDate).toBe("2026-02-01");
+    expect(wrapper?.endDate).toBe("2026-07-31");
+
+    // And no cascade-date-change audit row should have emitted for the
+    // wrapper, because the guard short-circuited (no actual write happened).
+    const cascadeRows = await getAuditByType("cascade-date-change");
+    const wrapperCascades = cascadeRows.filter((r) => r.project_id === "pj-cds");
+    expect(wrapperCascades).toHaveLength(0);
+  });
+
+  it("preserves wrapper envelope when re-parenting an L2 INTO a wrapper that already has L1 children (existing guard path still fires)", async () => {
+    // pj-cds is a retainer wrapper with one L1 child (pj-social-cgx).
+    await setEngagementType("pj-cds", "retainer");
+    await setProjectDates("pj-cds", "2026-02-01", "2026-07-31");
+    await setParent("pj-social-cgx", "pj-cds");
+    // Clear week items on pj-cds so we're a pure "L1-child-only" wrapper.
+    await libsqlClient.execute({
+      sql: `DELETE FROM week_items WHERE project_id = 'pj-cds'`,
+    });
+    // Insert an orphan L2 to link.
+    await libsqlClient.execute({
+      sql: `INSERT INTO week_items (id, project_id, client_id, week_of, date, start_date, end_date, title, sort_order, created_at, updated_at)
+            VALUES ('wi-orphan-l1c', NULL, 'cl-convergix', '2026-04-13', '2026-04-15', '2026-04-15', '2026-04-15', 'Orphan L2', 0, ${Math.floor(Date.now() / 1000)}, ${Math.floor(Date.now() / 1000)})`,
+    });
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "wi-orphan-l1c",
+      projectId: "pj-cds",
+      updatedBy: "tester",
+    });
+
+    expect(result.ok).toBe(true);
+    const wrapper = await getProject(testDb, "pj-cds");
+    expect(wrapper?.startDate).toBe("2026-02-01");
+    expect(wrapper?.endDate).toBe("2026-07-31");
+  });
+
+  it("recomputes normally when linking to a non-retainer L1 (engagementType=project path unchanged)", async () => {
+    // pj-impact is a non-retainer project. After link, it should derive
+    // dates from its (existing) deadline L2 + the newly linked L2 — i.e.
+    // recompute fires normally and the structural guard never engages.
+    await setEngagementType("pj-impact", "project");
+    await setProjectDates("pj-impact", null, null);
+
+    // Insert an orphan L2 for Bonterra.
+    await libsqlClient.execute({
+      sql: `INSERT INTO week_items (id, project_id, client_id, week_of, date, start_date, end_date, title, sort_order, created_at, updated_at)
+            VALUES ('wi-orphan-bt', NULL, 'cl-bonterra', '2026-06-01', '2026-06-05', '2026-06-05', '2026-06-05', 'Orphan L2 BT', 0, ${Math.floor(Date.now() / 1000)}, ${Math.floor(Date.now() / 1000)})`,
+    });
+
+    const { linkWeekItemToProject } = await import("./operations-writes-week");
+    const result = await linkWeekItemToProject({
+      weekItemId: "wi-orphan-bt",
+      projectId: "pj-impact",
+      updatedBy: "tester",
+    });
+
+    expect(result.ok).toBe(true);
+    const project = await getProject(testDb, "pj-impact");
+    // pj-impact had wi-impact-dl (2026-05-15) + newly linked wi-orphan-bt
+    // (2026-06-05). MIN=05-15, MAX=06-05.
+    expect(project?.startDate).toBe("2026-05-15");
+    expect(project?.endDate).toBe("2026-06-05");
+  });
+});

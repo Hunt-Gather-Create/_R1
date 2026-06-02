@@ -941,6 +941,17 @@ export async function linkWeekItemToProject(
   // v4 (Chunk 5): reparent + recompute both parents atomically. A crash
   // between the three writes could leave one or both parents with stale
   // derived dates; the transaction closes that window.
+  //
+  // Issue #20 (wrapper-clobber on link): the destination project's recompute
+  // runs AFTER the L2 has been re-parented, so a retainer wrapper that had
+  // no children pre-link now has exactly one L2 child (this one). The
+  // retainer-guard in recomputeProjectDatesWith — extended for L2-only
+  // wrappers as part of issue #8 — short-circuits at that point and the
+  // wrapper's pinned start/end dates are preserved. No paired
+  // overrideProjectDate workaround needed in callers. The reverse case
+  // (linking the last L2 off a wrapper, leaving it fully childless) is
+  // covered separately and intentionally falls through — a truly childless
+  // retainer is a bootstrap edge case, not a steady state.
   await db.transaction(async (tx) => {
     await tx
       .update(weekItems)
