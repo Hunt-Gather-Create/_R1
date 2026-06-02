@@ -13,6 +13,7 @@ import {
   cleanupTestDb,
   getProject,
   getWeekItem,
+  getAuditRecords,
   type TestDb,
 } from "./test-db";
 
@@ -459,3 +460,187 @@ describe("recomputeProjectDates — retainer wrapper guard", () => {
     expect(row?.endDate).toBeNull();
   });
 });
+
+describe("recomputeProjectDates — cascade-date-change audit row (#19)", () => {
+  async function seedSingleChild(
+    projectId: string,
+    clientId: string,
+    startDate: string,
+    endDate: string | null,
+  ): Promise<void> {
+    await libsqlClient.execute(`DELETE FROM week_items WHERE project_id = '${projectId}'`);
+    await insertWeekItem(libsqlClient, {
+      id: `wi-${projectId}-seed`,
+      projectId,
+      clientId,
+      startDate,
+      endDate,
+    });
+  }
+
+  it("emits a cascade-date-change row per field that moved (forward extend)", async () => {
+    await seedSingleChild("pj-cds", "cl-convergix", "2026-05-01", "2026-05-10");
+    const { recomputeProjectDates } = await import("./operations-writes-week");
+
+    // Baseline recompute to set stored dates. No auditContext → no rows.
+    await recomputeProjectDates("pj-cds");
+    const before = await getAuditRecords(testDb, { updateType: "cascade-date-change" });
+    expect(before).toHaveLength(0);
+
+    // Forward extend: replace the child with a wider window.
+    await libsqlClient.execute("DELETE FROM week_items WHERE project_id = 'pj-cds'");
+    await insertWeekItem(libsqlClient, {
+      id: "wi-extended",
+      projectId: "pj-cds",
+      clientId: "cl-convergix",
+      startDate: "2026-05-01",
+      endDate: "2026-05-20",
+    });
+
+    await recomputeProjectDates("pj-cds", {
+      updatedBy: "test:cascade",
+      triggeredByUpdateId: "audit-trigger-1",
+    });
+
+    const after = await getAuditRecords(testDb, { updateType: "cascade-date-change" });
+    expect(after).toHaveLength(1);
+    expect(after[0].projectId).toBe("pj-cds");
+    expect(after[0].updatedBy).toBe("test:cascade");
+    expect(after[0].previousValue).toBe("2026-05-10");
+    expect(after[0].newValue).toBe("2026-05-20");
+    expect(after[0].triggeredByUpdateId).toBe("audit-trigger-1");
+    expect(JSON.parse(after[0].metadata ?? "{}").field).toBe("endDate");
+  });
+
+  it("emits a cascade-date-change row per field that moved (backward pull on both fields)", async () => {
+    await seedSingleChild("pj-cds", "cl-convergix", "2026-05-01", "2026-05-20");
+    const { recomputeProjectDates } = await import("./operations-writes-week");
+
+    // Baseline.
+    await recomputeProjectDates("pj-cds");
+
+    // Backward pull: tighter window on both ends.
+    await libsqlClient.execute("DELETE FROM week_items WHERE project_id = 'pj-cds'");
+    await insertWeekItem(libsqlClient, {
+      id: "wi-tighter",
+      projectId: "pj-cds",
+      clientId: "cl-convergix",
+      startDate: "2026-05-05",
+      endDate: "2026-05-15",
+    });
+
+    await recomputeProjectDates("pj-cds", {
+      updatedBy: "test:cascade",
+    });
+
+    const rows = await getAuditRecords(testDb, { updateType: "cascade-date-change" });
+    expect(rows).toHaveLength(2);
+    const byField = Object.fromEntries(
+      rows.map((r) => [JSON.parse(r.metadata ?? "{}").field, r] as const),
+    );
+    expect(byField.startDate.previousValue).toBe("2026-05-01");
+    expect(byField.startDate.newValue).toBe("2026-05-05");
+    expect(byField.endDate.previousValue).toBe("2026-05-20");
+    expect(byField.endDate.newValue).toBe("2026-05-15");
+  });
+
+  it("does not emit a cascade row when recompute is a no-op", async () => {
+    await seedSingleChild("pj-cds", "cl-convergix", "2026-05-01", "2026-05-10");
+    const { recomputeProjectDates } = await import("./operations-writes-week");
+
+    await recomputeProjectDates("pj-cds"); // baseline write
+    const before = await getAuditRecords(testDb, { updateType: "cascade-date-change" });
+
+    // Re-run with auditContext but no change to children.
+    await recomputeProjectDates("pj-cds", { updatedBy: "test:cascade" });
+
+    const after = await getAuditRecords(testDb, { updateType: "cascade-date-change" });
+    expect(after.length).toBe(before.length);
+  });
+
+  it("does not emit a cascade row when the L2-only retainer guard short-circuits", async () => {
+    // pj-cds (retainer with pinned dates) + one L2 child = L2-only retainer wrapper.
+    // recompute short-circuits and returns the pinned dates — no audit row.
+    await libsqlClient.execute(
+      `UPDATE projects SET engagement_type = 'retainer', start_date = '2026-02-01', end_date = '2026-07-31' WHERE id = 'pj-cds'`,
+    );
+    await libsqlClient.execute("DELETE FROM week_items WHERE project_id = 'pj-cds'");
+    await insertWeekItem(libsqlClient, {
+      id: "wi-wrapper-l2",
+      projectId: "pj-cds",
+      clientId: "cl-convergix",
+      startDate: "2026-04-10",
+      endDate: "2026-04-12",
+    });
+    const { recomputeProjectDates } = await import("./operations-writes-week");
+
+    await recomputeProjectDates("pj-cds", { updatedBy: "test:cascade" });
+
+    const rows = await getAuditRecords(testDb, { updateType: "cascade-date-change" });
+    expect(rows).toHaveLength(0);
+
+    const project = await getProject(testDb, "pj-cds");
+    expect(project?.startDate).toBe("2026-02-01");
+    expect(project?.endDate).toBe("2026-07-31");
+  });
+
+  it("does not emit when auditContext is omitted (backwards-compat with direct callers)", async () => {
+    await seedSingleChild("pj-cds", "cl-convergix", "2026-05-01", "2026-05-20");
+    const { recomputeProjectDates } = await import("./operations-writes-week");
+
+    await recomputeProjectDates("pj-cds"); // first call, no audit context
+
+    // Force a real recompute (date moves) without auditContext.
+    await libsqlClient.execute("DELETE FROM week_items WHERE project_id = 'pj-cds'");
+    await insertWeekItem(libsqlClient, {
+      id: "wi-shift",
+      projectId: "pj-cds",
+      clientId: "cl-convergix",
+      startDate: "2026-06-01",
+      endDate: "2026-06-10",
+    });
+    await recomputeProjectDates("pj-cds");
+
+    const rows = await getAuditRecords(testDb, { updateType: "cascade-date-change" });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("no double-write: in-batch date-override on startDate suppresses the cascade row for that field but allows endDate", async () => {
+    // Seed: project at (2026-05-01, 2026-05-20). Child window matches.
+    await seedSingleChild("pj-cds", "cl-convergix", "2026-05-01", "2026-05-20");
+    const { recomputeProjectDates } = await import("./operations-writes-week");
+    await recomputeProjectDates("pj-cds");
+
+    // Insert a date-override audit row with batchId="batch-1" pinning startDate.
+    await libsqlClient.execute({
+      sql: `INSERT INTO updates (id, idempotency_key, update_type, project_id, updated_by, batch_id, metadata, created_at)
+            VALUES ('override-1', 'idem-1', 'date-override', 'pj-cds', 'test:cascade', 'batch-1', ?, ?)`,
+      args: [JSON.stringify({ field: "startDate" }), Math.floor(Date.now() / 1000)],
+    });
+
+    // Move the child so both startDate (3->1) and endDate (20->30) would shift.
+    // The startDate override should preserve project.startDate at 2026-05-01.
+    await libsqlClient.execute("DELETE FROM week_items WHERE project_id = 'pj-cds'");
+    await insertWeekItem(libsqlClient, {
+      id: "wi-shift",
+      projectId: "pj-cds",
+      clientId: "cl-convergix",
+      startDate: "2026-05-03",
+      endDate: "2026-05-30",
+    });
+
+    // Run recompute inside the ALS batch so the override guard sees the date-override row.
+    const { withBatchId } = await import("./runway-als");
+    await withBatchId("batch-1", async () => {
+      await recomputeProjectDates("pj-cds", { updatedBy: "test:cascade" });
+    });
+
+    const rows = await getAuditRecords(testDb, { updateType: "cascade-date-change" });
+    // Only the endDate cascade row should exist; startDate was preserved by the override.
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0].metadata ?? "{}").field).toBe("endDate");
+    expect(rows[0].previousValue).toBe("2026-05-20");
+    expect(rows[0].newValue).toBe("2026-05-30");
+  });
+});
+

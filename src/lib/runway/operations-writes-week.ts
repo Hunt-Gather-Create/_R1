@@ -35,6 +35,24 @@ import type {
   AuditEvent,
   AuditSource,
 } from "./operations-utils";
+
+/**
+ * Optional context the cascade audit row needs when `recomputeProjectDatesWith`
+ * actually moves project dates. Tests that exercise raw derivation may omit
+ * this — production callers always thread it through so the cascade leaves
+ * an audit trail. See `cascade-date-change` emit at the bottom of the function.
+ */
+export interface RecomputeAuditContext {
+  updatedBy: string;
+  source?: AuditSource | null;
+  /**
+   * When the trigger that called recompute already wrote an audit row (e.g.
+   * the L2 field-change row in updateWeekItemField), pass that audit id so
+   * the cascade row links back via `triggered_by_update_id`. Mirrors the
+   * cascade-status / cascade-duedate pattern.
+   */
+  triggeredByUpdateId?: string | null;
+}
 import type {
   MutationResponse,
   ReverseCascadeInfo,
@@ -44,9 +62,11 @@ import type {
 /**
  * Minimal shape of a Drizzle transaction object we need for the recompute
  * helper. Narrowed to the methods actually used so callers can pass either a
- * top-level `db` or the `tx` handed into `db.transaction(tx => ...)`.
+ * top-level `db` or the `tx` handed into `db.transaction(tx => ...)`. Includes
+ * `insert` so the cascade-date-change audit row (#19) can be written via the
+ * same executor when an `auditContext` is supplied.
  */
-type RecomputeExecutor = Pick<ReturnType<typeof getRunwayDb>, "select" | "update">;
+type RecomputeExecutor = Pick<ReturnType<typeof getRunwayDb>, "select" | "update" | "insert">;
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -78,20 +98,34 @@ function getMonday(dateStr: string): string {
  * child write and parent recompute stay atomic (Chunk 5 / Wave 1 debt §2).
  */
 export async function recomputeProjectDates(
-  projectId: string | null | undefined
+  projectId: string | null | undefined,
+  auditContext?: RecomputeAuditContext,
 ): Promise<{ startDate: string | null; endDate: string | null } | null> {
   if (!projectId) return null;
-  return recomputeProjectDatesWith(getRunwayDb(), projectId);
+  return recomputeProjectDatesWith(getRunwayDb(), projectId, auditContext);
 }
 
 /**
  * Transaction-aware variant: uses the provided executor (top-level db or a
  * transaction object) for both the read and write. Returns the derived dates
  * for callers that need to thread them into audit metadata.
+ *
+ * When `auditContext` is provided and the recompute actually writes new
+ * dates (not a no-op + not fully override-preserved), emits a
+ * `cascade-date-change` audit row per field that moved. Issue #19: prior to
+ * this, parent recompute wrote dates with no audit trail, leaving cohorts
+ * under-counting audit rows by 1+ per cascade boundary.
+ *
+ * Per-batch double-write guard: when `overrideProjectDate` already pinned a
+ * field via `date-override` audit row earlier in this batch, the override
+ * logic below forces `effective[field] = current[field]`, so the per-field
+ * "did this actually change?" gate naturally suppresses the cascade row for
+ * the override-protected field. No additional guard needed.
  */
 export async function recomputeProjectDatesWith(
   executor: RecomputeExecutor,
-  projectId: string
+  projectId: string,
+  auditContext?: RecomputeAuditContext,
 ): Promise<{ startDate: string | null; endDate: string | null }> {
   // Retainer-wrapper guard: a retainer L1 with at least one child — L1 OR L2
   // — acts as a SOW-window wrapper. Its start_date / end_date are pinned to
@@ -110,6 +144,7 @@ export async function recomputeProjectDatesWith(
       engagementType: projects.engagementType,
       startDate: projects.startDate,
       endDate: projects.endDate,
+      clientId: projects.clientId,
     })
     .from(projects)
     .where(eq(projects.id, projectId));
@@ -215,6 +250,48 @@ export async function recomputeProjectDatesWith(
     .update(projects)
     .set({ startDate: effectiveStart, endDate: effectiveEnd, updatedAt: new Date() })
     .where(eq(projects.id, projectId));
+
+  // Issue #19: emit a `cascade-date-change` audit row per field that actually
+  // moved, mirroring the cascade-status / cascade-duedate pattern. The
+  // per-field gate (`effective[X] !== current[X]`) is also the no-double-write
+  // guard: any field preserved by an in-batch date-override will be identical
+  // to `current[X]` here, so no cascade row emits for that field. Mixed cases
+  // (override on startDate + cascade move on endDate) emit a single endDate
+  // row, sibling to the override's startDate row.
+  if (auditContext && current) {
+    const clientId = project?.clientId ?? null;
+    const fields = [
+      { field: "startDate" as const, previous: current.startDate, next: effectiveStart },
+      { field: "endDate" as const, previous: current.endDate, next: effectiveEnd },
+    ];
+    for (const { field, previous, next } of fields) {
+      if (previous === next) continue;
+      const cascadeIdemKey = generateIdempotencyKey(
+        "cascade-date-change",
+        projectId,
+        field,
+        previous ?? "(null)",
+        next ?? "(null)",
+        auditContext.triggeredByUpdateId ?? "(no-trigger)",
+      );
+      await insertAuditRecord(
+        {
+          idempotencyKey: cascadeIdemKey,
+          projectId,
+          clientId,
+          updatedBy: auditContext.updatedBy,
+          updateType: "cascade-date-change",
+          previousValue: previous,
+          newValue: next,
+          summary: `Project dates recomputed: ${field} ${previous ?? "(null)"} -> ${next ?? "(null)"}`,
+          metadata: JSON.stringify({ field }),
+          triggeredByUpdateId: auditContext.triggeredByUpdateId ?? null,
+          source: auditContext.source ?? null,
+        },
+        executor,
+      );
+    }
+  }
 
   return { startDate: effectiveStart, endDate: effectiveEnd };
 }
@@ -378,6 +455,11 @@ export async function createWeekItem(
   if (dup) return dup as MutationResponse<{ clientName?: string; title: string }>;
 
   const itemId = generateId();
+  // Pre-generate the L2-create audit id so the cascade-date-change row can
+  // link back via `triggered_by_update_id` (mirrors the parentAuditId pattern
+  // in updateProjectStatus). The L2 create audit row is still written after
+  // the transaction (with this id) per the existing flow.
+  const createAuditId = generateId();
   // v4 (Chunk 5): normalize resources string on write so storage is
   // canonical (`->` over alt arrows, trimmed entries). `null` preserved.
   const normalizedResources = resources ? normalizeResourcesString(resources) : null;
@@ -406,11 +488,16 @@ export async function createWeekItem(
       sortOrder: 999,
     });
     if (projectId) {
-      await recomputeProjectDatesWith(tx, projectId);
+      await recomputeProjectDatesWith(tx, projectId, {
+        updatedBy,
+        source: source ?? null,
+        triggeredByUpdateId: createAuditId,
+      });
     }
   });
 
   await insertAuditRecord({
+    id: createAuditId,
     idempotencyKey: idemKey,
     clientId,
     updatedBy,
@@ -567,6 +654,11 @@ export async function updateWeekItemField(
   });
   if (dup) return dup as MutationResponse<UpdateWeekItemFieldData>;
 
+  // Pre-generate the L2 field-change audit id so the cascade-date-change row
+  // emitted inside recompute can link back via `triggered_by_update_id`.
+  // Mirrors the parentAuditId pattern in updateProjectStatus / updateProjectField.
+  const fieldChangeAuditId = generateId();
+
   // Determine whether this write will reverse-cascade; if so, snapshot the
   // parent project BEFORE the transaction so we can surface the prior
   // `dueDate` + name in the structured response (PR #86). We still set the
@@ -615,7 +707,11 @@ export async function updateWeekItemField(
       item.projectId &&
       (typedField === "date" || typedField === "startDate" || typedField === "endDate")
     ) {
-      await recomputeProjectDatesWith(tx, item.projectId);
+      await recomputeProjectDatesWith(tx, item.projectId, {
+        updatedBy,
+        source: source ?? null,
+        triggeredByUpdateId: fieldChangeAuditId,
+      });
     }
   });
 
@@ -634,6 +730,7 @@ export async function updateWeekItemField(
   const summaryNewValue = effectiveNewValue ?? "(null)";
 
   const auditId = await insertAuditRecord({
+    id: fieldChangeAuditId,
     idempotencyKey: idemKey,
     clientId: item.clientId,
     updatedBy,
@@ -736,15 +833,23 @@ export async function deleteWeekItem(
   const clientName = await getClientNameById(item.clientId);
   const parentProjectId = item.projectId;
 
+  // Pre-generate the delete audit id so the cascade-date-change row can link
+  // back via `triggered_by_update_id`.
+  const deleteAuditId = generateId();
+
   // v4 (Chunk 5): atomic delete + parent-date recompute.
   await db.transaction(async (tx) => {
     await tx.delete(weekItems).where(eq(weekItems.id, item.id));
     if (parentProjectId) {
-      await recomputeProjectDatesWith(tx, parentProjectId);
+      await recomputeProjectDatesWith(tx, parentProjectId, {
+        updatedBy,
+        triggeredByUpdateId: deleteAuditId,
+      });
     }
   });
 
   await insertAuditRecord({
+    id: deleteAuditId,
     idempotencyKey: idemKey,
     clientId: item.clientId,
     updatedBy,
@@ -829,6 +934,10 @@ export async function linkWeekItemToProject(
       clientName?: string;
     }>;
 
+  // Pre-generate the reparent audit id so the cascade-date-change row(s) on
+  // either parent project (old + new) link back via `triggered_by_update_id`.
+  const reparentAuditId = generateId();
+
   // v4 (Chunk 5): reparent + recompute both parents atomically. A crash
   // between the three writes could leave one or both parents with stale
   // derived dates; the transaction closes that window.
@@ -838,13 +947,18 @@ export async function linkWeekItemToProject(
       .set({ projectId, updatedAt: new Date() })
       .where(eq(weekItems.id, weekItemId));
 
+    const cascadeAuditContext: RecomputeAuditContext = {
+      updatedBy,
+      triggeredByUpdateId: reparentAuditId,
+    };
     if (previousProjectId && previousProjectId !== projectId) {
-      await recomputeProjectDatesWith(tx, previousProjectId);
+      await recomputeProjectDatesWith(tx, previousProjectId, cascadeAuditContext);
     }
-    await recomputeProjectDatesWith(tx, projectId);
+    await recomputeProjectDatesWith(tx, projectId, cascadeAuditContext);
   });
 
   await insertAuditRecord({
+    id: reparentAuditId,
     idempotencyKey: idemKey,
     projectId,
     clientId: item.clientId,
