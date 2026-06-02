@@ -156,7 +156,11 @@ export async function updateProjectStatus(
       .where(eq(projects.id, project.id));
 
     if (shouldCascade && cascadedStatus) {
-      const linkedItems = await getLinkedWeekItems(project.id);
+      // MED-1 (TP holistic review): pass tx so the read snapshot sits
+      // inside the cascade transaction's read-write set. Closes the same
+      // TOCTOU pattern fixed in updateProjectField's cascade-duedate path.
+      // Chunk 5 debt §12.2 (above) is now partially retired.
+      const linkedItems = await getLinkedWeekItems(project.id, tx);
       for (const item of linkedItems) {
         const itemAlreadyTerminal = (TERMINAL_ITEM_STATUSES as readonly string[]).includes(item.status ?? "");
         if (!itemAlreadyTerminal) {

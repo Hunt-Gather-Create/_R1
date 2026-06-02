@@ -92,13 +92,28 @@ export async function getOrphanWeekItems(
   return rows.filter((r) => r.clientId === client.id);
 }
 
-export async function getLinkedWeekItems(projectId: string): Promise<WeekItemRow[]> {
-  const db = getRunwayDb();
+/**
+ * Minimal shape needed by the linked-week-item readers — just `select`. Lets
+ * a `db.transaction(tx => ...)` callback pass `tx` so the read sits inside
+ * the cascade transaction's read-write set (per TP holistic-review MED-1).
+ * Falls back to a fresh `getRunwayDb()` when omitted, preserving every
+ * existing call site outside the runway write helpers (MCP, reads, etc.).
+ */
+type LinkedItemReader = Pick<ReturnType<typeof getRunwayDb>, "select">;
+
+export async function getLinkedWeekItems(
+  projectId: string,
+  executor?: LinkedItemReader,
+): Promise<WeekItemRow[]> {
+  const db = executor ?? getRunwayDb();
   return db.select().from(weekItems).where(eq(weekItems.projectId, projectId));
 }
 
-export async function getLinkedDeadlineItems(projectId: string): Promise<WeekItemRow[]> {
-  const db = getRunwayDb();
+export async function getLinkedDeadlineItems(
+  projectId: string,
+  executor?: LinkedItemReader,
+): Promise<WeekItemRow[]> {
+  const db = executor ?? getRunwayDb();
   return db.select().from(weekItems)
     .where(and(eq(weekItems.projectId, projectId), eq(weekItems.category, "deadline")));
 }

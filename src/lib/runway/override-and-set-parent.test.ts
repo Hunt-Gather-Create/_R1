@@ -449,8 +449,13 @@ describe("linkWeekItemToProject — wrapper-clobber guard (#20)", () => {
     expect(l2Row.rows[0]?.end_date).toBe("2026-04-28");
     expect(l2Row.rows[0]?.day_of_week).toBe("tuesday"); // 2026-04-28 is Tuesday
 
-    // Audit row trail: the cascade-date-change row for the L1 endDate
-    // move must link back to the parent field-change audit id.
+    // Audit row trail: the cascade-date-change rows for the L1 envelope
+    // move must link back to the parent field-change audit id. LOW-3
+    // (TP holistic review): tightened from `>= 1` to exact count + field
+    // set. The forward cascade moves BOTH L1.startDate (04-10 → 04-28)
+    // AND L1.endDate (04-10 → 04-28), so exactly 2 rows are expected.
+    // A regression dropping one of them would have slipped the prior
+    // `>= 1` assertion.
     const fieldChangeRows = await getAuditByType("field-change");
     const parentRow = fieldChangeRows.find((r) => r.project_id === "pj-impact");
     expect(parentRow).toBeDefined();
@@ -458,7 +463,11 @@ describe("linkWeekItemToProject — wrapper-clobber guard (#20)", () => {
     const linkedCascades = cascadeRows.filter(
       (r) => r.project_id === "pj-impact" && r.triggered_by_update_id === parentRow?.id,
     );
-    expect(linkedCascades.length).toBeGreaterThanOrEqual(1);
+    expect(linkedCascades).toHaveLength(2);
+    const cascadeFields = linkedCascades
+      .map((r) => JSON.parse((r.metadata as string | null) ?? "{}").field as string)
+      .sort();
+    expect(cascadeFields).toEqual(["endDate", "startDate"]);
   });
 
   it("emits cascade-date-change on the previous parent when the moved L2 was a boundary child (M-1)", async () => {

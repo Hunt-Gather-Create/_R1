@@ -331,7 +331,13 @@ export async function updateProjectField(
     //       change. Only sync the extra fields when there's a real new
     //       date to anchor on.
     if (typedField === "dueDate") {
-      const linkedDeadlines = await getLinkedDeadlineItems(project.id);
+      // MED-1 (TP holistic review): pass tx so the read snapshot sits
+      // inside the cascade transaction's read-write set. Without this,
+      // a concurrent flip to terminal status or a concurrent insert /
+      // delete on a deadline L2 could land between the read and the
+      // per-row tx.update, bypassing the terminal-status skip or making
+      // cascade decisions on stale data.
+      const linkedDeadlines = await getLinkedDeadlineItems(project.id, tx);
       for (const item of linkedDeadlines) {
         if (item.status === "completed" || item.status === "canceled") {
           continue;
