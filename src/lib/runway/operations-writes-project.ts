@@ -9,6 +9,7 @@ import { getRunwayDb } from "@/lib/db/runway";
 import { projects, weekItems, updates } from "@/lib/db/runway-schema";
 import { eq } from "drizzle-orm";
 import { getLinkedDeadlineItems } from "./operations-reads-week";
+import { recomputeProjectDatesWith } from "./operations-writes-week";
 import {
   PROJECT_FIELDS,
   PROJECT_FIELD_TO_COLUMN,
@@ -387,6 +388,23 @@ export async function updateProjectField(
         const prev =
           (item as { date?: string | null }).date ?? null;
         cascadedPrevDates.push(prev);
+      }
+      // Issue #22 follow-on: with L2.startDate / L2.endDate now moving on
+      // cascade (not just L2.date as pre-fix), the parent L1's derived
+      // start_date / end_date — MIN/MAX over those very fields per
+      // recomputeProjectDatesWith — would go stale until the next unrelated
+      // L2 write fires a recompute. Re-derive here, inside the same tx,
+      // and pass the parent audit id as triggeredByUpdateId so the
+      // resulting cascade-date-change rows (#19) link back to the dueDate
+      // change that caused them. Retainer-wrapper guards still short-circuit
+      // this when applicable. No-op when no cascade fired or when the L1's
+      // dates didn't actually move.
+      if (cascadedIds.length > 0) {
+        await recomputeProjectDatesWith(tx, project.id, {
+          updatedBy,
+          source: source ?? null,
+          triggeredByUpdateId: parentAuditId,
+        });
       }
     }
   });

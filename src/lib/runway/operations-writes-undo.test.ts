@@ -81,6 +81,7 @@ vi.mock("drizzle-orm", () => ({
   desc: vi.fn((a) => ({ desc: a })),
   and: vi.fn((...conds) => ({ and: conds })),
   gt: vi.fn((a, b) => ({ gt: [a, b] })),
+  or: vi.fn((...conds) => ({ or: conds })),
 }));
 
 const mockCheckIdempotency = vi.fn();
@@ -617,6 +618,74 @@ describe("undoLastChange", () => {
         summary: 'Convergix / CDS: owner changed from "Kathy" to "Lane"',
       },
     ];
+
+    const { undoLastChange } = await import("./operations-writes-undo");
+    const result = await undoLastChange({ updatedBy: "kathy" });
+
+    expect(result.ok).toBe(true);
+    expect(mockUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ dueDate: "2026-04-15" }),
+    );
+  });
+
+  it("catches same-second concurrent write via id tiebreak (WR-02)", async () => {
+    // `createdAt` is integer-seconds. A concurrent writer landing in the
+    // SAME second as my lastChange would slip past `gt(createdAt)` alone.
+    // The composite predicate now also catches `eq(createdAt) AND gt(id)`.
+    mockSelectOrderBy.mockResolvedValue([
+      {
+        id: "u-mine",
+        updateType: "status-change",
+        projectId: "p1",
+        clientId: "c1",
+        previousValue: "in-production",
+        newValue: "completed",
+        summary: "test",
+        updatedBy: "kathy",
+        createdAt: 1700000000,
+      },
+    ]);
+    // Concurrent status-change row with SAME createdAt but greater id.
+    mockStaleCheckRows = [
+      {
+        id: "u-concurrent",
+        updateType: "status-change",
+        metadata: null,
+        summary: "Convergix / CDS: status changed from \"completed\" to \"on-hold\"",
+      },
+    ];
+
+    const { undoLastChange } = await import("./operations-writes-undo");
+    const result = await undoLastChange({ updatedBy: "kathy" });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe(
+        "This change has been modified since you last saw it. Refresh to see the latest state.",
+      );
+    }
+  });
+
+  it("does not treat empty-string metadata.field as a valid match (L-1)", async () => {
+    // Defensive: pre-existing inline `if (!fieldName)` falsy check would
+    // fall through to regex on empty-string. The hoisted helper preserves
+    // that by length-check after type-check.
+    mockSelectOrderBy.mockResolvedValue([
+      {
+        id: "u-mine",
+        updateType: "field-change",
+        projectId: "p1",
+        clientId: "c1",
+        previousValue: "2026-04-15",
+        newValue: "2026-04-25",
+        // metadata exists but field is empty string — should fall to regex
+        // and pick up "dueDate" from the summary.
+        metadata: JSON.stringify({ field: "" }),
+        summary: 'Convergix / CDS: dueDate changed from "2026-04-15" to "2026-04-25"',
+        updatedBy: "kathy",
+        createdAt: 1700000000,
+      },
+    ]);
 
     const { undoLastChange } = await import("./operations-writes-undo");
     const result = await undoLastChange({ updatedBy: "kathy" });

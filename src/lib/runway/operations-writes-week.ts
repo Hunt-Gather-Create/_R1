@@ -35,6 +35,11 @@ import type {
   AuditEvent,
   AuditSource,
 } from "./operations-utils";
+import type {
+  MutationResponse,
+  ReverseCascadeInfo,
+  UpdateWeekItemFieldData,
+} from "./mutation-response";
 
 /**
  * Optional context the cascade audit row needs when `recomputeProjectDatesWith`
@@ -53,11 +58,6 @@ export interface RecomputeAuditContext {
    */
   triggeredByUpdateId?: string | null;
 }
-import type {
-  MutationResponse,
-  ReverseCascadeInfo,
-  UpdateWeekItemFieldData,
-} from "./mutation-response";
 
 /**
  * Minimal shape of a Drizzle transaction object we need for the recompute

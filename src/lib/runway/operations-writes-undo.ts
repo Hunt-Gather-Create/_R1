@@ -12,7 +12,7 @@
 
 import { getRunwayDb } from "@/lib/db/runway";
 import { projects, updates } from "@/lib/db/runway-schema";
-import { and, eq, desc, gt } from "drizzle-orm";
+import { and, eq, desc, gt, or } from "drizzle-orm";
 import {
   UNDO_FIELDS,
   generateIdempotencyKey,
@@ -50,7 +50,11 @@ function extractFieldName(row: AuditLike): string | null {
   if (row.metadata) {
     try {
       const meta = JSON.parse(row.metadata);
-      if (typeof meta?.field === "string") return meta.field;
+      // Length check preserves the pre-hoist falsy-fallthrough semantics:
+      // empty-string field metadata falls back to the summary regex.
+      if (typeof meta?.field === "string" && meta.field.length > 0) {
+        return meta.field;
+      }
     } catch {
       /* fall through to summary regex */
     }
@@ -104,6 +108,11 @@ export async function undoLastChange(params: {
     // #26 stale-target detection: any newer audit row touching the same
     // {project, field} means our apply would clobber a more recent state.
     // Refuse and tell the user to refresh.
+    //
+    // `createdAt` is integer-seconds — same-second writes need an id-tiebreak
+    // to be detected. Mirrors the recentUpdates query's `desc(createdAt),
+    // desc(id)` ordering convention. Without the tiebreak (gt-on-createdAt
+    // alone) a competing writer landing in the same second slips the gate.
     const lastField = extractFieldName(lastChange);
     if (lastField) {
       const newerSameProject = await tx
@@ -117,7 +126,13 @@ export async function undoLastChange(params: {
         .where(
           and(
             eq(updates.projectId, lastChange.projectId),
-            gt(updates.createdAt, lastChange.createdAt),
+            or(
+              gt(updates.createdAt, lastChange.createdAt),
+              and(
+                eq(updates.createdAt, lastChange.createdAt),
+                gt(updates.id, lastChange.id),
+              ),
+            ),
           ),
         );
       const staleClobber = newerSameProject.some(

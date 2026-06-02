@@ -345,11 +345,14 @@ describe("updateProjectField", () => {
     if (result.ok) {
       expect(result.data?.cascadedItems).toEqual(["Code handoff", "Go live"]);
     }
-    // #22: cascade is now direction-aware. With no current startDate on the
-    // mock items, every cascade is treated as FORWARD which splits into 2
-    // tx.update calls per item (endDate first, then startDate+date+dayOfWeek).
-    // So: 1 project update + 2 items × 2 writes = 5 mockUpdateSet calls.
-    expect(mockUpdateSet).toHaveBeenCalledTimes(5);
+    // #22 + H-1: cascade is now direction-aware AND triggers a parent
+    // recompute after the cascade loop. With no current startDate on the
+    // mock items, every cascade takes the FORWARD path which splits into
+    // 2 tx.update calls per L2 (endDate first, then startDate+date+
+    // dayOfWeek). Then a final recompute fires on the L1 to refresh its
+    // derived dates. So: 1 project field update + (2 items × 2 L2 writes)
+    // + 1 L1 recompute = 6 mockUpdateSet calls.
+    expect(mockUpdateSet).toHaveBeenCalledTimes(6);
     expect(mockUpdateSet).toHaveBeenCalledWith(
       expect.objectContaining({ date: "2026-04-28" })
     );
@@ -593,8 +596,9 @@ describe("updateProjectField", () => {
       // calls[0] = the project field-change update.
       // calls[1] = L2 endDate write (forward leading).
       // calls[2] = L2 startDate+date+dayOfWeek combined write.
+      // calls[3] = L1 recompute (H-1: refreshes derived dates after cascade).
       const calls = mockUpdateSet.mock.calls.map((c) => c[0]);
-      expect(calls).toHaveLength(3);
+      expect(calls).toHaveLength(4);
       // First L2 write: endDate only.
       expect(calls[1]).toMatchObject({ endDate: "2026-04-28" });
       expect(calls[1]).not.toHaveProperty("startDate");
@@ -625,7 +629,8 @@ describe("updateProjectField", () => {
       });
 
       const calls = mockUpdateSet.mock.calls.map((c) => c[0]);
-      expect(calls).toHaveLength(3);
+      // 1 project + 1 L2 startDate + 1 L2 endDate+date+dayOfWeek + 1 L1 recompute = 4.
+      expect(calls).toHaveLength(4);
       // First L2 write: startDate only (backward leading).
       expect(calls[1]).toMatchObject({ startDate: "2026-04-28" });
       expect(calls[1]).not.toHaveProperty("endDate");
@@ -677,7 +682,18 @@ describe("updateProjectField", () => {
       }
     });
 
-    it("when new dueDate is null, writes only date=null on the L2 (legacy behavior preserved)", async () => {
+    it("WR-04 lock-in: when new dueDate is null, writes ONLY date=null on the L2 (intentional half-clear; full L2 cleanup is operator-followed)", async () => {
+      // WR-04 — explicit lock-in test. When operator clears L1.dueDate, the
+      // existing legacy behavior writes only date=null on linked deadline
+      // L2s, leaving startDate / endDate / dayOfWeek as their pre-clear
+      // values. This is INTENTIONALLY out of scope for the #22 fix: the
+      // null write itself violates feedback_no_nulls_in_prod_db ("never
+      // leave date field null"), so the right structural cleanup is "block
+      // the dueDate=null write OR require operator-driven L2 cleanup".
+      // That's a separate semantic decision; this PR preserves the prior
+      // behavior verbatim and locks it in test so a future maintainer
+      // doesn't "fix" the half-clear without thinking through whether
+      // null-clear should be allowed at all. See WR-04 in the cc review.
       mockGetClientBySlug.mockResolvedValue(client);
       mockFindProjectByFuzzyName.mockResolvedValue(project);
       mockGetLinkedDeadlineItems.mockResolvedValue([
@@ -694,10 +710,77 @@ describe("updateProjectField", () => {
       });
 
       const calls = mockUpdateSet.mock.calls.map((c) => c[0]);
-      // 1 project update + 1 L2 date=null write — no extra start/end/dayOfWeek
-      // when there's no defensible value to sync to.
-      expect(calls).toHaveLength(2);
+      // 1 project field update + 1 L2 date=null + 1 L1 recompute (post-cascade
+      // refresh per H-1) = 3. Critically, the L2 write at calls[1] writes
+      // ONLY date — startDate / endDate / dayOfWeek are NOT in the patch.
+      expect(calls).toHaveLength(3);
       expect(calls[1]).toEqual({ date: null, updatedAt: expect.any(Date) });
+      expect(calls[1]).not.toHaveProperty("startDate");
+      expect(calls[1]).not.toHaveProperty("endDate");
+      expect(calls[1]).not.toHaveProperty("dayOfWeek");
+    });
+
+    it("H-1 lock-in: after cascade-duedate fires, recomputeProjectDatesWith is called on the parent L1", async () => {
+      // H-1 — fresh-eyes QA finding. #22 introduced cascade writes to
+      // L2.startDate / endDate, which feed the L1's MIN/MAX derivation.
+      // Without a post-cascade recompute, L1.startDate / endDate go stale
+      // until the next unrelated L2 write triggers one. The fix is a
+      // recomputeProjectDatesWith call after the cascade loop, inside the
+      // same transaction. This test pins the "recompute fired" signal at
+      // the mock layer; integration coverage that proves derived dates
+      // actually move lives in operations-writes-week-recompute.test.ts.
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+      mockGetLinkedDeadlineItems.mockResolvedValue([
+        { id: "wi-h1", title: "Code handoff", category: "deadline", status: "in-progress", date: "2026-04-10", startDate: "2026-04-10", endDate: "2026-04-10" },
+      ]);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "dueDate",
+        newValue: "2026-04-28",
+        updatedBy: "kathy",
+      });
+
+      // 1 project field update + 2 L2 writes (forward direction) + 1 L1
+      // recompute = 4. The recompute mock-write surface is identical to
+      // any update on projects (mockSelectResult is empty so the
+      // recompute writes {startDate: null, endDate: null}), but the
+      // important signal is that the 4th call exists.
+      const calls = mockUpdateSet.mock.calls.map((c) => c[0]);
+      expect(calls).toHaveLength(4);
+      // Last call is the recompute on the parent project.
+      expect(calls[3]).toEqual(
+        expect.objectContaining({ updatedAt: expect.any(Date) }),
+      );
+    });
+
+    it("H-1: skip the post-cascade recompute when no L2 was actually cascaded (terminal-only deadlines)", async () => {
+      // H-1 negative case: when all deadline L2s are terminal-status (so
+      // cascadedIds stays empty), the post-cascade recompute should NOT
+      // fire — there's nothing for the L1 to re-derive from. Saves a
+      // pointless tx.update on the project row.
+      mockGetClientBySlug.mockResolvedValue(client);
+      mockFindProjectByFuzzyName.mockResolvedValue(project);
+      mockGetLinkedDeadlineItems.mockResolvedValue([
+        { id: "wi-terminal", title: "Code handoff", category: "deadline", status: "completed", date: "2026-04-10" },
+      ]);
+
+      const { updateProjectField } = await import("./operations-writes-project");
+      await updateProjectField({
+        clientSlug: "convergix",
+        projectName: "CDS Messaging",
+        field: "dueDate",
+        newValue: "2026-04-28",
+        updatedBy: "kathy",
+      });
+
+      const calls = mockUpdateSet.mock.calls.map((c) => c[0]);
+      // Only the project field-change update; the L2 was skipped AND
+      // the post-cascade recompute was skipped because nothing cascaded.
+      expect(calls).toHaveLength(1);
     });
   });
 
