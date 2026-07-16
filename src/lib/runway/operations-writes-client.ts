@@ -92,7 +92,9 @@ export async function createClient(
     clientContacts: clientContacts ?? null,
   });
 
-  // Invalidate the client cache so subsequent lookups find the new client
+  // Invalidate the client cache so subsequent lookups find the new client.
+  // Post-#44 semantics: no-op outside a `withClientsCache` scope; clears the
+  // per-request slot when the caller wrapped its handler body.
   invalidateClientCache();
 
   await insertAuditRecord({
@@ -174,7 +176,9 @@ export async function updateClientField(
     .set({ [columnKey]: effectiveNewValue, updatedAt: new Date() })
     .where(eq(clients.id, client.id));
 
-  // Invalidate cache since client data changed
+  // Invalidate cache since client data changed. Post-#44 semantics:
+  // no-op outside a `withClientsCache` scope; clears the per-request slot
+  // when the caller wrapped its handler body.
   invalidateClientCache();
 
   await insertAuditRecord({

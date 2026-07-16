@@ -19,7 +19,12 @@
  * dependency is unset (e.g. parent_project asked before client picked).
  *
  * Performance: must respond within Slack's 3-second window.
- *   - getAllClients() is cached (5-min TTL via getCachedClients)
+ *   - getAllClients() round-trips the clients table on each call. Post-#44
+ *     the module-level client cache is gone; per-request scoping lives in
+ *     `clients-cache-als.ts`, and this handler is not wrapped in
+ *     `withClientsCache` because each Slack picker request calls
+ *     getAllClients() at most once, so wrapping would not amortize any
+ *     duplicate reads.
  *   - Other queries are simple SELECTs against indexed columns
  *   - Result set capped at MAX_OPTIONS (Slack's hard limit is 100)
  */
