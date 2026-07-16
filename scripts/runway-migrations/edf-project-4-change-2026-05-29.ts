@@ -85,11 +85,14 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "notes",
       newValue: WI_OPEN_NEW_NOTES,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!r.ok) throw new Error(`WI notes update failed: ${r.error}`);
   }
 
-  ctx.log(`  WI ${WI_OPEN_ID.slice(0, 8)} title: "${WI_OPEN_OLD_TITLE}" → "${WI_OPEN_NEW_TITLE}"`);
+  ctx.log(
+    `  WI ${WI_OPEN_ID.slice(0, 8)} title: "${WI_OPEN_OLD_TITLE}" → "${WI_OPEN_NEW_TITLE}"`
+  );
   if (!ctx.dryRun) {
     const r = await updateWeekItemField({
       weekOf: WI_OPEN_WEEK_OF,
@@ -97,6 +100,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "title",
       newValue: WI_OPEN_NEW_TITLE,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!r.ok) throw new Error(`WI title update failed: ${r.error}`);
   }
@@ -104,7 +108,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
   // ── Phase B — Create new WI ─────────────────────────────
   ctx.log(`--- Phase B: create new WI "${NEW_WI.title}" ---`);
   ctx.log(
-    `  ${NEW_WI.startDate} → ${NEW_WI.endDate} | ${NEW_WI.dayOfWeek} | weekOf ${NEW_WI.weekOf} | owner=${NEW_WI.owner} | res="${NEW_WI.resources}"`,
+    `  ${NEW_WI.startDate} → ${NEW_WI.endDate} | ${NEW_WI.dayOfWeek} | weekOf ${NEW_WI.weekOf} | owner=${NEW_WI.owner} | res="${NEW_WI.resources}"`
   );
   if (!ctx.dryRun) {
     const r = await createWeekItem({
@@ -120,6 +124,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       startDate: NEW_WI.startDate,
       endDate: NEW_WI.endDate,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!r.ok) throw new Error(`createWeekItem failed: ${r.error}`);
   }
@@ -127,18 +132,23 @@ export async function up(ctx: MigrationContext): Promise<void> {
   // ── Phase C — L1 edits (status first, name LAST) ────────
   ctx.log("--- Phase C: L1 (status first, name LAST) ---");
 
-  ctx.log(`  L1 ${L1_ID.slice(0, 8)} status: ${L1_OLD_STATUS} → ${L1_NEW_STATUS}`);
+  ctx.log(
+    `  L1 ${L1_ID.slice(0, 8)} status: ${L1_OLD_STATUS} → ${L1_NEW_STATUS}`
+  );
   if (!ctx.dryRun) {
     const r = await updateProjectStatus({
       clientSlug: EDF_SLUG,
       projectName: L1_OLD_NAME,
       newStatus: L1_NEW_STATUS,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!r.ok) throw new Error(`L1 status update failed: ${r.error}`);
   }
 
-  ctx.log(`  L1 ${L1_ID.slice(0, 8)} name: "${L1_OLD_NAME}" → "${L1_NEW_NAME}"`);
+  ctx.log(
+    `  L1 ${L1_ID.slice(0, 8)} name: "${L1_OLD_NAME}" → "${L1_NEW_NAME}"`
+  );
   if (!ctx.dryRun) {
     const r = await updateProjectField({
       clientSlug: EDF_SLUG,
@@ -146,6 +156,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "name",
       newValue: L1_NEW_NAME,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!r.ok) throw new Error(`L1 name update failed: ${r.error}`);
   }
@@ -163,26 +174,43 @@ export async function up(ctx: MigrationContext): Promise<void> {
 }
 
 async function preChecks(ctx: MigrationContext): Promise<void> {
-  const [client] = await ctx.db.select().from(clients).where(eq(clients.slug, EDF_SLUG));
+  const [client] = await ctx.db
+    .select()
+    .from(clients)
+    .where(eq(clients.slug, EDF_SLUG));
   if (!client) throw new Error(`EDF client not found.`);
 
-  const [l1] = await ctx.db.select().from(projects).where(eq(projects.id, L1_ID));
+  const [l1] = await ctx.db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, L1_ID));
   if (!l1) throw new Error(`L1 (id=${L1_ID}) not found.`);
   if (l1.name !== L1_OLD_NAME) {
-    throw new Error(`L1 name drift: expected '${L1_OLD_NAME}', got '${l1.name}'.`);
+    throw new Error(
+      `L1 name drift: expected '${L1_OLD_NAME}', got '${l1.name}'.`
+    );
   }
   if (l1.status !== L1_OLD_STATUS) {
-    throw new Error(`L1 status drift: expected '${L1_OLD_STATUS}', got '${l1.status}'.`);
+    throw new Error(
+      `L1 status drift: expected '${L1_OLD_STATUS}', got '${l1.status}'.`
+    );
   }
   if (l1.clientId !== client.id) throw new Error(`L1 clientId drift.`);
 
-  const [wi] = await ctx.db.select().from(weekItems).where(eq(weekItems.id, WI_OPEN_ID));
+  const [wi] = await ctx.db
+    .select()
+    .from(weekItems)
+    .where(eq(weekItems.id, WI_OPEN_ID));
   if (!wi) throw new Error(`Open WI (id=${WI_OPEN_ID}) not found.`);
   if (wi.title !== WI_OPEN_OLD_TITLE) {
-    throw new Error(`WI title drift: expected '${WI_OPEN_OLD_TITLE}', got '${wi.title}'.`);
+    throw new Error(
+      `WI title drift: expected '${WI_OPEN_OLD_TITLE}', got '${wi.title}'.`
+    );
   }
   if (wi.weekOf !== WI_OPEN_WEEK_OF) {
-    throw new Error(`WI weekOf drift: expected '${WI_OPEN_WEEK_OF}', got '${wi.weekOf}'.`);
+    throw new Error(
+      `WI weekOf drift: expected '${WI_OPEN_WEEK_OF}', got '${wi.weekOf}'.`
+    );
   }
   if (wi.projectId !== L1_ID) throw new Error(`WI projectId drift.`);
 
@@ -193,25 +221,42 @@ async function preChecks(ctx: MigrationContext): Promise<void> {
     .where(eq(weekItems.title, NEW_WI.title));
   if (collision) {
     throw new Error(
-      `New WI title "${NEW_WI.title}" already exists (id=${collision.id}). Pick a different title or delete the collision.`,
+      `New WI title "${NEW_WI.title}" already exists (id=${collision.id}). Pick a different title or delete the collision.`
     );
   }
 
   ctx.log(`  EDF client: ${client.id}`);
   ctx.log(`  L1 ${L1_ID.slice(0, 8)}: name='${l1.name}', status=${l1.status}`);
-  ctx.log(`  Open WI ${WI_OPEN_ID.slice(0, 8)}: title='${wi.title}', weekOf=${wi.weekOf}, status=${wi.status}`);
+  ctx.log(
+    `  Open WI ${WI_OPEN_ID.slice(0, 8)}: title='${wi.title}', weekOf=${wi.weekOf}, status=${wi.status}`
+  );
   ctx.log(`  No collision on new WI title "${NEW_WI.title}"`);
 }
 
 async function verify(ctx: MigrationContext): Promise<void> {
-  const [l1] = await ctx.db.select().from(projects).where(eq(projects.id, L1_ID));
-  if (l1.name !== L1_NEW_NAME) throw new Error(`Post: L1 name '${l1.name}', expected '${L1_NEW_NAME}'.`);
-  if (l1.status !== L1_NEW_STATUS) throw new Error(`Post: L1 status '${l1.status}', expected '${L1_NEW_STATUS}'.`);
+  const [l1] = await ctx.db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, L1_ID));
+  if (l1.name !== L1_NEW_NAME)
+    throw new Error(`Post: L1 name '${l1.name}', expected '${L1_NEW_NAME}'.`);
+  if (l1.status !== L1_NEW_STATUS)
+    throw new Error(
+      `Post: L1 status '${l1.status}', expected '${L1_NEW_STATUS}'.`
+    );
 
-  const [wi] = await ctx.db.select().from(weekItems).where(eq(weekItems.id, WI_OPEN_ID));
-  if (wi.title !== WI_OPEN_NEW_TITLE) throw new Error(`Post: WI title '${wi.title}', expected '${WI_OPEN_NEW_TITLE}'.`);
+  const [wi] = await ctx.db
+    .select()
+    .from(weekItems)
+    .where(eq(weekItems.id, WI_OPEN_ID));
+  if (wi.title !== WI_OPEN_NEW_TITLE)
+    throw new Error(
+      `Post: WI title '${wi.title}', expected '${WI_OPEN_NEW_TITLE}'.`
+    );
   if (wi.notes !== WI_OPEN_NEW_NOTES) {
-    throw new Error(`Post: WI notes drift.\n  got: ${wi.notes}\n  exp: ${WI_OPEN_NEW_NOTES}`);
+    throw new Error(
+      `Post: WI notes drift.\n  got: ${wi.notes}\n  exp: ${WI_OPEN_NEW_NOTES}`
+    );
   }
 
   const [newWi] = await ctx.db
@@ -219,34 +264,63 @@ async function verify(ctx: MigrationContext): Promise<void> {
     .from(weekItems)
     .where(eq(weekItems.title, NEW_WI.title));
   if (!newWi) throw new Error(`Post: new WI "${NEW_WI.title}" not found.`);
-  if (newWi.startDate !== NEW_WI.startDate || newWi.endDate !== NEW_WI.endDate) {
-    throw new Error(`Post: new WI dates ${newWi.startDate}→${newWi.endDate}, expected ${NEW_WI.startDate}→${NEW_WI.endDate}.`);
+  if (
+    newWi.startDate !== NEW_WI.startDate ||
+    newWi.endDate !== NEW_WI.endDate
+  ) {
+    throw new Error(
+      `Post: new WI dates ${newWi.startDate}→${newWi.endDate}, expected ${NEW_WI.startDate}→${NEW_WI.endDate}.`
+    );
   }
   if (newWi.weekOf !== NEW_WI.weekOf || newWi.dayOfWeek !== NEW_WI.dayOfWeek) {
     throw new Error(`Post: new WI weekOf/dow drift.`);
   }
-  if (newWi.status !== NEW_WI.status) throw new Error(`Post: new WI status drift.`);
-  if (newWi.owner !== NEW_WI.owner) throw new Error(`Post: new WI owner='${newWi.owner}', expected '${NEW_WI.owner}'.`);
+  if (newWi.status !== NEW_WI.status)
+    throw new Error(`Post: new WI status drift.`);
+  if (newWi.owner !== NEW_WI.owner)
+    throw new Error(
+      `Post: new WI owner='${newWi.owner}', expected '${NEW_WI.owner}'.`
+    );
   if (newWi.resources !== NEW_WI.resources) {
-    throw new Error(`Post: new WI resources='${newWi.resources}', expected '${NEW_WI.resources}'.`);
+    throw new Error(
+      `Post: new WI resources='${newWi.resources}', expected '${NEW_WI.resources}'.`
+    );
   }
-  if (newWi.projectId !== L1_ID) throw new Error(`Post: new WI projectId drift.`);
+  if (newWi.projectId !== L1_ID)
+    throw new Error(`Post: new WI projectId drift.`);
 
-  ctx.log(`  Verified: L1 renamed + status, open WI renamed + notes refreshed, new WI created on Tuesday`);
+  ctx.log(
+    `  Verified: L1 renamed + status, open WI renamed + notes refreshed, new WI created on Tuesday`
+  );
 }
 
-async function snapshot(ctx: MigrationContext, relativePath: string): Promise<void> {
-  const [client] = await ctx.db.select().from(clients).where(eq(clients.slug, EDF_SLUG));
-  const allProjects = await ctx.db.select().from(projects).where(eq(projects.clientId, client.id));
-  const allWis = await ctx.db.select().from(weekItems).where(eq(weekItems.clientId, client.id));
+async function snapshot(
+  ctx: MigrationContext,
+  relativePath: string
+): Promise<void> {
+  const [client] = await ctx.db
+    .select()
+    .from(clients)
+    .where(eq(clients.slug, EDF_SLUG));
+  const allProjects = await ctx.db
+    .select()
+    .from(projects)
+    .where(eq(projects.clientId, client.id));
+  const allWis = await ctx.db
+    .select()
+    .from(weekItems)
+    .where(eq(weekItems.clientId, client.id));
   const payload = {
     pulledAt: new Date().toISOString(),
-    note: relativePath.includes("pre") ? "pre-project-4-change" : "post-project-4-change",
+    note: relativePath.includes("pre")
+      ? "pre-project-4-change"
+      : "post-project-4-change",
     client,
     projects: allProjects,
     weekItems: allWis,
   };
   const fullPath = resolvePath(process.cwd(), relativePath);
-  if (!existsSync(dirname(fullPath))) mkdirSync(dirname(fullPath), { recursive: true });
+  if (!existsSync(dirname(fullPath)))
+    mkdirSync(dirname(fullPath), { recursive: true });
   writeFileSync(fullPath, JSON.stringify(payload, null, 2));
 }

@@ -19,6 +19,12 @@ import { eq, asc } from "drizzle-orm";
 import { createHash } from "crypto";
 import { withRunwayRetry } from "@/lib/runway/retry";
 import { getCurrentBatchId } from "@/lib/runway/runway-als";
+import {
+  getRequestClientsCache,
+  setRequestClientsCache,
+  invalidateRequestClientsCache,
+  type ClientRow,
+} from "@/lib/runway/clients-cache-als";
 
 // ── Constants ────────────────────────────────────────────
 
@@ -133,38 +139,36 @@ export function groupBy<T, K>(
 }
 
 // ── Request-scoped client cache ──────────────────────────
-// Avoids repeated DB round-trips for clients within a single
-// MCP tool call or bot tool call. Expires after 5 seconds
-// so concurrent requests don't serve stale data.
-
-type ClientRow = typeof clients.$inferSelect;
-
-let _cachedClients: ClientRow[] | null = null;
-let _cacheTimestamp = 0;
-const CLIENT_CACHE_TTL_MS = 5_000;
+// Issue #44: the storage lives in AsyncLocalStorage (see
+// `clients-cache-als.ts`), not module-level state. A handler that wants
+// to dedupe client-table round-trips wraps its body in
+// `withClientsCache(async () => ...)`. Reads outside any scope always
+// hit the DB, which is the correct behavior on Fluid Compute — the
+// prior module-level cache bled the client list across concurrent
+// requests and could serve stale rows for the TTL window after a
+// mutation landed on another request.
 
 async function getCachedClients(): Promise<ClientRow[]> {
-  const now = Date.now();
-  if (_cachedClients && now - _cacheTimestamp < CLIENT_CACHE_TTL_MS) {
-    return _cachedClients;
-  }
+  const cached = getRequestClientsCache();
+  if (cached) return cached;
+
   const db = getRunwayDb();
-  _cachedClients = await withRunwayRetry(
+  const rows = await withRunwayRetry(
     () => db.select().from(clients).orderBy(asc(clients.name)),
     "getCachedClients",
   );
-  _cacheTimestamp = now;
-  return _cachedClients;
+  setRequestClientsCache(rows);
+  return rows;
 }
 
 /**
- * Invalidate the in-memory client cache.
- * Called after creating a new client so subsequent lookups find it.
- * Also used in tests to reset state between runs.
+ * Invalidate the request-scoped client cache slot for the current
+ * async chain. Called after creating a new client so subsequent lookups
+ * in the same handler see it, and used in tests as a hygiene reset.
+ * Outside any `withClientsCache` scope this is a safe no-op.
  */
 export function invalidateClientCache(): void {
-  _cachedClients = null;
-  _cacheTimestamp = 0;
+  invalidateRequestClientsCache();
 }
 
 // ── Shared Queries ────────────────────────────────────────

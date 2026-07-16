@@ -280,13 +280,17 @@ export async function up(ctx: MigrationContext): Promise<void> {
   // must be written FIRST or validateStartEndDateOrder rejects the endDate
   // write. Applies to 8efef949 + 312dbcbf (both currently sd=ed=5/27,
   // new ed=5/26). All other closures preserve existing startDate.
-  ctx.log("--- Phase A: Close out 6 WIs (re-anchor to true completion dates) ---");
+  ctx.log(
+    "--- Phase A: Close out 6 WIs (re-anchor to true completion dates) ---"
+  );
   for (const cfg of CLOSEOUTS) {
     const wi = r.closeoutWis.find((w) => w.id.startsWith(cfg.idPrefix))!;
 
     // 3a. startDate FIRST (only when backward single-day move requires it)
     if (cfg.newStartDate !== undefined && wi.startDate !== cfg.newStartDate) {
-      ctx.log(`  WI ${cfg.idPrefix} startDate: ${wi.startDate} → ${cfg.newStartDate} (backward move — write before endDate)`);
+      ctx.log(
+        `  WI ${cfg.idPrefix} startDate: ${wi.startDate} → ${cfg.newStartDate} (backward move — write before endDate)`
+      );
       if (!ctx.dryRun) {
         const res = await updateWeekItemField({
           weekOf: cfg.currentWeekOf,
@@ -294,13 +298,19 @@ export async function up(ctx: MigrationContext): Promise<void> {
           field: "startDate",
           newValue: cfg.newStartDate,
           updatedBy: UPDATED_BY,
+          source: "migration",
         });
-        if (!res.ok) throw new Error(`WI ${cfg.idPrefix} startDate update failed: ${res.error}`);
+        if (!res.ok)
+          throw new Error(
+            `WI ${cfg.idPrefix} startDate update failed: ${res.error}`
+          );
       }
     }
 
     // 3b. endDate
-    ctx.log(`  WI ${cfg.idPrefix} "${cfg.title}" endDate: ${wi.endDate} → ${cfg.newEndDate}`);
+    ctx.log(
+      `  WI ${cfg.idPrefix} "${cfg.title}" endDate: ${wi.endDate} → ${cfg.newEndDate}`
+    );
     if (!ctx.dryRun) {
       const res = await updateWeekItemField({
         weekOf: cfg.currentWeekOf,
@@ -308,8 +318,12 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "endDate",
         newValue: cfg.newEndDate,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
-      if (!res.ok) throw new Error(`WI ${cfg.idPrefix} endDate update failed: ${res.error}`);
+      if (!res.ok)
+        throw new Error(
+          `WI ${cfg.idPrefix} endDate update failed: ${res.error}`
+        );
     }
 
     // 3c. status
@@ -321,12 +335,18 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "status",
         newValue: "completed",
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
-      if (!res.ok) throw new Error(`WI ${cfg.idPrefix} status update failed: ${res.error}`);
+      if (!res.ok)
+        throw new Error(
+          `WI ${cfg.idPrefix} status update failed: ${res.error}`
+        );
     }
 
     // 3d. dayOfWeek
-    ctx.log(`  WI ${cfg.idPrefix} dayOfWeek: ${wi.dayOfWeek} → ${cfg.newDayOfWeek}`);
+    ctx.log(
+      `  WI ${cfg.idPrefix} dayOfWeek: ${wi.dayOfWeek} → ${cfg.newDayOfWeek}`
+    );
     if (!ctx.dryRun) {
       const res = await updateWeekItemField({
         weekOf: cfg.currentWeekOf,
@@ -334,8 +354,12 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "dayOfWeek",
         newValue: cfg.newDayOfWeek,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
-      if (!res.ok) throw new Error(`WI ${cfg.idPrefix} dayOfWeek update failed: ${res.error}`);
+      if (!res.ok)
+        throw new Error(
+          `WI ${cfg.idPrefix} dayOfWeek update failed: ${res.error}`
+        );
     }
 
     // 3e. weekOf — LAST (lookup key)
@@ -347,20 +371,27 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "weekOf",
         newValue: cfg.newWeekOf,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
-      if (!res.ok) throw new Error(`WI ${cfg.idPrefix} weekOf update failed: ${res.error}`);
+      if (!res.ok)
+        throw new Error(
+          `WI ${cfg.idPrefix} weekOf update failed: ${res.error}`
+        );
     }
   }
 
   // ── Step 4 — Phase B: Delete stale WI ────────────────
-  ctx.log("--- Phase B: Delete stale WI b6019f8d (Shoot: Pre Pro Meeting + Prep) ---");
+  ctx.log(
+    "--- Phase B: Delete stale WI b6019f8d (Shoot: Pre Pro Meeting + Prep) ---"
+  );
   ctx.log(`  delete WI ${DELETE_WI.idPrefix} "${DELETE_WI.title}"`);
   if (!ctx.dryRun) {
     const res = await deleteWeekItem({
       id: r.deleteWi.id,
       updatedBy: UPDATED_BY,
     });
-    if (!res.ok) throw new Error(`Delete WI ${DELETE_WI.idPrefix} failed: ${res.error}`);
+    if (!res.ok)
+      throw new Error(`Delete WI ${DELETE_WI.idPrefix} failed: ${res.error}`);
   }
 
   // ── Step 5 — Phase C: Update 3 WIs ───────────────────
@@ -371,7 +402,9 @@ export async function up(ctx: MigrationContext): Promise<void> {
 
     // endDate (forward move first)
     if (cfg.newEndDate !== undefined && wi.endDate !== cfg.newEndDate) {
-      ctx.log(`  WI ${cfg.idPrefix} "${cfg.title}" endDate: ${wi.endDate} → ${cfg.newEndDate}`);
+      ctx.log(
+        `  WI ${cfg.idPrefix} "${cfg.title}" endDate: ${wi.endDate} → ${cfg.newEndDate}`
+      );
       if (!ctx.dryRun) {
         const res = await updateWeekItemField({
           weekOf: cfg.currentWeekOf,
@@ -379,14 +412,20 @@ export async function up(ctx: MigrationContext): Promise<void> {
           field: "endDate",
           newValue: cfg.newEndDate,
           updatedBy: UPDATED_BY,
+          source: "migration",
         });
-        if (!res.ok) throw new Error(`WI ${cfg.idPrefix} endDate update failed: ${res.error}`);
+        if (!res.ok)
+          throw new Error(
+            `WI ${cfg.idPrefix} endDate update failed: ${res.error}`
+          );
       }
     }
 
     // startDate (forward move next)
     if (cfg.newStartDate !== undefined && wi.startDate !== cfg.newStartDate) {
-      ctx.log(`  WI ${cfg.idPrefix} startDate: ${wi.startDate} → ${cfg.newStartDate}`);
+      ctx.log(
+        `  WI ${cfg.idPrefix} startDate: ${wi.startDate} → ${cfg.newStartDate}`
+      );
       if (!ctx.dryRun) {
         const res = await updateWeekItemField({
           weekOf: cfg.currentWeekOf,
@@ -394,14 +433,20 @@ export async function up(ctx: MigrationContext): Promise<void> {
           field: "startDate",
           newValue: cfg.newStartDate,
           updatedBy: UPDATED_BY,
+          source: "migration",
         });
-        if (!res.ok) throw new Error(`WI ${cfg.idPrefix} startDate update failed: ${res.error}`);
+        if (!res.ok)
+          throw new Error(
+            `WI ${cfg.idPrefix} startDate update failed: ${res.error}`
+          );
       }
     }
 
     // dayOfWeek
     if (cfg.newDayOfWeek !== undefined && wi.dayOfWeek !== cfg.newDayOfWeek) {
-      ctx.log(`  WI ${cfg.idPrefix} dayOfWeek: ${wi.dayOfWeek} → ${cfg.newDayOfWeek}`);
+      ctx.log(
+        `  WI ${cfg.idPrefix} dayOfWeek: ${wi.dayOfWeek} → ${cfg.newDayOfWeek}`
+      );
       if (!ctx.dryRun) {
         const res = await updateWeekItemField({
           weekOf: cfg.currentWeekOf,
@@ -409,14 +454,20 @@ export async function up(ctx: MigrationContext): Promise<void> {
           field: "dayOfWeek",
           newValue: cfg.newDayOfWeek,
           updatedBy: UPDATED_BY,
+          source: "migration",
         });
-        if (!res.ok) throw new Error(`WI ${cfg.idPrefix} dayOfWeek update failed: ${res.error}`);
+        if (!res.ok)
+          throw new Error(
+            `WI ${cfg.idPrefix} dayOfWeek update failed: ${res.error}`
+          );
       }
     }
 
     // resources
     if (cfg.newResources !== undefined && wi.resources !== cfg.newResources) {
-      ctx.log(`  WI ${cfg.idPrefix} resources: "${wi.resources}" → "${cfg.newResources}"`);
+      ctx.log(
+        `  WI ${cfg.idPrefix} resources: "${wi.resources}" → "${cfg.newResources}"`
+      );
       if (!ctx.dryRun) {
         const res = await updateWeekItemField({
           weekOf: cfg.currentWeekOf,
@@ -424,8 +475,12 @@ export async function up(ctx: MigrationContext): Promise<void> {
           field: "resources",
           newValue: cfg.newResources,
           updatedBy: UPDATED_BY,
+          source: "migration",
         });
-        if (!res.ok) throw new Error(`WI ${cfg.idPrefix} resources update failed: ${res.error}`);
+        if (!res.ok)
+          throw new Error(
+            `WI ${cfg.idPrefix} resources update failed: ${res.error}`
+          );
       }
     }
 
@@ -439,8 +494,12 @@ export async function up(ctx: MigrationContext): Promise<void> {
           field: "notes",
           newValue: cfg.newNotes,
           updatedBy: UPDATED_BY,
+          source: "migration",
         });
-        if (!res.ok) throw new Error(`WI ${cfg.idPrefix} notes update failed: ${res.error}`);
+        if (!res.ok)
+          throw new Error(
+            `WI ${cfg.idPrefix} notes update failed: ${res.error}`
+          );
       }
     }
 
@@ -454,8 +513,12 @@ export async function up(ctx: MigrationContext): Promise<void> {
           field: "weekOf",
           newValue: cfg.newWeekOf,
           updatedBy: UPDATED_BY,
+          source: "migration",
         });
-        if (!res.ok) throw new Error(`WI ${cfg.idPrefix} weekOf update failed: ${res.error}`);
+        if (!res.ok)
+          throw new Error(
+            `WI ${cfg.idPrefix} weekOf update failed: ${res.error}`
+          );
       }
     }
   }
@@ -463,7 +526,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
   // ── Step 6 — Phase D: Create SEO Feedback Implementation ──
   ctx.log("--- Phase D: Create 1 new WI under L1 'Website Build' ---");
   ctx.log(
-    `  create "${NEW_WI.title}" ${NEW_WI.startDate}→${NEW_WI.endDate} (${NEW_WI.dayOfWeek}, weekOf ${NEW_WI.weekOf}, status=${NEW_WI.status}, resources="${NEW_WI.resources}")`,
+    `  create "${NEW_WI.title}" ${NEW_WI.startDate}→${NEW_WI.endDate} (${NEW_WI.dayOfWeek}, weekOf ${NEW_WI.weekOf}, status=${NEW_WI.status}, resources="${NEW_WI.resources}")`
   );
   if (!ctx.dryRun) {
     const res = await createWeekItem({
@@ -481,14 +544,18 @@ export async function up(ctx: MigrationContext): Promise<void> {
       resources: NEW_WI.resources,
       notes: NEW_WI.notes,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
-    if (!res.ok) throw new Error(`Create WI "${NEW_WI.title}" failed: ${res.error}`);
+    if (!res.ok)
+      throw new Error(`Create WI "${NEW_WI.title}" failed: ${res.error}`);
   }
 
   // ── Step 7 — Phase E: Pin L1 endDate to 2026-07-07 ───
-  ctx.log(`--- Phase E: Pin L1 '${L1_HDL_NAME}' endDate to ${L1_PINNED_END_DATE} ---`);
   ctx.log(
-    `  WI-derived endDate after Phase C would be ~7/31 (Post-Shoot Editing placeholder). Pinning back to 7/7 (launch milestone).`,
+    `--- Phase E: Pin L1 '${L1_HDL_NAME}' endDate to ${L1_PINNED_END_DATE} ---`
+  );
+  ctx.log(
+    `  WI-derived endDate after Phase C would be ~7/31 (Post-Shoot Editing placeholder). Pinning back to 7/7 (launch milestone).`
   );
   if (!ctx.dryRun) {
     const res = await overrideProjectDate({
@@ -515,69 +582,117 @@ async function preChecks(ctx: MigrationContext): Promise<ResolvedState> {
   ctx.log("--- Pre-checks ---");
 
   // Client
-  const clientRows = await ctx.db.select().from(clients).where(eq(clients.slug, HDL_SLUG));
+  const clientRows = await ctx.db
+    .select()
+    .from(clients)
+    .where(eq(clients.slug, HDL_SLUG));
   const client = clientRows[0];
-  if (!client) throw new Error(`Pre-check failed: client '${HDL_SLUG}' not found.`);
-  ctx.log(`Client: ${client.name} (${client.id}) — contractStatus="${client.contractStatus}" (flag-only, not mutating)`);
+  if (!client)
+    throw new Error(`Pre-check failed: client '${HDL_SLUG}' not found.`);
+  ctx.log(
+    `Client: ${client.name} (${client.id}) — contractStatus="${client.contractStatus}" (flag-only, not mutating)`
+  );
 
   // L1
-  const projectRows = await ctx.db.select().from(projects).where(eq(projects.clientId, client.id));
+  const projectRows = await ctx.db
+    .select()
+    .from(projects)
+    .where(eq(projects.clientId, client.id));
   const l1 = projectRows.find((p) => p.id === L1_HDL_ID);
-  if (!l1) throw new Error(`Pre-check failed: L1 '${L1_HDL_NAME}' (${L1_HDL_ID.slice(0, 8)}) not found.`);
+  if (!l1)
+    throw new Error(
+      `Pre-check failed: L1 '${L1_HDL_NAME}' (${L1_HDL_ID.slice(0, 8)}) not found.`
+    );
   if (l1.name !== L1_HDL_NAME) {
-    throw new Error(`Pre-check failed: L1 name="${l1.name}", expected "${L1_HDL_NAME}".`);
+    throw new Error(
+      `Pre-check failed: L1 name="${l1.name}", expected "${L1_HDL_NAME}".`
+    );
   }
   if (l1.engagementType !== "project") {
-    throw new Error(`Pre-check failed: L1 engagementType="${l1.engagementType}", expected "project".`);
+    throw new Error(
+      `Pre-check failed: L1 engagementType="${l1.engagementType}", expected "project".`
+    );
   }
-  ctx.log(`L1: ${l1.name} (${l1.id.slice(0, 8)}) — status=${l1.status}, category=${l1.category}, ${l1.startDate}→${l1.endDate}`);
+  ctx.log(
+    `L1: ${l1.name} (${l1.id.slice(0, 8)}) — status=${l1.status}, category=${l1.category}, ${l1.startDate}→${l1.endDate}`
+  );
 
   // WIs — fetch all HDL WIs in one query
-  const allWis = await ctx.db.select().from(weekItems).where(eq(weekItems.clientId, client.id));
+  const allWis = await ctx.db
+    .select()
+    .from(weekItems)
+    .where(eq(weekItems.clientId, client.id));
 
   // Closeout WIs
   const closeoutWis = CLOSEOUTS.map((cfg) => {
     const wi = allWis.find((w) => w.id.startsWith(cfg.idPrefix));
-    if (!wi) throw new Error(`Pre-check failed: closeout WI ${cfg.idPrefix} ("${cfg.title}") not found.`);
+    if (!wi)
+      throw new Error(
+        `Pre-check failed: closeout WI ${cfg.idPrefix} ("${cfg.title}") not found.`
+      );
     if (wi.title !== cfg.title) {
-      throw new Error(`Pre-check failed: WI ${cfg.idPrefix} title="${wi.title}", expected "${cfg.title}".`);
+      throw new Error(
+        `Pre-check failed: WI ${cfg.idPrefix} title="${wi.title}", expected "${cfg.title}".`
+      );
     }
     if (wi.weekOf !== cfg.currentWeekOf) {
-      throw new Error(`Pre-check failed: WI ${cfg.idPrefix} weekOf="${wi.weekOf}", expected "${cfg.currentWeekOf}".`);
+      throw new Error(
+        `Pre-check failed: WI ${cfg.idPrefix} weekOf="${wi.weekOf}", expected "${cfg.currentWeekOf}".`
+      );
     }
     if (wi.status !== "in-progress") {
-      throw new Error(`Pre-check failed: WI ${cfg.idPrefix} status="${wi.status}", expected "in-progress".`);
+      throw new Error(
+        `Pre-check failed: WI ${cfg.idPrefix} status="${wi.status}", expected "in-progress".`
+      );
     }
     return wi;
   });
 
   // Delete WI
   const deleteWi = allWis.find((w) => w.id.startsWith(DELETE_WI.idPrefix));
-  if (!deleteWi) throw new Error(`Pre-check failed: delete WI ${DELETE_WI.idPrefix} not found — already deleted?`);
+  if (!deleteWi)
+    throw new Error(
+      `Pre-check failed: delete WI ${DELETE_WI.idPrefix} not found — already deleted?`
+    );
   if (deleteWi.title !== DELETE_WI.title) {
-    throw new Error(`Pre-check failed: delete WI title="${deleteWi.title}", expected "${DELETE_WI.title}".`);
+    throw new Error(
+      `Pre-check failed: delete WI title="${deleteWi.title}", expected "${DELETE_WI.title}".`
+    );
   }
 
   // Update WIs
   const updateWis = UPDATES.map((cfg) => {
     const wi = allWis.find((w) => w.id.startsWith(cfg.idPrefix));
-    if (!wi) throw new Error(`Pre-check failed: update WI ${cfg.idPrefix} ("${cfg.title}") not found.`);
+    if (!wi)
+      throw new Error(
+        `Pre-check failed: update WI ${cfg.idPrefix} ("${cfg.title}") not found.`
+      );
     if (wi.title !== cfg.title) {
-      throw new Error(`Pre-check failed: WI ${cfg.idPrefix} title="${wi.title}", expected "${cfg.title}".`);
+      throw new Error(
+        `Pre-check failed: WI ${cfg.idPrefix} title="${wi.title}", expected "${cfg.title}".`
+      );
     }
     if (wi.weekOf !== cfg.currentWeekOf) {
-      throw new Error(`Pre-check failed: WI ${cfg.idPrefix} weekOf="${wi.weekOf}", expected "${cfg.currentWeekOf}".`);
+      throw new Error(
+        `Pre-check failed: WI ${cfg.idPrefix} weekOf="${wi.weekOf}", expected "${cfg.currentWeekOf}".`
+      );
     }
     return wi;
   });
 
   // No collision on new WI title
-  const dup = allWis.find((w) => w.title === NEW_WI.title && w.projectId === L1_HDL_ID);
+  const dup = allWis.find(
+    (w) => w.title === NEW_WI.title && w.projectId === L1_HDL_ID
+  );
   if (dup) {
-    throw new Error(`Pre-check failed: a WI titled "${NEW_WI.title}" already exists under L1 Website Build (${dup.id.slice(0, 8)}). Duplicate — abort.`);
+    throw new Error(
+      `Pre-check failed: a WI titled "${NEW_WI.title}" already exists under L1 Website Build (${dup.id.slice(0, 8)}). Duplicate — abort.`
+    );
   }
 
-  ctx.log(`Pre-checks passed: 1 L1 + ${closeoutWis.length} closeouts + 1 delete + ${updateWis.length} updates resolved, no collision for new WI.`);
+  ctx.log(
+    `Pre-checks passed: 1 L1 + ${closeoutWis.length} closeouts + 1 delete + ${updateWis.length} updates resolved, no collision for new WI.`
+  );
 
   return {
     client,
@@ -600,7 +715,8 @@ function writeSnapshot(ctx: MigrationContext, r: ResolvedState): void {
     weekItems: allWis,
   };
   const fullPath = resolvePath(SNAPSHOT_PATH);
-  if (!existsSync(dirname(fullPath))) mkdirSync(dirname(fullPath), { recursive: true });
+  if (!existsSync(dirname(fullPath)))
+    mkdirSync(dirname(fullPath), { recursive: true });
   writeFileSync(fullPath, JSON.stringify(snapshot, null, 2));
   ctx.log(`Snapshot written: ${SNAPSHOT_PATH}`);
 }
@@ -610,44 +726,66 @@ function writeSnapshot(ctx: MigrationContext, r: ResolvedState): void {
 async function verify(ctx: MigrationContext): Promise<void> {
   ctx.log("--- Verification ---");
 
-  const clientRows = await ctx.db.select().from(clients).where(eq(clients.slug, HDL_SLUG));
+  const clientRows = await ctx.db
+    .select()
+    .from(clients)
+    .where(eq(clients.slug, HDL_SLUG));
   const client = clientRows[0];
 
-  const projectRows = await ctx.db.select().from(projects).where(eq(projects.clientId, client.id));
+  const projectRows = await ctx.db
+    .select()
+    .from(projects)
+    .where(eq(projects.clientId, client.id));
   const l1 = projectRows.find((p) => p.id === L1_HDL_ID);
   if (!l1) throw new Error(`Verify: L1 ${L1_HDL_ID.slice(0, 8)} disappeared.`);
   if (l1.endDate !== L1_PINNED_END_DATE) {
-    throw new Error(`Verify: L1 endDate="${l1.endDate}", expected pinned "${L1_PINNED_END_DATE}".`);
+    throw new Error(
+      `Verify: L1 endDate="${l1.endDate}", expected pinned "${L1_PINNED_END_DATE}".`
+    );
   }
   ctx.log(`  ✓ L1 '${L1_HDL_NAME}' endDate pinned to ${L1_PINNED_END_DATE}`);
 
-  const allWis = await ctx.db.select().from(weekItems).where(eq(weekItems.clientId, client.id));
+  const allWis = await ctx.db
+    .select()
+    .from(weekItems)
+    .where(eq(weekItems.clientId, client.id));
 
   // Closures
   for (const cfg of CLOSEOUTS) {
     const wi = allWis.find((w) => w.id.startsWith(cfg.idPrefix));
     if (!wi) throw new Error(`Verify: closeout WI ${cfg.idPrefix} missing.`);
     if (wi.status !== "completed") {
-      throw new Error(`Verify: WI ${cfg.idPrefix} status="${wi.status}", expected "completed".`);
+      throw new Error(
+        `Verify: WI ${cfg.idPrefix} status="${wi.status}", expected "completed".`
+      );
     }
     if (wi.endDate !== cfg.newEndDate) {
-      throw new Error(`Verify: WI ${cfg.idPrefix} endDate="${wi.endDate}", expected "${cfg.newEndDate}".`);
+      throw new Error(
+        `Verify: WI ${cfg.idPrefix} endDate="${wi.endDate}", expected "${cfg.newEndDate}".`
+      );
     }
     if (cfg.newStartDate !== undefined && wi.startDate !== cfg.newStartDate) {
-      throw new Error(`Verify: WI ${cfg.idPrefix} startDate="${wi.startDate}", expected "${cfg.newStartDate}".`);
+      throw new Error(
+        `Verify: WI ${cfg.idPrefix} startDate="${wi.startDate}", expected "${cfg.newStartDate}".`
+      );
     }
     if (wi.weekOf !== cfg.newWeekOf) {
-      throw new Error(`Verify: WI ${cfg.idPrefix} weekOf="${wi.weekOf}", expected "${cfg.newWeekOf}".`);
+      throw new Error(
+        `Verify: WI ${cfg.idPrefix} weekOf="${wi.weekOf}", expected "${cfg.newWeekOf}".`
+      );
     }
     if (wi.dayOfWeek !== cfg.newDayOfWeek) {
-      throw new Error(`Verify: WI ${cfg.idPrefix} dayOfWeek="${wi.dayOfWeek}", expected "${cfg.newDayOfWeek}".`);
+      throw new Error(
+        `Verify: WI ${cfg.idPrefix} dayOfWeek="${wi.dayOfWeek}", expected "${cfg.newDayOfWeek}".`
+      );
     }
   }
   ctx.log(`  ✓ ${CLOSEOUTS.length} closures completed at re-anchored dates`);
 
   // Delete
   const deleted = allWis.find((w) => w.id.startsWith(DELETE_WI.idPrefix));
-  if (deleted) throw new Error(`Verify: delete WI ${DELETE_WI.idPrefix} still present.`);
+  if (deleted)
+    throw new Error(`Verify: delete WI ${DELETE_WI.idPrefix} still present.`);
   ctx.log(`  ✓ WI ${DELETE_WI.idPrefix} deleted`);
 
   // Updates
@@ -655,16 +793,24 @@ async function verify(ctx: MigrationContext): Promise<void> {
     const wi = allWis.find((w) => w.id.startsWith(cfg.idPrefix));
     if (!wi) throw new Error(`Verify: update WI ${cfg.idPrefix} disappeared.`);
     if (cfg.newEndDate !== undefined && wi.endDate !== cfg.newEndDate) {
-      throw new Error(`Verify: WI ${cfg.idPrefix} endDate="${wi.endDate}", expected "${cfg.newEndDate}".`);
+      throw new Error(
+        `Verify: WI ${cfg.idPrefix} endDate="${wi.endDate}", expected "${cfg.newEndDate}".`
+      );
     }
     if (cfg.newStartDate !== undefined && wi.startDate !== cfg.newStartDate) {
-      throw new Error(`Verify: WI ${cfg.idPrefix} startDate="${wi.startDate}", expected "${cfg.newStartDate}".`);
+      throw new Error(
+        `Verify: WI ${cfg.idPrefix} startDate="${wi.startDate}", expected "${cfg.newStartDate}".`
+      );
     }
     if (cfg.newWeekOf !== undefined && wi.weekOf !== cfg.newWeekOf) {
-      throw new Error(`Verify: WI ${cfg.idPrefix} weekOf="${wi.weekOf}", expected "${cfg.newWeekOf}".`);
+      throw new Error(
+        `Verify: WI ${cfg.idPrefix} weekOf="${wi.weekOf}", expected "${cfg.newWeekOf}".`
+      );
     }
     if (cfg.newDayOfWeek !== undefined && wi.dayOfWeek !== cfg.newDayOfWeek) {
-      throw new Error(`Verify: WI ${cfg.idPrefix} dayOfWeek="${wi.dayOfWeek}", expected "${cfg.newDayOfWeek}".`);
+      throw new Error(
+        `Verify: WI ${cfg.idPrefix} dayOfWeek="${wi.dayOfWeek}", expected "${cfg.newDayOfWeek}".`
+      );
     }
     if (cfg.newResources !== undefined && wi.resources !== cfg.newResources) {
       throw new Error(`Verify: WI ${cfg.idPrefix} resources mismatch.`);
@@ -676,13 +822,23 @@ async function verify(ctx: MigrationContext): Promise<void> {
   ctx.log(`  ✓ ${UPDATES.length} updates landed (dates, resources, notes)`);
 
   // New WI
-  const created = allWis.find((w) => w.title === NEW_WI.title && w.projectId === L1_HDL_ID);
-  if (!created) throw new Error(`Verify: new WI "${NEW_WI.title}" not found under L1.`);
-  if (created.startDate !== NEW_WI.startDate || created.endDate !== NEW_WI.endDate) {
-    throw new Error(`Verify: new WI dates wrong (got ${created.startDate}→${created.endDate}, expected ${NEW_WI.startDate}→${NEW_WI.endDate}).`);
+  const created = allWis.find(
+    (w) => w.title === NEW_WI.title && w.projectId === L1_HDL_ID
+  );
+  if (!created)
+    throw new Error(`Verify: new WI "${NEW_WI.title}" not found under L1.`);
+  if (
+    created.startDate !== NEW_WI.startDate ||
+    created.endDate !== NEW_WI.endDate
+  ) {
+    throw new Error(
+      `Verify: new WI dates wrong (got ${created.startDate}→${created.endDate}, expected ${NEW_WI.startDate}→${NEW_WI.endDate}).`
+    );
   }
   if (created.status !== NEW_WI.status) {
-    throw new Error(`Verify: new WI status="${created.status}", expected "${NEW_WI.status}".`);
+    throw new Error(
+      `Verify: new WI status="${created.status}", expected "${NEW_WI.status}".`
+    );
   }
   ctx.log(`  ✓ New WI '${NEW_WI.title}' created under L1`);
 

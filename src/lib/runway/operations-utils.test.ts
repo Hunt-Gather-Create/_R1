@@ -450,7 +450,13 @@ describe("getWeekItemsForWeek", () => {
 });
 
 describe("client cache", () => {
-  it("getAllClients returns cached clients", async () => {
+  // Issue #44: the client cache is now request-scoped via AsyncLocalStorage
+  // (see clients-cache-als.ts). Outside a `withClientsCache(fn)` scope every
+  // call hits the DB — that's correct behavior; module-level caching was
+  // bleeding across requests on Fluid Compute. Callers that need
+  // intra-handler dedup wrap their entry point.
+
+  it("getAllClients hits the DB on every call OUTSIDE a withClientsCache scope", async () => {
     const clients = [
       { id: "c1", name: "Convergix", slug: "convergix" },
     ];
@@ -460,8 +466,42 @@ describe("client cache", () => {
     const result1 = await getAllClients();
     const result2 = await getAllClients();
     expect(result1).toEqual(result2);
-    // Only one DB call due to caching
+    expect(mockSelectFrom).toHaveBeenCalledTimes(2);
+  });
+
+  it("getAllClients dedupes to one DB call INSIDE a withClientsCache scope", async () => {
+    const clients = [
+      { id: "c1", name: "Convergix", slug: "convergix" },
+    ];
+    mockSelectFrom.mockReturnValue(chainable(clients));
+    const { getAllClients } = await import("./operations-utils");
+    const { withClientsCache } = await import("./clients-cache-als");
+
+    await withClientsCache(async () => {
+      const result1 = await getAllClients();
+      const result2 = await getAllClients();
+      expect(result1).toEqual(result2);
+    });
+
     expect(mockSelectFrom).toHaveBeenCalledTimes(1);
+  });
+
+  it("scopes do not bleed — a fresh withClientsCache scope re-fetches", async () => {
+    const clients = [
+      { id: "c1", name: "Convergix", slug: "convergix" },
+    ];
+    mockSelectFrom.mockReturnValue(chainable(clients));
+    const { getAllClients } = await import("./operations-utils");
+    const { withClientsCache } = await import("./clients-cache-als");
+
+    await withClientsCache(async () => {
+      await getAllClients();
+    });
+    await withClientsCache(async () => {
+      await getAllClients();
+    });
+
+    expect(mockSelectFrom).toHaveBeenCalledTimes(2);
   });
 
   it("getClientBySlug finds client from cache", async () => {

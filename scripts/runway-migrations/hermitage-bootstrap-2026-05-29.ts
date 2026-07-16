@@ -18,7 +18,12 @@ import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve as resolvePath, dirname } from "node:path";
 import { eq } from "drizzle-orm";
 import type { MigrationContext } from "../runway-migrate";
-import { clients, projects, weekItems, pipelineItems } from "@/lib/db/runway-schema";
+import {
+  clients,
+  projects,
+  weekItems,
+  pipelineItems,
+} from "@/lib/db/runway-schema";
 import { createClient } from "@/lib/runway/operations-writes-client";
 import { addProject } from "@/lib/runway/operations-add";
 import { createWeekItem } from "@/lib/runway/operations-writes-week";
@@ -48,7 +53,8 @@ const WI = {
   status: "scheduled",
   owner: "Jason",
   resources: "AM: Jason",
-  notes: "Get the intro call on the calendar with Hermitage to kick off BI Power Reports - Middleware scoping.",
+  notes:
+    "Get the intro call on the calendar with Hermitage to kick off BI Power Reports - Middleware scoping.",
 };
 
 const PIPELINE = {
@@ -77,7 +83,9 @@ export async function up(ctx: MigrationContext): Promise<void> {
   }
 
   // ── Phase A — Create client ─────────────────────────────
-  ctx.log(`--- Phase A: Create client "${CLIENT.name}" (slug=${CLIENT.slug}) ---`);
+  ctx.log(
+    `--- Phase A: Create client "${CLIENT.name}" (slug=${CLIENT.slug}) ---`
+  );
   if (!ctx.dryRun) {
     const r = await createClient({
       name: CLIENT.name,
@@ -89,7 +97,9 @@ export async function up(ctx: MigrationContext): Promise<void> {
   }
 
   // ── Phase B — Create L1 project ─────────────────────────
-  ctx.log(`--- Phase B: Create L1 "${L1.name}" (engType=${L1.engagementType}) ---`);
+  ctx.log(
+    `--- Phase B: Create L1 "${L1.name}" (engType=${L1.engagementType}) ---`
+  );
   if (!ctx.dryRun) {
     const r = await addProject({
       clientSlug: CLIENT.slug,
@@ -98,6 +108,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       status: L1.status,
       category: L1.category,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!r.ok) throw new Error(`addProject failed: ${r.error}`);
   }
@@ -118,12 +129,15 @@ export async function up(ctx: MigrationContext): Promise<void> {
       startDate: WI.startDate,
       endDate: WI.endDate,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!r.ok) throw new Error(`createWeekItem failed: ${r.error}`);
   }
 
   // ── Phase D — Create Pipeline item ──────────────────────
-  ctx.log(`--- Phase D: Create Pipeline item "${PIPELINE.name}" @ ${PIPELINE.estimatedValue} (${PIPELINE.status}) ---`);
+  ctx.log(
+    `--- Phase D: Create Pipeline item "${PIPELINE.name}" @ ${PIPELINE.estimatedValue} (${PIPELINE.status}) ---`
+  );
   if (!ctx.dryRun) {
     const r = await createPipelineItem({
       clientSlug: CLIENT.slug,
@@ -157,7 +171,7 @@ async function preChecks(ctx: MigrationContext): Promise<void> {
     .where(eq(clients.slug, CLIENT.slug));
   if (existingClient) {
     throw new Error(
-      `Client slug '${CLIENT.slug}' already exists (name='${existingClient.name}', id=${existingClient.id}). Migration assumes Hermitage is brand new.`,
+      `Client slug '${CLIENT.slug}' already exists (name='${existingClient.name}', id=${existingClient.id}). Migration assumes Hermitage is brand new.`
     );
   }
 
@@ -166,7 +180,7 @@ async function preChecks(ctx: MigrationContext): Promise<void> {
   const projCollision = allProjects.find((p) => p.name === L1.name);
   if (projCollision) {
     throw new Error(
-      `Project name "${L1.name}" already exists (id=${projCollision.id}). Pick a different name or expand to handle merge.`,
+      `Project name "${L1.name}" already exists (id=${projCollision.id}). Pick a different name or expand to handle merge.`
     );
   }
 
@@ -177,7 +191,7 @@ async function preChecks(ctx: MigrationContext): Promise<void> {
     .where(eq(weekItems.title, WI.title));
   if (wiCollision) {
     throw new Error(
-      `WI title "${WI.title}" already exists (id=${wiCollision.id}). Pick a different title.`,
+      `WI title "${WI.title}" already exists (id=${wiCollision.id}). Pick a different title.`
     );
   }
 
@@ -186,17 +200,23 @@ async function preChecks(ctx: MigrationContext): Promise<void> {
   const pipeCollision = allPipeline.find((p) => p.name === PIPELINE.name);
   if (pipeCollision) {
     throw new Error(
-      `Pipeline item "${PIPELINE.name}" already exists (id=${pipeCollision.id}).`,
+      `Pipeline item "${PIPELINE.name}" already exists (id=${pipeCollision.id}).`
     );
   }
 
-  ctx.log(`  Pre-checks pass: no Hermitage client, no project/WI/pipeline collisions`);
+  ctx.log(
+    `  Pre-checks pass: no Hermitage client, no project/WI/pipeline collisions`
+  );
 }
 
 async function verify(ctx: MigrationContext): Promise<void> {
-  const [client] = await ctx.db.select().from(clients).where(eq(clients.slug, CLIENT.slug));
+  const [client] = await ctx.db
+    .select()
+    .from(clients)
+    .where(eq(clients.slug, CLIENT.slug));
   if (!client) throw new Error(`Post: Hermitage client not found.`);
-  if (client.name !== CLIENT.name) throw new Error(`Post: client name '${client.name}'.`);
+  if (client.name !== CLIENT.name)
+    throw new Error(`Post: client name '${client.name}'.`);
   if (client.contractStatus !== CLIENT.contractStatus) {
     throw new Error(`Post: client contractStatus '${client.contractStatus}'.`);
   }
@@ -210,37 +230,51 @@ async function verify(ctx: MigrationContext): Promise<void> {
   if (l1.engagementType !== L1.engagementType) {
     throw new Error(`Post: L1 engType '${l1.engagementType}'.`);
   }
-  if (l1.status !== L1.status) throw new Error(`Post: L1 status '${l1.status}'.`);
-  if (l1.parentProjectId !== null) throw new Error(`Post: L1 should be top-level (parentProjectId=null).`);
+  if (l1.status !== L1.status)
+    throw new Error(`Post: L1 status '${l1.status}'.`);
+  if (l1.parentProjectId !== null)
+    throw new Error(`Post: L1 should be top-level (parentProjectId=null).`);
 
-  const [wi] = await ctx.db.select().from(weekItems).where(eq(weekItems.title, WI.title));
+  const [wi] = await ctx.db
+    .select()
+    .from(weekItems)
+    .where(eq(weekItems.title, WI.title));
   if (!wi) throw new Error(`Post: WI "${WI.title}" not found.`);
-  if (wi.projectId !== l1.id) throw new Error(`Post: WI projectId not pointing at new L1.`);
+  if (wi.projectId !== l1.id)
+    throw new Error(`Post: WI projectId not pointing at new L1.`);
   if (wi.startDate !== WI.startDate || wi.endDate !== WI.endDate) {
     throw new Error(`Post: WI dates drift.`);
   }
   if (wi.owner !== WI.owner) throw new Error(`Post: WI owner '${wi.owner}'.`);
-  if (wi.resources !== WI.resources) throw new Error(`Post: WI resources '${wi.resources}'.`);
+  if (wi.resources !== WI.resources)
+    throw new Error(`Post: WI resources '${wi.resources}'.`);
 
-  const [pipeline] = await ctx.db.select().from(pipelineItems).where(eq(pipelineItems.name, PIPELINE.name));
-  if (!pipeline) throw new Error(`Post: Pipeline "${PIPELINE.name}" not found.`);
-  if (pipeline.clientId !== client.id) throw new Error(`Post: Pipeline clientId mismatch.`);
+  const [pipeline] = await ctx.db
+    .select()
+    .from(pipelineItems)
+    .where(eq(pipelineItems.name, PIPELINE.name));
+  if (!pipeline)
+    throw new Error(`Post: Pipeline "${PIPELINE.name}" not found.`);
+  if (pipeline.clientId !== client.id)
+    throw new Error(`Post: Pipeline clientId mismatch.`);
   if (pipeline.status !== PIPELINE.status) {
     throw new Error(`Post: Pipeline status '${pipeline.status}'.`);
   }
   if (pipeline.estimatedValue !== PIPELINE.estimatedValue) {
-    throw new Error(`Post: Pipeline estimatedValue '${pipeline.estimatedValue}'.`);
+    throw new Error(
+      `Post: Pipeline estimatedValue '${pipeline.estimatedValue}'.`
+    );
   }
 
   ctx.log(
-    `  Verified: client + L1 + WI + Pipeline all created and linked correctly`,
+    `  Verified: client + L1 + WI + Pipeline all created and linked correctly`
   );
 }
 
 async function snapshot(
   ctx: MigrationContext,
   relativePath: string,
-  phase: "pre" | "post",
+  phase: "pre" | "post"
 ): Promise<void> {
   // Pre-snapshot: no Hermitage yet, capture pipeline-wide for diffing.
   // Post-snapshot: full Hermitage state.
@@ -257,6 +291,7 @@ async function snapshot(
     pipelineItems: allPipeline,
   };
   const fullPath = resolvePath(process.cwd(), relativePath);
-  if (!existsSync(dirname(fullPath))) mkdirSync(dirname(fullPath), { recursive: true });
+  if (!existsSync(dirname(fullPath)))
+    mkdirSync(dirname(fullPath), { recursive: true });
   writeFileSync(fullPath, JSON.stringify(payload, null, 2));
 }

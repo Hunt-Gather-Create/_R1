@@ -3,6 +3,25 @@ import { db } from "@/lib/db";
 import { backgroundJobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
+// Tracker functions run with retries: 0 — a DB write failure here should NOT
+// error the tracker itself, because tracker errors muddy the audit trail of
+// the outer function whose lifecycle we're tracking. Log a structured warning
+// and return skipped instead of throwing.
+function warnTrackerWriteFailure(
+  tracker: "invoked" | "finished" | "failed",
+  runId: string,
+  err: unknown,
+): void {
+  console.warn(
+    JSON.stringify({
+      event: "job_tracker_write_failed",
+      tracker,
+      runId,
+      error: err instanceof Error ? err.message : String(err),
+    }),
+  );
+}
+
 /**
  * Track when an Inngest function is invoked
  * Creates a new job record with status "running"
@@ -48,18 +67,23 @@ export const trackFunctionInvoked = inngest.createFunction(
       parentIssueId: eventData.parentIssueId,
     };
 
-    await db.insert(backgroundJobs).values({
-      workspaceId,
-      functionId: function_id,
-      functionName,
-      runId: run_id,
-      correlationId: originalEvent?.data?.correlationId,
-      status: "running",
-      startedAt: new Date(),
-      metadata: metadata ? JSON.stringify(metadata) : null,
-      attempt: 1,
-      maxAttempts: 3, // Default, could be extracted from function config
-    });
+    try {
+      await db.insert(backgroundJobs).values({
+        workspaceId,
+        functionId: function_id,
+        functionName,
+        runId: run_id,
+        correlationId: originalEvent?.data?.correlationId,
+        status: "running",
+        startedAt: new Date(),
+        metadata: metadata ? JSON.stringify(metadata) : null,
+        attempt: 1,
+        maxAttempts: 3, // Default, could be extracted from function config
+      });
+    } catch (err) {
+      warnTrackerWriteFailure("invoked", run_id, err);
+      return { skipped: true, reason: "db_write_failed" };
+    }
 
     return { tracked: true, runId: run_id };
   }
@@ -86,14 +110,19 @@ export const trackFunctionFinished = inngest.createFunction(
       return { skipped: true, reason: "tracker or self-tracked function" };
     }
 
-    await db
-      .update(backgroundJobs)
-      .set({
-        status: "completed",
-        completedAt: new Date(),
-        result: result ? JSON.stringify(result) : null,
-      })
-      .where(eq(backgroundJobs.runId, run_id));
+    try {
+      await db
+        .update(backgroundJobs)
+        .set({
+          status: "completed",
+          completedAt: new Date(),
+          result: result ? JSON.stringify(result) : null,
+        })
+        .where(eq(backgroundJobs.runId, run_id));
+    } catch (err) {
+      warnTrackerWriteFailure("finished", run_id, err);
+      return { skipped: true, reason: "db_write_failed" };
+    }
 
     return { updated: true, runId: run_id };
   }
@@ -125,14 +154,19 @@ export const trackFunctionFailed = inngest.createFunction(
         ? error
         : (error as { message?: string } | null)?.message ?? "Unknown error";
 
-    await db
-      .update(backgroundJobs)
-      .set({
-        status: "failed",
-        completedAt: new Date(),
-        error: errorMessage,
-      })
-      .where(eq(backgroundJobs.runId, run_id));
+    try {
+      await db
+        .update(backgroundJobs)
+        .set({
+          status: "failed",
+          completedAt: new Date(),
+          error: errorMessage,
+        })
+        .where(eq(backgroundJobs.runId, run_id));
+    } catch (err) {
+      warnTrackerWriteFailure("failed", run_id, err);
+      return { skipped: true, reason: "db_write_failed" };
+    }
 
     return { updated: true, runId: run_id, error: errorMessage };
   }

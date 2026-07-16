@@ -6,9 +6,13 @@
  * every 15s and only call `router.refresh()` when the version changes,
  * so the dashboard stops paying for full RSC re-renders every 60s.
  *
- * Auth is enforced by `proxy.ts` (WorkOS authkit) for all paths not
- * explicitly listed as `unauthenticatedPaths`. This handler does not
- * appear there, so any request reaching here has a valid session.
+ * Auth is enforced by a route-local `getCurrentUser()` check that reads
+ * the WorkOS session cookie. `proxy.ts`'s `authkitMiddleware` matcher
+ * covers this path, but WorkOS authkit lets JSON `/api/*` requests
+ * through (it only redirects on `Accept: text/html`), so the route
+ * cannot rely on the middleware alone. Unauthenticated requests get 401.
+ * The polling client (`use-version-poll.ts`) already sends
+ * `credentials: "same-origin"`, so it carries the session cookie.
  *
  * Cache prevention is belt-and-suspenders:
  *   1. `export const dynamic = "force-dynamic"` opts the route out of
@@ -21,10 +25,16 @@
 import { max } from "drizzle-orm";
 import { getRunwayDb } from "@/lib/db/runway";
 import { updates } from "@/lib/db/runway-schema";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) {
+    return new Response(null, { status: 401 });
+  }
+
   const db = getRunwayDb();
   const rows = await db.select({ latest: max(updates.createdAt) }).from(updates);
   const latest = rows[0]?.latest ?? null;

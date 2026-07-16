@@ -10,6 +10,7 @@ import type { ClientWithProjects, DayItemType, PipelineRow, WeekDay } from "./ty
 import { parseISODate, getMonday, getMondayISODate, toISODateString } from "./date-utils";
 import { getClientNameMap, groupBy } from "@/lib/runway/operations";
 import { withRunwayRetry } from "@/lib/runway/retry";
+import { withClientsCache } from "@/lib/runway/clients-cache-als";
 
 // ── Shared helpers ──────────────────────────────────────
 
@@ -205,46 +206,50 @@ async function buildParentProjectAttrsMap(
 }
 
 export async function getWeekItems(weekOf?: string): Promise<WeekDay[]> {
-  const db = getRunwayDb();
+  return withClientsCache(async () => {
+    const db = getRunwayDb();
 
-  const clientNameById = await getClientNameMap();
+    const clientNameById = await getClientNameMap();
 
-  const items = await withRunwayRetry(
-    () =>
-      weekOf
-        ? db
-            .select()
-            .from(weekItems)
-            .where(eq(weekItems.weekOf, weekOf))
-            .orderBy(asc(weekItems.date), asc(weekItems.sortOrder))
-        : db
-            .select()
-            .from(weekItems)
-            .orderBy(asc(weekItems.date), asc(weekItems.sortOrder)),
-    "getWeekItems",
-  );
+    const items = await withRunwayRetry(
+      () =>
+        weekOf
+          ? db
+              .select()
+              .from(weekItems)
+              .where(eq(weekItems.weekOf, weekOf))
+              .orderBy(asc(weekItems.date), asc(weekItems.sortOrder))
+          : db
+              .select()
+              .from(weekItems)
+              .orderBy(asc(weekItems.date), asc(weekItems.sortOrder)),
+      "getWeekItems",
+    );
 
-  // dashboard-cleanup item 1: resolve parent project attrs (name + category)
-  // for L2 week items. Two batched queries, no N+1.
-  const parentProjectAttrsById = await buildParentProjectAttrsMap(items);
+    // dashboard-cleanup item 1: resolve parent project attrs (name + category)
+    // for L2 week items. Two batched queries, no N+1.
+    const parentProjectAttrsById = await buildParentProjectAttrsMap(items);
 
-  return groupWeekItemsIntoDays(items, clientNameById, undefined, parentProjectAttrsById);
+    return groupWeekItemsIntoDays(items, clientNameById, undefined, parentProjectAttrsById);
+  });
 }
 
 export async function getPipeline(): Promise<PipelineRow[]> {
-  const db = getRunwayDb();
+  return withClientsCache(async () => {
+    const db = getRunwayDb();
 
-  const clientNameById = await getClientNameMap();
+    const clientNameById = await getClientNameMap();
 
-  const items = await withRunwayRetry(
-    () => db.select().from(pipelineItems).orderBy(asc(pipelineItems.sortOrder)),
-    "getPipeline",
-  );
+    const items = await withRunwayRetry(
+      () => db.select().from(pipelineItems).orderBy(asc(pipelineItems.sortOrder)),
+      "getPipeline",
+    );
 
-  return items.map((item) => ({
-    ...item,
-    accountName: item.clientId ? (clientNameById.get(item.clientId) ?? null) : null,
-  }));
+    return items.map((item) => ({
+      ...item,
+      accountName: item.clientId ? (clientNameById.get(item.clientId) ?? null) : null,
+    }));
+  });
 }
 
 /**
@@ -260,6 +265,7 @@ export async function getPipeline(): Promise<PipelineRow[]> {
  * No suppression based on parent-project edits or update freshness.
  */
 export async function getStaleWeekItems(): Promise<WeekDay[]> {
+  return withClientsCache(async () => {
   const db = getRunwayDb();
   const now = new Date();
   const todayISO = toISODateString(now);
@@ -340,4 +346,5 @@ export async function getStaleWeekItems(): Promise<WeekDay[]> {
     (item) => item.endDate ?? item.date ?? "",
     parentProjectAttrsById,
   );
+  });
 }

@@ -67,7 +67,8 @@ const L2_BRR_ID = "678b8f1e880940a0aafb44386";
 const L2_BRR_NAME = "Brand Refresh Revisions";
 
 const PRE_SNAPSHOT_PATH = "docs/tmp/hopdoddy-brr-unparent-pre-2026-05-28.json";
-const POST_SNAPSHOT_PATH = "docs/tmp/hopdoddy-brr-unparent-post-2026-05-28.json";
+const POST_SNAPSHOT_PATH =
+  "docs/tmp/hopdoddy-brr-unparent-post-2026-05-28.json";
 
 // ── Migration ────────────────────────────────────────────
 
@@ -90,7 +91,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
   // Step 3 — Single-field update: parentProjectId → null
   ctx.log("--- Step 2: Unparent Brand Refresh Revisions ---");
   ctx.log(
-    `  Project ${L2_BRR_ID.slice(0, 8)} "${L2_BRR_NAME}" parentProjectId: ${r.currentParentId ?? "(null)"} → (null)`,
+    `  Project ${L2_BRR_ID.slice(0, 8)} "${L2_BRR_NAME}" parentProjectId: ${r.currentParentId ?? "(null)"} → (null)`
   );
   if (!ctx.dryRun) {
     const res = await updateProjectField({
@@ -99,6 +100,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "parentProjectId",
       newValue: "", // empty string → null per operations-writes-project.ts:197-208
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!res.ok) {
       throw new Error(`parentProjectId update failed: ${res.error}`);
@@ -125,32 +127,43 @@ interface PreCheckResult {
 }
 
 async function preChecks(ctx: MigrationContext): Promise<PreCheckResult> {
-  const [client] = await ctx.db.select().from(clients).where(eq(clients.slug, HOPDODDY_SLUG));
+  const [client] = await ctx.db
+    .select()
+    .from(clients)
+    .where(eq(clients.slug, HOPDODDY_SLUG));
   if (!client) throw new Error(`Hopdoddy client not found.`);
 
-  const [brr] = await ctx.db.select().from(projects).where(eq(projects.id, L2_BRR_ID));
-  if (!brr) throw new Error(`Brand Refresh Revisions (id=${L2_BRR_ID}) not found.`);
+  const [brr] = await ctx.db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, L2_BRR_ID));
+  if (!brr)
+    throw new Error(`Brand Refresh Revisions (id=${L2_BRR_ID}) not found.`);
   if (brr.name !== L2_BRR_NAME) {
     throw new Error(
-      `Brand Refresh Revisions name drift: expected '${L2_BRR_NAME}', got '${brr.name}'.`,
+      `Brand Refresh Revisions name drift: expected '${L2_BRR_NAME}', got '${brr.name}'.`
     );
   }
   if (brr.clientId !== client.id) {
     throw new Error(
-      `Brand Refresh Revisions clientId drift: expected '${client.id}', got '${brr.clientId}'.`,
+      `Brand Refresh Revisions clientId drift: expected '${client.id}', got '${brr.clientId}'.`
     );
   }
   if (brr.parentProjectId !== L1_RETAINER_ID) {
     throw new Error(
-      `Brand Refresh Revisions parentProjectId drift: expected '${L1_RETAINER_ID}' (Digital Retainer), got '${brr.parentProjectId ?? "(null)"}'.`,
+      `Brand Refresh Revisions parentProjectId drift: expected '${L1_RETAINER_ID}' (Digital Retainer), got '${brr.parentProjectId ?? "(null)"}'.`
     );
   }
 
-  const [retainer] = await ctx.db.select().from(projects).where(eq(projects.id, L1_RETAINER_ID));
-  if (!retainer) throw new Error(`Digital Retainer (id=${L1_RETAINER_ID}) not found.`);
+  const [retainer] = await ctx.db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, L1_RETAINER_ID));
+  if (!retainer)
+    throw new Error(`Digital Retainer (id=${L1_RETAINER_ID}) not found.`);
   if (retainer.engagementType !== "retainer") {
     throw new Error(
-      `Digital Retainer engagementType drift: expected 'retainer', got '${retainer.engagementType}'.`,
+      `Digital Retainer engagementType drift: expected 'retainer', got '${retainer.engagementType}'.`
     );
   }
 
@@ -159,20 +172,20 @@ async function preChecks(ctx: MigrationContext): Promise<PreCheckResult> {
     .from(projects)
     .where(eq(projects.clientId, client.id));
   const currentL2sUnderRetainer = allHopdoddyProjects.filter(
-    (p) => p.parentProjectId === L1_RETAINER_ID,
+    (p) => p.parentProjectId === L1_RETAINER_ID
   );
 
   ctx.log(`  Hopdoddy client: ${client.id}`);
   ctx.log(
-    `  Digital Retainer ${L1_RETAINER_ID.slice(0, 8)}: engagementType=retainer, current L2 children=${currentL2sUnderRetainer.length}`,
+    `  Digital Retainer ${L1_RETAINER_ID.slice(0, 8)}: engagementType=retainer, current L2 children=${currentL2sUnderRetainer.length}`
   );
   ctx.log(
-    `  Brand Refresh Revisions ${L2_BRR_ID.slice(0, 8)}: parentProjectId=${brr.parentProjectId ?? "(null)"}, status=${brr.status}, dates=${brr.startDate}→${brr.endDate}`,
+    `  Brand Refresh Revisions ${L2_BRR_ID.slice(0, 8)}: parentProjectId=${brr.parentProjectId ?? "(null)"}, status=${brr.status}, dates=${brr.startDate}→${brr.endDate}`
   );
 
   if (currentL2sUnderRetainer.length !== 1) {
     throw new Error(
-      `Expected exactly 1 L2 under Digital Retainer (Brand Refresh Revisions). Found ${currentL2sUnderRetainer.length}: ${currentL2sUnderRetainer.map((p) => `${p.id.slice(0, 8)} '${p.name}'`).join(", ")}. Manual review required.`,
+      `Expected exactly 1 L2 under Digital Retainer (Brand Refresh Revisions). Found ${currentL2sUnderRetainer.length}: ${currentL2sUnderRetainer.map((p) => `${p.id.slice(0, 8)} '${p.name}'`).join(", ")}. Manual review required.`
     );
   }
 
@@ -180,34 +193,42 @@ async function preChecks(ctx: MigrationContext): Promise<PreCheckResult> {
 }
 
 async function verify(ctx: MigrationContext): Promise<void> {
-  const [brr] = await ctx.db.select().from(projects).where(eq(projects.id, L2_BRR_ID));
+  const [brr] = await ctx.db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, L2_BRR_ID));
   if (!brr) throw new Error(`Post-state: Brand Refresh Revisions disappeared.`);
   if (brr.parentProjectId !== null) {
     throw new Error(
-      `Post-state: parentProjectId='${brr.parentProjectId}', expected null.`,
+      `Post-state: parentProjectId='${brr.parentProjectId}', expected null.`
     );
   }
   if (brr.name !== L2_BRR_NAME) {
-    throw new Error(`Post-state: name drift: '${brr.name}' vs '${L2_BRR_NAME}'.`);
+    throw new Error(
+      `Post-state: name drift: '${brr.name}' vs '${L2_BRR_NAME}'.`
+    );
   }
   if (brr.startDate !== "2026-05-11" || brr.endDate !== "2026-05-21") {
     throw new Error(
-      `Post-state: Brand Refresh Revisions dates drifted: ${brr.startDate}→${brr.endDate} (expected 2026-05-11→2026-05-21).`,
+      `Post-state: Brand Refresh Revisions dates drifted: ${brr.startDate}→${brr.endDate} (expected 2026-05-11→2026-05-21).`
     );
   }
 
   // Confirm Digital Retainer now has zero L2 children → will classify as l1.
-  const [client] = await ctx.db.select().from(clients).where(eq(clients.slug, HOPDODDY_SLUG));
+  const [client] = await ctx.db
+    .select()
+    .from(clients)
+    .where(eq(clients.slug, HOPDODDY_SLUG));
   const allHopdoddyProjects = await ctx.db
     .select()
     .from(projects)
     .where(eq(projects.clientId, client.id));
   const l2sUnderRetainer = allHopdoddyProjects.filter(
-    (p) => p.parentProjectId === L1_RETAINER_ID,
+    (p) => p.parentProjectId === L1_RETAINER_ID
   );
   if (l2sUnderRetainer.length !== 0) {
     throw new Error(
-      `Post-state: Digital Retainer still has ${l2sUnderRetainer.length} L2 child(ren). Wrapper classification not cleared.`,
+      `Post-state: Digital Retainer still has ${l2sUnderRetainer.length} L2 child(ren). Wrapper classification not cleared.`
     );
   }
 
@@ -216,12 +237,22 @@ async function verify(ctx: MigrationContext): Promise<void> {
     .select()
     .from(weekItems)
     .where(eq(weekItems.projectId, L1_RETAINER_ID));
-  ctx.log(`  Verified: Digital Retainer L2 children=0, direct WIs=${directWis.length}`);
-  ctx.log(`  Verified: Brand Refresh Revisions parentProjectId=null, dates intact`);
+  ctx.log(
+    `  Verified: Digital Retainer L2 children=0, direct WIs=${directWis.length}`
+  );
+  ctx.log(
+    `  Verified: Brand Refresh Revisions parentProjectId=null, dates intact`
+  );
 }
 
-async function snapshot(ctx: MigrationContext, relativePath: string): Promise<void> {
-  const [client] = await ctx.db.select().from(clients).where(eq(clients.slug, HOPDODDY_SLUG));
+async function snapshot(
+  ctx: MigrationContext,
+  relativePath: string
+): Promise<void> {
+  const [client] = await ctx.db
+    .select()
+    .from(clients)
+    .where(eq(clients.slug, HOPDODDY_SLUG));
   const allProjects = await ctx.db
     .select()
     .from(projects)
@@ -239,6 +270,7 @@ async function snapshot(ctx: MigrationContext, relativePath: string): Promise<vo
     weekItems: allWis,
   };
   const fullPath = resolvePath(process.cwd(), relativePath);
-  if (!existsSync(dirname(fullPath))) mkdirSync(dirname(fullPath), { recursive: true });
+  if (!existsSync(dirname(fullPath)))
+    mkdirSync(dirname(fullPath), { recursive: true });
   writeFileSync(fullPath, JSON.stringify(payload, null, 2));
 }
