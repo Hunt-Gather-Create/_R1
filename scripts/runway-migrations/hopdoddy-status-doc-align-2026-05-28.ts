@@ -78,9 +78,7 @@ import { resolve as resolvePath, dirname } from "node:path";
 import { eq, and } from "drizzle-orm";
 import type { MigrationContext } from "../runway-migrate";
 import { clients, projects, weekItems } from "@/lib/db/runway-schema";
-import {
-  updateProjectField,
-} from "@/lib/runway/operations-writes-project";
+import { updateProjectField } from "@/lib/runway/operations-writes-project";
 import {
   updateWeekItemField,
   createWeekItem,
@@ -113,18 +111,38 @@ const L2_BRR_NAME = "Brand Refresh Revisions";
 // (Fri) → weekOf=2026-06-01 (Mon). After close-out, endDate moves to
 // 2026-05-21 (Thu) → new weekOf=2026-05-18 (Mon), new dayOfWeek=thursday.
 const REVISION_WIS: Array<{ id: string; title: string; weekOf: string }> = [
-  { id: "4407781d", title: "Overall: Typography + brand book application", weekOf: "2026-06-01" },
+  {
+    id: "4407781d",
+    title: "Overall: Typography + brand book application",
+    weekOf: "2026-06-01",
+  },
   { id: "b29eb922", title: "Home Page revisions", weekOf: "2026-06-01" },
   { id: "f032607f", title: "Culture Page revisions", weekOf: "2026-06-01" },
   { id: "b7dea36a", title: "Sourcing Page revisions", weekOf: "2026-06-01" },
-  { id: "27adaf7c", title: "Sourcing: NEW Tillamook Module build", weekOf: "2026-06-01" },
-  { id: "6060ee50", title: "Quality Page revisions (incl. Our Story rename decision)", weekOf: "2026-06-01" },
+  {
+    id: "27adaf7c",
+    title: "Sourcing: NEW Tillamook Module build",
+    weekOf: "2026-06-01",
+  },
+  {
+    id: "6060ee50",
+    title: "Quality Page revisions (incl. Our Story rename decision)",
+    weekOf: "2026-06-01",
+  },
 ];
 
 // 2 WIs direct child of retainer L1 — close out
 const RETAINER_CLOSEOUT_WIS = {
-  websiteRefresh: { id: "dc248132", title: "Website Refresh", weekOf: "2026-06-01" },
-  civTiming: { id: "ad787e3f", title: "Civilization provides timing on Rewards + Happy Hour pages", weekOf: "2026-05-25" },
+  websiteRefresh: {
+    id: "dc248132",
+    title: "Website Refresh",
+    weekOf: "2026-06-01",
+  },
+  civTiming: {
+    id: "ad787e3f",
+    title: "Civilization provides timing on Rewards + Happy Hour pages",
+    weekOf: "2026-05-25",
+  },
 };
 
 // New weekOf/dayOfWeek for the 7 close-out WIs (6 brand revisions + 1
@@ -171,7 +189,8 @@ const NEW_WIS: NewWIConfig[] = [
     dayOfWeek: "monday",
     status: "scheduled",
     resources: "Dev: Leslie",
-    notes: "Add the new social icons to the global nav (desktop + mobile hamburger menu).",
+    notes:
+      "Add the new social icons to the global nav (desktop + mobile hamburger menu).",
   },
   {
     title: "Homepage: Updates",
@@ -191,7 +210,8 @@ const NEW_WIS: NewWIConfig[] = [
     dayOfWeek: "monday",
     status: "scheduled",
     resources: "Dev: Leslie",
-    notes: "Switch the Obsession Wanted module on the Culture page to a polaroid layout.",
+    notes:
+      "Switch the Obsession Wanted module on the Culture page to a polaroid layout.",
   },
   {
     title: "Rewards Page: Refresh",
@@ -288,7 +308,9 @@ export async function up(ctx: MigrationContext): Promise<void> {
   ctx.log("--- Phase A: Close out 6 brand-revision WIs ---");
   for (const wi of r.revisionWis) {
     // 3a. endDate
-    ctx.log(`  WI ${wi.id.slice(0, 8)} "${wi.title}" endDate: ${wi.endDate} → ${WI_NEW_END_DATE}`);
+    ctx.log(
+      `  WI ${wi.id.slice(0, 8)} "${wi.title}" endDate: ${wi.endDate} → ${WI_NEW_END_DATE}`
+    );
     if (!ctx.dryRun) {
       const res = await updateWeekItemField({
         weekOf: wi.weekOf!,
@@ -296,8 +318,12 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "endDate",
         newValue: WI_NEW_END_DATE,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
-      if (!res.ok) throw new Error(`WI ${wi.id.slice(0, 8)} endDate update failed: ${res.error}`);
+      if (!res.ok)
+        throw new Error(
+          `WI ${wi.id.slice(0, 8)} endDate update failed: ${res.error}`
+        );
     }
     // 3b. status
     ctx.log(`  WI ${wi.id.slice(0, 8)} status: ${wi.status} → completed`);
@@ -308,11 +334,17 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "status",
         newValue: "completed",
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
-      if (!res.ok) throw new Error(`WI ${wi.id.slice(0, 8)} status update failed: ${res.error}`);
+      if (!res.ok)
+        throw new Error(
+          `WI ${wi.id.slice(0, 8)} status update failed: ${res.error}`
+        );
     }
     // 3c. dayOfWeek (re-anchor to new endDate)
-    ctx.log(`  WI ${wi.id.slice(0, 8)} dayOfWeek: ${wi.dayOfWeek} → ${CLOSEOUT_NEW_DAY_OF_WEEK}`);
+    ctx.log(
+      `  WI ${wi.id.slice(0, 8)} dayOfWeek: ${wi.dayOfWeek} → ${CLOSEOUT_NEW_DAY_OF_WEEK}`
+    );
     if (!ctx.dryRun) {
       const res = await updateWeekItemField({
         weekOf: wi.weekOf!,
@@ -320,11 +352,17 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "dayOfWeek",
         newValue: CLOSEOUT_NEW_DAY_OF_WEEK,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
-      if (!res.ok) throw new Error(`WI ${wi.id.slice(0, 8)} dayOfWeek update failed: ${res.error}`);
+      if (!res.ok)
+        throw new Error(
+          `WI ${wi.id.slice(0, 8)} dayOfWeek update failed: ${res.error}`
+        );
     }
     // 3d. weekOf — LAST (lookup key)
-    ctx.log(`  WI ${wi.id.slice(0, 8)} weekOf: ${wi.weekOf} → ${CLOSEOUT_NEW_WEEK_OF}`);
+    ctx.log(
+      `  WI ${wi.id.slice(0, 8)} weekOf: ${wi.weekOf} → ${CLOSEOUT_NEW_WEEK_OF}`
+    );
     if (!ctx.dryRun) {
       const res = await updateWeekItemField({
         weekOf: wi.weekOf!,
@@ -332,15 +370,19 @@ export async function up(ctx: MigrationContext): Promise<void> {
         field: "weekOf",
         newValue: CLOSEOUT_NEW_WEEK_OF,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
-      if (!res.ok) throw new Error(`WI ${wi.id.slice(0, 8)} weekOf update failed: ${res.error}`);
+      if (!res.ok)
+        throw new Error(
+          `WI ${wi.id.slice(0, 8)} weekOf update failed: ${res.error}`
+        );
     }
   }
 
   // ── Step 4 — Close out "Website Refresh" (dc248132) ──
   ctx.log("--- Phase A: Close out WI Website Refresh (dc248132) ---");
   ctx.log(
-    `  WI ${r.websiteRefreshWi.id.slice(0, 8)} endDate: ${r.websiteRefreshWi.endDate} → ${WI_NEW_END_DATE}`,
+    `  WI ${r.websiteRefreshWi.id.slice(0, 8)} endDate: ${r.websiteRefreshWi.endDate} → ${WI_NEW_END_DATE}`
   );
   if (!ctx.dryRun) {
     const res = await updateWeekItemField({
@@ -349,10 +391,14 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "endDate",
       newValue: WI_NEW_END_DATE,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
-    if (!res.ok) throw new Error(`Website Refresh endDate update failed: ${res.error}`);
+    if (!res.ok)
+      throw new Error(`Website Refresh endDate update failed: ${res.error}`);
   }
-  ctx.log(`  WI ${r.websiteRefreshWi.id.slice(0, 8)} status: ${r.websiteRefreshWi.status} → completed`);
+  ctx.log(
+    `  WI ${r.websiteRefreshWi.id.slice(0, 8)} status: ${r.websiteRefreshWi.status} → completed`
+  );
   if (!ctx.dryRun) {
     const res = await updateWeekItemField({
       weekOf: r.websiteRefreshWi.weekOf!,
@@ -360,10 +406,14 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "status",
       newValue: "completed",
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
-    if (!res.ok) throw new Error(`Website Refresh status update failed: ${res.error}`);
+    if (!res.ok)
+      throw new Error(`Website Refresh status update failed: ${res.error}`);
   }
-  ctx.log(`  WI ${r.websiteRefreshWi.id.slice(0, 8)} dayOfWeek: ${r.websiteRefreshWi.dayOfWeek} → ${CLOSEOUT_NEW_DAY_OF_WEEK}`);
+  ctx.log(
+    `  WI ${r.websiteRefreshWi.id.slice(0, 8)} dayOfWeek: ${r.websiteRefreshWi.dayOfWeek} → ${CLOSEOUT_NEW_DAY_OF_WEEK}`
+  );
   if (!ctx.dryRun) {
     const res = await updateWeekItemField({
       weekOf: r.websiteRefreshWi.weekOf!,
@@ -371,10 +421,14 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "dayOfWeek",
       newValue: CLOSEOUT_NEW_DAY_OF_WEEK,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
-    if (!res.ok) throw new Error(`Website Refresh dayOfWeek update failed: ${res.error}`);
+    if (!res.ok)
+      throw new Error(`Website Refresh dayOfWeek update failed: ${res.error}`);
   }
-  ctx.log(`  WI ${r.websiteRefreshWi.id.slice(0, 8)} weekOf: ${r.websiteRefreshWi.weekOf} → ${CLOSEOUT_NEW_WEEK_OF}`);
+  ctx.log(
+    `  WI ${r.websiteRefreshWi.id.slice(0, 8)} weekOf: ${r.websiteRefreshWi.weekOf} → ${CLOSEOUT_NEW_WEEK_OF}`
+  );
   if (!ctx.dryRun) {
     const res = await updateWeekItemField({
       weekOf: r.websiteRefreshWi.weekOf!,
@@ -382,13 +436,19 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "weekOf",
       newValue: CLOSEOUT_NEW_WEEK_OF,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
-    if (!res.ok) throw new Error(`Website Refresh weekOf update failed: ${res.error}`);
+    if (!res.ok)
+      throw new Error(`Website Refresh weekOf update failed: ${res.error}`);
   }
 
   // ── Step 5 — Close out "Civilization provides timing" ─
-  ctx.log("--- Phase A: Close out WI Civilization provides timing (ad787e3f) ---");
-  ctx.log(`  WI ${r.civTimingWi.id.slice(0, 8)} status: ${r.civTimingWi.status} → completed`);
+  ctx.log(
+    "--- Phase A: Close out WI Civilization provides timing (ad787e3f) ---"
+  );
+  ctx.log(
+    `  WI ${r.civTimingWi.id.slice(0, 8)} status: ${r.civTimingWi.status} → completed`
+  );
   if (!ctx.dryRun) {
     const res = await updateWeekItemField({
       weekOf: r.civTimingWi.weekOf!,
@@ -396,15 +456,21 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "status",
       newValue: "completed",
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
-    if (!res.ok) throw new Error(`Civ timing status update failed: ${res.error}`);
+    if (!res.ok)
+      throw new Error(`Civ timing status update failed: ${res.error}`);
   }
 
   // ── Step 6 — L2 + L1 close-out (category FIRST, then status) ──
-  ctx.log("--- Phase A: L2 + L1 close-out (category before status, compat-safe) ---");
+  ctx.log(
+    "--- Phase A: L2 + L1 close-out (category before status, compat-safe) ---"
+  );
 
   // L2 Brand Refresh Revisions
-  ctx.log(`  L2 ${r.l2Brr.id.slice(0, 8)} "${L2_BRR_NAME}" category: ${r.l2Brr.category} → completed`);
+  ctx.log(
+    `  L2 ${r.l2Brr.id.slice(0, 8)} "${L2_BRR_NAME}" category: ${r.l2Brr.category} → completed`
+  );
   if (!ctx.dryRun) {
     const res = await updateProjectField({
       clientSlug: HOPDODDY_SLUG,
@@ -412,23 +478,27 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "category",
       newValue: "completed",
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!res.ok) throw new Error(`L2 BRR category update failed: ${res.error}`);
   }
-  ctx.log(`  L2 ${r.l2Brr.id.slice(0, 8)} status: ${r.l2Brr.status} → completed`);
+  ctx.log(
+    `  L2 ${r.l2Brr.id.slice(0, 8)} status: ${r.l2Brr.status} → completed`
+  );
   if (!ctx.dryRun) {
     const res = await updateProjectStatus({
       clientSlug: HOPDODDY_SLUG,
       projectName: L2_BRR_NAME,
       newStatus: "completed",
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!res.ok) throw new Error(`L2 BRR status update failed: ${res.error}`);
   }
 
   // L1 Brand Refresh Website
   ctx.log(
-    `  L1 ${r.l1BrandRefresh.id.slice(0, 8)} "${L1_BRAND_REFRESH_WEBSITE_NAME}" category: ${r.l1BrandRefresh.category} → completed`,
+    `  L1 ${r.l1BrandRefresh.id.slice(0, 8)} "${L1_BRAND_REFRESH_WEBSITE_NAME}" category: ${r.l1BrandRefresh.category} → completed`
   );
   if (!ctx.dryRun) {
     const res = await updateProjectField({
@@ -437,22 +507,30 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "category",
       newValue: "completed",
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
-    if (!res.ok) throw new Error(`L1 BR Website category update failed: ${res.error}`);
+    if (!res.ok)
+      throw new Error(`L1 BR Website category update failed: ${res.error}`);
   }
-  ctx.log(`  L1 ${r.l1BrandRefresh.id.slice(0, 8)} status: ${r.l1BrandRefresh.status} → completed`);
+  ctx.log(
+    `  L1 ${r.l1BrandRefresh.id.slice(0, 8)} status: ${r.l1BrandRefresh.status} → completed`
+  );
   if (!ctx.dryRun) {
     const res = await updateProjectStatus({
       clientSlug: HOPDODDY_SLUG,
       projectName: L1_BRAND_REFRESH_WEBSITE_NAME,
       newStatus: "completed",
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
-    if (!res.ok) throw new Error(`L1 BR Website status update failed: ${res.error}`);
+    if (!res.ok)
+      throw new Error(`L1 BR Website status update failed: ${res.error}`);
   }
 
   // L1 National Burger Day LP
-  ctx.log(`  L1 ${r.l1Nbd.id.slice(0, 8)} "${L1_NBD_LP_NAME}" category: ${r.l1Nbd.category} → completed`);
+  ctx.log(
+    `  L1 ${r.l1Nbd.id.slice(0, 8)} "${L1_NBD_LP_NAME}" category: ${r.l1Nbd.category} → completed`
+  );
   if (!ctx.dryRun) {
     const res = await updateProjectField({
       clientSlug: HOPDODDY_SLUG,
@@ -460,16 +538,20 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "category",
       newValue: "completed",
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!res.ok) throw new Error(`L1 NBD category update failed: ${res.error}`);
   }
-  ctx.log(`  L1 ${r.l1Nbd.id.slice(0, 8)} status: ${r.l1Nbd.status} → completed`);
+  ctx.log(
+    `  L1 ${r.l1Nbd.id.slice(0, 8)} status: ${r.l1Nbd.status} → completed`
+  );
   if (!ctx.dryRun) {
     const res = await updateProjectStatus({
       clientSlug: HOPDODDY_SLUG,
       projectName: L1_NBD_LP_NAME,
       newStatus: "completed",
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!res.ok) throw new Error(`L1 NBD status update failed: ${res.error}`);
   }
@@ -481,7 +563,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
     if (!ctx.dryRun) {
       const derived = await recomputeProjectDates(p.id);
       ctx.log(
-        `    derived: startDate=${derived?.startDate ?? "null"}, endDate=${derived?.endDate ?? "null"}`,
+        `    derived: startDate=${derived?.startDate ?? "null"}, endDate=${derived?.endDate ?? "null"}`
       );
     }
   }
@@ -496,10 +578,13 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "notes",
       newValue: KACI_WI.newNotes,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!res.ok) throw new Error(`Kaci notes update failed: ${res.error}`);
   }
-  ctx.log(`  WI ${KACI_WI.id} title: "${KACI_WI.currentTitle}" → "${KACI_WI.newTitle}"`);
+  ctx.log(
+    `  WI ${KACI_WI.id} title: "${KACI_WI.currentTitle}" → "${KACI_WI.newTitle}"`
+  );
   if (!ctx.dryRun) {
     const res = await updateWeekItemField({
       weekOf: KACI_WI.weekOf,
@@ -507,6 +592,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "title",
       newValue: KACI_WI.newTitle,
       updatedBy: UPDATED_BY,
+      source: "migration",
     });
     if (!res.ok) throw new Error(`Kaci title update failed: ${res.error}`);
   }
@@ -526,7 +612,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
   ctx.log("--- Phase D: Create 7 new WIs under retainer L1 ---");
   for (const wi of NEW_WIS) {
     ctx.log(
-      `  create "${wi.title}" ${wi.startDate}→${wi.endDate} (${wi.dayOfWeek}, weekOf ${wi.weekOf}, status=${wi.status}, resources="${wi.resources}")`,
+      `  create "${wi.title}" ${wi.startDate}→${wi.endDate} (${wi.dayOfWeek}, weekOf ${wi.weekOf}, status=${wi.status}, resources="${wi.resources}")`
     );
     if (!ctx.dryRun) {
       const res = await createWeekItem({
@@ -544,8 +630,10 @@ export async function up(ctx: MigrationContext): Promise<void> {
         resources: wi.resources,
         notes: wi.notes,
         updatedBy: UPDATED_BY,
+        source: "migration",
       });
-      if (!res.ok) throw new Error(`Create WI "${wi.title}" failed: ${res.error}`);
+      if (!res.ok)
+        throw new Error(`Create WI "${wi.title}" failed: ${res.error}`);
     }
   }
 
@@ -563,21 +651,42 @@ async function preChecks(ctx: MigrationContext): Promise<ResolvedState> {
   ctx.log("--- Pre-checks ---");
 
   // Client
-  const clientRows = await ctx.db.select().from(clients).where(eq(clients.slug, HOPDODDY_SLUG));
+  const clientRows = await ctx.db
+    .select()
+    .from(clients)
+    .where(eq(clients.slug, HOPDODDY_SLUG));
   const client = clientRows[0];
-  if (!client) throw new Error(`Pre-check failed: client '${HOPDODDY_SLUG}' not found.`);
+  if (!client)
+    throw new Error(`Pre-check failed: client '${HOPDODDY_SLUG}' not found.`);
   ctx.log(`Client: ${client.name} (${client.id})`);
 
   // L1s
-  const projectRows = await ctx.db.select().from(projects).where(eq(projects.clientId, client.id));
-  const l1BrandRefresh = projectRows.find((p) => p.id === L1_BRAND_REFRESH_WEBSITE_ID);
+  const projectRows = await ctx.db
+    .select()
+    .from(projects)
+    .where(eq(projects.clientId, client.id));
+  const l1BrandRefresh = projectRows.find(
+    (p) => p.id === L1_BRAND_REFRESH_WEBSITE_ID
+  );
   const l1Nbd = projectRows.find((p) => p.id === L1_NBD_LP_ID);
   const l1Retainer = projectRows.find((p) => p.id === L1_RETAINER_ID);
   const l2Brr = projectRows.find((p) => p.id === L2_BRR_ID);
-  if (!l1BrandRefresh) throw new Error(`Pre-check failed: L1 Brand Refresh Website (${L1_BRAND_REFRESH_WEBSITE_ID.slice(0, 8)}) not found.`);
-  if (!l1Nbd) throw new Error(`Pre-check failed: L1 NBD LP (${L1_NBD_LP_ID.slice(0, 8)}) not found.`);
-  if (!l1Retainer) throw new Error(`Pre-check failed: L1 Retainer (${L1_RETAINER_ID.slice(0, 8)}) not found.`);
-  if (!l2Brr) throw new Error(`Pre-check failed: L2 BRR (${L2_BRR_ID.slice(0, 8)}) not found.`);
+  if (!l1BrandRefresh)
+    throw new Error(
+      `Pre-check failed: L1 Brand Refresh Website (${L1_BRAND_REFRESH_WEBSITE_ID.slice(0, 8)}) not found.`
+    );
+  if (!l1Nbd)
+    throw new Error(
+      `Pre-check failed: L1 NBD LP (${L1_NBD_LP_ID.slice(0, 8)}) not found.`
+    );
+  if (!l1Retainer)
+    throw new Error(
+      `Pre-check failed: L1 Retainer (${L1_RETAINER_ID.slice(0, 8)}) not found.`
+    );
+  if (!l2Brr)
+    throw new Error(
+      `Pre-check failed: L2 BRR (${L2_BRR_ID.slice(0, 8)}) not found.`
+    );
 
   // Expected pre-state on each
   for (const [label, p, expectedStatus] of [
@@ -586,67 +695,112 @@ async function preChecks(ctx: MigrationContext): Promise<ResolvedState> {
     ["L2 BRR", l2Brr, "in-production"] as const,
   ]) {
     if (p.status !== expectedStatus) {
-      throw new Error(`Pre-check failed: ${label} status="${p.status}", expected "${expectedStatus}". Drift — abort.`);
+      throw new Error(
+        `Pre-check failed: ${label} status="${p.status}", expected "${expectedStatus}". Drift — abort.`
+      );
     }
     if (p.category !== "active") {
-      throw new Error(`Pre-check failed: ${label} category="${p.category}", expected "active". Drift — abort.`);
+      throw new Error(
+        `Pre-check failed: ${label} category="${p.category}", expected "active". Drift — abort.`
+      );
     }
   }
   ctx.log(`L1/L2 status+category pre-state OK.`);
 
   // WIs
-  const allWis = await ctx.db.select().from(weekItems).where(eq(weekItems.clientId, client.id));
+  const allWis = await ctx.db
+    .select()
+    .from(weekItems)
+    .where(eq(weekItems.clientId, client.id));
   const findWi = (id: string) => allWis.find((w) => w.id === id);
 
   const revisionWis = REVISION_WIS.map((expected) => {
     const wi = allWis.find((w) => w.id.startsWith(expected.id));
-    if (!wi) throw new Error(`Pre-check failed: brand-revision WI ${expected.id} ("${expected.title}") not found.`);
+    if (!wi)
+      throw new Error(
+        `Pre-check failed: brand-revision WI ${expected.id} ("${expected.title}") not found.`
+      );
     if (wi.title !== expected.title) {
-      throw new Error(`Pre-check failed: WI ${expected.id} title="${wi.title}", expected "${expected.title}".`);
+      throw new Error(
+        `Pre-check failed: WI ${expected.id} title="${wi.title}", expected "${expected.title}".`
+      );
     }
     if (wi.weekOf !== expected.weekOf) {
-      throw new Error(`Pre-check failed: WI ${expected.id} weekOf="${wi.weekOf}", expected "${expected.weekOf}".`);
+      throw new Error(
+        `Pre-check failed: WI ${expected.id} weekOf="${wi.weekOf}", expected "${expected.weekOf}".`
+      );
     }
     if (wi.status !== "in-progress") {
-      throw new Error(`Pre-check failed: WI ${expected.id} status="${wi.status}", expected "in-progress".`);
+      throw new Error(
+        `Pre-check failed: WI ${expected.id} status="${wi.status}", expected "in-progress".`
+      );
     }
     if (wi.endDate !== "2026-06-05") {
-      throw new Error(`Pre-check failed: WI ${expected.id} endDate="${wi.endDate}", expected "2026-06-05".`);
+      throw new Error(
+        `Pre-check failed: WI ${expected.id} endDate="${wi.endDate}", expected "2026-06-05".`
+      );
     }
     return wi;
   });
 
-  const websiteRefreshWi = allWis.find((w) => w.id.startsWith(RETAINER_CLOSEOUT_WIS.websiteRefresh.id) && w.title === RETAINER_CLOSEOUT_WIS.websiteRefresh.title && w.weekOf === RETAINER_CLOSEOUT_WIS.websiteRefresh.weekOf);
-  if (!websiteRefreshWi) throw new Error(`Pre-check failed: Website Refresh WI (${RETAINER_CLOSEOUT_WIS.websiteRefresh.id}) not found.`);
+  const websiteRefreshWi = allWis.find(
+    (w) =>
+      w.id.startsWith(RETAINER_CLOSEOUT_WIS.websiteRefresh.id) &&
+      w.title === RETAINER_CLOSEOUT_WIS.websiteRefresh.title &&
+      w.weekOf === RETAINER_CLOSEOUT_WIS.websiteRefresh.weekOf
+  );
+  if (!websiteRefreshWi)
+    throw new Error(
+      `Pre-check failed: Website Refresh WI (${RETAINER_CLOSEOUT_WIS.websiteRefresh.id}) not found.`
+    );
   if (websiteRefreshWi.status !== "in-progress") {
-    throw new Error(`Pre-check failed: Website Refresh WI status="${websiteRefreshWi.status}", expected "in-progress".`);
+    throw new Error(
+      `Pre-check failed: Website Refresh WI status="${websiteRefreshWi.status}", expected "in-progress".`
+    );
   }
 
-  const civTimingWi = allWis.find((w) => w.id.startsWith(RETAINER_CLOSEOUT_WIS.civTiming.id));
-  if (!civTimingWi) throw new Error(`Pre-check failed: Civ timing WI (${RETAINER_CLOSEOUT_WIS.civTiming.id}) not found.`);
+  const civTimingWi = allWis.find((w) =>
+    w.id.startsWith(RETAINER_CLOSEOUT_WIS.civTiming.id)
+  );
+  if (!civTimingWi)
+    throw new Error(
+      `Pre-check failed: Civ timing WI (${RETAINER_CLOSEOUT_WIS.civTiming.id}) not found.`
+    );
   if (civTimingWi.status !== "in-progress") {
-    throw new Error(`Pre-check failed: Civ timing WI status="${civTimingWi.status}", expected "in-progress".`);
+    throw new Error(
+      `Pre-check failed: Civ timing WI status="${civTimingWi.status}", expected "in-progress".`
+    );
   }
 
   const kaciWi = allWis.find((w) => w.id.startsWith(KACI_WI.id));
-  if (!kaciWi) throw new Error(`Pre-check failed: Kaci WI (${KACI_WI.id}) not found.`);
+  if (!kaciWi)
+    throw new Error(`Pre-check failed: Kaci WI (${KACI_WI.id}) not found.`);
   if (kaciWi.title !== KACI_WI.currentTitle) {
-    throw new Error(`Pre-check failed: Kaci WI title="${kaciWi.title}", expected "${KACI_WI.currentTitle}".`);
+    throw new Error(
+      `Pre-check failed: Kaci WI title="${kaciWi.title}", expected "${KACI_WI.currentTitle}".`
+    );
   }
 
   const staleWi = allWis.find((w) => w.id.startsWith(STALE_WI.id));
-  if (!staleWi) throw new Error(`Pre-check failed: stale WI (${STALE_WI.id}) not found — already deleted?`);
+  if (!staleWi)
+    throw new Error(
+      `Pre-check failed: stale WI (${STALE_WI.id}) not found — already deleted?`
+    );
 
   // Confirm none of the 7 new WI titles already exist (avoid duplicate create)
   for (const wi of NEW_WIS) {
-    const dup = allWis.find((w) => w.title === wi.title && w.projectId === L1_RETAINER_ID);
+    const dup = allWis.find(
+      (w) => w.title === wi.title && w.projectId === L1_RETAINER_ID
+    );
     if (dup) {
-      throw new Error(`Pre-check failed: a WI titled "${wi.title}" already exists under retainer (${dup.id.slice(0, 8)}). Duplicate — abort.`);
+      throw new Error(
+        `Pre-check failed: a WI titled "${wi.title}" already exists under retainer (${dup.id.slice(0, 8)}). Duplicate — abort.`
+      );
     }
   }
 
   ctx.log(
-    `Pre-checks passed: 4 projects + ${revisionWis.length + 2 + 1 + 1} WIs resolved, no naming collisions for 7 new WIs.`,
+    `Pre-checks passed: 4 projects + ${revisionWis.length + 2 + 1 + 1} WIs resolved, no naming collisions for 7 new WIs.`
   );
 
   return {
@@ -682,7 +836,8 @@ function writeSnapshot(ctx: MigrationContext, r: ResolvedState): void {
     weekItems: allWis,
   };
   const fullPath = resolvePath(SNAPSHOT_PATH);
-  if (!existsSync(dirname(fullPath))) mkdirSync(dirname(fullPath), { recursive: true });
+  if (!existsSync(dirname(fullPath)))
+    mkdirSync(dirname(fullPath), { recursive: true });
   writeFileSync(fullPath, JSON.stringify(snapshot, null, 2));
   ctx.log(`Snapshot written: ${SNAPSHOT_PATH}`);
 }
@@ -692,11 +847,17 @@ function writeSnapshot(ctx: MigrationContext, r: ResolvedState): void {
 async function verify(ctx: MigrationContext): Promise<void> {
   ctx.log("--- Verification ---");
 
-  const clientRows = await ctx.db.select().from(clients).where(eq(clients.slug, HOPDODDY_SLUG));
+  const clientRows = await ctx.db
+    .select()
+    .from(clients)
+    .where(eq(clients.slug, HOPDODDY_SLUG));
   const client = clientRows[0];
 
   // L1/L2 status+category
-  const projectRows = await ctx.db.select().from(projects).where(eq(projects.clientId, client.id));
+  const projectRows = await ctx.db
+    .select()
+    .from(projects)
+    .where(eq(projects.clientId, client.id));
   for (const [label, id] of [
     ["L1 BR Website", L1_BRAND_REFRESH_WEBSITE_ID] as const,
     ["L1 NBD LP", L1_NBD_LP_ID] as const,
@@ -705,35 +866,60 @@ async function verify(ctx: MigrationContext): Promise<void> {
     const p = projectRows.find((x) => x.id === id);
     if (!p) throw new Error(`Verify: ${label} disappeared.`);
     if (p.status !== "completed" || p.category !== "completed") {
-      throw new Error(`Verify: ${label} status="${p.status}", category="${p.category}" (expected completed/completed).`);
+      throw new Error(
+        `Verify: ${label} status="${p.status}", category="${p.category}" (expected completed/completed).`
+      );
     }
     ctx.log(`  ✓ ${label} completed/completed (endDate=${p.endDate})`);
   }
 
   // WIs — brand revisions + 2 retainer-direct
-  const allWis = await ctx.db.select().from(weekItems).where(eq(weekItems.clientId, client.id));
+  const allWis = await ctx.db
+    .select()
+    .from(weekItems)
+    .where(eq(weekItems.clientId, client.id));
   for (const expected of REVISION_WIS) {
     const wi = allWis.find((w) => w.id.startsWith(expected.id));
     if (!wi) throw new Error(`Verify: WI ${expected.id} missing.`);
     if (wi.status !== "completed" || wi.endDate !== WI_NEW_END_DATE) {
-      throw new Error(`Verify: WI ${expected.id} status="${wi.status}" endDate="${wi.endDate}" (expected completed / ${WI_NEW_END_DATE}).`);
+      throw new Error(
+        `Verify: WI ${expected.id} status="${wi.status}" endDate="${wi.endDate}" (expected completed / ${WI_NEW_END_DATE}).`
+      );
     }
-    if (wi.weekOf !== CLOSEOUT_NEW_WEEK_OF || wi.dayOfWeek !== CLOSEOUT_NEW_DAY_OF_WEEK) {
-      throw new Error(`Verify: WI ${expected.id} weekOf="${wi.weekOf}" dayOfWeek="${wi.dayOfWeek}" (expected ${CLOSEOUT_NEW_WEEK_OF}/${CLOSEOUT_NEW_DAY_OF_WEEK}).`);
+    if (
+      wi.weekOf !== CLOSEOUT_NEW_WEEK_OF ||
+      wi.dayOfWeek !== CLOSEOUT_NEW_DAY_OF_WEEK
+    ) {
+      throw new Error(
+        `Verify: WI ${expected.id} weekOf="${wi.weekOf}" dayOfWeek="${wi.dayOfWeek}" (expected ${CLOSEOUT_NEW_WEEK_OF}/${CLOSEOUT_NEW_DAY_OF_WEEK}).`
+      );
     }
   }
-  ctx.log(`  ✓ 6 brand-revision WIs completed @ ${WI_NEW_END_DATE} (weekOf=${CLOSEOUT_NEW_WEEK_OF})`);
+  ctx.log(
+    `  ✓ 6 brand-revision WIs completed @ ${WI_NEW_END_DATE} (weekOf=${CLOSEOUT_NEW_WEEK_OF})`
+  );
 
-  const wr = allWis.find((w) => w.id.startsWith(RETAINER_CLOSEOUT_WIS.websiteRefresh.id));
+  const wr = allWis.find((w) =>
+    w.id.startsWith(RETAINER_CLOSEOUT_WIS.websiteRefresh.id)
+  );
   if (!wr || wr.status !== "completed" || wr.endDate !== WI_NEW_END_DATE) {
     throw new Error(`Verify: Website Refresh WI not closed correctly.`);
   }
-  if (wr.weekOf !== CLOSEOUT_NEW_WEEK_OF || wr.dayOfWeek !== CLOSEOUT_NEW_DAY_OF_WEEK) {
-    throw new Error(`Verify: Website Refresh WI weekOf="${wr.weekOf}" dayOfWeek="${wr.dayOfWeek}".`);
+  if (
+    wr.weekOf !== CLOSEOUT_NEW_WEEK_OF ||
+    wr.dayOfWeek !== CLOSEOUT_NEW_DAY_OF_WEEK
+  ) {
+    throw new Error(
+      `Verify: Website Refresh WI weekOf="${wr.weekOf}" dayOfWeek="${wr.dayOfWeek}".`
+    );
   }
-  ctx.log(`  ✓ Website Refresh WI completed @ ${WI_NEW_END_DATE} (weekOf=${CLOSEOUT_NEW_WEEK_OF})`);
+  ctx.log(
+    `  ✓ Website Refresh WI completed @ ${WI_NEW_END_DATE} (weekOf=${CLOSEOUT_NEW_WEEK_OF})`
+  );
 
-  const ct = allWis.find((w) => w.id.startsWith(RETAINER_CLOSEOUT_WIS.civTiming.id));
+  const ct = allWis.find((w) =>
+    w.id.startsWith(RETAINER_CLOSEOUT_WIS.civTiming.id)
+  );
   if (!ct || ct.status !== "completed") {
     throw new Error(`Verify: Civ timing WI not closed.`);
   }
@@ -743,7 +929,9 @@ async function verify(ctx: MigrationContext): Promise<void> {
   const kaci = allWis.find((w) => w.id.startsWith(KACI_WI.id));
   if (!kaci) throw new Error(`Verify: Kaci WI disappeared.`);
   if (kaci.title !== KACI_WI.newTitle) {
-    throw new Error(`Verify: Kaci WI title="${kaci.title}", expected "${KACI_WI.newTitle}".`);
+    throw new Error(
+      `Verify: Kaci WI title="${kaci.title}", expected "${KACI_WI.newTitle}".`
+    );
   }
   if (kaci.notes !== KACI_WI.newNotes) {
     throw new Error(`Verify: Kaci WI notes did not update.`);
@@ -758,14 +946,18 @@ async function verify(ctx: MigrationContext): Promise<void> {
   // 7 new WIs present
   for (const wi of NEW_WIS) {
     const found = allWis.find(
-      (w) => w.title === wi.title && w.projectId === L1_RETAINER_ID,
+      (w) => w.title === wi.title && w.projectId === L1_RETAINER_ID
     );
     if (!found) throw new Error(`Verify: new WI "${wi.title}" not found.`);
     if (found.startDate !== wi.startDate || found.endDate !== wi.endDate) {
-      throw new Error(`Verify: new WI "${wi.title}" dates wrong (got ${found.startDate}→${found.endDate}, expected ${wi.startDate}→${wi.endDate}).`);
+      throw new Error(
+        `Verify: new WI "${wi.title}" dates wrong (got ${found.startDate}→${found.endDate}, expected ${wi.startDate}→${wi.endDate}).`
+      );
     }
     if (found.status !== wi.status) {
-      throw new Error(`Verify: new WI "${wi.title}" status="${found.status}", expected "${wi.status}".`);
+      throw new Error(
+        `Verify: new WI "${wi.title}" status="${found.status}", expected "${wi.status}".`
+      );
     }
   }
   ctx.log(`  ✓ 7 new WIs created under retainer L1`);
