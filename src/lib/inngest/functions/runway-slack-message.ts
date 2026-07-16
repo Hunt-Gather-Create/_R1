@@ -14,6 +14,12 @@ export const processRunwaySlackMessage = inngest.createFunction(
     name: "Runway Slack Message",
     retries: 2,
     concurrency: { limit: 3 },
+    // Issue #35: Slack `messageTs` is unique per user message. Dedupe at the
+    // queue layer so a webhook retry, network double-dispatch, or an Inngest
+    // retry after partial success does not re-run the AI turn and post a
+    // duplicate `chat.postMessage`. Second invocation with the same
+    // messageTs becomes a queue-level no-op.
+    idempotency: "event.data.messageTs",
   },
   { event: "runway/slack.message" },
   async ({ event, step }) => {

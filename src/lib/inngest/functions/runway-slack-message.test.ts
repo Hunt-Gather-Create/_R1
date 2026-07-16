@@ -48,6 +48,15 @@ describe("processRunwaySlackMessage", () => {
     expect(event).toEqual({ event: "runway/slack.message" });
   });
 
+  it("dedupes retries at the queue layer via messageTs idempotency key (#35)", () => {
+    // Function-level `idempotency` is an expression evaluated against
+    // `event.data` at dispatch time. Slack's messageTs is unique per user
+    // message, so a second dispatch with the same key becomes a no-op
+    // instead of re-running the AI turn + re-posting `chat.postMessage`.
+    const [config] = mockCreateFunction.mock.calls[0];
+    expect(config.idempotency).toBe("event.data.messageTs");
+  });
+
   it("calls handleDirectMessage with event data inside step.run", async () => {
     // handler captured in beforeAll
     const eventData = {
