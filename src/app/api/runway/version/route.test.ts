@@ -3,16 +3,33 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock the runway DB. The handler chains `.select(...).from(updates)` so
 // we expose a select() that returns an object with `.from()` returning a
 // thenable resolving to a [{ latest: Date | null }] row shape.
-const mockSelect = vi.fn();
+//
+// Also mock @/lib/auth.getCurrentUser to control the #52 auth gate.
+// Shared state lives in vi.hoisted() so factories can reach it.
+const { mockSelect, mockGetCurrentUser } = vi.hoisted(() => ({
+  mockSelect: vi.fn(),
+  mockGetCurrentUser:
+    vi.fn<() => Promise<{ id: string; email: string } | null>>(),
+}));
 
 vi.mock("@/lib/db/runway", () => ({
   getRunwayDb: () => ({ select: mockSelect }),
+}));
+
+vi.mock("@/lib/auth", () => ({
+  getCurrentUser: () => mockGetCurrentUser(),
 }));
 
 describe("GET /api/runway/version", () => {
   beforeEach(() => {
     vi.resetModules();
     mockSelect.mockReset();
+    mockGetCurrentUser.mockReset();
+    // Default: authenticated. Tests that need unauth override explicitly.
+    mockGetCurrentUser.mockResolvedValue({
+      id: "user_test",
+      email: "jason@civilization.agency",
+    });
   });
 
   it("returns the latest audit timestamp as ISO string when rows exist", async () => {
@@ -70,5 +87,18 @@ describe("GET /api/runway/version", () => {
     const mod = await import("./route");
 
     expect((mod as { dynamic?: string }).dynamic).toBe("force-dynamic");
+  });
+
+  it("returns 401 with no body when unauthenticated (#52)", async () => {
+    mockGetCurrentUser.mockReset();
+    mockGetCurrentUser.mockResolvedValueOnce(null);
+
+    const { GET } = await import("./route");
+    const res = await GET();
+
+    expect(res.status).toBe(401);
+    // Runway DB must never be touched when auth fails — no leak of
+    // "endpoint exists" via error-message-vs-null differences either.
+    expect(mockSelect).not.toHaveBeenCalled();
   });
 });
