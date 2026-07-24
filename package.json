@@ -22,6 +22,7 @@
     "runway:publish-updates": "npx tsx scripts/runway-publish-updates.ts",
     "runway:check-orphans": "npx tsx scripts/runway-migrations/check-orphan-parent-project-ids.ts",
     "runway:gantt": "npx tsx scripts/runway-gantt.tsx",
+    "runway:sheet-sync": "npx tsx scripts/runway-sheet-sync.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "dev:inngest": "NPM_CONFIG_CACHE=$(mktemp -d) npx --yes --ignore-scripts=false inngest-cli@latest dev",
