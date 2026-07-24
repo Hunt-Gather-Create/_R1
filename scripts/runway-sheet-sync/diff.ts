@@ -152,6 +152,7 @@ export function diffSheet(
           leaf,
           weekItemId: wi.id,
           weekItemTitle: wi.title,
+          weekItemWeekOf: wi.weekOf ?? null,
           matchScore: 1,
           deltas,
           note: "ledger-banked match",
@@ -164,11 +165,18 @@ export function diffSheet(
       );
     }
 
-    // Fuzzy match within the resolved L1's WIs first, then client-wide.
-    const pool = l1Wis.length > 0 ? l1Wis : clientWis;
+    // Fuzzy match ONLY within the resolved L1's WIs — a client-wide pool
+    // would let a leaf silently adopt a WI under a different L1 (§2.7/§2.9
+    // never-silently-adopt hazard). Client-wide fuzzy is used only when no
+    // L1 resolved at all; exact cross-L1 hits still route to the collision
+    // branch below.
+    const pool = l1.resolved ? l1Wis : clientWis;
     let best: { wi: RunwayClientBundle["weekItems"][number]; score: number } | null = null;
     for (const wi of pool) {
       if (matchedWiIds.has(wi.id)) continue;
+      // Matching deliberately uses the ORIGINAL title, not resolvedTitle —
+      // the disambiguation suffix exists only to keep future CREATES from
+      // colliding; prod WIs were never created with it.
       const score = sorensenDice(normalizeTitle(leaf.title), normalizeTitle(wi.title));
       if (best === null || score > best.score) best = { wi, score };
     }
@@ -183,6 +191,7 @@ export function diffSheet(
         leaf,
         weekItemId: best.wi.id,
         weekItemTitle: best.wi.title,
+        weekItemWeekOf: best.wi.weekOf ?? null,
         matchScore: Number(best.score.toFixed(3)),
         deltas,
       });

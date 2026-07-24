@@ -135,4 +135,16 @@ describe("disambiguateTitles (§2.7 create-side dedupe guard)", () => {
     expect(tasks[0].resolvedTitle).toBe("QA [row 5]");
     expect(tasks[1].resolvedTitle).toBe("QA [row 9]");
   });
+
+  it("falls back to row number when duplicates share the SAME section (still-colliding suffix)", () => {
+    const tasks = [
+      leaf({ rowNumber: 5, title: "QA", resolvedTitle: "QA", section: "Dev Sprint" }),
+      leaf({ rowNumber: 9, title: "QA", resolvedTitle: "QA", section: "Dev Sprint" }),
+    ];
+    disambiguateTitles(tasks);
+    expect(tasks[0].resolvedTitle).toBe("QA [row 5]");
+    expect(tasks[1].resolvedTitle).toBe("QA [row 9]");
+    // resolvedTitles must be globally unique or createWeekItem silently dedupes
+    expect(new Set(tasks.map((t) => t.resolvedTitle)).size).toBe(2);
+  });
 });

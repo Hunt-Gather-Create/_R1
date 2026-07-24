@@ -3,6 +3,9 @@
  */
 import { eq } from "drizzle-orm";
 import { clients, projects, weekItems } from "../../src/lib/db/runway-schema";
+import type { createRunwayDb } from "../lib/run-script";
+
+type RunwayDb = ReturnType<typeof createRunwayDb>["db"];
 
 export interface RunwayClientBundle {
   client: { id: string; slug: string; name: string };
@@ -26,10 +29,7 @@ export interface RunwayClientBundle {
   }[];
 }
 
-// drizzle db instance type from createRunwayDb — kept loose; scripts are the
-// only consumer and the queries below are the entire surface.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function readClientBundle(db: any, slug: string): Promise<RunwayClientBundle> {
+export async function readClientBundle(db: RunwayDb, slug: string): Promise<RunwayClientBundle> {
   const clientRows = await db
     .select({ id: clients.id, slug: clients.slug, name: clients.name })
     .from(clients)

@@ -41,34 +41,40 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
     if (rd.disposition === "missing-in-runway") {
       const statusValid = (WEEK_ITEM_STATUSES as readonly string[]).includes(leaf.derivedStatus);
       const categoryValid = (WEEK_ITEM_CATEGORIES as readonly string[]).includes(leaf.category);
+      // createWeekItem rejects when no weekOf is derivable — unparseable
+      // sheet dates make this payload unapplyable as-is, so review-gate it.
+      const datesMissing = leaf.weekOf === null;
       payloads.push({
         op: "createWeekItem",
         params: {
           clientSlug: diff.config.clientSlug,
           projectName: diff.l1.projectName ?? diff.config.label,
           title: leaf.resolvedTitle,
-          startDate: leaf.startDate,
-          endDate: leaf.endDate,
-          weekOf: leaf.weekOf,
+          startDate: leaf.startDate ?? undefined,
+          endDate: leaf.endDate ?? undefined,
+          weekOf: leaf.weekOf ?? undefined,
           status: leaf.derivedStatus,
           category: leaf.category,
           notes: leaf.notes,
-          sortOrder: leaf.sortOrder,
           updatedBy,
         },
         source,
         applyOrder: order++,
-        requiresReview: rd.collision === true,
+        requiresReview: rd.collision === true || datesMissing,
         preflight: {
           notesLength: leaf.notes.length,
           notesTruncated: leaf.notesTruncated,
           titleDisambiguated: leaf.resolvedTitle !== leaf.title,
+          datesMissing,
           statusValid,
           categoryValid,
         },
+        advisory: { sortOrder: leaf.sortOrder },
         reason: rd.collision
           ? `mid-week collision — ${rd.note ?? "flagged"}`
-          : "sheet leaf task has no Runway counterpart",
+          : datesMissing
+            ? "sheet leaf task has no Runway counterpart (dates unparseable — resolve before apply)"
+            : "sheet leaf task has no Runway counterpart",
       });
       continue;
     }
@@ -78,11 +84,12 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
         if (delta.action === "write") {
           payloads.push({
             op: "updateWeekItemField",
+            // EXACTLY UpdateWeekItemFieldParams — the helper looks the row
+            // up by (weekOf, weekItemTitle) against the RUNWAY row, so the
+            // matched WI's weekOf + title are used, never the sheet's.
             params: {
-              clientSlug: diff.config.clientSlug,
-              weekItemId: rd.weekItemId,
-              title: rd.weekItemTitle,
-              weekOf: rd.leaf.weekOf,
+              weekOf: rd.weekItemWeekOf,
+              weekItemTitle: rd.weekItemTitle,
               field: delta.field,
               newValue: delta.sheet,
               updatedBy,
@@ -90,8 +97,9 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
             source,
             // Delta order already encodes FORWARD endDate-first (§2.8).
             applyOrder: order++,
-            requiresReview: false,
+            requiresReview: rd.weekItemWeekOf == null,
             preflight: { statusValid: true, categoryValid: true },
+            advisory: { weekItemId: rd.weekItemId, clientSlug: diff.config.clientSlug },
             reason: `field drift: ${delta.field} runway=${delta.runway ?? "null"} sheet=${delta.sheet ?? "null"}`,
           });
         } else {
@@ -111,7 +119,9 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
             reason:
               delta.action === "protected-no-write"
                 ? `Runway status "${delta.runway}" is human-set (§2.4) — sync never overwrites`
-                : `completed↔unchecked divergence — editorial call for AM (§2.4)`,
+                : delta.runway === "canceled"
+                  ? `Runway status "canceled" vs sheet "${delta.sheet}" — terminal-state divergence, editorial call for AM (§2.4)`
+                  : `completed↔unchecked divergence — editorial call for AM (§2.4)`,
           });
         }
       }

@@ -91,6 +91,19 @@ export function disambiguateTitles(tasks: LeafTask[]): number {
       t.resolvedTitle = `${t.title} [${tag}]`;
       disambiguated++;
     }
+    // Duplicates sharing a section produce identical suffixes and would
+    // still collide on the (title, weekOf) idempotency key — fall back to
+    // the always-unique row number for any group still non-unique.
+    const stillColliding = new Map<string, LeafTask[]>();
+    for (const t of list) {
+      const arr = stillColliding.get(t.resolvedTitle) ?? [];
+      arr.push(t);
+      stillColliding.set(t.resolvedTitle, arr);
+    }
+    for (const dupes of stillColliding.values()) {
+      if (dupes.length < 2) continue;
+      for (const t of dupes) t.resolvedTitle = `${t.title} [row ${t.rowNumber}]`;
+    }
   }
   return disambiguated;
 }

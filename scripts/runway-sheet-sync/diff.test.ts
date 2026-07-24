@@ -157,6 +157,15 @@ describe("diffSheet", () => {
     expect(diff.counts["runway-only-orphan"]).toBe(1);
   });
 
+  it("never fuzzy-adopts a WI under a different L1 when the sheet's L1 is resolved", () => {
+    // Only near-identical title lives under p_other; pool must stay L1-scoped.
+    const tasks = [leaf({ title: "Logo pass v2", resolvedTitle: "Logo pass v2", taskNo: "7.1" })];
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const rd = diff.rowDiffs.find((r) => r.leaf)!;
+    expect(rd.disposition).toBe("missing-in-runway");
+    expect(rd.weekItemId).toBeUndefined();
+  });
+
   it("skips orphan analysis for unfilled templates (zero leaf tasks)", () => {
     const diff = diffSheet(parsedWith([]), BUNDLE, emptyLedger(), "run-1");
     expect(diff.orphans).toHaveLength(0);
@@ -237,6 +246,48 @@ describe("buildPayloads", () => {
     expect(ops).toContain("flag-for-review"); // blocked status protected
     const flagged = payloads.find((p) => p.op === "flag-for-review")!;
     expect(flagged.requiresReview).toBe(true);
+  });
+
+  it("shapes update params EXACTLY as UpdateWeekItemFieldParams with the RUNWAY row's weekOf", () => {
+    // wi_comps lives in weekOf 2026-06-01; sheet task drifted to next week.
+    const tasks = [
+      leaf({ rowNumber: 14, taskNo: "2.1", title: "Comps", resolvedTitle: "Comps", startDate: "2026-06-09", endDate: "2026-06-12", weekOf: "2026-06-08", completed: true, derivedStatus: "completed" }),
+    ];
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const update = buildPayloads(diff, "run-1").find((p) => p.op === "updateWeekItemField")!;
+    // Helper looks up by (weekOf, weekItemTitle) against the Runway row.
+    expect(update.params.weekOf).toBe("2026-06-01"); // NOT the sheet's 2026-06-08
+    expect(update.params.weekItemTitle).toBe("Comps");
+    expect(Object.keys(update.params).sort()).toEqual(["field", "newValue", "updatedBy", "weekItemTitle", "weekOf"]);
+    expect(update.advisory).toMatchObject({ weekItemId: "wi_comps" });
+  });
+
+  it("review-gates create payloads with unparseable dates (no weekOf derivable)", () => {
+    const tasks = [leaf({ title: "Dateless task", resolvedTitle: "Dateless task", startDate: null, endDate: null, weekOf: null })];
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const create = buildPayloads(diff, "run-1").find((p) => p.op === "createWeekItem")!;
+    expect(create.requiresReview).toBe(true);
+    expect(create.preflight.datesMissing).toBe(true);
+    expect(create.reason).toContain("dates unparseable");
+  });
+
+  it("keeps sortOrder advisory, never a createWeekItem param", () => {
+    const tasks = [leaf({ title: "Brand new task", resolvedTitle: "Brand new task" })];
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const create = buildPayloads(diff, "run-1").find((p) => p.op === "createWeekItem")!;
+    expect(create.params.sortOrder).toBeUndefined();
+    expect(create.advisory).toMatchObject({ sortOrder: 0 });
+  });
+
+  it("brands canceled-status divergence with a terminal-state reason", () => {
+    const canceledBundle: RunwayClientBundle = {
+      ...BUNDLE,
+      weekItems: [{ id: "wi_c", projectId: "p_widget", title: "Kickoff call", weekOf: "2026-06-01", startDate: "2026-06-01", endDate: "2026-06-01", status: "canceled", category: null, notes: null }],
+    };
+    const tasks = [leaf({ completed: true, derivedStatus: "completed" })];
+    const diff = diffSheet(parsedWith(tasks), canceledBundle, emptyLedger(), "run-1");
+    const flag = buildPayloads(diff, "run-1").find((p) => p.op === "flag-for-review")!;
+    expect(flag.reason).toContain("terminal-state divergence");
   });
 });
 

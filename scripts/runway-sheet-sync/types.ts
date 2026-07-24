@@ -139,6 +139,8 @@ export interface RowDiff {
   leaf?: LeafTask;
   weekItemId?: string;
   weekItemTitle?: string;
+  /** The matched Runway WI's weekOf — update payloads must look up by THIS, not the sheet week. */
+  weekItemWeekOf?: string | null;
   matchScore?: number;
   deltas?: FieldDelta[];
   /** Mid-week collision: WI matches (title, weekOf, client) but under another L1 / not in ledger. */
@@ -149,7 +151,7 @@ export interface RowDiff {
 /** Self-contained ready-to-apply operation (Q1.14 (a) — no downstream re-encoding). */
 export interface SyncPayload {
   op: "createWeekItem" | "updateWeekItemField" | "addProject" | "flag-for-review";
-  /** Params shaped for the operations.ts barrel helper named in `op`. */
+  /** Params shaped EXACTLY for the operations.ts barrel helper named in `op` — consumed as-is. */
   params: Record<string, unknown>;
   source: { sheetId: string; rowNumber: number; taskNo: string | null };
   /** Ordering index — date writes are FORWARD endDate-first encoded per §2.8. */
@@ -159,9 +161,13 @@ export interface SyncPayload {
     notesLength?: number;
     notesTruncated?: boolean;
     titleDisambiguated?: boolean;
+    /** True when start/end/weekOf could not be derived — createWeekItem would reject. */
+    datesMissing?: boolean;
     statusValid: boolean;
     categoryValid: boolean;
   };
+  /** Non-param context (verification WI id, advisory sortOrder) — NOT passed to the helper. */
+  advisory?: Record<string, unknown>;
   reason: string;
 }
 

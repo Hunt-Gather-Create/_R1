@@ -45,8 +45,7 @@ export function computeRunId(sheetId: string, fixture: SheetFixture): string {
 }
 
 export async function runSheet(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  db: any,
+  db: ReturnType<typeof createRunwayDb>["db"],
   sheetId: string,
   fixturesDir: string,
   outDir: string
@@ -119,7 +118,7 @@ async function main(): Promise<void> {
     );
   }
 
-  const summaries = [];
+  const summaries: Record<string, unknown>[] = [];
   for (const t of targets) {
     console.error(`── diffing ${t.label} (${t.sheetId.slice(0, 8)}…)`);
     summaries.push(await runSheet(db, t.sheetId, fixturesDir, outDir));
