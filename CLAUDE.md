@@ -37,6 +37,7 @@ pnpm runway:push      # Push schema to Turso
 pnpm runway:studio    # Open Drizzle Studio
 pnpm runway:pull      # Pull prod data to local
 pnpm runway:gantt     # Render Gantt CLI
+pnpm runway:sheet-sync # Sheet→Runway diff report (read-only, Phase 1a; fixtures via google-api skill)
 ```
 
 ## Working agreements
