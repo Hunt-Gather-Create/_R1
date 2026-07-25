@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently --raw \"next dev\" \"pnpm dev:warm:wait\"",
-    "build": "node scripts/build-with-migrations.mjs",
+    "build": "node scripts/runway-schema-push.mjs && node scripts/build-with-migrations.mjs",
     "build:next": "next build",
     "start": "next start",
     "lint": "eslint",

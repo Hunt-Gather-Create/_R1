@@ -57,6 +57,12 @@ describe("shouldRunSchemaPush env matrix", () => {
     ).toBe(false);
   });
 
+  it("missing URL beats RUN_DB_MIGRATIONS force", () => {
+    const d = shouldRunSchemaPush({ VERCEL_ENV: "production", RUN_DB_MIGRATIONS: "true" });
+    expect(d.run).toBe(false);
+    expect(d.reason).toContain("RUNWAY_DATABASE_URL");
+  });
+
   it("accepts the documented truthy spellings for the flag overrides", () => {
     for (const value of ["1", "true", "YES", "on"]) {
       expect(
