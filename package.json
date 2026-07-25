@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently --raw \"next dev\" \"pnpm dev:warm:wait\"",
-    "build": "node scripts/build-with-migrations.mjs",
+    "build": "node scripts/runway-schema-push.mjs && node scripts/build-with-migrations.mjs",
     "build:next": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -15,6 +15,7 @@
     "db:studio": "drizzle-kit studio",
     "runway:generate": "export $(grep -v '^#' .env.local | grep RUNWAY | xargs) && drizzle-kit generate --config drizzle-runway.config.ts",
     "runway:push": "export $(grep -v '^#' .env.local | grep RUNWAY | xargs) && drizzle-kit push --config drizzle-runway.config.ts",
+    "runway:schema-push": "node scripts/runway-schema-push.mjs",
     "runway:studio": "export $(grep -v '^#' .env.local | grep RUNWAY | xargs) && drizzle-kit studio --config drizzle-runway.config.ts",
     "runway:seed": "npx tsx scripts/seed-runway.ts",
     "runway:pull": "npx tsx scripts/runway-pull.ts",

@@ -33,7 +33,8 @@ pnpm runway:smoke     # Playwright smoke tests against runway.startround1.com
 
 # Runway database (separate Turso instance, requires RUNWAY_DATABASE_URL in .env.local)
 pnpm runway:generate  # Generate migrations
-pnpm runway:push      # Push schema to Turso
+pnpm runway:push      # Push schema to Turso (dev flow, sources .env.local)
+pnpm runway:schema-push # Deploy-time schema push (prod-gated via VERCEL_ENV; runs first in pnpm build)
 pnpm runway:studio    # Open Drizzle Studio
 pnpm runway:pull      # Pull prod data to local
 pnpm runway:gantt     # Render Gantt CLI
