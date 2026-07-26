@@ -79,8 +79,13 @@ export {
   formatModalUpdatedBy,
   NOTES_MAX_LEN_L1,
   NOTES_MAX_LEN_L2,
+  NOTES_MAX_LEN_L3,
   INTERCEPT_ALLOWLIST,
   INTERCEPT_EXCLUDED,
+  // 4-level hierarchy (2026-07-26): L3 section field constants
+  SECTION_FIELDS,
+  SECTION_FIELD_TO_COLUMN,
+  SECTION_ACTIONABLE_FIELDS,
 } from "./operations-utils";
 
 export type {
@@ -88,6 +93,8 @@ export type {
   OperationResult,
   ProjectField,
   WeekItemField,
+  SectionField,
+  SectionActionableField,
   PipelineItemField,
   ClientField,
   TeamMemberField,
@@ -276,6 +283,50 @@ export type {
 export {
   undoLastChange,
 } from "./operations-writes-undo";
+
+// ── Section operations (L3, 4-level hierarchy 2026-07-26) ──
+export {
+  getSectionsForProject,
+  getSectionById,
+  findSectionByFuzzyTitle,
+  deriveSectionChildDateRange,
+  getWeekItemsForSection,
+} from "./operations-reads-sections";
+
+export type {
+  SectionRow,
+} from "./operations-reads-sections";
+
+export {
+  createSection,
+  updateSectionField,
+  deleteSection,
+  reparentWeekItemToSection,
+  reconcileSectionFromSheet,
+} from "./operations-writes-section";
+
+export type {
+  CreateSectionParams,
+  UpdateSectionFieldParams,
+  DeleteSectionParams,
+  ReparentWeekItemToSectionParams,
+  ReconcileSectionFromSheetParams,
+} from "./operations-writes-section";
+
+// ── Sheet-sync ledger repository (plan §4.6 + §9.4 adapter) ──
+export {
+  getSheetSyncLedger,
+  LEDGER_ENTITY_TYPES,
+  LEDGER_STATES,
+} from "./sheet-sync-ledger-repo";
+
+export type {
+  SheetSyncLedgerRepo,
+  LedgerEntry,
+  LedgerEntityType,
+  LedgerState,
+  RegisterLedgerEntryParams,
+} from "./sheet-sync-ledger-repo";
 
 // ── Team member write operations ───────────────────────
 export {

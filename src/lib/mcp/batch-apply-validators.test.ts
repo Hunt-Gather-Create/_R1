@@ -119,7 +119,7 @@ describe("batch_apply cannot bypass shared validators (P1-1)", () => {
     // future refactor that changes the error string must also update
     // this test (correct — test SHOULD detect a contract change).
     expect(r0.error).toBe(
-      `engagementType must be one of retainer, project or '' (clear); got 'retainer-v2'.`,
+      `engagementType must be one of retainer, project, one-off or '' (clear); got 'retainer-v2'.`,
     );
 
     // Confirm no row mutation actually happened.

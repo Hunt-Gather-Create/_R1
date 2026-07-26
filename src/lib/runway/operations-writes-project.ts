@@ -6,8 +6,9 @@
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
-import { projects, weekItems, updates } from "@/lib/db/runway-schema";
-import { eq } from "drizzle-orm";
+import { projects, sections, weekItems, updates } from "@/lib/db/runway-schema";
+import { eq, inArray } from "drizzle-orm";
+import { getSheetSyncLedger } from "./sheet-sync-ledger-repo";
 import { getLinkedDeadlineItems } from "./operations-reads-week";
 import { recomputeProjectDatesWith } from "./operations-writes-week";
 import {
@@ -107,11 +108,38 @@ export async function deleteProject(
 
   // Unlink week items, null out audit FK references, then delete project.
   // Audit records are preserved (projectId nulled, clientId + summary intact).
+  //
+  // 4-level hierarchy: the project's L3 sections go in the same transaction —
+  // demote their tasks (sectionId NULL alongside the projectId NULL, keeping
+  // invariant 1: no task may point at a section without its project), flip
+  // section ledger rows to wi-deleted, then delete the section rows (they
+  // carry a real FK to projects, so they must go before the project row).
   await db.transaction(async (tx) => {
+    const projectSections = await tx
+      .select({ id: sections.id })
+      .from(sections)
+      .where(eq(sections.projectId, project.id));
+    const sectionIds = projectSections.map((s) => s.id);
+
     await tx
       .update(weekItems)
-      .set({ projectId: null, updatedAt: new Date() })
+      .set({ projectId: null, sectionId: null, updatedAt: new Date() })
       .where(eq(weekItems.projectId, project.id));
+
+    if (sectionIds.length > 0) {
+      // Defensive sweep: any task pointing at these sections without the
+      // project link (drifted data) still gets demoted.
+      await tx
+        .update(weekItems)
+        .set({ sectionId: null, updatedAt: new Date() })
+        .where(inArray(weekItems.sectionId, sectionIds));
+
+      const ledger = getSheetSyncLedger(tx);
+      for (const sectionId of sectionIds) {
+        await ledger.markStateByRunwayId(sectionId, "wi-deleted");
+      }
+      await tx.delete(sections).where(eq(sections.projectId, project.id));
+    }
 
     await tx
       .update(updates)

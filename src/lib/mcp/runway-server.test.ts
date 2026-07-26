@@ -108,6 +108,12 @@ describe("createRunwayMcpServer", () => {
       "create_week_item",
       "update_week_item",
       "delete_week_item",
+      // Section tools (L3, 4-level hierarchy)
+      "get_sections",
+      "create_section",
+      "update_section",
+      "delete_section",
+      "reparent_week_item_to_section",
       // Mutation tools — pipeline
       "create_pipeline_item",
       "update_pipeline_item",

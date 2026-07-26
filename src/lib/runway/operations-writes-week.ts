@@ -6,8 +6,10 @@
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
-import { projects, updates, weekItems } from "@/lib/db/runway-schema";
+import { projects, sections, updates, weekItems } from "@/lib/db/runway-schema";
 import { and, eq, sql } from "drizzle-orm";
+import { computeNextTaskNo, parseTaskNo } from "./task-no";
+import { getSheetSyncLedger } from "./sheet-sync-ledger-repo";
 import { getCurrentBatchId } from "./runway-als";
 import {
   WEEK_ITEM_FIELDS,
@@ -316,6 +318,20 @@ export interface CreateWeekItemParams {
   endDate?: string;
   /** JSON-serialized array of week_item ids this item is blocked by, or null. */
   blockedBy?: string;
+  /**
+   * 4-level hierarchy (2026-07-26): optional parent L3 section. When set,
+   * invariant 1 applies — projectId/clientId are taken FROM the section's
+   * project, overriding any clientSlug/projectName resolution, so a task can
+   * never point at a section belonging to a different project.
+   */
+  sectionId?: string;
+  /**
+   * Sheet-sourced tasks pass their sheet task number (e.g. "3.2") explicitly.
+   * When omitted AND sectionId is set AND numbered siblings exist, the helper
+   * auto-appends (max trailing + 1, numeric parse) and registers the minted
+   * number in the sheet-sync ledger with state='runway-born' (plan §4.3).
+   */
+  taskNo?: string;
   updatedBy: string;
   /**
    * Wave 0b §A4: optional callback fired on successful insert. Wave 14
@@ -344,6 +360,8 @@ export async function createWeekItem(
     startDate,
     endDate,
     blockedBy,
+    sectionId,
+    taskNo: explicitTaskNo,
     updatedBy,
     auditObserver,
     source,
@@ -417,6 +435,9 @@ export async function createWeekItem(
   // v4: when we know the parent L1 we may need its owner for inheritance.
   let resolvedProjectOwner: string | null = null;
 
+  // 4-level hierarchy: section-owner link in the inheritance chain (D5).
+  let resolvedSectionOwner: string | null = null;
+
   if (clientSlug) {
     const lookup = await getClientOrFail(clientSlug);
     if (!lookup.ok) return lookup;
@@ -433,18 +454,61 @@ export async function createWeekItem(
     }
   }
 
-  // v4 §L2 owner inheritance rule (runway-v4-convention.md):
-  // when the caller does not specify an owner, auto-populate from parent
-  // L1.owner and store it as an explicit value on the L2. If no parent L1
-  // or no L1 owner is known, leave owner null — matches pre-v4 behavior.
-  const resolvedOwner = owner ?? resolvedProjectOwner ?? null;
+  // 4-level hierarchy invariant 1 (plan §4.2): when a section is given, the
+  // task's projectId/clientId come FROM the section's project — never from a
+  // conflicting clientSlug/projectName resolution.
+  if (sectionId) {
+    const sectionRows = await db
+      .select()
+      .from(sections)
+      .where(eq(sections.id, sectionId))
+      .limit(1);
+    const section = sectionRows[0];
+    if (!section) {
+      return { ok: false, error: `Section '${sectionId}' not found.` };
+    }
+    if (projectId && projectId !== section.projectId) {
+      return {
+        ok: false,
+        error: `Section '${section.title}' belongs to a different project than '${projectName}'. A task's section and project must match (invariant 1).`,
+      };
+    }
+    projectId = section.projectId;
+    resolvedSectionOwner = section.owner ?? null;
+    const projectRows = await db
+      .select({ clientId: projects.clientId, owner: projects.owner })
+      .from(projects)
+      .where(eq(projects.id, section.projectId))
+      .limit(1);
+    const sectionProject = projectRows[0];
+    if (sectionProject) {
+      if (clientId && clientId !== sectionProject.clientId) {
+        return {
+          ok: false,
+          error: `Section '${section.title}' belongs to a different client than '${clientSlug}'. A task's section and client must match (invariant 1).`,
+        };
+      }
+      clientId = sectionProject.clientId;
+      resolvedProjectOwner = resolvedProjectOwner ?? sectionProject.owner ?? null;
+      if (!clientName) clientName = await getClientNameById(clientId);
+    }
+  }
 
+  // Owner-inheritance chain (plan §4.10, D5): explicit owner wins, then the
+  // section's owner (actionable sections), then the parent L1's owner.
+  const resolvedOwner = owner ?? resolvedSectionOwner ?? resolvedProjectOwner ?? null;
+
+  // sectionId joins the key (4-level hierarchy): same-titled tasks in the
+  // same week under DIFFERENT sections are distinct creates — without this,
+  // per-section boilerplate titles ("Client review") silently dedupe, the
+  // exact failure mode of gotcha_createwi_idempotency_dedupes_across_l1s.
   const idemKey = generateIdempotencyKey(
     "create-week-item",
     clientId ?? "none",
     title,
     weekOf,
-    updatedBy
+    updatedBy,
+    sectionId ?? "none"
   );
 
   const dup = await checkDuplicate(idemKey, {
@@ -463,14 +527,102 @@ export async function createWeekItem(
   // v4 (Chunk 5): normalize resources string on write so storage is
   // canonical (`->` over alt arrows, trimmed entries). `null` preserved.
   const normalizedResources = resources ? normalizeResourcesString(resources) : null;
+
+  // Explicit taskNo (sheet-sourced import path) is validated, not trusted:
+  // a numbered task must live in a section, and its number must not collide
+  // with a sibling — only MINTED numbers register in the ledger, so this
+  // sibling check is the whole duplicate guard for explicit numbers.
+  if (explicitTaskNo !== undefined) {
+    if (!sectionId) {
+      return {
+        ok: false,
+        error: "taskNo requires a sectionId — loose tasks are unnumbered until sheet reconciliation places them.",
+      };
+    }
+    const numberedSiblings = await db
+      .select({ taskNo: weekItems.taskNo })
+      .from(weekItems)
+      .where(eq(weekItems.sectionId, sectionId));
+    if (numberedSiblings.some((s) => s.taskNo === explicitTaskNo)) {
+      return {
+        ok: false,
+        error: `taskNo '${explicitTaskNo}' already exists in this section.`,
+      };
+    }
+  }
+
+  // taskNo auto-append (plan §4.3). Only fires when the caller did not pass
+  // an explicit taskNo AND the task lands in a section with at least one
+  // numbered sibling. Runway-born sections (no numbered siblings) yield null
+  // until sheet reconciliation places them (SP-2). Minted numbers register in
+  // the sheet-sync ledger with state='runway-born' (SP-1) so a later sheet
+  // version adding the same number surfaces as a digest collision instead of
+  // a silent duplicate. The section's engagementKey comes from the section's
+  // OWN ledger row — a section without one is Runway-born, so no mint.
+  let resolvedTaskNo: string | null = explicitTaskNo ?? null;
+  let mintedForLedger: { engagementKey: string; taskNo: string } | null = null;
+  if (explicitTaskNo === undefined && sectionId) {
+    const siblings = await db
+      .select({ taskNo: weekItems.taskNo })
+      .from(weekItems)
+      .where(eq(weekItems.sectionId, sectionId));
+    const siblingNos = siblings.map((s) => s.taskNo);
+    const candidate = computeNextTaskNo(siblingNos);
+    if (candidate) {
+      const ledger = getSheetSyncLedger(db);
+      const sectionLedgerRow = await ledger.findByRunwayId(sectionId);
+      if (sectionLedgerRow) {
+        // Gap-preservation must also survive deleting the CURRENT max:
+        // surviving siblings alone would re-mint the deleted number. Fold in
+        // the engagement's ledger task keys (all lifecycle states, incl.
+        // wi-deleted) that share the candidate's prefix, so max+1 continues
+        // past every number that was ever handed out.
+        const prefix = parseTaskNo(candidate)!.prefix;
+        const engagementEntries = await ledger.listForEngagement(
+          sectionLedgerRow.engagementKey,
+          "task",
+        );
+        const ledgerKeysSamePrefix = engagementEntries
+          .map((e) => e.sheetKey)
+          .filter((k) => parseTaskNo(k)?.prefix === prefix);
+        resolvedTaskNo = computeNextTaskNo([...siblingNos, ...ledgerKeysSamePrefix]);
+        if (resolvedTaskNo) {
+          mintedForLedger = {
+            engagementKey: sectionLedgerRow.engagementKey,
+            taskNo: resolvedTaskNo,
+          };
+        }
+      }
+      // No section ledger row → section is Runway-born → taskNo stays null.
+    }
+  }
+
   // v4 (Chunk 5): wrap child insert + parent-date recompute in a single
   // transaction so a crash between the two cannot leave the parent's
-  // derived dates stale.
+  // derived dates stale. Ledger registration of a minted taskNo joins the
+  // same boundary so a crash cannot leave an unregistered mint (SP-1).
   await db.transaction(async (tx) => {
+    if (mintedForLedger) {
+      const reg = await getSheetSyncLedger(tx).register({
+        engagementKey: mintedForLedger.engagementKey,
+        entityType: "task",
+        sheetKey: mintedForLedger.taskNo,
+        runwayId: itemId,
+        state: "runway-born",
+        lastSeenTitle: title,
+      });
+      if (!reg.ok) {
+        // Collision: the sheet side already owns this number. Fall back to a
+        // null taskNo — reconciliation will place it — rather than duplicate.
+        resolvedTaskNo = null;
+      }
+    }
     await tx.insert(weekItems).values({
       id: itemId,
       clientId,
       projectId,
+      sectionId: sectionId ?? null,
+      taskNo: resolvedTaskNo,
       weekOf,
       dayOfWeek: dayOfWeek ?? null,
       date: date ?? null,
@@ -837,9 +989,14 @@ export async function deleteWeekItem(
   // back via `triggered_by_update_id`.
   const deleteAuditId = generateId();
 
-  // v4 (Chunk 5): atomic delete + parent-date recompute.
+  // v4 (Chunk 5): atomic delete + parent-date recompute. If the item has a
+  // sync-ledger row, flip it to state='wi-deleted' in the same boundary —
+  // deletion is gap-preserving (plan §4.3): the number is never reused, and
+  // the next reconcile surfaces the orphaned sheet row instead of
+  // re-importing a duplicate.
   await db.transaction(async (tx) => {
     await tx.delete(weekItems).where(eq(weekItems.id, item.id));
+    await getSheetSyncLedger(tx).markStateByRunwayId(item.id, "wi-deleted");
     if (parentProjectId) {
       await recomputeProjectDatesWith(tx, parentProjectId, {
         updatedBy,
@@ -938,6 +1095,22 @@ export async function linkWeekItemToProject(
   // either parent project (old + new) link back via `triggered_by_update_id`.
   const reparentAuditId = generateId();
 
+  // 4-level hierarchy invariant 1: a task's section must belong to its
+  // project. If this link moves the task to a project its current section
+  // does NOT belong to, the section link (and the sheet-placement taskNo
+  // that came with it) cannot survive the move — clear both in the same
+  // transaction and flag the task's ledger row so the next reconcile
+  // surfaces the displaced sheet row, mirroring reparentWeekItemToSection.
+  let clearSectionLink = false;
+  if (item.sectionId != null) {
+    const sectionRows = await db
+      .select({ projectId: sections.projectId })
+      .from(sections)
+      .where(eq(sections.id, item.sectionId));
+    const sectionProjectId = sectionRows[0]?.projectId ?? null;
+    clearSectionLink = sectionProjectId !== projectId;
+  }
+
   // v4 (Chunk 5): reparent + recompute both parents atomically. A crash
   // between the three writes could leave one or both parents with stale
   // derived dates; the transaction closes that window.
@@ -955,8 +1128,18 @@ export async function linkWeekItemToProject(
   await db.transaction(async (tx) => {
     await tx
       .update(weekItems)
-      .set({ projectId, updatedAt: new Date() })
+      .set({
+        projectId,
+        ...(clearSectionLink ? { sectionId: null, taskNo: null } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(weekItems.id, weekItemId));
+
+    if (clearSectionLink) {
+      const ledger = getSheetSyncLedger(tx);
+      const entry = await ledger.findByRunwayId(weekItemId);
+      if (entry) await ledger.markStateByRunwayId(weekItemId, "flagged");
+    }
 
     const cascadeAuditContext: RecomputeAuditContext = {
       updatedBy,
@@ -977,7 +1160,17 @@ export async function linkWeekItemToProject(
     updateType: "week-reparent",
     previousValue: previousProjectId ?? "(none)",
     newValue: projectId,
-    summary: `Week item '${item.title}': re-parented from ${previousProjectId ?? "(none)"} to ${project.name}`,
+    summary: `Week item '${item.title}': re-parented from ${previousProjectId ?? "(none)"} to ${project.name}${
+      clearSectionLink ? " (section link + taskNo cleared — section belonged to the previous project)" : ""
+    }`,
+    ...(clearSectionLink
+      ? {
+          metadata: JSON.stringify({
+            demotedSectionId: item.sectionId,
+            clearedTaskNo: item.taskNo,
+          }),
+        }
+      : {}),
   });
 
   return {

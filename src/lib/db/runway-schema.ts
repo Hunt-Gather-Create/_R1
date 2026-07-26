@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // ============================================================
 // Runway Database Schema — Separate Turso DB
@@ -40,7 +40,11 @@ export const projects = sqliteTable("projects", {
   endDate: text("end_date"), // ISO date; derived from children, recomputed on L2 write
   contractStart: text("contract_start"), // ISO date; manual override for retainers
   contractEnd: text("contract_end"), // ISO date; manual override for retainers
-  engagementType: text("engagement_type"), // project, retainer, break-fix
+  // v4-schema-plan (2026-07-26): enum enforced at the application layer:
+  //   project | retainer | one-off   (default on create: project)
+  // Validator posture is tolerant-read / strict-write until the G2 backfill
+  // signs off; legacy free-text and NULL remain readable until then.
+  engagementType: text("engagement_type"),
   // v4 convention (2026-04-21 / PR #88 Chunk F): optional self-reference for
   // retainer wrappers. When set, this project is a deliverable L1 nested
   // under a retainer wrapper L1. Null for top-level projects. No DB-level
@@ -62,6 +66,26 @@ export const weekItems = sqliteTable("week_items", {
   id: text("id").primaryKey(),
   projectId: text("project_id").references(() => projects.id),
   clientId: text("client_id").references(() => clients.id),
+  // 4-level hierarchy (2026-07-26): L4 task's optional parent L3 section.
+  // NO DB-level FK constraint, per the parentProjectId convention below —
+  // FK constraints complicate drizzle-kit SQLite migrations and can force a
+  // full week_items table rebuild on push. Runtime invariants live in the
+  // write helpers: sectionId != null implies projectId == section.projectId
+  // (reparent rewrites both atomically); section delete demotes children to
+  // sectionId = NULL in the same transaction.
+  sectionId: text("section_id"),
+  // Sheet-sourced tasks carry their sheet task number (e.g. "3.2");
+  // Runway-born tasks under a numbered section auto-append (max+1, numeric
+  // parse of the trailing component, gap-preserving on delete). Null for
+  // loose tasks and for tasks in Runway-born sections awaiting sheet
+  // reconciliation. Minted numbers register in sheet_sync_ledger with
+  // state='runway-born' at creation.
+  taskNo: text("task_no"),
+  // L5 door (unified-hierarchy principle, plan §3.4): every level is potentially
+  // actionable AND container. week_items becomes container-capable when real
+  // subtask demand appears (revisit trigger: hierarchy-comparison doc, 2026-07-25).
+  // Until then, deliberately not shipped:
+  // parentTaskId: text("parent_task_id"),  // FK-free self-ref per parentProjectId convention
   dayOfWeek: text("day_of_week"), // monday, tuesday, etc.
   weekOf: text("week_of"), // ISO date of the Monday (e.g. "2026-04-06")
   date: text("date"), // exact date (e.g. "2026-04-07") — legacy; replaced by startDate in v4
@@ -93,6 +117,122 @@ export const weekItems = sqliteTable("week_items", {
   index("idx_week_items_week_of").on(table.weekOf),
 ]);
 
+// ============================================================
+// Sections — L3 of the 4-level hierarchy (2026-07-26)
+// ============================================================
+// L1 wrapper (projects) → L2 sub-project (projects.parentProjectId) →
+// L3 section (this table) → L4 task (week_items.sectionId).
+//
+// Unified-hierarchy principle (plan §3.4): every level is potentially
+// actionable AND potentially a container, data-driven not schema-driven.
+// A section with all 5 actionable fields null is a pure grouping band
+// (the default; the sheet-sync engine only ever creates this shape).
+// Setting any of them promotes the section to actionable. `status`
+// REUSES the L4 week_items status vocabulary — no third enum. Status is
+// never auto-derived from children and never auto-flips them. startDate /
+// endDate are manual-only; when null the UI shows the derived child range
+// grayed, computed at read time — no stored rollups for sections.
+export const sections = sqliteTable("sections", {
+  id: text("id").primaryKey(),
+  // FK-free per the parentProjectId / week_items.sectionId convention (F6):
+  // DB-level FK constraints complicate drizzle-kit SQLite migrations and
+  // risk a full table rebuild on push. Runtime enforcement lives in the
+  // write helpers (createSection verifies the project exists; deleteProject
+  // cleans sections in the same transaction).
+  projectId: text("project_id").notNull(),
+  title: text("title").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  notes: text("notes"),
+  // Actionable-optional fields. Any set = actionable; all null = pure grouping.
+  // scheduled | in-progress | blocked | at-risk | completed | canceled
+  // (canceled is a status flip, NOT a delete — children stay attached and
+  // the digest prompts for child-task handling).
+  status: text("status"),
+  owner: text("owner"),
+  resources: text("resources"), // comma-separated, same convention as projects/week_items
+  startDate: text("start_date"), // ISO date; manual only, never stored-derived
+  endDate: text("end_date"), // ISO date; manual only
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+}, (table) => [
+  // Ordered read of a project's sections
+  index("idx_sections_project_id_sort_order").on(table.projectId, table.sortOrder),
+]);
+
+// ============================================================
+// Sheet Registry — engagement-stable sheet identity (2026-07-26)
+// ============================================================
+// The versioning flow mints a NEW spreadsheetId per version. Keying sync
+// state on the raw sheetId would orphan the ledger on every version bump.
+// This table anchors identity on an opaque per-engagement key; the
+// versioning flow updates currentSheetId + version in the same transaction
+// that logs the `sheet-version` updates row.
+export const sheetRegistry = sqliteTable("sheet_registry", {
+  engagementKey: text("engagement_key").primaryKey(), // e.g. "lppc-2604-01"
+  currentSheetId: text("current_sheet_id").notNull(), // Drive file id of the live sheet
+  previousSheetId: text("previous_sheet_id"), // last version, moved to _old/
+  version: integer("version").notNull().default(1),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+// ============================================================
+// Sheet Sync Ledger — row-identity map for Sheet↔Runway sync (2026-07-26)
+// ============================================================
+// Generalized two-entity ledger: tasks AND sections. sheetKey is the
+// stable in-sheet identity (tasks: taskNo like "2.3"; sections: header
+// ordinal like "S2"). Keys on engagementKey (stable across sheet
+// versions via sheet_registry), never on raw spreadsheetId.
+//
+// state values:
+//   active            — normal reconciled state
+//   sheet-row-missing — ledger entry exists but sheet no longer has this row
+//   wi-deleted        — Runway entity was deleted, ledger orphaned
+//   flagged           — reconciliation ambiguity, needs operator input
+//   runway-born       — minted via Runway auto-append, not yet reconciled
+export const sheetSyncLedger = sqliteTable("sheet_sync_ledger", {
+  id: text("id").primaryKey(),
+  engagementKey: text("engagement_key").notNull(), // references sheet_registry.engagementKey
+  entityType: text("entity_type").notNull(), // 'task' | 'section'
+  sheetKey: text("sheet_key").notNull(),
+  runwayId: text("runway_id").notNull(), // weekItemId or sectionId
+  state: text("state").notNull().default("active"),
+  lastSyncRunId: text("last_sync_run_id"),
+  lastSeenTitle: text("last_seen_title"), // audit only
+  lastSeenContentHash: text("last_seen_content_hash"), // hash of structural cols B-J
+  lastSeenAt: integer("last_seen_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  // One ledger row per sheet position per engagement
+  uniqueIndex("uq_sheet_sync_ledger_engagement_entity_sheet_key").on(
+    table.engagementKey,
+    table.entityType,
+    table.sheetKey,
+  ),
+  // Reverse lookup for Phase 2 writeback; guards two sheet rows claiming one entity
+  uniqueIndex("uq_sheet_sync_ledger_runway_id").on(table.runwayId),
+  // Bulk state reads per engagement
+  index("idx_sheet_sync_ledger_engagement_entity").on(table.engagementKey, table.entityType),
+]);
+
+// ============================================================
+// Meta — schema version + feature flags (2026-07-26)
+// ============================================================
+// Seeded on the step-1 migration: `schema_version` (marker consumers check
+// before writing new-hierarchy fields, e.g. Slack modal helpers no-op if
+// version < required) and `feature_flags` (JSON) for staged rollout gates.
+export const meta = sqliteTable("_meta", {
+  key: text("key").primaryKey(),
+  value: text("value"),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
 export const pipelineItems = sqliteTable("pipeline_items", {
   id: text("id").primaryKey(),
   clientId: text("client_id").references(() => clients.id),
@@ -117,7 +257,16 @@ export const updates = sqliteTable("updates", {
   projectId: text("project_id").references(() => projects.id),
   clientId: text("client_id").references(() => clients.id),
   updatedBy: text("updated_by"),
-  updateType: text("update_type"), // status-change, note, new-item, etc.
+  // status-change, note, new-item, field-change, week-field-change,
+  // new-week-item, delete-week-item, week-reparent, date-override,
+  // cascade-date-change, cascade-status, cascade-duedate, undo, etc.
+  // v4-schema-plan (2026-07-26) reserves 4 more for the cascade/versioning
+  // workstream (see docs/plans + civ-account-manager schema plan §5-§6):
+  //   cascade              — cascade telemetry rows (90-day retention sweep)
+  //   cascade-decision     — operator digest decision (retained indefinitely)
+  //   sheet-version-intent — versioning-flow intent log (crash-resume anchor)
+  //   sheet-version        — versioning-flow completion (retained indefinitely)
+  updateType: text("update_type"),
   previousValue: text("previous_value"),
   newValue: text("new_value"),
   summary: text("summary"),

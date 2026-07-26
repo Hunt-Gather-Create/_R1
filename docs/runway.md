@@ -33,11 +33,32 @@ Runway uses a **separate Turso database** (`RUNWAY_DATABASE_URL`), not the main 
 | Table | Purpose |
 |-------|---------|
 | `clients` | Agency clients (Convergix, LPPC, etc.) with contract info |
-| `projects` | Work items under each client, with status, owner, and resources |
-| `week_items` | Calendar entries by date, with owner/resources separation |
+| `projects` | L1/L2 work items under each client, with status, owner, and resources |
+| `sections` | L3 grouping bands inside a project (4-level hierarchy); optionally actionable via 5 nullable fields |
+| `week_items` | L4 tasks / calendar entries by date, with owner/resources separation, optional `sectionId` + `taskNo` |
 | `pipeline_items` | Unsigned SOWs and new business, with owner and pipeline status lifecycle |
 | `updates` | Audit log of all changes (idempotency-keyed, `metadata` JSON for structured undo) |
 | `team_members` | Civilization team with Slack user IDs |
+| `sheet_registry` | Engagement-stable sheet identity (survives sheet versioning; keys the sync ledger) |
+| `sheet_sync_ledger` | Sheet↔Runway row-identity map (tasks + sections), lifecycle states incl. `runway-born` |
+| `_meta` | `schema_version` marker + `feature_flags` JSON (seeded idempotently by the deploy schema push) |
+
+### 4-Level Hierarchy
+
+L1 wrapper (`projects`) → L2 sub-project (`projects.parentProjectId`, max depth 2, validator-enforced) → L3 section (`sections`) → L4 task (`week_items.sectionId`).
+
+Design principle (schema plan §3.4): every level is potentially actionable AND potentially a container, data-driven not schema-driven. A section with all 5 actionable fields (`status`, `owner`, `resources`, `startDate`, `endDate`) null is a pure grouping band; setting any promotes it to actionable. Section status REUSES the week-item status enum (no third vocabulary) and is never auto-derived from children. Section dates are manual-only; when null the UI shows the derived child range grayed, computed at read time — no stored rollups.
+
+Key invariants (enforced in `operations-writes-section.ts` + `operations-utils.ts`):
+
+1. `weekItem.sectionId != null` implies `weekItem.projectId == section.projectId` — reparenting rewrites both atomically (`reparentWeekItemToSection`).
+2. Deleting a section demotes its children to loose tasks in the same transaction — never deletes them.
+3. `status='canceled'` on a section is a status flip, not a delete; the audit row carries `openChildCount` for the future digest prompt.
+4. Sync-respect (D7): the sheet-sync engine's only section write surface is `reconcileSectionFromSheet` (title + sortOrder only) — operator-promoted sections survive every reconcile.
+5. `taskNo` auto-append: Runway-born tasks under a sheet-sourced numbered section mint max+1 (numeric parse of the trailing component — `task-no.ts`) and register in `sheet_sync_ledger` with `state='runway-born'` inside the create transaction. Runway-born sections yield null `taskNo` until sheet reconciliation. Deletion is gap-preserving.
+6. Owner inheritance chain: `owner ?? section.owner ?? project.owner` on task create.
+
+Ledger access goes through the repository adapter `sheet-sync-ledger-repo.ts` (`getSheetSyncLedger()`), never direct table access from business logic — the v2 backend swap (Memory Substrate via MCP) is a one-file change.
 
 ### Separate Drizzle Config
 
@@ -63,7 +84,11 @@ All database reads and writes go through `src/lib/runway/operations*.ts`. No con
 | `operations-reads-pipeline.ts` | Pipeline data and stale items detection |
 | `operations-writes.ts` | Status updates with idempotency, audit logging, and cascade to linked week items |
 | `operations-writes-project.ts` | Project field updates with forward deadline cascade (dueDate changes propagate to linked deadline week items) |
-| `operations-writes-week.ts` | Create week items and update week item fields with reverse deadline cascade (deadline date changes sync back to project.dueDate) |
+| `operations-writes-week.ts` | Create week items (incl. `sectionId`/`taskNo` + auto-append + owner chain) and update week item fields with reverse deadline cascade (deadline date changes sync back to project.dueDate) |
+| `operations-reads-sections.ts` | L3 section reads: per-project list, fuzzy title match, read-time derived child date range |
+| `operations-writes-section.ts` | L3 section writes: create/update (actionable promotion), delete (child demote), reparent, sheet reconcile surface |
+| `sheet-sync-ledger-repo.ts` | Sheet-sync ledger repository adapter (Turso v1 backend; substrate-swappable) |
+| `task-no.ts` | Pure taskNo parse/append helpers (numeric trailing-component compare) |
 | `operations-writes-undo.ts` | Undo last status or field change by user (reads field from `metadata` JSON, regex fallback for pre-migration records) |
 | `operations-reads-updates.ts` | Recent updates query (powers "what did I change?" recall) |
 | `operations-add.ts` | New projects (with duplicate name guard, expanded fields: resources, dueDate, waitingOn) and free-form updates (with disambiguation on ambiguous project matches) |
@@ -280,7 +305,7 @@ UI types are in `src/app/runway/types.ts`. DB types are inferred from Drizzle sc
 
 ## MCP Server
 
-Documented in [MCP Integration](./mcp-integration.md#standalone-mcp-servers-runway). Bearer token auth at `POST /api/mcp/runway`. 11 tools wrapping the operations layer (includes `get_person_workload` for cross-client workload queries).
+Documented in [MCP Integration](./mcp-integration.md#standalone-mcp-servers-runway). Bearer token auth at `POST /api/mcp/runway`. 48 registered tools wrapping the operations layer (includes `get_person_workload` for cross-client workload queries and the L3 section CRUD set: `get_sections`, `create_section`, `update_section`, `delete_section`, `reparent_week_item_to_section`).
 
 ## Slack Modals
 
@@ -471,7 +496,7 @@ Requires `pnpm dev:inngest` (or `pnpm dev:all`) running alongside the dev server
 | `src/lib/runway/reference/clients.ts` | Client reference data (nicknames, contacts) |
 | `src/lib/runway/reference/team.ts` | Team reference data (roles, accounts led) |
 | `src/lib/mcp/runway-server.ts` | MCP server factory |
-| `src/lib/mcp/runway-tools.ts` | MCP tool registrations (11 tools) |
+| `src/lib/mcp/runway-tools.ts` | MCP tool registrations (48 tools, incl. L3 section CRUD) |
 | `src/app/api/mcp/runway/route.ts` | MCP HTTP endpoint |
 | `src/app/api/slack/events/route.ts` | Slack webhook handler (text + images) |
 | `src/app/api/slack/commands/route.ts` | Slash command HMAC + fuzzy match + modal dispatch |

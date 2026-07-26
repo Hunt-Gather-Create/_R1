@@ -21,7 +21,7 @@ type AccountForTier = {
   // #78 — schema mirrors src AccountForTier; tests don't exercise these
   // fields directly (account-section.test.tsx covers the AuditBadge path).
   ganttSeverity?: { critical: number; warn: number; info: number };
-  ganttAuditIssues?: unknown[];
+  ganttAuditIssues?: import("../audit-badge").AuditIssue[];
 };
 
 function mockAccount(overrides: Partial<AccountForTier> = {}): AccountForTier {
@@ -565,5 +565,170 @@ describe("AccountTier", () => {
     expect(screen.getByText("Wrapper Beta")).toBeTruthy();
     expect(screen.getByText("Sub B1")).toBeTruthy();
     expect(screen.getByText("Standalone X")).toBeTruthy();
+  });
+});
+
+// ─── 4-level hierarchy: §3.3 render contract (L3 bands + one-off card) ────
+
+import type { L3SectionDisplay } from "@/lib/runway/gantt/types";
+
+function makeL3(overrides: Partial<L3SectionDisplay> = {}): L3SectionDisplay {
+  return {
+    id: "l3-1",
+    title: "Design Phase",
+    sortOrder: 0,
+    notes: null,
+    status: null,
+    owner: null,
+    resources: null,
+    startDate: null,
+    endDate: null,
+    actionable: false,
+    derivedStartDate: "2026-05-04",
+    derivedEndDate: "2026-05-08",
+    ...overrides,
+  };
+}
+
+describe("AccountTier — L3 section bands (§3.3)", () => {
+  function renderWithL3(
+    l3Sections: L3SectionDisplay[],
+    rows: AnnotatedRow[],
+  ) {
+    const section = makeSection("standalone", "L1 Project", rows, undefined, "l1-a");
+    section.l3Sections = l3Sections;
+    return render(
+      <AccountTier
+        account={mockAccount()}
+        rundown={mockRundown([section])}
+        readyToCloseIds={new Set()}
+      />,
+    );
+  }
+
+  it("D8: all-null section renders as a pure grouping band with grayed derived range", () => {
+    renderWithL3(
+      [makeL3()],
+      [makeWeekItemRow({ sectionId: "l3-1" } as Partial<AnnotatedRow>)],
+    );
+    expect(screen.getByTestId("l3-band-grouping")).toBeTruthy();
+    expect(screen.queryByTestId("l3-band-actionable")).toBeNull();
+    // Derived dates render grayed, never solid.
+    expect(screen.getByTestId("l3-dates-derived")).toBeTruthy();
+    expect(screen.queryByTestId("l3-dates-own")).toBeNull();
+    expect(screen.getByText("1 task")).toBeTruthy();
+  });
+
+  it("actionable section renders ONE band with its own solid chips — never a phantom child card", () => {
+    renderWithL3(
+      [
+        makeL3({
+          id: "l3-2",
+          title: "Development",
+          status: "in-progress",
+          owner: "Lane",
+          startDate: "2026-05-01",
+          endDate: "2026-05-20",
+          actionable: true,
+        }),
+      ],
+      [makeWeekItemRow({ sectionId: "l3-2" } as Partial<AnnotatedRow>)],
+    );
+    const bands = screen.getAllByTestId("l3-band-actionable");
+    expect(bands).toHaveLength(1);
+    expect(screen.getByTestId("section-status-chip").textContent).toBe("in-progress");
+    expect(screen.getByTestId("l3-dates-own")).toBeTruthy();
+    expect(screen.queryByTestId("l3-dates-derived")).toBeNull();
+    // The section title appears exactly once — the band. No phantom task
+    // card carries the section's own title.
+    expect(screen.getAllByText("Development")).toHaveLength(1);
+  });
+
+  it("per-field own-value-wins: actionable section with null dates shows derived grayed", () => {
+    renderWithL3(
+      [
+        makeL3({
+          id: "l3-3",
+          title: "QA",
+          status: "blocked",
+          actionable: true,
+          derivedStartDate: "2026-06-01",
+          derivedEndDate: "2026-06-05",
+        }),
+      ],
+      [makeWeekItemRow({ sectionId: "l3-3" } as Partial<AnnotatedRow>)],
+    );
+    expect(screen.getByTestId("l3-band-actionable")).toBeTruthy();
+    expect(screen.getByTestId("l3-dates-derived")).toBeTruthy();
+    expect(screen.queryByTestId("l3-dates-own")).toBeNull();
+  });
+
+  it("renders sections in order with loose tasks LAST, never interleaved", () => {
+    const { container } = renderWithL3(
+      [
+        makeL3({ id: "l3-a", title: "Phase One", sortOrder: 0 }),
+        makeL3({ id: "l3-b", title: "Phase Two", sortOrder: 1 }),
+      ],
+      [
+        makeWeekItemRow({ id: "wi-loose", title: "Loose Task", startDate: "2026-05-01" } as Partial<AnnotatedRow>),
+        makeWeekItemRow({ id: "wi-a", title: "Task In One", sectionId: "l3-a" } as Partial<AnnotatedRow>),
+        makeWeekItemRow({ id: "wi-b", title: "Task In Two", sectionId: "l3-b" } as Partial<AnnotatedRow>),
+      ],
+    );
+    const text = container.textContent ?? "";
+    const idxOne = text.indexOf("Task In One");
+    const idxTwo = text.indexOf("Task In Two");
+    const idxLoose = text.indexOf("Loose Task");
+    expect(idxOne).toBeGreaterThan(-1);
+    expect(idxTwo).toBeGreaterThan(idxOne);
+    expect(idxLoose).toBeGreaterThan(idxTwo);
+    expect(screen.getByTestId("l3-loose-tasks")).toBeTruthy();
+  });
+
+  it("falls back to the flat list when the project has zero sections", () => {
+    renderWithL3([], [makeWeekItemRow({ title: "Flat Task" } as Partial<AnnotatedRow>)]);
+    expect(screen.queryByTestId("l3-band-grouping")).toBeNull();
+    expect(screen.queryByTestId("l3-band-actionable")).toBeNull();
+    expect(screen.getByText("Flat Task")).toBeTruthy();
+  });
+});
+
+describe("AccountTier — one-off L1 card (§3.3)", () => {
+  it("renders a childless one-off L1 as a first-class card, not empty-project UI", () => {
+    const section = makeSection("standalone", "Father's Day Page", [], undefined, "l1-oneoff");
+    (section.data.raw as { entity: Record<string, unknown> }).entity = {
+      id: "l1-oneoff",
+      title: "Father's Day Page",
+      engagementType: "one-off",
+      status: "in-production",
+      owner: "Kaci",
+      resources: null,
+      startDate: "2026-06-10",
+      endDate: "2026-06-17",
+    };
+    render(
+      <AccountTier
+        account={mockAccount()}
+        rundown={mockRundown([section])}
+        readyToCloseIds={new Set()}
+      />,
+    );
+    expect(screen.getByTestId("l1-one-off-card")).toBeTruthy();
+    expect(screen.getByTestId("one-off-chip")).toBeTruthy();
+    expect(screen.queryByText("No Scheduled Tasks")).toBeNull();
+    expect(screen.queryByTestId("l1-empty")).toBeNull();
+  });
+
+  it("keeps the standard empty state for non-one-off L1s", () => {
+    const section = makeSection("standalone", "Regular Empty", [], undefined, "l1-reg");
+    render(
+      <AccountTier
+        account={mockAccount()}
+        rundown={mockRundown([section])}
+        readyToCloseIds={new Set()}
+      />,
+    );
+    expect(screen.getByTestId("l1-empty")).toBeTruthy();
+    expect(screen.queryByTestId("l1-one-off-card")).toBeNull();
   });
 });

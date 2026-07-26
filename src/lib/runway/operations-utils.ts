@@ -10,6 +10,7 @@ import { getRunwayDb } from "@/lib/db/runway";
 import {
   clients,
   projects,
+  sections,
   updates,
   weekItems,
   pipelineItems,
@@ -410,6 +411,50 @@ export const WEEK_ITEM_FIELD_TO_COLUMN: Record<WeekItemField, keyof typeof weekI
   endDate: "endDate",
   blockedBy: "blockedBy",
 };
+
+/**
+ * Editable fields on an L3 section (4-level hierarchy, 2026-07-26).
+ *
+ * `sectionId` and `taskNo` on week items are deliberately NOT in
+ * WEEK_ITEM_FIELDS: reparenting a task to a section must rewrite
+ * `projectId` + `sectionId` atomically (invariant 1), so it goes through
+ * the dedicated `reparentWeekItemToSection` helper; `taskNo` is identity,
+ * assigned only at create (auto-append) or by sheet reconciliation —
+ * implicit renumbering never happens.
+ */
+export const SECTION_FIELDS = [
+  "title", "sortOrder", "notes",
+  // Actionable-optional fields (plan §4.1). Setting any promotes the
+  // section to actionable; nulling all demotes it back to pure grouping.
+  "status", "owner", "resources", "startDate", "endDate",
+] as const;
+
+export type SectionField = (typeof SECTION_FIELDS)[number];
+
+export const SECTION_FIELD_TO_COLUMN: Record<SectionField, keyof typeof sections.$inferSelect> = {
+  title: "title",
+  sortOrder: "sortOrder",
+  notes: "notes",
+  status: "status",
+  owner: "owner",
+  resources: "resources",
+  startDate: "startDate",
+  endDate: "endDate",
+};
+
+/**
+ * The 5 actionable fields on a section. The sheet-sync engine must NEVER
+ * write these on reconciliation (D7 sync-respect rule) — an operator who
+ * promoted a section to actionable keeps that promotion across every sync
+ * run. The engine's write surface is `reconcileSectionFromSheet`, whose
+ * signature structurally excludes these fields; this constant exists so
+ * engine code and tests can assert the boundary explicitly.
+ */
+export const SECTION_ACTIONABLE_FIELDS = [
+  "status", "owner", "resources", "startDate", "endDate",
+] as const satisfies readonly SectionField[];
+
+export type SectionActionableField = (typeof SECTION_ACTIONABLE_FIELDS)[number];
 
 /**
  * Fields that undo can revert — union of project fields + status.
@@ -926,8 +971,13 @@ export function parseResources(raw: string | null | undefined): ResourceEntry[] 
 /**
  * Allowed values for `projects.engagement_type`. `""` is a sentinel for
  * "clear" (becomes null at the persistence layer). Any other value rejects.
+ *
+ * v4-schema-plan (2026-07-26): `one-off` added — a small ad-hoc task or
+ * standalone deliverable that does not warrant its own SOW. Renders as a
+ * first-class childless card (never "empty project" UI). Default on create
+ * stays `project`.
  */
-export const ENGAGEMENT_TYPES = ["retainer", "project"] as const;
+export const ENGAGEMENT_TYPES = ["retainer", "project", "one-off"] as const;
 export type EngagementType = (typeof ENGAGEMENT_TYPES)[number];
 
 export type EngagementTypeValidationResult =
@@ -1314,13 +1364,15 @@ export function validatePastDateNonTerminal(
  */
 export const NOTES_MAX_LEN_L2 = 280;
 export const NOTES_MAX_LEN_L1 = 500;
+/** L3 sections share the L2 cap — section notes are grouping context, not narrative. */
+export const NOTES_MAX_LEN_L3 = 280;
 
 export function validateNotesMaxLength(
   notes: string,
-  kind: "L1" | "L2",
+  kind: "L1" | "L2" | "L3",
 ): { ok: true } | { ok: false; error: string } {
   if (!notes) return { ok: true };
-  const max = kind === "L1" ? NOTES_MAX_LEN_L1 : NOTES_MAX_LEN_L2;
+  const max = kind === "L1" ? NOTES_MAX_LEN_L1 : kind === "L3" ? NOTES_MAX_LEN_L3 : NOTES_MAX_LEN_L2;
   if (notes.length > max) {
     return {
       ok: false,
@@ -1427,25 +1479,38 @@ export type ParentProjectIdValidationResult =
   | { ok: false; error: string };
 
 /**
- * Four invariants enforced for any write that sets parent_project_id:
+ * Five invariants enforced for any write that sets parent_project_id:
  *  1. parent must exist (non-null case)
  *  2. parent.engagement_type === "retainer"
  *  3. parent.client_id === child.client_id (no cross-client parenting)
  *  4. no cycle via 10-hop walk (newParentId → parent's parent → ...; reject
  *     if the chain hits childId)
+ *  5. depth guard (v4-schema-plan §4.9, 2026-07-26): parent must itself be
+ *     top-level (parent.parent_project_id NULL). Max nesting depth is 2 —
+ *     an L2 can never parent another L2. Prod chain-check verified zero
+ *     existing chains deeper than 2 before this guard shipped.
  *
  * Null newParentId (clearing the link) is trivially valid.
  *
  * Both the `set_project_parent` MCP tool and the existing
  * `update_project_field({ field: "parentProjectId" })` write path call this
  * validator. Validators live here, not in handlers, so every write path
- * runs the same four checks (no path can bypass).
+ * runs the same checks (no path can bypass).
  */
 export async function validateParentProjectIdAssignment(
   executor: ValidatorExecutor,
   ctx: ParentProjectIdValidationContext,
 ): Promise<ParentProjectIdValidationResult> {
   if (ctx.newParentId === null) return { ok: true };
+
+  // Self-parent is the degenerate cycle the walk below can't see (the walk
+  // starts at the parent's parent, which is null for a top-level project).
+  if (ctx.newParentId === ctx.childId) {
+    return {
+      ok: false,
+      error: `Cycle detected: project '${ctx.childId}' cannot be its own parent.`,
+    };
+  }
 
   const parentRows = await executor
     .select({
@@ -1479,7 +1544,9 @@ export async function validateParentProjectIdAssignment(
   }
 
   // Cycle check — walk the parent chain up to 10 hops; reject if it ever
-  // hits the child being assigned.
+  // hits the child being assigned. Runs BEFORE the depth guard so a genuine
+  // cycle surfaces as "Cycle detected" (the more specific error) rather
+  // than the generic depth rejection.
   let cursorId: string | null = parent.parentProjectId;
   for (let hop = 0; hop < 10 && cursorId !== null; hop++) {
     if (cursorId === ctx.childId) {
@@ -1494,6 +1561,16 @@ export async function validateParentProjectIdAssignment(
       .where(eq(projects.id, cursorId))
       .limit(1);
     cursorId = nextRows[0]?.parentProjectId ?? null;
+  }
+
+  // Depth guard (invariant 5): the parent must be top-level. Rejecting here
+  // caps the hierarchy at L1 → L2; an L2 (a project that itself has a
+  // parent) can never become a parent.
+  if (parent.parentProjectId !== null) {
+    return {
+      ok: false,
+      error: `Parent project '${parent.id}' is itself nested under '${parent.parentProjectId}' — cannot nest an L2 under an L2 (max depth 2).`,
+    };
   }
   return { ok: true };
 }

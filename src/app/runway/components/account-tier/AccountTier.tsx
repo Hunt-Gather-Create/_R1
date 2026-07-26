@@ -36,6 +36,7 @@ import type {
   ClientRundownData,
   RundownSection,
   AnnotatedRow,
+  L3SectionDisplay,
   SeverityCounts,
 } from "@/lib/runway/gantt/types";
 import { groupSections } from "@/lib/runway/gantt/group-sections";
@@ -173,6 +174,83 @@ function SowChip() {
   );
 }
 
+/**
+ * L3 section status chip — reuses the L4 task status vocabulary (plan
+ * guardrail: no third enum). Colors mirror the task-status conventions.
+ */
+const SECTION_STATUS_CLASSES: Record<string, string> = {
+  scheduled: "bg-sky-500/20 text-sky-400",
+  "in-progress": "bg-violet-500/20 text-violet-400",
+  blocked: "bg-red-500/20 text-red-400",
+  "at-risk": "bg-amber-500/20 text-amber-400",
+  completed: "bg-emerald-500/20 text-emerald-400",
+  canceled: "bg-zinc-500/20 text-zinc-400",
+};
+
+function SectionStatusChip({ status }: { status: string }) {
+  return (
+    <ChipBase
+      className={SECTION_STATUS_CLASSES[status] ?? "bg-zinc-500/20 text-zinc-400"}
+      testId="section-status-chip"
+    >
+      {status}
+    </ChipBase>
+  );
+}
+
+/**
+ * §3.3 render contract — L3 section header band (4-level hierarchy).
+ *
+ * ONE band per section, always. An actionable section carries its own
+ * fields inline on this same band — it never renders as a phantom child
+ * task of itself and never splits into "header row + floating task row."
+ *
+ * Per-field own-value-wins (plan §3.4 guardrail 1): own dates render solid;
+ * when own dates are null the derived child rollup renders grayed — even on
+ * an otherwise-actionable section. Nothing is stored either way.
+ */
+function SectionBand({
+  l3,
+  taskCount,
+}: {
+  l3: L3SectionDisplay;
+  taskCount: number;
+}) {
+  const hasOwnDates = l3.startDate !== null || l3.endDate !== null;
+  const ownDates = formatDateLine(l3.startDate, l3.endDate);
+  const derivedDates = formatDateLine(l3.derivedStartDate, l3.derivedEndDate);
+  return (
+    <div
+      data-testid={l3.actionable ? "l3-band-actionable" : "l3-band-grouping"}
+      className="flex flex-wrap items-center gap-2"
+    >
+      <span className="font-medium text-foreground">{l3.title}</span>
+      {l3.status ? <SectionStatusChip status={l3.status} /> : null}
+      {l3.owner ? (
+        <span className="text-xs text-muted-foreground">O: {l3.owner}</span>
+      ) : null}
+      {l3.resources ? (
+        <span className="text-xs text-muted-foreground">{l3.resources}</span>
+      ) : null}
+      {hasOwnDates && ownDates ? (
+        <span data-testid="l3-dates-own" className="text-xs text-foreground">
+          {ownDates}
+        </span>
+      ) : derivedDates ? (
+        <span
+          data-testid="l3-dates-derived"
+          className="text-xs text-muted-foreground/60"
+        >
+          {derivedDates}
+        </span>
+      ) : null}
+      <span className="text-xs text-muted-foreground">
+        {taskCount} {taskCount === 1 ? "task" : "tasks"}
+      </span>
+    </div>
+  );
+}
+
 // ─── Headers ──────────────────────────────────────────────────────────────
 
 function ClientHeader({ account }: { account: AccountForTier }) {
@@ -265,6 +343,49 @@ function L1Header({
 
 // ─── L1 body ──────────────────────────────────────────────────────────────
 
+/**
+ * One-off L1 card (§3.3, 4-level hierarchy): an actionable L1 with no
+ * children renders as a first-class childless card — its own status, owner,
+ * resources, and dates inline — never the "empty project" shape.
+ */
+function OneOffCard({ section }: { section: RundownSection }) {
+  const raw = section.data.raw;
+  const entity =
+    raw.kind === "l1"
+      ? (raw.entity as unknown as {
+          owner?: string | null;
+          resources?: string | null;
+          startDate?: string | null;
+          endDate?: string | null;
+          status?: string | null;
+        })
+      : null;
+  const dates = formatDateLine(entity?.startDate ?? null, entity?.endDate ?? null);
+  return (
+    <div
+      data-testid="l1-one-off-card"
+      className="flex flex-wrap items-center gap-2 rounded-xl border border-sky-500/30 bg-sky-500/5 px-4 py-2 ml-4"
+    >
+      <span className="font-medium text-foreground">{section.title}</span>
+      <ChipBase className="bg-sky-500/20 text-sky-400" testId="one-off-chip">
+        One-off
+      </ChipBase>
+      {entity?.status ? (
+        <span className="text-xs text-muted-foreground">{entity.status}</span>
+      ) : null}
+      {entity?.owner ? (
+        <span className="text-xs text-muted-foreground">O: {entity.owner}</span>
+      ) : null}
+      {entity?.resources ? (
+        <span className="text-xs text-muted-foreground">{entity.resources}</span>
+      ) : null}
+      {dates ? (
+        <span className="text-xs text-muted-foreground">{dates}</span>
+      ) : null}
+    </div>
+  );
+}
+
 function L1Section({
   section,
   readyToCloseIds,
@@ -286,15 +407,24 @@ function L1Section({
     section.data.raw.kind === "l1"
       ? (section.data.raw.entity.category ?? null)
       : null;
+  const l1EngagementType =
+    section.data.raw.kind === "l1"
+      ? (section.data.raw.entity.engagementType ?? null)
+      : null;
 
-  // Empty L1 (no scheduled L2s after status filter): header-only flat row
-  // with the inline "No Scheduled Tasks" chip, no <details>.
+  // Empty L1 (no scheduled L2s after status filter).
+  //
+  // 4-level hierarchy (§3.3): a one-off L1 is a first-class childless card,
+  // not "empty project" UI — its actionable fields render inline.
   //
   // Issue #41: an L1 with no scheduled items has nothing to be ready-to-close
   // on — the ready-to-close signal is meaningful only when there's at least
   // one scheduled task remaining to close out. Suppress the chip here so the
   // empty state shows only "No Scheduled Tasks", never both chips at once.
   if (items.length === 0) {
+    if (l1EngagementType === "one-off") {
+      return <OneOffCard section={section} />;
+    }
     return (
       <div
         data-testid="l1-empty"
@@ -309,6 +439,61 @@ function L1Section({
     );
   }
 
+  // §3.3 render order inside a project: L3 sections in sortOrder (each with
+  // its tasks), then loose tasks (null sectionId) LAST — legacy flat-list
+  // data never interleaves inside the L3 grouping. Projects with zero
+  // sections fall back to the flat list unchanged.
+  const l3s = section.l3Sections ?? [];
+  const itemsByL3 = new Map<string, AnnotatedRow[]>();
+  const looseItems: AnnotatedRow[] = [];
+  for (const wi of items) {
+    const sid = wi.kind === "weekitem" ? wi.sectionId : null;
+    if (sid && l3s.some((s) => s.id === sid)) {
+      const arr = itemsByL3.get(sid);
+      if (arr) arr.push(wi);
+      else itemsByL3.set(sid, [wi]);
+    } else {
+      looseItems.push(wi);
+    }
+  }
+
+  const renderCards = (rows: AnnotatedRow[]) => (
+    <div className="flex flex-wrap gap-2 pl-2 pt-2">
+      {rows.map((wi, index) => (
+        // Track 4 audit fix (2026-05-05, WARN — Panel 5, Edge Cases):
+        // empty-string or duplicate ids in upstream weekItem data would
+        // collide on `key={wi.id}` and trigger React's duplicate-key
+        // warning + DOM reuse. Fall back to a positional sentinel so
+        // each card gets a unique key even when ids are malformed.
+        <L2MiniCard
+          key={wi.id || `l2-fallback-${index}`}
+          accountName={accountName}
+          weekItem={{
+            id: wi.id,
+            title: wi.title,
+            owner: wi.owner,
+            resources: wi.resources,
+            startDate: wi.startDate,
+            endDate: wi.endDate,
+            status: wi.status,
+            category: wi.category,
+            // P1.3 (TP review on b7c89f3): notes flows through the
+            // GanttRow weekitem variant + AnnotatedRow; parent project
+            // name is the section title — every L1Section's items are
+            // children of the project the section represents.
+            notes: wi.kind === "weekitem" ? wi.notes : null,
+            parentProjectName: section.title,
+            parentCategory: l1Category,
+            // #70 commit 8b — projectId powers the modal's project
+            // picker. Same source as notes (per-row WeekItemRow field
+            // surfaced via the GanttRow weekitem variant).
+            projectId: wi.kind === "weekitem" ? wi.projectId : null,
+          }}
+        />
+      ))}
+    </div>
+  );
+
   return (
     <CollapsibleSection
       className="pl-4 border-l border-border"
@@ -320,40 +505,26 @@ function L1Section({
         />
       }
     >
-      <div className="flex flex-wrap gap-2 pl-2 pt-2">
-        {items.map((wi, index) => (
-          // Track 4 audit fix (2026-05-05, WARN — Panel 5, Edge Cases):
-          // empty-string or duplicate ids in upstream weekItem data would
-          // collide on `key={wi.id}` and trigger React's duplicate-key
-          // warning + DOM reuse. Fall back to a positional sentinel so
-          // each card gets a unique key even when ids are malformed.
-          <L2MiniCard
-            key={wi.id || `l2-fallback-${index}`}
-            accountName={accountName}
-            weekItem={{
-              id: wi.id,
-              title: wi.title,
-              owner: wi.owner,
-              resources: wi.resources,
-              startDate: wi.startDate,
-              endDate: wi.endDate,
-              status: wi.status,
-              category: wi.category,
-              // P1.3 (TP review on b7c89f3): notes flows through the
-              // GanttRow weekitem variant + AnnotatedRow; parent project
-              // name is the section title — every L1Section's items are
-              // children of the project the section represents.
-              notes: wi.kind === "weekitem" ? wi.notes : null,
-              parentProjectName: section.title,
-              parentCategory: l1Category,
-              // #70 commit 8b — projectId powers the modal's project
-              // picker. Same source as notes (per-row WeekItemRow field
-              // surfaced via the GanttRow weekitem variant).
-              projectId: wi.kind === "weekitem" ? wi.projectId : null,
-            }}
-          />
-        ))}
-      </div>
+      {l3s.length === 0 ? (
+        renderCards(items)
+      ) : (
+        <div className="space-y-2 pt-2">
+          {l3s.map((l3) => {
+            const l3Items = itemsByL3.get(l3.id) ?? [];
+            return (
+              <div key={l3.id} className="pl-2">
+                <SectionBand l3={l3} taskCount={l3Items.length} />
+                {l3Items.length > 0 ? renderCards(l3Items) : null}
+              </div>
+            );
+          })}
+          {looseItems.length > 0 ? (
+            <div className="pl-2" data-testid="l3-loose-tasks">
+              {renderCards(looseItems)}
+            </div>
+          ) : null}
+        </div>
+      )}
     </CollapsibleSection>
   );
 }
