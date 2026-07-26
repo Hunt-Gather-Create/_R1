@@ -56,6 +56,8 @@ CREATE TABLE week_items (
   id TEXT PRIMARY KEY NOT NULL,
   project_id TEXT,
   client_id TEXT,
+  section_id TEXT,
+  task_no TEXT,
   day_of_week TEXT,
   week_of TEXT,
   date TEXT,
@@ -74,6 +76,54 @@ CREATE TABLE week_items (
 );
 
 CREATE INDEX idx_week_items_week_of ON week_items(week_of);
+
+CREATE TABLE sections (
+  id TEXT PRIMARY KEY NOT NULL,
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  title TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  notes TEXT,
+  status TEXT,
+  owner TEXT,
+  resources TEXT,
+  start_date TEXT,
+  end_date TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX idx_sections_project_id_sort_order ON sections(project_id, sort_order);
+
+CREATE TABLE sheet_registry (
+  engagement_key TEXT PRIMARY KEY NOT NULL,
+  current_sheet_id TEXT NOT NULL,
+  previous_sheet_id TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE sheet_sync_ledger (
+  id TEXT PRIMARY KEY NOT NULL,
+  engagement_key TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  sheet_key TEXT NOT NULL,
+  runway_id TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'active',
+  last_sync_run_id TEXT,
+  last_seen_title TEXT,
+  last_seen_content_hash TEXT,
+  last_seen_at INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX uq_sheet_sync_ledger_engagement_entity_sheet_key ON sheet_sync_ledger(engagement_key, entity_type, sheet_key);
+CREATE UNIQUE INDEX uq_sheet_sync_ledger_runway_id ON sheet_sync_ledger(runway_id);
+CREATE INDEX idx_sheet_sync_ledger_engagement_entity ON sheet_sync_ledger(engagement_key, entity_type);
+
+CREATE TABLE _meta (
+  key TEXT PRIMARY KEY NOT NULL,
+  value TEXT,
+  updated_at INTEGER NOT NULL
+);
 
 CREATE TABLE pipeline_items (
   id TEXT PRIMARY KEY NOT NULL,
@@ -185,6 +235,10 @@ INSERT INTO pipeline_items (id, client_id, name, owner, status, estimated_value,
   ('pl-cgx-sow', 'cl-convergix', 'SOW Expansion', 'Kathy', 'proposal', '50000', 'Client review', 'Pending budget approval', 0, ${NOW_EPOCH}, ${NOW_EPOCH}),
   ('pl-bonterra-renewal', 'cl-bonterra', 'Annual Renewal', 'Jill', 'negotiation', '120000', NULL, NULL, 1, ${NOW_EPOCH}, ${NOW_EPOCH}),
   ('pl-new-lead', NULL, 'Inbound Lead - Acme', 'Lane', 'qualification', '30000', 'Discovery call', NULL, 2, ${NOW_EPOCH}, ${NOW_EPOCH});
+
+INSERT INTO _meta (key, value, updated_at) VALUES
+  ('schema_version', '4level-1', ${NOW_EPOCH}),
+  ('feature_flags', '{}', ${NOW_EPOCH});
 
 INSERT INTO team_members (id, name, first_name, full_name, nicknames, title, role_category, accounts_led, is_active) VALUES
   ('tm-kathy', 'Kathy', 'Kathy', 'Kathy Horn', NULL, 'Account Director', 'am', '["convergix","lppc"]', 1),

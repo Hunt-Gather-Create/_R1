@@ -70,6 +70,35 @@ async function main() {
 
   console.log(`Pushing Runway database schema (${decision.reason})...`);
   await run("npx", ["drizzle-kit", "push", "--config", "drizzle-runway.config.ts", "--force"]);
+  await seedMetaRows();
+}
+
+/**
+ * Idempotent `_meta` seed (4-level hierarchy plan §7.1 step 1). INSERT OR
+ * IGNORE only — existing rows are never overwritten, so re-running on every
+ * deploy is a no-op after the first. `schema_version` gates consumers that
+ * must no-op until the 4-level schema is live (e.g. Slack modal helpers);
+ * `feature_flags` is the staged-rollout JSON blob.
+ */
+async function seedMetaRows() {
+  const { createClient } = await import("@libsql/client");
+  const client = createClient({
+    url: process.env.RUNWAY_DATABASE_URL,
+    authToken: process.env.RUNWAY_AUTH_TOKEN,
+  });
+  try {
+    await client.execute(
+      `INSERT INTO _meta (key, value, updated_at) VALUES ('schema_version', '4level-1', unixepoch())
+       ON CONFLICT(key) DO NOTHING`
+    );
+    await client.execute(
+      `INSERT INTO _meta (key, value, updated_at) VALUES ('feature_flags', '{}', unixepoch())
+       ON CONFLICT(key) DO NOTHING`
+    );
+    console.log("Seeded _meta rows (schema_version, feature_flags) — idempotent.");
+  } finally {
+    client.close();
+  }
 }
 
 const isDirectInvocation =
