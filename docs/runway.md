@@ -47,6 +47,8 @@ Runway uses a **separate Turso database** (`RUNWAY_DATABASE_URL`), not the main 
 
 L1 wrapper (`projects`) → L2 sub-project (`projects.parentProjectId`, max depth 2, validator-enforced) → L3 section (`sections`) → L4 task (`week_items.sectionId`).
 
+Nesting rules (Delta A, schema plan v4-delta-a §4): an L2's parent may be typed `retainer` or `project` (NULL tolerated as default-project until the G2 backfill); `one-off` parents are rejected (childless-card contract). `engagementType='retainer'` is L1-only — a nested project can never be typed or toggled to retainer (L2-never-retainer; retainer context inherits from the L1 parent). Enforced in `validateParentProjectIdAssignment` + the `updateProjectField` toggle guard.
+
 Design principle (schema plan §3.4): every level is potentially actionable AND potentially a container, data-driven not schema-driven. A section with all 5 actionable fields (`status`, `owner`, `resources`, `startDate`, `endDate`) null is a pure grouping band; setting any promotes it to actionable. Section status REUSES the week-item status enum (no third vocabulary) and is never auto-derived from children. Section dates are manual-only; when null the UI shows the derived child range grayed, computed at read time — no stored rollups.
 
 Key invariants (enforced in `operations-writes-section.ts` + `operations-utils.ts`):
