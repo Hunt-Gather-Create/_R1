@@ -24,6 +24,7 @@ import {
   getPreviousValue,
   normalizeResourcesString,
   validateParentProjectIdAssignment,
+  formatL2NeverRetainerError,
   validateEngagementType,
   validateIsoDateShape,
   validateStatusCategoryCompatibility,
@@ -256,9 +257,23 @@ export async function updateProjectField(
       ? null
       : effectiveNewValue;
 
+  // L2-never-retainer toggle guard (Delta A, 2026-07-26): a project nested
+  // under a parent can never be typed 'retainer' — retainer-ness is L1-only
+  // and inherits down the tree (runway-schema-change-plan-v4-delta-a.md §4).
+  // The nesting-side twin of this rule lives in
+  // validateParentProjectIdAssignment (invariant 4).
+  if (
+    typedField === "engagementType" &&
+    persistedValue === "retainer" &&
+    project.parentProjectId != null
+  ) {
+    return { ok: false, error: formatL2NeverRetainerError(project.id) };
+  }
+
   // parentProjectId validators (shared module): both this path and the
   // set_project_parent MCP tool route through validateParentProjectIdAssignment
-  // so cycle / non-retainer / cross-client parents always reject.
+  // so cycle / one-off-parent / cross-client / L2-never-retainer cases always
+  // reject.
   if (typedField === "parentProjectId") {
     const parentValidation = await validateParentProjectIdAssignment(db, {
       childId: project.id,
@@ -671,7 +686,7 @@ export async function overrideProjectDate(
 export interface SetProjectParentParams {
   clientSlug: string;
   projectName: string;
-  /** Wrapper project name (same client, must be retainer); null clears. */
+  /** Wrapper project name (same client, retainer or project — not one-off); null clears. */
   parentProjectName: string | null;
   updatedBy: string;
 }
