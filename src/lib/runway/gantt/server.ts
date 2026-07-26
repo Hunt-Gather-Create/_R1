@@ -16,6 +16,7 @@ import { getRunwayDb } from "@/lib/db/runway";
 import {
   clients,
   projects as projectsTable,
+  sections as sectionsTable,
   weekItems,
 } from "@/lib/db/runway-schema";
 import { uploadContent } from "@/lib/storage/r2-client";
@@ -40,9 +41,14 @@ import {
   renderClientRundown,
 } from "@/lib/runway/gantt/GanttTemplate";
 import { makePayload, signPayload } from "@/lib/runway/gantt/share-token";
+import {
+  foldChildDateRange,
+  isSectionActionable,
+} from "@/lib/runway/section-utils";
 import type {
   ClientRow,
   ClientRundownData,
+  L3SectionDisplay,
   ProjectRow,
   RawData,
   ResolveClientResult,
@@ -217,6 +223,48 @@ export async function extractClientRundown(
     }
   }
 
+  // 4-level hierarchy (2026-07-26): batch-fetch L3 sections for every
+  // project that renders a task list, in one query. Derived child date
+  // ranges are computed here from the week items already in memory —
+  // read-time only, never stored (§3.4 own-value-wins rule).
+  const l3ByProject = new Map<string, L3SectionDisplay[]>();
+  if (idsNeedingWeekItems.size > 0) {
+    const allSections = await withRunwayRetry(
+      () =>
+        db
+          .select()
+          .from(sectionsTable)
+          .where(inArray(sectionsTable.projectId, Array.from(idsNeedingWeekItems))),
+      "extractClientRundown:sections",
+    );
+    for (const s of allSections) {
+      const children = (wiByProject.get(s.projectId) ?? []).filter(
+        (w) => w.sectionId === s.id,
+      );
+      const derived = foldChildDateRange(children);
+      const display: L3SectionDisplay = {
+        id: s.id,
+        title: s.title,
+        sortOrder: s.sortOrder,
+        notes: s.notes,
+        status: s.status,
+        owner: s.owner,
+        resources: s.resources,
+        startDate: s.startDate,
+        endDate: s.endDate,
+        actionable: isSectionActionable(s),
+        derivedStartDate: derived.startDate,
+        derivedEndDate: derived.endDate,
+      };
+      const arr = l3ByProject.get(s.projectId);
+      if (arr) arr.push(display);
+      else l3ByProject.set(s.projectId, [display]);
+    }
+    for (const arr of l3ByProject.values()) {
+      arr.sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title));
+    }
+  }
+
   function hasContent(c: ClassifiedTop): boolean {
     if (c.kind === "wrapper") return true;
     return (wiByProject.get(c.project.id) ?? []).length > 0;
@@ -280,6 +328,7 @@ export async function extractClientRundown(
           title: child.name,
           parentTitle: c.project.name,
           data: childData,
+          l3Sections: l3ByProject.get(child.id) ?? [],
         });
         addSeverity(overall, childData.summary.severity);
       }
@@ -297,6 +346,7 @@ export async function extractClientRundown(
         kind: "standalone",
         title: c.project.name,
         data,
+        l3Sections: l3ByProject.get(c.project.id) ?? [],
       });
       addSeverity(overall, data.summary.severity);
     }

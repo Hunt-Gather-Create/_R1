@@ -80,6 +80,9 @@ export type GanttRow =
       weekOf: string | null;
       notes: string | null;
       projectId: string | null;
+      // 4-level hierarchy (2026-07-26): L3 grouping + sheet task number.
+      sectionId: string | null;
+      taskNo: string | null;
     };
 
 export type AxisColumn = { date: string; label: string };
@@ -214,12 +217,40 @@ export type GanttData = {
 
 export type RundownSectionKind = "wrapper" | "wrapper-child" | "standalone";
 
+/**
+ * Display shape for an L3 section band (4-level hierarchy, 2026-07-26).
+ * Serializable (no Dates) so it can cross the RSC → client-component
+ * boundary. `derivedStartDate` / `derivedEndDate` are the child-task rollup
+ * computed at extract time (read-time only, never stored) — the UI grays
+ * them on pure-grouping sections; an actionable section's own dates win.
+ */
+export type L3SectionDisplay = {
+  id: string;
+  title: string;
+  sortOrder: number;
+  notes: string | null;
+  status: string | null;
+  owner: string | null;
+  resources: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  /** True when any of the 5 actionable fields is set. */
+  actionable: boolean;
+  derivedStartDate: string | null;
+  derivedEndDate: string | null;
+};
+
 export type RundownSection = {
   anchor: string; // slug for the in-page #anchor jump
   kind: RundownSectionKind;
   title: string;
   parentTitle?: string; // for wrapper-child: the wrapper's name
   data: GanttData;
+  /**
+   * L3 section bands for this project (standalone / wrapper-child kinds
+   * only), ordered by sortOrder. Absent/empty = flat-list fallback (§3.3).
+   */
+  l3Sections?: L3SectionDisplay[];
 };
 
 export type ClientRundownData = {

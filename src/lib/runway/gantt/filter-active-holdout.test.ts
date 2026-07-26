@@ -40,6 +40,8 @@ function makeWeekItem(overrides: Partial<WeekItemRow> = {}): WeekItemRow {
     id: "w-default",
     projectId: "p-default",
     clientId: "c-default",
+    sectionId: null,
+    taskNo: null,
     dayOfWeek: null,
     weekOf: null,
     date: null,
