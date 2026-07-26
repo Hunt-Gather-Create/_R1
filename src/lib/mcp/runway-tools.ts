@@ -35,6 +35,12 @@ import {
   undoLastChange,
   deleteProject,
   deleteWeekItem,
+  getSectionsForProject,
+  getWeekItemsForSection,
+  createSection,
+  updateSectionField,
+  deleteSection,
+  reparentWeekItemToSection,
   createPipelineItem,
   updatePipelineItem,
   deletePipelineItem,
@@ -48,6 +54,10 @@ import {
   validateWeekItemCategory,
 } from "@/lib/runway/operations";
 import { getRetainerTeam } from "@/lib/runway/operations-reads-retainers";
+import {
+  foldChildDateRange,
+  isSectionActionable,
+} from "@/lib/runway/section-utils";
 import { postMutationUpdate } from "@/lib/slack/updates-channel";
 import { generateGanttShare } from "@/lib/runway/gantt/share-orchestrator";
 import { withBatchId } from "@/lib/runway/runway-als";
@@ -572,6 +582,8 @@ export function registerRunwayTools(server: McpServer) {
     startDate: z.string().optional().describe("ISO YYYY-MM-DD; takes precedence over `date` for v4 spans"),
     endDate: z.string().optional().describe("ISO YYYY-MM-DD; multi-day end"),
     blockedBy: z.string().optional().describe("JSON array of week_item ids this item is blocked by"),
+    sectionId: z.string().optional().describe("Parent L3 section id. When set, the task's project/client are taken from the section (invariant 1); a conflicting clientSlug/projectName rejects."),
+    taskNo: z.string().optional().describe("Sheet task number (e.g. '3.2'). Omit for Runway-born tasks — auto-appends when the section has numbered siblings, else stays null until sheet reconciliation."),
     updatedBy: z.string().default("mcp").describe("Person making the update"),
   }, async (params) => {
     // Tool-boundary date validation — defense in depth. Helper revalidates
@@ -670,6 +682,123 @@ export function registerRunwayTools(server: McpServer) {
     }
     return operationResultMessage(result);
   });
+
+  // ── Section tools (L3, 4-level hierarchy) ───────────────
+
+  server.tool(
+    "get_sections",
+    "List a project's L3 sections in sortOrder, each with its child tasks. A section with all 5 actionable fields (status, owner, resources, startDate, endDate) null is a pure grouping band; the response includes derivedStartDate/derivedEndDate (child rollup, computed at read time) for those. Any set field means the section is actionable and its own values stand.",
+    {
+      projectId: z.string().describe("Project id (L1 or L2)"),
+    },
+    async ({ projectId }) => {
+      const rows = await getSectionsForProject(projectId);
+      const enriched = await Promise.all(
+        rows.map(async (s) => {
+          const children = await getWeekItemsForSection(s.id);
+          // Derive the range from the children already fetched — one query
+          // per section, and the same fold the dashboard renders.
+          const derived = foldChildDateRange(children);
+          return {
+            ...s,
+            actionable: isSectionActionable(s),
+            derivedStartDate: derived.startDate,
+            derivedEndDate: derived.endDate,
+            taskCount: children.length,
+            tasks: children.map((c) => ({
+              id: c.id, title: c.title, taskNo: c.taskNo, status: c.status,
+              startDate: c.startDate, endDate: c.endDate, owner: c.owner,
+            })),
+          };
+        }),
+      );
+      return textResult(enriched);
+    },
+  );
+
+  server.tool(
+    "create_section",
+    "Create an L3 section under a project. Sections group tasks (e.g. 'Discovery', 'Design'). The 5 actionable fields are optional — set any of them to make the section actionable; omit all for a pure grouping band. Section status reuses the task enum: scheduled | in-progress | blocked | at-risk | completed | canceled.",
+    {
+      projectId: z.string().describe("Parent project id (L1 or L2)"),
+      title: z.string().describe("Section title"),
+      sortOrder: z.number().int().optional().describe("Position among the project's sections (default 0)"),
+      notes: z.string().optional(),
+      status: z.string().optional().describe("Actionable-optional; task enum reuse"),
+      owner: z.string().optional().describe("Actionable-optional; also inherited by new child tasks (owner chain)"),
+      resources: z.string().optional().describe("Actionable-optional; comma-separated with role tags"),
+      startDate: z.string().optional().describe("Actionable-optional; ISO YYYY-MM-DD, manual only"),
+      endDate: z.string().optional().describe("Actionable-optional; ISO YYYY-MM-DD, manual only"),
+      updatedBy: z.string().default("mcp").describe("Person making the update"),
+    },
+    async (params) => {
+      for (const field of ["startDate", "endDate"] as const) {
+        const value = params[field];
+        if (value !== undefined) {
+          const v = validateIsoDateShape(value, field);
+          if (!v.ok) return operationResultMessage({ ok: false, error: v.error });
+        }
+      }
+      if (params.status !== undefined) {
+        const v = validateWeekItemStatus(params.status);
+        if (!v.ok) return operationResultMessage({ ok: false, error: v.error });
+      }
+      const result = await createSection({ ...params, source: "mcp" });
+      return mutationResult(result);
+    },
+  );
+
+  server.tool(
+    "update_section",
+    "Update a field on an L3 section. Setting any of status / owner / resources / startDate / endDate promotes the section to actionable (no separate promote verb); clearing them all (empty string) demotes it back to pure grouping. status='canceled' is a STATUS FLIP, not a delete — child tasks stay attached and the response reports how many open tasks remain (cancel them, move them, or leave them).",
+    {
+      sectionId: z.string().describe("Section id"),
+      field: z
+        .enum(["title", "sortOrder", "notes", "status", "owner", "resources", "startDate", "endDate"])
+        .describe("Field to update"),
+      newValue: z.string().describe("New value (empty string clears null-able fields)"),
+      updatedBy: z.string().default("mcp").describe("Person making the update"),
+    },
+    async (params) => {
+      if (params.field === "status" && params.newValue !== "") {
+        const v = validateWeekItemStatus(params.newValue);
+        if (!v.ok) return mutationResult({ ok: false, error: v.error });
+      }
+      if ((params.field === "startDate" || params.field === "endDate") && params.newValue !== "") {
+        const v = validateIsoDateShape(params.newValue, params.field);
+        if (!v.ok) return mutationResult({ ok: false, error: v.error });
+      }
+      const result = await updateSectionField({ ...params, source: "mcp" });
+      return mutationResult(result);
+    },
+  );
+
+  server.tool(
+    "delete_section",
+    "Delete an L3 section. Its child tasks are NEVER deleted — they demote to loose tasks (sectionId cleared) in the same transaction. To cancel a section while keeping its grouping, use update_section with status='canceled' instead.",
+    {
+      sectionId: z.string().describe("Section id"),
+      updatedBy: z.string().default("mcp").describe("Person making the update"),
+    },
+    async (params) => {
+      const result = await deleteSection({ ...params, source: "mcp" });
+      return mutationResult(result);
+    },
+  );
+
+  server.tool(
+    "reparent_week_item_to_section",
+    "Move a task into an L3 section (or out, with sectionId=null). Assigning a section atomically rewrites the task's projectId/clientId to match the section's project (invariant 1) — a task can never point at a section from a different project.",
+    {
+      weekItemId: z.string().describe("Week item id"),
+      sectionId: z.string().nullable().describe("Target section id, or null to detach into a loose task"),
+      updatedBy: z.string().default("mcp").describe("Person making the update"),
+    },
+    async (params) => {
+      const result = await reparentWeekItemToSection({ ...params, source: "mcp" });
+      return mutationResult(result);
+    },
+  );
 
   // ── Mutation tools — pipeline ───────────────────────────
 
