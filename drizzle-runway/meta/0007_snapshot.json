@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "9953ff93-fe6d-4323-8da9-616c9fc7266d",
+  "id": "4461eda0-1546-474a-89b5-51abded60735",
   "prevId": "4074dd0a-c4a0-4a8e-ac7a-b409af2f78bb",
   "tables": {
     "bot_modal_proposals": {
@@ -679,21 +679,7 @@
           "isUnique": false
         }
       },
-      "foreignKeys": {
-        "sections_project_id_projects_id_fk": {
-          "name": "sections_project_id_projects_id_fk",
-          "tableFrom": "sections",
-          "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}

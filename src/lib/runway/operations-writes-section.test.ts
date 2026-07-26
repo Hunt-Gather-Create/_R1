@@ -707,3 +707,68 @@ describe("deleteProject section cleanup (C1)", () => {
     expect(entry!.state).toBe("wi-deleted");
   });
 });
+
+// ─── TP-gate regression: linkWeekItemToProject invariant 1 (HIGH) ─────────
+
+import { linkWeekItemToProject } from "./operations-writes-week";
+
+describe("linkWeekItemToProject invariant 1 (TP gate HIGH)", () => {
+  it("clears sectionId + taskNo and flags the ledger row when linking to a project the section does not belong to", async () => {
+    // Task with a sheet-numbered section under pj-cds (project A).
+    const sectionId = await mkSection({ title: "Link Guard Section" });
+    await getSheetSyncLedger().register({
+      engagementKey: "cgx-cds-01", entityType: "section", sheetKey: "S6",
+      runwayId: sectionId,
+    });
+    const sib = await createWeekItem({
+      title: "Link Guard Sib", weekOf: "2026-04-13", sectionId, taskNo: "8.1",
+      updatedBy: "tester",
+    });
+    expect(sib.ok).toBe(true);
+    const minted = await createWeekItem({
+      title: "Link Guard Mover", weekOf: "2026-04-13", sectionId, updatedBy: "tester",
+    });
+    expect(minted.ok).toBe(true);
+    const row = await libsqlClient.execute(
+      `SELECT id, task_no FROM week_items WHERE title = 'Link Guard Mover'`,
+    );
+    const wiId = String(row.rows[0].id);
+    expect(row.rows[0].task_no).toBe("8.2");
+
+    // Dashboard project-picker path: link to pj-social-cgx (project B, same client).
+    const linked = await linkWeekItemToProject({
+      weekItemId: wiId, projectId: "pj-social-cgx", updatedBy: "tester",
+    });
+    expect(linked.ok).toBe(true);
+
+    const after = await libsqlClient.execute(
+      `SELECT project_id, section_id, task_no FROM week_items WHERE id = '${wiId}'`,
+    );
+    expect(after.rows[0].project_id).toBe("pj-social-cgx");
+    expect(after.rows[0].section_id).toBeNull();
+    expect(after.rows[0].task_no).toBeNull();
+    const entry = await getSheetSyncLedger().findByRunwayId(wiId);
+    expect(entry!.state).toBe("flagged");
+  });
+
+  it("keeps the section link when re-linking to the section's own project (no-op case)", async () => {
+    const sectionId = await mkSection({ title: "Link Stay Section" });
+    const created = await createWeekItem({
+      title: "Link Stay Task", weekOf: "2026-04-13", sectionId, updatedBy: "tester",
+    });
+    expect(created.ok).toBe(true);
+    const row = await libsqlClient.execute(
+      `SELECT id FROM week_items WHERE title = 'Link Stay Task'`,
+    );
+    const wiId = String(row.rows[0].id);
+
+    const linked = await linkWeekItemToProject({
+      weekItemId: wiId, projectId: "pj-cds", updatedBy: "tester",
+    });
+    expect(linked.ok).toBe(true);
+    const after = await libsqlClient.execute(
+      `SELECT section_id FROM week_items WHERE id = '${wiId}'`,
+    );
+    expect(after.rows[0].section_id).toBe(sectionId);
+  });
+});

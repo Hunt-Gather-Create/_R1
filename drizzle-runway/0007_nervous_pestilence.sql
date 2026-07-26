@@ -16,8 +16,7 @@ CREATE TABLE `sections` (
 	`start_date` text,
 	`end_date` text,
 	`created_at` integer NOT NULL,
-	`updated_at` integer NOT NULL,
-	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE no action
+	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
 CREATE INDEX `idx_sections_project_id_sort_order` ON `sections` (`project_id`,`sort_order`);--> statement-breakpoint

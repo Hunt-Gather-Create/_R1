@@ -79,7 +79,7 @@ CREATE INDEX idx_week_items_week_of ON week_items(week_of);
 
 CREATE TABLE sections (
   id TEXT PRIMARY KEY NOT NULL,
-  project_id TEXT NOT NULL REFERENCES projects(id),
+  project_id TEXT NOT NULL,
   title TEXT NOT NULL,
   sort_order INTEGER NOT NULL DEFAULT 0,
   notes TEXT,

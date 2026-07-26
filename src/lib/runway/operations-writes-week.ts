@@ -1095,6 +1095,22 @@ export async function linkWeekItemToProject(
   // either parent project (old + new) link back via `triggered_by_update_id`.
   const reparentAuditId = generateId();
 
+  // 4-level hierarchy invariant 1: a task's section must belong to its
+  // project. If this link moves the task to a project its current section
+  // does NOT belong to, the section link (and the sheet-placement taskNo
+  // that came with it) cannot survive the move — clear both in the same
+  // transaction and flag the task's ledger row so the next reconcile
+  // surfaces the displaced sheet row, mirroring reparentWeekItemToSection.
+  let clearSectionLink = false;
+  if (item.sectionId != null) {
+    const sectionRows = await db
+      .select({ projectId: sections.projectId })
+      .from(sections)
+      .where(eq(sections.id, item.sectionId));
+    const sectionProjectId = sectionRows[0]?.projectId ?? null;
+    clearSectionLink = sectionProjectId !== projectId;
+  }
+
   // v4 (Chunk 5): reparent + recompute both parents atomically. A crash
   // between the three writes could leave one or both parents with stale
   // derived dates; the transaction closes that window.
@@ -1112,8 +1128,18 @@ export async function linkWeekItemToProject(
   await db.transaction(async (tx) => {
     await tx
       .update(weekItems)
-      .set({ projectId, updatedAt: new Date() })
+      .set({
+        projectId,
+        ...(clearSectionLink ? { sectionId: null, taskNo: null } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(weekItems.id, weekItemId));
+
+    if (clearSectionLink) {
+      const ledger = getSheetSyncLedger(tx);
+      const entry = await ledger.findByRunwayId(weekItemId);
+      if (entry) await ledger.markStateByRunwayId(weekItemId, "flagged");
+    }
 
     const cascadeAuditContext: RecomputeAuditContext = {
       updatedBy,
@@ -1134,7 +1160,17 @@ export async function linkWeekItemToProject(
     updateType: "week-reparent",
     previousValue: previousProjectId ?? "(none)",
     newValue: projectId,
-    summary: `Week item '${item.title}': re-parented from ${previousProjectId ?? "(none)"} to ${project.name}`,
+    summary: `Week item '${item.title}': re-parented from ${previousProjectId ?? "(none)"} to ${project.name}${
+      clearSectionLink ? " (section link + taskNo cleared — section belonged to the previous project)" : ""
+    }`,
+    ...(clearSectionLink
+      ? {
+          metadata: JSON.stringify({
+            demotedSectionId: item.sectionId,
+            clearedTaskNo: item.taskNo,
+          }),
+        }
+      : {}),
   });
 
   return {

@@ -134,9 +134,12 @@ export const weekItems = sqliteTable("week_items", {
 // grayed, computed at read time — no stored rollups for sections.
 export const sections = sqliteTable("sections", {
   id: text("id").primaryKey(),
-  projectId: text("project_id")
-    .notNull()
-    .references(() => projects.id),
+  // FK-free per the parentProjectId / week_items.sectionId convention (F6):
+  // DB-level FK constraints complicate drizzle-kit SQLite migrations and
+  // risk a full table rebuild on push. Runtime enforcement lives in the
+  // write helpers (createSection verifies the project exists; deleteProject
+  // cleans sections in the same transaction).
+  projectId: text("project_id").notNull(),
   title: text("title").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
   notes: text("notes"),
