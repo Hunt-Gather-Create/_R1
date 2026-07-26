@@ -12,10 +12,13 @@ vi.mock("@/lib/db/runway-schema", () => ({
   projects: { id: "id" },
   weekItems: { id: "id" },
   updates: {},
+  sections: { id: "id", projectId: "projectId" },
+  sheetSyncLedger: { runwayId: "runwayId" },
 }));
 
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((a, b) => ({ eq: [a, b] })),
+  inArray: vi.fn((a, b) => ({ inArray: [a, b] })),
 }));
 
 const mockGetClientBySlug = vi.fn();

@@ -33,6 +33,8 @@ vi.mock("@/lib/db/runway-schema", () => ({
   projects: { id: "id" },
   weekItems: { id: "id" },
   updates: {},
+  sections: { id: "id" },
+  sheetSyncLedger: { runwayId: "runwayId" },
 }));
 
 vi.mock("drizzle-orm", () => ({
