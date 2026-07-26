@@ -135,13 +135,13 @@ export function registerRunwayTools(server: McpServer) {
         .string()
         .optional()
         .describe(
-          "Exact match on engagement_type (e.g. 'retainer', 'project', 'break-fix'). Pass the sentinel '__null__' to narrow to projects with NULL engagement_type.",
+          "Exact match on engagement_type (e.g. 'retainer', 'project', 'one-off'). Pass the sentinel '__null__' to narrow to projects with NULL engagement_type.",
         ),
       parentProjectId: z
         .string()
         .optional()
         .describe(
-          "Exact match on parent_project_id (retainer wrapper linkage, PR #88 Chunk F). Pass a wrapper's id to list its deliverable L1s. Pass '__null__' to narrow to top-level L1s that are not nested under a wrapper.",
+          "Exact match on parent_project_id (wrapper linkage — retainer or project umbrella). Pass a wrapper's id to list its child projects. Pass '__null__' to narrow to top-level L1s that are not nested under a wrapper.",
         ),
     },
     async ({ clientSlug, status, owner, waitingOn, engagementType, parentProjectId }) =>

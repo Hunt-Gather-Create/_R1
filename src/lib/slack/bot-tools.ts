@@ -104,13 +104,13 @@ export function createBotTools(
           .string()
           .optional()
           .describe(
-            "Exact engagement_type match (e.g. 'retainer', 'project', 'break-fix'). Pass '__null__' to narrow to projects with NULL engagement_type.",
+            "Exact engagement_type match (e.g. 'retainer', 'project', 'one-off'). Pass '__null__' to narrow to projects with NULL engagement_type.",
           ),
         parentProjectId: z
           .string()
           .optional()
           .describe(
-            "Exact parent_project_id match (retainer wrapper linkage, PR #88 Chunk F). Pass a wrapper's id to list its deliverable L1s. Pass '__null__' to narrow to top-level L1s.",
+            "Exact parent_project_id match (wrapper linkage — retainer or project umbrella). Pass a wrapper's id to list its child projects. Pass '__null__' to narrow to top-level L1s.",
           ),
       }),
       execute: async ({ clientSlug, owner, waitingOn, engagementType, parentProjectId }) => {
@@ -297,7 +297,7 @@ export function createBotTools(
 
     create_project: tool({
       description:
-        "Create a new project under a client. Use when someone says they want to add a project. Supports retainer wrapper fields: pass engagementType='retainer' (and optionally contractStart/contractEnd) when the user mentions retainer cues or year-anchored wrapper names like 'AG1 Pro 2026'. Set isRetainer=true as a redundant signal alongside engagementType. parentProjectId attaches a deliverable L1 to an existing retainer wrapper (must be same client; cycle-checked).",
+        "Create a new project under a client. Use when someone says they want to add a project. Supports retainer wrapper fields: pass engagementType='retainer' (and optionally contractStart/contractEnd) when the user mentions retainer cues or year-anchored wrapper names like 'AG1 Pro 2026'. Set isRetainer=true as a redundant signal alongside engagementType. parentProjectId attaches a child project to an existing wrapper — retainer or project umbrella, not one-off (same client; cycle-checked; a nested project cannot itself be 'retainer').",
       inputSchema: z.object({
         clientSlug: z.string().describe("Client slug"),
         name: z.string().describe("Project name"),
@@ -325,7 +325,7 @@ export function createBotTools(
           .string()
           .optional()
           .describe(
-            "Retainer wrapper id (same client, no cycle). Attach a deliverable L1 to a retainer wrapper. Use get_projects(engagementType='retainer') to find the id.",
+            "Wrapper project id (retainer or project umbrella; same client, no cycle). Use get_projects to find the id (engagementType='retainer' for retainer wrappers).",
           ),
       }),
       execute: async (params) => {
@@ -400,7 +400,7 @@ export function createBotTools(
 
     update_project_field: tool({
       description:
-        "Update a specific field on a project. This ACTUALLY changes the database field. Use for deadlines, owner, resources, name changes. Do NOT use add_update for field changes. Set `parentProjectId` to attach a deliverable L1 to a retainer wrapper (PR #88 Chunk F); pass an empty string to clear it.",
+        "Update a specific field on a project. This ACTUALLY changes the database field. Use for deadlines, owner, resources, name changes. Do NOT use add_update for field changes. Set `parentProjectId` to nest a project under a wrapper (retainer or project umbrella); pass an empty string to clear it. engagementType='retainer' is rejected on nested projects (L2-never-retainer).",
       inputSchema: z.object({
         clientSlug: z.string().describe("Client slug"),
         projectName: z.string().describe("Project name (fuzzy match)"),

@@ -313,6 +313,131 @@ describe("Delta A addProject create path", () => {
   });
 });
 
+// ── Delta A: undo path revalidates nesting invariants ─────
+// The #26 stale gate is same-field only; cross-field sequences could
+// otherwise reconstruct a forbidden nested-retainer state through undo.
+
+describe("Delta A undo guard (undoLastChange)", () => {
+  it("rejects undo that would restore engagementType='retainer' on a since-nested project", async () => {
+    // pj-cds starts retainer (raw seed), u1 retypes it to project (audit
+    // row), u2 nests it under pj-social-cgx, then u1's undo would restore
+    // 'retainer' onto a now-nested project.
+    await setEngagementType("pj-cds", "retainer");
+    const { updateProjectField } = await import("./operations-writes-project");
+    const retype = await updateProjectField({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      field: "engagementType",
+      newValue: "project",
+      updatedBy: "delta-u1",
+    });
+    expect(retype.ok).toBe(true);
+    const nest = await updateProjectField({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      field: "parentProjectId",
+      newValue: "pj-social-cgx",
+      updatedBy: "delta-u2",
+    });
+    expect(nest.ok).toBe(true);
+
+    const { undoLastChange } = await import("./operations-writes-undo");
+    const result = await undoLastChange({ updatedBy: "delta-u1" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/L2-never-retainer/);
+    const row = await getProject(testDb, "pj-cds");
+    expect(row?.engagementType).toBe("project");
+  });
+
+  it("rejects undo that would restore a parent link onto a since-retainer-typed project", async () => {
+    // u1 nests pj-cds then clears the link (audit row prev=pj-social-cgx),
+    // u2 types pj-cds retainer (legal, top-level), then u1's undo would
+    // re-nest a retainer-typed project.
+    const { updateProjectField } = await import("./operations-writes-project");
+    const nest = await updateProjectField({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      field: "parentProjectId",
+      newValue: "pj-social-cgx",
+      updatedBy: "delta-u1",
+    });
+    expect(nest.ok).toBe(true);
+    const clear = await updateProjectField({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      field: "parentProjectId",
+      newValue: "",
+      updatedBy: "delta-u1",
+    });
+    expect(clear.ok).toBe(true);
+    // createdAt is integer-seconds; nest + clear land in the same second and
+    // the desc(createdAt), desc(id) tiebreak is random-id order. Bump the
+    // clear row (previous_value carries the old parent id) so it is strictly
+    // the newest delta-u1 change and undo targets it deterministically.
+    await libsqlClient.execute({
+      sql: `UPDATE updates SET created_at = created_at + 10
+            WHERE updated_by = 'delta-u1' AND previous_value = 'pj-social-cgx'`,
+      args: [],
+    });
+    const retype = await updateProjectField({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      field: "engagementType",
+      newValue: "retainer",
+      updatedBy: "delta-u2",
+    });
+    expect(retype.ok).toBe(true);
+
+    const { undoLastChange } = await import("./operations-writes-undo");
+    const result = await undoLastChange({ updatedBy: "delta-u1" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/L2-never-retainer/);
+    const row = await getProject(testDb, "pj-cds");
+    expect(row?.parentProjectId).toBeNull();
+  });
+
+  it("still allows a legal undo of a parent link (restores null)", async () => {
+    const { updateProjectField } = await import("./operations-writes-project");
+    const nest = await updateProjectField({
+      clientSlug: "convergix",
+      projectName: "CDS Messaging",
+      field: "parentProjectId",
+      newValue: "pj-social-cgx",
+      updatedBy: "delta-u3",
+    });
+    expect(nest.ok).toBe(true);
+    const { undoLastChange } = await import("./operations-writes-undo");
+    const result = await undoLastChange({ updatedBy: "delta-u3" });
+    expect(result.ok).toBe(true);
+    const row = await getProject(testDb, "pj-cds");
+    expect(row?.parentProjectId).toBeNull();
+  });
+});
+
+// ── Delta A: remediation path for pre-existing forbidden rows ──
+
+describe("Delta A remediation path", () => {
+  it("allows clearing the parent link on an already-nested retainer-typed row", async () => {
+    // Pre-Delta-A data could hold nested retainer-typed rows (the old rule
+    // only inspected the parent). The cleanup move — clearing the link —
+    // must not be blocked by the new guards.
+    await setEngagementType("pj-social-cgx", "retainer");
+    await setParent("pj-social-cgx", "pj-cds");
+    const { updateProjectField } = await import("./operations-writes-project");
+    const result = await updateProjectField({
+      clientSlug: "convergix",
+      projectName: "Social Content",
+      field: "parentProjectId",
+      newValue: "",
+      updatedBy: "test",
+    });
+    expect(result.ok).toBe(true);
+    const row = await getProject(testDb, "pj-social-cgx");
+    expect(row?.parentProjectId).toBeNull();
+    expect(row?.engagementType).toBe("retainer");
+  });
+});
+
 // ── updateProjectField parentProjectId branch reuses validator ──
 
 describe("updateProjectField parentProjectId — shared validator wiring", () => {

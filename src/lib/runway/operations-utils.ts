@@ -1491,13 +1491,13 @@ export type ParentProjectIdValidationResult =
 /**
  * Six invariants enforced for any write that sets parent_project_id:
  *  1. parent must exist (non-null case)
- *  2. parent.engagement_type must allow children: 'retainer' | 'project' |
+ *  2. parent.client_id === child.client_id (no cross-client parenting)
+ *  3. parent.engagement_type must allow children: 'retainer' | 'project' |
  *     NULL (NULL tolerated as default-project per the tolerant-read
  *     convention until the G2 backfill). 'one-off' parents are rejected —
  *     one-offs render as first-class childless cards (v4 §3.3). Delta A
  *     (2026-07-26) relaxed this from retainer-only parents; see
  *     runway-schema-change-plan-v4-delta-a.md §4.
- *  3. parent.client_id === child.client_id (no cross-client parenting)
  *  4. child must not be typed 'retainer' (L2-never-retainer, Delta A §4):
  *     retainer-ness lives at L1 only and inherits down the tree. The child
  *     row is looked up here rather than passed in so no write path can
@@ -1548,7 +1548,17 @@ export async function validateParentProjectIdAssignment(
     return { ok: false, error: `Parent project '${ctx.newParentId}' not found.` };
   }
 
-  // Invariant 2 (Delta A relaxation): parents may be 'retainer', 'project',
+  // Invariant 2: same-client first, so pointing at another client's project
+  // rejects with the cross-client error rather than leaking that project's
+  // engagementType shape.
+  if (parent.clientId !== ctx.childClientId) {
+    return {
+      ok: false,
+      error: `Parent project belongs to client '${parent.clientId}', child belongs to client '${ctx.childClientId}' — cross-client parenting forbidden.`,
+    };
+  }
+
+  // Invariant 3 (Delta A relaxation): parents may be 'retainer', 'project',
   // or NULL-typed (default project). Only 'one-off' cannot wrap children.
   if (parent.engagementType === "one-off") {
     return {
@@ -1557,16 +1567,14 @@ export async function validateParentProjectIdAssignment(
     };
   }
 
-  if (parent.clientId !== ctx.childClientId) {
-    return {
-      ok: false,
-      error: `Parent project belongs to client '${parent.clientId}', child belongs to client '${ctx.childClientId}' — cross-client parenting forbidden.`,
-    };
-  }
-
   // Invariant 4 (L2-never-retainer, Delta A): a retainer-typed project can
   // never be nested. Child lookup covers create too — addProject inserts
   // the candidate row before calling this validator inside its tx.
+  // Contract note: a missing child row skips this check (updateProjectField
+  // resolves a real row first; addProject's insert precedes validation
+  // in-tx). A future caller validating BEFORE inserting, outside a tx,
+  // must pass the executor that can see the candidate row — otherwise this
+  // guard silently no-ops for that caller.
   const childRows = await executor
     .select({ engagementType: projects.engagementType })
     .from(projects)
