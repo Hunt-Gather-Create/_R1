@@ -79,24 +79,52 @@ describe("shouldRunSchemaPush env matrix", () => {
 // `runway` branch as preview, so the production-only gate skipped the push and
 // PR #118 shipped code querying tables prod never got. The runway-branch
 // trigger closes that gap. All rows explicit — no matrix loops.
+// The trigger requires all three: exact ref match, empty PR id (fork-PR
+// guard), and a non-empty VERCEL_DEPLOYMENT_ID (cloud-deploy marker — local
+// vercel dev/build with a dirty checkout must never force-push prod schema;
+// Holdout M2 on PR #120).
 describe("shouldRunSchemaPush runway-branch trigger", () => {
-  it("pushes on runway-branch preview deploys (the incident shape)", () => {
+  it("pushes on runway-branch cloud preview deploys (the incident shape)", () => {
+    const d = shouldRunSchemaPush({
+      VERCEL_ENV: "preview",
+      VERCEL_GIT_COMMIT_REF: "runway",
+      VERCEL_DEPLOYMENT_ID: "dpl_abc123",
+      RUNWAY_DATABASE_URL: RUNWAY_URL,
+    });
+    expect(d.run).toBe(true);
+    expect(d.reason).toBe("runway-branch cloud deploy (schema-push contract)");
+  });
+
+  it("pushes on runway-branch cloud deploys even when VERCEL_ENV is unset", () => {
+    const d = shouldRunSchemaPush({
+      VERCEL_GIT_COMMIT_REF: "runway",
+      VERCEL_DEPLOYMENT_ID: "dpl_abc123",
+      RUNWAY_DATABASE_URL: RUNWAY_URL,
+    });
+    expect(d.run).toBe(true);
+    expect(d.reason).toBe("runway-branch cloud deploy (schema-push contract)");
+  });
+
+  it("skips a runway ref without the cloud-deploy marker (local vercel build/dev)", () => {
     const d = shouldRunSchemaPush({
       VERCEL_ENV: "preview",
       VERCEL_GIT_COMMIT_REF: "runway",
       RUNWAY_DATABASE_URL: RUNWAY_URL,
     });
-    expect(d.run).toBe(true);
-    expect(d.reason).toBe("runway-branch deploy (schema-push contract)");
+    expect(d.run).toBe(false);
+    expect(d.reason).toContain("VERCEL_DEPLOYMENT_ID unset");
+    expect(d.checkOnly).toBeUndefined();
   });
 
-  it("pushes on runway-branch deploys even when VERCEL_ENV is unset", () => {
+  it("treats a whitespace-only deployment id as no marker", () => {
     const d = shouldRunSchemaPush({
+      VERCEL_ENV: "preview",
       VERCEL_GIT_COMMIT_REF: "runway",
+      VERCEL_DEPLOYMENT_ID: "   ",
       RUNWAY_DATABASE_URL: RUNWAY_URL,
     });
-    expect(d.run).toBe(true);
-    expect(d.reason).toBe("runway-branch deploy (schema-push contract)");
+    expect(d.run).toBe(false);
+    expect(d.reason).toContain("VERCEL_DEPLOYMENT_ID unset");
   });
 
   it("skips main-branch preview deploys", () => {
@@ -134,15 +162,20 @@ describe("shouldRunSchemaPush runway-branch trigger", () => {
     expect(d.run).toBe(false);
   });
 
-  it("skips a fork PR whose branch is literally named 'runway'", () => {
+  it("skips a fork PR whose branch is literally named 'runway', in check-only mode", () => {
     const d = shouldRunSchemaPush({
       VERCEL_ENV: "preview",
       VERCEL_GIT_COMMIT_REF: "runway",
       VERCEL_GIT_PULL_REQUEST_ID: "121",
+      VERCEL_DEPLOYMENT_ID: "dpl_abc123",
       RUNWAY_DATABASE_URL: RUNWAY_URL,
     });
     expect(d.run).toBe(false);
     expect(d.reason).toContain("PR #121");
+    // The runway-ref + PR-linked branch is the wrong-skip window: main() must
+    // still run the read-only parity check so drift fails the build
+    // mechanically (Holdout M3).
+    expect(d.checkOnly).toBe(true);
   });
 
   it("still pushes when the PR id is an empty string (Vercel's no-PR value)", () => {
@@ -150,10 +183,11 @@ describe("shouldRunSchemaPush runway-branch trigger", () => {
       VERCEL_ENV: "preview",
       VERCEL_GIT_COMMIT_REF: "runway",
       VERCEL_GIT_PULL_REQUEST_ID: "",
+      VERCEL_DEPLOYMENT_ID: "dpl_abc123",
       RUNWAY_DATABASE_URL: RUNWAY_URL,
     });
     expect(d.run).toBe(true);
-    expect(d.reason).toBe("runway-branch deploy (schema-push contract)");
+    expect(d.reason).toBe("runway-branch cloud deploy (schema-push contract)");
   });
 
   it("treats a whitespace-only PR id as no PR", () => {
@@ -161,6 +195,7 @@ describe("shouldRunSchemaPush runway-branch trigger", () => {
       VERCEL_ENV: "preview",
       VERCEL_GIT_COMMIT_REF: "runway",
       VERCEL_GIT_PULL_REQUEST_ID: "   ",
+      VERCEL_DEPLOYMENT_ID: "dpl_abc123",
       RUNWAY_DATABASE_URL: RUNWAY_URL,
     });
     expect(d.run).toBe(true);
@@ -213,23 +248,25 @@ describe("shouldRunSchemaPush runway-branch trigger", () => {
     expect(d.run).toBe(false);
   });
 
-  // Edge: `vercel dev` on the runway branch. Shouldn't happen, but the trigger
-  // is deliberately env-agnostic (per the ENV-unset case above), so it pushes
-  // with an unambiguous reason — the push itself is idempotent.
-  it("VERCEL_ENV=development on the runway branch pushes with a clear reason", () => {
+  // The realistic local hazard (Holdout M2): `vercel dev` / `vercel build` on
+  // a DIRTY runway checkout mid-migration. drizzle push --force of WIP schema
+  // can emit DROPs at prod, so the cloud-deploy marker must block it.
+  // RUN_DB_MIGRATIONS remains the deliberate local escape.
+  it("VERCEL_ENV=development on the runway branch skips without the cloud marker", () => {
     const d = shouldRunSchemaPush({
       VERCEL_ENV: "development",
       VERCEL_GIT_COMMIT_REF: "runway",
       RUNWAY_DATABASE_URL: RUNWAY_URL,
     });
-    expect(d.run).toBe(true);
-    expect(d.reason).toBe("runway-branch deploy (schema-push contract)");
+    expect(d.run).toBe(false);
+    expect(d.reason).toContain("VERCEL_DEPLOYMENT_ID unset");
   });
 
   it("SKIP_DB_MIGRATIONS beats the runway-branch trigger", () => {
     const d = shouldRunSchemaPush({
       VERCEL_ENV: "preview",
       VERCEL_GIT_COMMIT_REF: "runway",
+      VERCEL_DEPLOYMENT_ID: "dpl_abc123",
       RUNWAY_DATABASE_URL: RUNWAY_URL,
       SKIP_DB_MIGRATIONS: "true",
     });
@@ -241,8 +278,20 @@ describe("shouldRunSchemaPush runway-branch trigger", () => {
     const d = shouldRunSchemaPush({
       VERCEL_ENV: "preview",
       VERCEL_GIT_COMMIT_REF: "runway",
+      VERCEL_DEPLOYMENT_ID: "dpl_abc123",
     });
     expect(d.run).toBe(false);
     expect(d.reason).toContain("RUNWAY_DATABASE_URL");
+  });
+
+  it("plain skips carry no checkOnly flag (parity only runs in the wrong-skip window)", () => {
+    const featureBranch = shouldRunSchemaPush({
+      VERCEL_ENV: "preview",
+      VERCEL_GIT_COMMIT_REF: "feat/xyz",
+      RUNWAY_DATABASE_URL: RUNWAY_URL,
+    });
+    expect(featureBranch.checkOnly).toBeUndefined();
+    const localDev = shouldRunSchemaPush({ RUNWAY_DATABASE_URL: RUNWAY_URL });
+    expect(localDev.checkOnly).toBeUndefined();
   });
 });

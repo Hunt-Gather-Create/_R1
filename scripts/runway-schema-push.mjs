@@ -16,11 +16,12 @@ function isTruthy(value) {
  *
  * Two deploy shapes serve prod and therefore must push schema:
  *  - VERCEL_ENV=production (the standard case).
- *  - VERCEL_GIT_COMMIT_REF=runway with NO linked pull request:
- *    Hunt-Gather-Create's Vercel treats the `runway` branch as PREVIEW, not
- *    production, but the live Runway app is aliased to those preview deploys.
- *    Skipping the push there lets shipped code query tables that were never
- *    created (RW-INC-2026-07-27-01, the PR #118 dashboard 500).
+ *  - VERCEL_GIT_COMMIT_REF=runway with NO linked pull request, on a CLOUD
+ *    deploy: Hunt-Gather-Create's Vercel treats the `runway` branch as
+ *    PREVIEW, not production, but the live Runway app is aliased to those
+ *    preview deploys. Skipping the push there lets shipped code query tables
+ *    that were never created (RW-INC-2026-07-27-01, the PR #118 dashboard
+ *    500).
  *
  * Why the trigger requires an EMPTY VERCEL_GIT_PULL_REQUEST_ID:
  * VERCEL_GIT_COMMIT_REF is the HEAD branch name, so a fork PR whose branch is
@@ -30,15 +31,33 @@ function isTruthy(value) {
  * push-triggered branch deploy of upstream `runway`, which carries no PR id;
  * PR-triggered previews (including all fork PRs) always do. Exact-equality on
  * the ref still excludes feature branches and substring lookalikes.
+ *
+ * Why the trigger also requires a NON-EMPTY VERCEL_DEPLOYMENT_ID (the
+ * cloud-deploy marker, Holdout finding M2 on PR #120): a local `vercel dev` /
+ * `vercel build` on the runway branch can populate the ref while the checkout
+ * is DIRTY — a developer mid-migration has WIP schema, and `drizzle-kit push
+ * --force` of WIP schema can emit DROPs at prod (RUNWAY_DATABASE_URL is
+ * All-Environments, so it's pulled locally). Vercel populates
+ * VERCEL_DEPLOYMENT_ID only in cloud builds, never locally.
+ * RUN_DB_MIGRATIONS stays above this trigger as the deliberate local escape.
+ *
  * Known caveat (documented in the runbook): if a PR is ever opened FROM the
  * upstream runway branch (e.g. runway → main), Vercel links runway-branch
- * deploys to that PR and the trigger wrong-skips; use RUN_DB_MIGRATIONS to
- * force the push for that deploy shape.
+ * deploys to that PR and the trigger wrong-skips. That window is detected
+ * mechanically, not by log readers: the skip decision carries checkOnly=true
+ * and main() still runs the read-only parity check, so a schema-adding change
+ * in the window fails the build instead of 500ing in prod (Holdout M3).
+ * RUN_DB_MIGRATIONS is the operator override to push through the window.
  *
  * Precedence: SKIP_DB_MIGRATIONS > missing URL > RUN_DB_MIGRATIONS >
- * VERCEL_ENV=production > runway-ref-without-PR. SKIP stays above everything
- * and the force flag stays above the env checks so operators keep both manual
- * overrides.
+ * VERCEL_ENV=production > runway-ref-without-PR-on-cloud-deploy. SKIP stays
+ * above everything and the force flag stays above the env checks so operators
+ * keep both manual overrides.
+ *
+ * HARD DEPENDENCY: every VERCEL_* variable this gate reads is exposed only
+ * while "Enable access to System Environment Variables" is checked on the
+ * Vercel project. See the runbook's "Hard dependency" section for the
+ * one-step diagnosis (Holdout M4).
  *
  * Env-shape matrix + manual verification runbook:
  * docs/runway/schema-push-env-matrix.md
@@ -60,12 +79,24 @@ export function shouldRunSchemaPush(env) {
   if (env.VERCEL_GIT_COMMIT_REF === "runway") {
     const pullRequestId = env.VERCEL_GIT_PULL_REQUEST_ID?.trim() ?? "";
     if (pullRequestId.length > 0) {
+      // The wrong-skip window: a PR opened FROM upstream runway links the
+      // branch deploys to that PR. checkOnly makes main() run the read-only
+      // parity check so drift in this window fails the build mechanically.
       return {
         run: false,
+        checkOnly: true,
         reason: `runway-named ref on a PR-linked deploy (PR #${pullRequestId}) — PR previews never push`,
       };
     }
-    return { run: true, reason: "runway-branch deploy (schema-push contract)" };
+    const deploymentId = env.VERCEL_DEPLOYMENT_ID?.trim() ?? "";
+    if (deploymentId.length === 0) {
+      return {
+        run: false,
+        reason:
+          "runway-branch ref without a cloud-deploy marker (VERCEL_DEPLOYMENT_ID unset) — local builds never push; use RUN_DB_MIGRATIONS to force",
+      };
+    }
+    return { run: true, reason: "runway-branch cloud deploy (schema-push contract)" };
   }
   return {
     run: false,
@@ -96,6 +127,15 @@ async function main() {
 
   if (!decision.run) {
     console.log(`Skipping Runway database schema push: ${decision.reason}.`);
+    if (decision.checkOnly) {
+      // Wrong-skip window (Holdout M3): verify prod schema still matches the
+      // shipped code even though this deploy didn't push. Read-only probes;
+      // a parity failure fails the build mechanically instead of relying on
+      // someone reading build logs.
+      console.log("Running read-only schema parity check for the wrong-skip window...");
+      const { runSchemaParityCheck } = await import("./runway-schema-parity-check.mjs");
+      await runSchemaParityCheck();
+    }
     return;
   }
 
