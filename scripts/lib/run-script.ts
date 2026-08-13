@@ -13,10 +13,21 @@ loadEnvLocal();
 
 type DrizzleDb = ReturnType<typeof drizzle>;
 
-/** Create a Drizzle DB connection for the Runway database. */
-export function createRunwayDb(): { db: DrizzleDb; url: string } {
-  const url = process.env.RUNWAY_DATABASE_URL ?? "file:runway-local.db";
-  const client = createClient({ url, authToken: process.env.RUNWAY_AUTH_TOKEN });
+/**
+ * Create a Drizzle DB connection for the Runway database.
+ *
+ * `staging: true` resolves the RUNWAY_STAGING_* env pair instead of the prod
+ * pair — used by the E2 (#102) two-pass `--live` integration test so the DB
+ * ledger is exercised against the `runway-staging` clone, never prod.
+ */
+export function createRunwayDb(opts?: { staging?: boolean }): { db: DrizzleDb; url: string } {
+  const url = opts?.staging
+    ? (process.env.RUNWAY_STAGING_DATABASE_URL ?? "")
+    : (process.env.RUNWAY_DATABASE_URL ?? "file:runway-local.db");
+  const authToken = opts?.staging
+    ? process.env.RUNWAY_STAGING_AUTH_TOKEN
+    : process.env.RUNWAY_AUTH_TOKEN;
+  const client = createClient({ url, authToken });
   const db = drizzle(client);
   return { db, url };
 }
