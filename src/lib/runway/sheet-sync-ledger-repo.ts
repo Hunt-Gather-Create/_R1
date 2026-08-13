@@ -97,10 +97,21 @@ export interface SheetSyncLedgerRepo {
   ): Promise<LedgerEntry[]>;
   /** Flip a row's lifecycle state by Runway entity id. No-op if absent. */
   markStateByRunwayId(runwayId: string, state: LedgerState): Promise<void>;
-  /** Refresh last-seen provenance after a reconcile pass. No-op if absent. */
+  /**
+   * Refresh last-seen provenance after a reconcile pass. No-op if absent.
+   * `lastSeenContentHash` and `state` are optional (E2, #102): a reconcile
+   * that re-banks an existing row updates its change-detection hash and
+   * lifecycle state in place, without a second call. Omitted fields are left
+   * untouched.
+   */
   touchByRunwayId(
     runwayId: string,
-    seen: { lastSeenTitle?: string | null; lastSyncRunId?: string | null },
+    seen: {
+      lastSeenTitle?: string | null;
+      lastSyncRunId?: string | null;
+      lastSeenContentHash?: string | null;
+      state?: LedgerState;
+    },
   ): Promise<void>;
 }
 
@@ -225,6 +236,10 @@ export function getSheetSyncLedger(executor?: LedgerExecutor): SheetSyncLedgerRe
         .set({
           ...(seen.lastSeenTitle !== undefined ? { lastSeenTitle: seen.lastSeenTitle } : {}),
           ...(seen.lastSyncRunId !== undefined ? { lastSyncRunId: seen.lastSyncRunId } : {}),
+          ...(seen.lastSeenContentHash !== undefined
+            ? { lastSeenContentHash: seen.lastSeenContentHash }
+            : {}),
+          ...(seen.state !== undefined ? { state: seen.state } : {}),
           lastSeenAt: new Date(),
         })
         .where(eq(sheetSyncLedger.runwayId, runwayId));
