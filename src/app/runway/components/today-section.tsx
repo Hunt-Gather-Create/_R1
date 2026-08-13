@@ -1,6 +1,7 @@
 "use client";
 
 import type { DayItem } from "../types";
+import { chicagoDisplayDate } from "@/lib/runway/date-chicago";
 import { DayItemCard } from "./day-item-card";
 
 export function TodaySection({
@@ -8,12 +9,8 @@ export function TodaySection({
 }: {
   todayColumn: DayItem | null;
 }) {
-  const todayFormatted = new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
+  // One Chicago day-bucket everywhere (issue #43).
+  const todayFormatted = chicagoDisplayDate();
 
   return (
     <section data-testid="today-section">
