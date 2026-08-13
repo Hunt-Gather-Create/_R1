@@ -76,6 +76,7 @@
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.19",
     "drizzle-orm": "^0.45.2",
+    "googleapis": "^174.0.1",
     "gray-matter": "^4.0.3",
     "inngest": "^3.54.0",
     "iron-session": "^8.0.4",

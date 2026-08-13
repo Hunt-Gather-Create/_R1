@@ -88,3 +88,6 @@ docs/tmp/
 
 # gstack tooling output (per-developer cache)
 .gstack/
+
+# Google service-account keys (never commit)
+*.service-account.json
