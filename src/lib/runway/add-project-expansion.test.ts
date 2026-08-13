@@ -96,8 +96,10 @@ describe("addProject — v4 metadata", () => {
     expect(row).toBeNull();
   });
 
-  it("rejects parentProjectId targeting a non-retainer parent and rolls back the insert", async () => {
-    // pj-cds defaults to engagement_type = NULL → not a retainer.
+  it("rejects parentProjectId targeting a one-off parent and rolls back the insert", async () => {
+    // Delta A relaxed retainer-only parents; 'one-off' is now the only
+    // engagementType that cannot wrap children (childless-card contract).
+    await setEngagementType("pj-cds", "one-off");
     const { addProject } = await import("./operations-add");
     const result = await addProject({
       clientSlug: "convergix",
@@ -107,7 +109,7 @@ describe("addProject — v4 metadata", () => {
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/must be 'retainer'/);
+    if (!result.ok) expect(result.error).toMatch(/one-off/);
 
     const row = await projectByName("cl-convergix", "Should Not Persist");
     expect(row).toBeNull();

@@ -1460,6 +1460,16 @@ export const INTERCEPT_EXCLUDED = ["create_pipeline_item"] as const;
 // ── parentProjectId validators ────────────────────────────
 
 /**
+ * Shared L2-never-retainer rejection message (Delta A, 2026-07-26).
+ * Emitted by validateParentProjectIdAssignment (nesting a retainer-typed
+ * child) and by updateProjectField (toggling a nested project to retainer)
+ * so both surfaces reject with identical, greppable wording.
+ */
+export function formatL2NeverRetainerError(projectId: string): string {
+  return `Project '${projectId}' cannot combine engagementType='retainer' with a parent link — retainer is L1-only; an L2 inherits retainer context from its parent (L2-never-retainer, runway-schema-change-plan-v4-delta-a.md §4).`;
+}
+
+/**
  * Minimal executor shape: just `select`. Compatible with `db` and any `tx`
  * passed into `db.transaction(...)`.
  */
@@ -1479,16 +1489,27 @@ export type ParentProjectIdValidationResult =
   | { ok: false; error: string };
 
 /**
- * Five invariants enforced for any write that sets parent_project_id:
+ * Six invariants enforced for any write that sets parent_project_id:
  *  1. parent must exist (non-null case)
- *  2. parent.engagement_type === "retainer"
- *  3. parent.client_id === child.client_id (no cross-client parenting)
- *  4. no cycle via 10-hop walk (newParentId → parent's parent → ...; reject
+ *  2. parent.client_id === child.client_id (no cross-client parenting)
+ *  3. parent.engagement_type must allow children: 'retainer' | 'project' |
+ *     NULL (NULL tolerated as default-project per the tolerant-read
+ *     convention until the G2 backfill). 'one-off' parents are rejected —
+ *     one-offs render as first-class childless cards (v4 §3.3). Delta A
+ *     (2026-07-26) relaxed this from retainer-only parents; see
+ *     runway-schema-change-plan-v4-delta-a.md §4.
+ *  4. child must not be typed 'retainer' (L2-never-retainer, Delta A §4):
+ *     retainer-ness lives at L1 only and inherits down the tree. The child
+ *     row is looked up here rather than passed in so no write path can
+ *     bypass — addProject inserts before validating inside its tx, so the
+ *     lookup sees the candidate row even at create time.
+ *  5. no cycle via 10-hop walk (newParentId → parent's parent → ...; reject
  *     if the chain hits childId)
- *  5. depth guard (v4-schema-plan §4.9, 2026-07-26): parent must itself be
+ *  6. depth guard (v4-schema-plan §4.9, 2026-07-26): parent must itself be
  *     top-level (parent.parent_project_id NULL). Max nesting depth is 2 —
  *     an L2 can never parent another L2. Prod chain-check verified zero
- *     existing chains deeper than 2 before this guard shipped.
+ *     existing chains deeper than 2 before this guard shipped. Unchanged by
+ *     Delta A — composes with L2-never-retainer to keep the 4-level ceiling.
  *
  * Null newParentId (clearing the link) is trivially valid.
  *
@@ -1527,20 +1548,40 @@ export async function validateParentProjectIdAssignment(
     return { ok: false, error: `Parent project '${ctx.newParentId}' not found.` };
   }
 
-  if (parent.engagementType !== "retainer") {
-    return {
-      ok: false,
-      error: `Parent project '${parent.id}' has engagementType='${
-        parent.engagementType ?? "null"
-      }', must be 'retainer'.`,
-    };
-  }
-
+  // Invariant 2: same-client first, so pointing at another client's project
+  // rejects with the cross-client error rather than leaking that project's
+  // engagementType shape.
   if (parent.clientId !== ctx.childClientId) {
     return {
       ok: false,
       error: `Parent project belongs to client '${parent.clientId}', child belongs to client '${ctx.childClientId}' — cross-client parenting forbidden.`,
     };
+  }
+
+  // Invariant 3 (Delta A relaxation): parents may be 'retainer', 'project',
+  // or NULL-typed (default project). Only 'one-off' cannot wrap children.
+  if (parent.engagementType === "one-off") {
+    return {
+      ok: false,
+      error: `Parent project '${parent.id}' has engagementType='one-off' — one-offs render as childless cards and cannot wrap sub-projects (v4 §3.3).`,
+    };
+  }
+
+  // Invariant 4 (L2-never-retainer, Delta A): a retainer-typed project can
+  // never be nested. Child lookup covers create too — addProject inserts
+  // the candidate row before calling this validator inside its tx.
+  // Contract note: a missing child row skips this check (updateProjectField
+  // resolves a real row first; addProject's insert precedes validation
+  // in-tx). A future caller validating BEFORE inserting, outside a tx,
+  // must pass the executor that can see the candidate row — otherwise this
+  // guard silently no-ops for that caller.
+  const childRows = await executor
+    .select({ engagementType: projects.engagementType })
+    .from(projects)
+    .where(eq(projects.id, ctx.childId))
+    .limit(1);
+  if (childRows[0]?.engagementType === "retainer") {
+    return { ok: false, error: formatL2NeverRetainerError(ctx.childId) };
   }
 
   // Cycle check — walk the parent chain up to 10 hops; reject if it ever

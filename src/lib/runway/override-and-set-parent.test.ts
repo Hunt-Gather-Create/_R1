@@ -231,8 +231,23 @@ describe("setProjectParent", () => {
     expect(child?.parentProjectId).toBeNull();
   });
 
-  it("rejects when parent is not a retainer", async () => {
-    // pj-cds defaults to engagement_type = NULL.
+  it("accepts a NULL-typed parent (tolerant-read default project, Delta A)", async () => {
+    // pj-cds defaults to engagement_type = NULL. Pre-Delta-A this rejected
+    // (retainer-only parents); NULL now reads as default 'project'.
+    const { setProjectParent } = await import("./operations-writes-project");
+    const result = await setProjectParent({
+      clientSlug: "convergix",
+      projectName: "Social Content",
+      parentProjectName: "CDS Messaging",
+      updatedBy: "tester",
+    });
+    expect(result.ok).toBe(true);
+    const child = await getProject(testDb, "pj-social-cgx");
+    expect(child?.parentProjectId).toBe("pj-cds");
+  });
+
+  it("rejects when parent is a one-off (Delta A childless-card contract)", async () => {
+    await setEngagementType("pj-cds", "one-off");
     const { setProjectParent } = await import("./operations-writes-project");
     const result = await setProjectParent({
       clientSlug: "convergix",
@@ -241,7 +256,7 @@ describe("setProjectParent", () => {
       updatedBy: "tester",
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/must be 'retainer'/);
+    if (!result.ok) expect(result.error).toMatch(/one-off/);
   });
 
   it("rejects cross-client parent (parent in different client)", async () => {
@@ -264,8 +279,7 @@ describe("setProjectParent", () => {
   });
 
   it("rejects cycle (A under B; try to assign A as B's parent)", async () => {
-    await setEngagementType("pj-cds", "retainer");
-    await setEngagementType("pj-social-cgx", "retainer");
+    // No engagementType setup post-Delta-A — isolates the cycle rejection.
     await setParent("pj-social-cgx", "pj-cds");
     const { setProjectParent } = await import("./operations-writes-project");
     const result = await setProjectParent({

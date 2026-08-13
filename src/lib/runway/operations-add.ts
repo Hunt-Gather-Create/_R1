@@ -41,7 +41,7 @@ export interface AddProjectParams {
   dueDate?: string;
   waitingOn?: string;
   notes?: string;
-  /** v4 retainer metadata (optional). engagementType: "retainer" | "project" | null. */
+  /** v4 metadata (optional). engagementType: "retainer" | "project" | "one-off" | null. */
   engagementType?: string | null;
   /** ISO YYYY-MM-DD or null. */
   contractStart?: string | null;
@@ -51,7 +51,7 @@ export interface AddProjectParams {
   startDate?: string | null;
   /** ISO YYYY-MM-DD or null. */
   endDate?: string | null;
-  /** Wrapper project id (must be retainer + same client + non-cyclic) or null. */
+  /** Wrapper project id (retainer or project umbrella + same client + non-cyclic) or null. */
   parentProjectId?: string | null;
   updatedBy: string;
   /**

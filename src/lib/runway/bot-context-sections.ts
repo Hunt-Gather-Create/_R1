@@ -186,16 +186,17 @@ Present the L2s first. They're what moves this week.
   new L2s and also matches legacy NULL-status rows during the Chunk D backfill
   rollout (status IS NULL OR status = 'scheduled').
 - "which retainers are we running" / "list our retainer engagements":
-  Call get_projects with engagementType='retainer'. Other values: 'project', 'break-fix'.
+  Call get_projects with engagementType='retainer'. Other values: 'project', 'one-off'.
   Pass engagementType='__null__' to list projects that have no engagement_type set.
-- "what's under [retainer wrapper]" / "which L1s are nested under [wrapper]":
-  Call get_projects with parentProjectId=<wrapper-id>. Returns every deliverable L1
-  nested under that retainer wrapper. PR #88 Chunk F introduced parent_project_id so a
-  retainer contract L1 can wrap multiple deliverable L1s; the UI renders a 3-level
-  hierarchy (wrapper -> children -> L2s). To attach a deliverable L1 to a wrapper,
-  call update_project_field with field='parentProjectId' and the wrapper's id.
-  To clear the link, pass newValue=''. Pass parentProjectId='__null__' to list
-  only top-level L1s (the default view when no wrapper exists).
+- "what's under [wrapper]" / "which L1s are nested under [wrapper]":
+  Call get_projects with parentProjectId=<wrapper-id>. Returns every child project
+  nested under that wrapper. A wrapper can be a retainer L1 OR a plain project
+  umbrella (Delta A, 2026-07-26); one-off L1s cannot wrap children. A nested
+  child can never itself be typed 'retainer' — retainer-ness is L1-only and
+  inherits down. To attach a child to a wrapper, call update_project_field with
+  field='parentProjectId' and the wrapper's id. To clear the link, pass
+  newValue=''. Pass parentProjectId='__null__' to list only top-level L1s
+  (the default view when no wrapper exists).
 - "who's on the [retainer wrapper] team" / "who's doing work under this retainer":
   Call get_retainer_team with the wrapper's id. Returns a deduplicated roster
   across all child L1s with per-person role + which projects they show up on.

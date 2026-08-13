@@ -18,6 +18,8 @@ import {
   generateIdempotencyKey,
   checkIdempotency,
   insertAuditRecord,
+  validateParentProjectIdAssignment,
+  formatL2NeverRetainerError,
 } from "./operations-utils";
 import type { MutationResponse } from "./mutation-response";
 
@@ -158,6 +160,40 @@ export async function undoLastChange(params: {
       }
       if (!UNDO_FIELDS.includes(fieldName as typeof UNDO_FIELDS[number])) {
         return { ok: false, error: `Cannot undo: field '${fieldName}' is not a recognized project field.` };
+      }
+      // Delta A (2026-07-26): undo re-applies previousValue raw, so the
+      // nesting invariants must be revalidated here. The #26 stale gate is
+      // same-field only — a cross-field sequence (e.g. retype retainer →
+      // project, then nest, then undo the retype) would otherwise
+      // reconstruct a forbidden nested-retainer state.
+      const restoredValue = lastChange.previousValue || null;
+      if (fieldName === "parentProjectId" && restoredValue !== null) {
+        const childRows = await tx
+          .select({ clientId: projects.clientId })
+          .from(projects)
+          .where(eq(projects.id, lastChange.projectId))
+          .limit(1);
+        if (childRows[0]) {
+          const v = await validateParentProjectIdAssignment(tx, {
+            childId: lastChange.projectId,
+            childClientId: childRows[0].clientId,
+            newParentId: restoredValue,
+          });
+          if (!v.ok) return { ok: false, error: `Cannot undo: ${v.error}` };
+        }
+      }
+      if (fieldName === "engagementType" && restoredValue === "retainer") {
+        const rows = await tx
+          .select({ parentProjectId: projects.parentProjectId })
+          .from(projects)
+          .where(eq(projects.id, lastChange.projectId))
+          .limit(1);
+        if (rows[0]?.parentProjectId != null) {
+          return {
+            ok: false,
+            error: `Cannot undo: ${formatL2NeverRetainerError(lastChange.projectId)}`,
+          };
+        }
       }
       await tx
         .update(projects)
