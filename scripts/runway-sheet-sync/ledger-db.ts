@@ -85,3 +85,60 @@ export async function loadDbLedger(
   }
   return { sheetId, updatedAt: "", lastRunId: "", entries };
 }
+
+export interface SaveDbLedgerResult {
+  /** Rows written (registered or touched). */
+  persisted: number;
+  /** Entries skipped because they have no durable weekItemId yet. */
+  skipped: number;
+  /** Non-fatal per-entry issues (e.g. register collisions). */
+  warnings: string[];
+}
+
+/**
+ * Persist the in-memory ledger for one engagement to `sheet_sync_ledger`.
+ * Upsert per entry: existing sheet_key -> touch (refresh title, run id, hash,
+ * state); new -> register. `pending-create` entries (no weekItemId) are
+ * skipped — `runway_id` is NOT NULL and there is no durable identity to bank.
+ * Collisions surface as warnings (never throw) so a partial batch still lands.
+ */
+export async function saveDbLedger(
+  repo: SheetSyncLedgerRepo,
+  engagementKey: string,
+  ledger: Ledger,
+  runId: string
+): Promise<SaveDbLedgerResult> {
+  const result: SaveDbLedgerResult = { persisted: 0, skipped: 0, warnings: [] };
+
+  for (const e of Object.values(ledger.entries)) {
+    if (e.weekItemId == null) {
+      result.skipped++;
+      continue;
+    }
+    const existing = await repo.findBySheetKey(engagementKey, "task", e.key);
+    if (existing) {
+      await repo.touchByRunwayId(e.weekItemId, {
+        lastSeenTitle: e.title,
+        lastSyncRunId: runId,
+        lastSeenContentHash: e.lastSeenContentHash,
+        state: toDbState(e.state),
+      });
+      result.persisted++;
+    } else {
+      const res = await repo.register({
+        engagementKey,
+        entityType: "task",
+        sheetKey: e.key,
+        runwayId: e.weekItemId,
+        state: toDbState(e.state),
+        lastSyncRunId: runId,
+        lastSeenTitle: e.title,
+        lastSeenContentHash: e.lastSeenContentHash,
+      });
+      if (res.ok) result.persisted++;
+      else result.warnings.push(res.error);
+    }
+  }
+
+  return result;
+}
