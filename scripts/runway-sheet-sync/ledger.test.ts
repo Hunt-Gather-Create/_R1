@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterAll, describe, expect, it } from "vitest";
-import { ledgerKey, linkEntry, loadLedger, reconcileLedger, saveLedger } from "./ledger";
+import { contentHash, ledgerKey, linkEntry, loadLedger, reconcileLedger, saveLedger } from "./ledger";
 import type { LeafTask, Ledger } from "./types";
 
 function leaf(over: Partial<LeafTask>): LeafTask {
@@ -75,8 +75,8 @@ describe("renumber reconciliation (§2.9 hazard 1)", () => {
       updatedAt: "",
       lastRunId: "run-1",
       entries: {
-        "2.1": { key: "2.1", taskNo: "2.1", title: "Comps", rowNumber: 14, weekItemId: "wi_comps", state: "matched", lastSeenRunId: "run-1" },
-        "2.2": { key: "2.2", taskNo: "2.2", title: "Client review", rowNumber: 15, weekItemId: "wi_review", state: "matched", lastSeenRunId: "run-1" },
+        "2.1": { key: "2.1", taskNo: "2.1", title: "Comps", rowNumber: 14, weekItemId: "wi_comps", state: "matched", lastSeenRunId: "run-1", lastSeenContentHash: null },
+        "2.2": { key: "2.2", taskNo: "2.2", title: "Client review", rowNumber: 15, weekItemId: "wi_review", state: "matched", lastSeenRunId: "run-1", lastSeenContentHash: null },
       },
     };
     // A new 2.1 was inserted; old 2.1/2.2 became 2.2/2.3.
@@ -107,7 +107,7 @@ describe("renumber reconciliation (§2.9 hazard 1)", () => {
       updatedAt: "",
       lastRunId: "run-1",
       entries: {
-        "3.1": { key: "3.1", taskNo: "3.1", title: "Homepage Carousel build", rowNumber: 22, weekItemId: "wi_carousel", state: "matched", lastSeenRunId: "run-1" },
+        "3.1": { key: "3.1", taskNo: "3.1", title: "Homepage Carousel build", rowNumber: 22, weekItemId: "wi_carousel", state: "matched", lastSeenRunId: "run-1", lastSeenContentHash: null },
       },
     };
     const tasks = [leaf({ taskNo: "4.1", title: "Homepage Carousel build", rowNumber: 30 })];
@@ -127,8 +127,8 @@ describe("row deletion (§2.9 hazard 3)", () => {
       updatedAt: "",
       lastRunId: "run-1",
       entries: {
-        "1.1": { key: "1.1", taskNo: "1.1", title: "Kickoff", rowNumber: 12, weekItemId: "wi_kick", state: "matched", lastSeenRunId: "run-1" },
-        "9.9": { key: "9.9", taskNo: "9.9", title: "Removed task", rowNumber: 99, weekItemId: "wi_gone", state: "matched", lastSeenRunId: "run-1" },
+        "1.1": { key: "1.1", taskNo: "1.1", title: "Kickoff", rowNumber: 12, weekItemId: "wi_kick", state: "matched", lastSeenRunId: "run-1", lastSeenContentHash: null },
+        "9.9": { key: "9.9", taskNo: "9.9", title: "Removed task", rowNumber: 99, weekItemId: "wi_gone", state: "matched", lastSeenRunId: "run-1", lastSeenContentHash: null },
       },
     };
     const { ledger, orphanedEntries } = reconcileLedger(prior, [leaf({})], "run-2");
@@ -136,5 +136,40 @@ describe("row deletion (§2.9 hazard 3)", () => {
     expect(orphanedEntries[0].weekItemId).toBe("wi_gone");
     expect(ledger.entries["9.9"]).toBeUndefined(); // dropped from forward ledger, surfaced as orphan
     expect(ledger.entries["1.1"].weekItemId).toBe("wi_kick");
+  });
+});
+
+describe("contentHash (change detection over sheet cols B–J)", () => {
+  it("is stable for identical structural content", () => {
+    expect(contentHash(leaf({}))).toBe(contentHash(leaf({})));
+  });
+
+  it("changes when any structural field changes", () => {
+    const base = contentHash(leaf({}));
+    expect(contentHash(leaf({ completed: true }))).not.toBe(base);
+    expect(contentHash(leaf({ title: "Different" }))).not.toBe(base);
+    expect(contentHash(leaf({ startDate: "2026-07-01" }))).not.toBe(base);
+    expect(contentHash(leaf({ endDate: "2026-07-01" }))).not.toBe(base);
+    expect(contentHash(leaf({ priority: "P1" }))).not.toBe(base);
+    expect(contentHash(leaf({ predecessorRow: 5 }))).not.toBe(base);
+    expect(contentHash(leaf({ lag: 2 }))).not.toBe(base);
+    expect(contentHash(leaf({ resource: "Lane" }))).not.toBe(base);
+  });
+
+  it("ignores positional / non-structural fields", () => {
+    const base = contentHash(leaf({}));
+    expect(contentHash(leaf({ rowNumber: 999 }))).toBe(base);
+    expect(contentHash(leaf({ taskNo: "9.9" }))).toBe(base);
+    expect(contentHash(leaf({ sortOrder: 42 }))).toBe(base);
+    expect(contentHash(leaf({ notes: "irrelevant to identity" }))).toBe(base);
+  });
+
+  it("populates lastSeenContentHash on reconcile", () => {
+    const { ledger } = reconcileLedger(
+      { sheetId: "s", updatedAt: "", lastRunId: "", entries: {} },
+      [leaf({})],
+      "run-1"
+    );
+    expect(ledger.entries["1.1"].lastSeenContentHash).toBe(contentHash(leaf({})));
   });
 });

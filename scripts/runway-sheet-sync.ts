@@ -21,8 +21,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { createRunwayDb, runIfDirect } from "./lib/run-script";
 import { getSheetConfig, SHEETS } from "./runway-sheet-sync/config";
+import { getSheetSyncLedger } from "../src/lib/runway/sheet-sync-ledger-repo";
 import { diffSheet } from "./runway-sheet-sync/diff";
 import { loadLedger, reconcileLedger, saveLedger } from "./runway-sheet-sync/ledger";
+import { loadDbLedger, saveDbLedger } from "./runway-sheet-sync/ledger-db";
 import { parseSheet } from "./runway-sheet-sync/parse-sheet";
 import { buildPayloads } from "./runway-sheet-sync/payloads";
 import { renderReport } from "./runway-sheet-sync/report";
@@ -72,8 +74,15 @@ export async function runSheet(
 
   const parsed = parseSheet(fixture, config);
 
+  // Ledger persistence: --live uses the durable DB ledger (sheet_sync_ledger,
+  // via the repo) so identity survives ephemeral serverless runs; fixture runs
+  // keep the local JSON file so CI needs no DB (#102). engagementCode is the
+  // stable per-engagement key (sheet_registry is not populated in Phase-1a).
   const ledgerPath = join(outDir, `ledger-${sheetId}.json`);
-  const prior = loadLedger(ledgerPath, sheetId);
+  const repo = live ? getSheetSyncLedger(db) : null;
+  const prior = repo
+    ? await loadDbLedger(repo, config.engagementCode, sheetId)
+    : loadLedger(ledgerPath, sheetId);
   const { ledger, renumbered, orphanedEntries } = reconcileLedger(prior, parsed.leafTasks, runId);
   for (const r of renumbered) {
     parsed.flags.push(`LEDGER: renumber reconciled ${r.from} → ${r.to} ("${r.title}")`);
@@ -98,7 +107,16 @@ export async function runSheet(
     payloadsPath,
     JSON.stringify({ sheetId, runId, generatedAt: diff.generatedAt, payloads }, null, 2) + "\n"
   );
-  saveLedger(ledgerPath, ledger);
+
+  let ledgerSink: string;
+  if (repo) {
+    const saved = await saveDbLedger(repo, config.engagementCode, ledger, runId);
+    for (const w of saved.warnings) parsed.flags.push(`LEDGER: ${w}`);
+    ledgerSink = `db:sheet_sync_ledger (persisted ${saved.persisted}, skipped ${saved.skipped})`;
+  } else {
+    saveLedger(ledgerPath, ledger);
+    ledgerSink = ledgerPath;
+  }
 
   return {
     sheetId,
@@ -109,7 +127,7 @@ export async function runSheet(
     flags: diff.flags.length,
     reportPath,
     payloadsPath,
-    ledgerPath,
+    ledgerPath: ledgerSink,
   };
 }
 
@@ -118,11 +136,14 @@ async function main(): Promise<void> {
   const outDir = arg("out") ?? DEFAULT_OUT_DIR;
   const only = arg("sheet");
   const live = process.argv.includes("--live");
+  // E2 (#102): point --live at the runway-staging clone, never prod.
+  const staging = process.argv.includes("--staging");
 
   const targets = only ? SHEETS.filter((s) => s.sheetId === only) : SHEETS;
   if (targets.length === 0) throw new Error(`--sheet ${only} not in registry`);
 
-  const { db, url } = createRunwayDb();
+  const { db, url } = createRunwayDb({ staging });
+  if (staging) console.error("── ledger target: runway-staging (E2 test mode)");
   if (!url.startsWith("libsql")) {
     throw new Error(
       `RUNWAY_DATABASE_URL not loaded (resolved "${url}") — check .env.local before diffing against a stale local file`

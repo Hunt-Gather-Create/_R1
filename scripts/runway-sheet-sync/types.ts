@@ -107,6 +107,14 @@ export interface LedgerEntry {
   weekItemId: string | null;
   state: "matched" | "pending-create" | "collision-flagged" | "orphaned";
   lastSeenRunId: string;
+  /**
+   * sha256 of the row's structural content (sheet cols B–J: completed, title,
+   * dates, priority, predecessor, lag, resource). Persisted to
+   * `sheet_sync_ledger.last_seen_content_hash` so a later run can detect an
+   * unchanged row and skip re-diff. Recomputed each run; null for entries that
+   * predate the field (e.g. loaded from a file ledger written before E2).
+   */
+  lastSeenContentHash: string | null;
 }
 
 export interface Ledger {

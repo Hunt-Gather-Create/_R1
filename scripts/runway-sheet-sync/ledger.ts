@@ -12,6 +12,7 @@
  *    not in the ledger → flag for AM, never silently adopt
  *  - sheet row deleted: ledger entry orphaned → flag, never auto-delete WI
  */
+import { createHash } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname } from "path";
 import { sorensenDice } from "../../src/lib/runway/fuzzy-match";
@@ -23,6 +24,31 @@ export function ledgerKey(task: Pick<LeafTask, "taskNo" | "title">): string {
 
 export function normalizeTitle(title: string): string {
   return title.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * sha256 of a leaf row's structural content — the sheet cols B–J that drive
+ * WeekItem field updates (completed, title, dates, priority, predecessor,
+ * lag, resource). Deliberately EXCLUDES positional/identity fields
+ * (rowNumber, taskNo, sortOrder) and composed notes: a row whose hash is
+ * unchanged since the last banked run needs no re-diff. Title is normalized
+ * so whitespace-only edits don't register as content change.
+ */
+export function contentHash(task: LeafTask): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        task.completed,
+        normalizeTitle(task.title),
+        task.startDate,
+        task.endDate,
+        task.priority,
+        task.predecessorRow,
+        task.lag,
+        task.resource,
+      ])
+    )
+    .digest("hex");
 }
 
 export function loadLedger(path: string, sheetId: string): Ledger {
@@ -95,6 +121,7 @@ export function reconcileLedger(
         title: task.title,
         rowNumber: task.rowNumber,
         lastSeenRunId: runId,
+        lastSeenContentHash: contentHash(task),
       };
     } else {
       unmatched.push(task);
@@ -122,6 +149,7 @@ export function reconcileLedger(
         title: task.title,
         rowNumber: task.rowNumber,
         lastSeenRunId: runId,
+        lastSeenContentHash: contentHash(task),
       };
     } else {
       next.entries[key] = {
@@ -132,6 +160,7 @@ export function reconcileLedger(
         weekItemId: null,
         state: "pending-create",
         lastSeenRunId: runId,
+        lastSeenContentHash: contentHash(task),
       };
     }
   }
