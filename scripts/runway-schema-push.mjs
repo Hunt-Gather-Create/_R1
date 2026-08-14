@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { isProdServingDeploy } from "./runway-deploy-target.mjs";
 
 function isTruthy(value) {
   if (!value) return false;
@@ -73,9 +74,6 @@ export function shouldRunSchemaPush(env) {
   if (isTruthy(env.RUN_DB_MIGRATIONS)) {
     return { run: true, reason: "RUN_DB_MIGRATIONS forces the push" };
   }
-  if (env.VERCEL_ENV === "production") {
-    return { run: true, reason: "production deploy" };
-  }
   if (env.VERCEL_GIT_COMMIT_REF === "runway") {
     const pullRequestId = env.VERCEL_GIT_PULL_REQUEST_ID?.trim() ?? "";
     if (pullRequestId.length > 0) {
@@ -96,7 +94,13 @@ export function shouldRunSchemaPush(env) {
           "runway-branch ref without a cloud-deploy marker (VERCEL_DEPLOYMENT_ID unset) — local builds never push; use RUN_DB_MIGRATIONS to force",
       };
     }
-    return { run: true, reason: "runway-branch cloud deploy (schema-push contract)" };
+  }
+  if (isProdServingDeploy(env)) {
+    const reason =
+      env.VERCEL_ENV === "production"
+        ? "production deploy"
+        : "runway-branch cloud deploy (schema-push contract)";
+    return { run: true, reason };
   }
   return {
     run: false,
