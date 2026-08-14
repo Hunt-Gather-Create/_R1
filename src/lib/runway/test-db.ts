@@ -199,6 +199,13 @@ CREATE INDEX idx_bot_modal_proposals_status_expires_at ON bot_modal_proposals(st
 CREATE INDEX idx_bot_modal_proposals_user_slack_id_created_at ON bot_modal_proposals(user_slack_id, created_at);
 CREATE INDEX idx_bot_modal_proposals_intent_group_id_status ON bot_modal_proposals(intent_group_id, status);
 CREATE INDEX idx_bot_modal_proposals_parent_proposal_id_status ON bot_modal_proposals(parent_proposal_id, status);
+
+CREATE TABLE apply_review_queue (
+  id TEXT PRIMARY KEY NOT NULL,
+  run_id TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
 `;
 
 // ── Seed Data ───────────────────────────────────────────

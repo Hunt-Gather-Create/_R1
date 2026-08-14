@@ -370,3 +370,17 @@ export const viewPreferences = sqliteTable("view_preferences", {
     .notNull()
     .$defaultFn(() => new Date()),
 });
+
+// ============================================================
+// Apply Review Queue — sheet-sync payloads held for human review
+// ============================================================
+// M1 E3 (#103): the apply-writes executor surfaces payloads flagged
+// `requiresReview` (or op `flag-for-review`) here instead of writing them to
+// the target table, so an operator or AM can adjudicate without blocking the
+// rest of the apply. Append-only log; `payload_json` is the full SyncPayload.
+export const applyReviewQueue = sqliteTable("apply_review_queue", {
+  id: text("id").primaryKey(),
+  runId: text("run_id").notNull(),
+  payloadJson: text("payload_json").notNull(), // full SyncPayload as JSON
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
