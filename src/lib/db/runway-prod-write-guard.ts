@@ -21,6 +21,7 @@ type GuardEnv = {
   VERCEL_DEPLOYMENT_ID?: string;
   VERCEL_GIT_PULL_REQUEST_ID?: string;
   RUNWAY_DATABASE_URL?: string;
+  [key: string]: string | undefined;
 };
 
 /** Prod URL heuristic — matches the merged E3 target-guard: prod = not staging. */
