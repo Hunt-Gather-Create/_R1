@@ -31,6 +31,9 @@ import { renderReport } from "./runway-sheet-sync/report";
 import { readClientBundle } from "./runway-sheet-sync/runway-read";
 import { readSheetViaServiceAccount } from "./runway-sheet-sync/sheets-client";
 import type { SheetFixture } from "./runway-sheet-sync/types";
+import { assertTarget } from "./runway-sheet-sync/target-guard";
+import { applyPayloads } from "./runway-sheet-sync/apply";
+import { writePreSnapshot, postVerifyDiff } from "./runway-sheet-sync/snapshot";
 
 const DEFAULT_FIXTURES_DIR = "docs/tmp/data/runway-sync/fixtures";
 const DEFAULT_OUT_DIR = "docs/tmp/data/runway-sync";
@@ -50,12 +53,16 @@ export function computeRunId(sheetId: string, fixture: SheetFixture): string {
     .slice(0, 12);
 }
 
+const SNAP_DIR = "docs/tmp/data-tp/snapshots";
+
 export async function runSheet(
   db: ReturnType<typeof createRunwayDb>["db"],
   sheetId: string,
   fixturesDir: string,
   outDir: string,
-  live: boolean
+  live: boolean,
+  apply = false,
+  force = false
 ): Promise<Record<string, unknown>> {
   const config = getSheetConfig(sheetId);
   if (!config) throw new Error(`Sheet ${sheetId} not in registry (scripts/runway-sheet-sync/config.ts)`);
@@ -118,6 +125,19 @@ export async function runSheet(
     ledgerSink = ledgerPath;
   }
 
+  let appliedCount: number | undefined;
+  let reviewCount: number | undefined;
+
+  if (apply) {
+    // Pre-snapshot MUST be written before any write attempt.
+    writePreSnapshot(bundle, runId, SNAP_DIR);
+    const applyResult = await applyPayloads(db, payloads, { runId, apply: true, force });
+    const postBundle = await readClientBundle(db, config.clientSlug);
+    postVerifyDiff(bundle, postBundle, runId, SNAP_DIR);
+    appliedCount = applyResult.applied.length;
+    reviewCount = applyResult.review.length;
+  }
+
   return {
     sheetId,
     label: config.label,
@@ -128,6 +148,7 @@ export async function runSheet(
     reportPath,
     payloadsPath,
     ledgerPath: ledgerSink,
+    ...(apply ? { applied: appliedCount, review: reviewCount } : {}),
   };
 }
 
@@ -136,8 +157,13 @@ async function main(): Promise<void> {
   const outDir = arg("out") ?? DEFAULT_OUT_DIR;
   const only = arg("sheet");
   const live = process.argv.includes("--live");
+  const doApply = process.argv.includes("--apply") && !process.argv.includes("--dry-run");
+  const target = arg("target");
+  const force = process.argv.includes("--force");
+
   // E2 (#102): point --live at the runway-staging clone, never prod.
-  const staging = process.argv.includes("--staging");
+  // E3 (#103): --target staging|prod drives DB resolution when --apply is set.
+  const staging = doApply ? target === "staging" : process.argv.includes("--staging");
 
   const targets = only ? SHEETS.filter((s) => s.sheetId === only) : SHEETS;
   if (targets.length === 0) throw new Error(`--sheet ${only} not in registry`);
@@ -150,10 +176,16 @@ async function main(): Promise<void> {
     );
   }
 
+  // Safety gate: assertTarget throws BEFORE any write when target is missing,
+  // mismatches the resolved DB host, or is prod without the allow env signal.
+  if (doApply) {
+    assertTarget(target, url, process.env);
+  }
+
   const summaries: Record<string, unknown>[] = [];
   for (const t of targets) {
     console.error(`── diffing ${t.label} (${t.sheetId.slice(0, 8)}…)`);
-    summaries.push(await runSheet(db, t.sheetId, fixturesDir, outDir, live));
+    summaries.push(await runSheet(db, t.sheetId, fixturesDir, outDir, live, doApply, force));
   }
   console.log(JSON.stringify(summaries, null, 2));
   process.exit(0);
