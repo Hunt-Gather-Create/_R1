@@ -29,6 +29,7 @@ import { pathToFileURL } from "node:url";
  */
 export const EXPECTED_TABLES = [
   "_meta",
+  "apply_review_queue",
   "bot_modal_proposals",
   "clients",
   "pipeline_items",

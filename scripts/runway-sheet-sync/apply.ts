@@ -61,21 +61,21 @@ export async function applyPayloads(
 
       let response: unknown;
       switch (p.op) {
-        case "createWeekItem":
-          response = await createWeekItem(
-            p.params as Parameters<typeof createWeekItem>[0],
-          );
+        case "createWeekItem": {
+          const args = p.params as Parameters<typeof createWeekItem>[0];
+          response = await createWeekItem(args);
           break;
-        case "updateWeekItemField":
-          response = await updateWeekItemField(
-            p.params as Parameters<typeof updateWeekItemField>[0],
-          );
+        }
+        case "updateWeekItemField": {
+          const args = p.params as Parameters<typeof updateWeekItemField>[0];
+          response = await updateWeekItemField(args);
           break;
-        case "addProject":
-          response = await addProject(
-            p.params as Parameters<typeof addProject>[0],
-          );
+        }
+        case "addProject": {
+          const args = p.params as Parameters<typeof addProject>[0];
+          response = await addProject(args);
           break;
+        }
         default:
           // Exhaustive — flag-for-review is handled above
           response = { ok: false, error: `Unknown op: ${p.op}` };
