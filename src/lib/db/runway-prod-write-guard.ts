@@ -10,7 +10,6 @@
  * scripts/runway-deploy-target.mjs (also used by the schema-push gate) so the
  * two can never drift. The error message never interpolates the DB URL.
  */
-// eslint-disable-next-line -- shared plain-JS predicate; allowJs+bundler resolves it
 import { isProdServingDeploy } from "../../../scripts/runway-deploy-target.mjs";
 
 export { isProdServingDeploy };
