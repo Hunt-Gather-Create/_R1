@@ -1,8 +1,10 @@
 import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
 import * as schema from "./runway-schema";
+import { assertRunwayProdWriteAllowed } from "./runway-prod-write-guard";
 
 function getRunwayClient() {
+  assertRunwayProdWriteAllowed(process.env);
   const url = process.env.RUNWAY_DATABASE_URL;
   if (!url) {
     throw new Error(
