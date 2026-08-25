@@ -91,3 +91,13 @@ docs/tmp/
 
 # Google service-account keys (never commit)
 *.service-account.json
+di-tp-exit-debrief.md
+
+# DI-TP one-off diagnostics + migrations (data-integrity working files, never
+# committed to runway per fleet rule). Scoped to 2026-06 ON PURPOSE: dated
+# migration scripts are this repo's normal tracked convention (42 of them are
+# committed upstream), so a date-agnostic glob here would swallow the
+# convention rather than the exception. A DI-TP file from any other month is
+# NOT covered by this; the durable fix is a naming marker, not a wider glob.
+scripts/diagnostics/*-2026-06-*
+scripts/runway-migrations/*-2026-06-*.ts
