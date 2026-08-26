@@ -42,6 +42,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       projectName: PROJECT,
       newStatus: "in-production",
       updatedBy: BATCH_ID,
+      source: "migration",
     });
     if (!st.ok) throw new Error(`revert updateProjectStatus failed: ${st.error}`);
     ctx.log(st.message);
@@ -52,6 +53,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "category",
       newValue: "active",
       updatedBy: BATCH_ID,
+      source: "migration",
     });
     if (!cat.ok) throw new Error(`revert updateProjectField(category) failed: ${cat.error}`);
     ctx.log(cat.message);
@@ -61,6 +63,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "contractStatus",
       newValue: "signed",
       updatedBy: BATCH_ID,
+      source: "migration",
     });
     if (!c.ok) throw new Error(`revert updateClientField failed: ${c.error}`);
     ctx.log(c.message);

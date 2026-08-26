@@ -48,6 +48,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "clientContacts",
       newValue: CONTACTS,
       updatedBy: BATCH_ID,
+      source: "migration",
     });
     if (!res.ok) throw new Error(`updateClientField failed: ${res.error}`);
     ctx.log(res.message);
