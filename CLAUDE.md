@@ -51,7 +51,7 @@ pnpm runway:sheet-sync # Sheet→Runway diff report (read-only, Phase 1a; fixtur
 
 ### Post-build pipeline (run in order before pushing)
 
-1. `/code-review` — DRY, prop drilling, hooks/context, test coverage
+1. `/gsd:code-review` -- GSD structured review (bugs, security, quality); alias `/code-review` for DRY, prop drilling, hooks/context, test coverage
 2. `/update-docs` — sync `/docs` if patterns/versions changed
 3. `/pr-ready` — debug statements, unused imports, final cleanup
 4. `/preflight` — build + grep gate + tests + lint
