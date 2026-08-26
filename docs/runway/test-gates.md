@@ -2,10 +2,41 @@
 
 There are two. They do different jobs and **neither substitutes for the other.**
 
-| | what it is | where it runs | can it be skipped? |
+| | what it is | where it runs | does it stop a bad merge? |
 |---|---|---|---|
-| `scripts/hooks/pre-push` | a convenience | your machine | yes, trivially |
-| `.github/workflows/pr-tests.yml` | **the gate** | the pull request | no |
+| `scripts/hooks/pre-push` | a convenience | your machine | no, and trivially skipped |
+| `.github/workflows/pr-tests.yml` | the visible signal | the pull request | **not today. It reports; it does not block.** |
+
+**Neither of these currently blocks anything.** Read the next section before you rely on either.
+
+## What is actually enforced right now: nothing
+
+The `runway` branch is **unprotected**, and the repository has **zero rulesets**. Measured, not assumed:
+
+```
+gh api repos/Hunt-Gather-Create/_R1/branches/runway/protection  -> 404 "Branch not protected"
+gh api repos/Hunt-Gather-Create/_R1/rulesets                    -> []
+gh api repos/Hunt-Gather-Create/_R1/branches/runway --jq .protected -> false
+```
+
+So the PR check is **not a required status check**. A red PR can be merged with one click and nothing refuses it. On 2026-08-26 three PRs were merged by hand inside five minutes; had one been red, nothing in this design would have stopped it.
+
+**Do not read a green check as "something is guarding this."** Today the check tells you the truth and then gets out of your way.
+
+### What would make it enforcing
+
+Mark the `vitest` check **required** on `runway`, via branch protection or a ruleset. Branch protection is available on this account (GitHub Pro is active), so this is a real next step and not a wish.
+
+**That decision is the operator's**, because it constrains his own merge button, and it is deliberately not turned on here.
+
+### Two separate problems, so say which one you fixed
+
+_R1#107 has two halves:
+
+1. **The check must exist and produce a signal.** That is this PR. Still unproven until a real check-run with a real conclusion appears on a real pull request.
+2. **The signal must block.** That is branch protection. Not built, operator's call.
+
+Right now neither is true. Getting the first without the second is still a large win — a visible red is worth a great deal even when it is only advisory — but they are different claims and should never be reported as one.
 
 ## The local hook is not a gate
 
@@ -30,9 +61,11 @@ RUNWAY_SKIP_PREPUSH=1       # session-wide
 
 Both escape hatches are on purpose. A control you cannot bypass gets ripped out; one you bypass loudly stays.
 
-## The PR check is the gate
+## The PR check: the visible signal
 
 `.github/workflows/pr-tests.yml`. One job, one command, on every pull request.
+
+It **reports**. It does not block — see the section above.
 
 ### Why it exists (_R1#107)
 

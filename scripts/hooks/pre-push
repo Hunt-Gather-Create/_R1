@@ -6,9 +6,13 @@
 # catches the honest mistake cheaply. It does not remove ambiguity, and it
 # would not have caught the PR #128 breakage if the pusher had skipped it.
 #
-# The actual gate is .github/workflows/pr-tests.yml, which runs on the PR
-# where everyone can see the result. Do not let anyone describe this file as
-# the gate. See docs/runway/test-gates.md.
+# The visible signal is .github/workflows/pr-tests.yml, which runs on the PR
+# where everyone can see the result. Do not let anyone describe THIS file as
+# the gate.
+#
+# And do not describe that one as a gate either, yet: the runway branch is
+# unprotected and the check is not required, so it REPORTS and does not BLOCK.
+# See docs/runway/test-gates.md.
 #
 # Escape hatches, both deliberate:
 #   git push --no-verify     one-off

@@ -12,6 +12,12 @@
 # The value here is not that the tests run. It is that the PR page finally
 # shows three different pictures for three different states.
 #
+# THIS REPORTS. IT DOES NOT BLOCK. The runway branch is unprotected and this
+# check is not a required status check, so a red PR can still be merged with
+# one click. Making it enforcing means marking `vitest` required via branch
+# protection or a ruleset, which constrains the operator's own merge button
+# and is therefore his decision, not this file's. See docs/runway/test-gates.md.
+#
 # DO NOT GROW THIS FILE. No matrix, no OS spread, no node-version spread, no
 # build, no lint, no tsc. The fleet burned 3,000 Actions minutes in one day on
 # over-engineered pipelines; this shape is the one that does not become that.

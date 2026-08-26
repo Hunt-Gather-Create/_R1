@@ -11,4 +11,5 @@ set -e
 root=$(git rev-parse --show-toplevel)
 git config core.hooksPath scripts/hooks
 echo "hooks installed: core.hooksPath -> scripts/hooks (in $root)"
-echo "reminder: this is a convenience, not a gate. The gate is the PR check."
+echo "reminder: this is a convenience, not a gate. The PR check is the visible"
+echo "signal, and today it reports rather than blocks. See docs/runway/test-gates.md."
