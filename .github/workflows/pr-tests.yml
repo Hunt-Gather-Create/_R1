@@ -1,0 +1,64 @@
+# The PR test gate (_R1#107).
+#
+# ONE job, ONE command. That is the whole design and it is deliberate.
+#
+# Before this existed, the only check-run on a PR was `Vercel Preview
+# Comments`, which reports FAILURE on every cross-fork PR for authorization
+# reasons unrelated to the code. So a red suite, a green suite, and a suite
+# that never ran all rendered as the same red mark. That is worse than no
+# check at all: a missing gate makes you go look, an uninformative one tells
+# you not to bother.
+#
+# The value here is not that the tests run. It is that the PR page finally
+# shows three different pictures for three different states.
+#
+# DO NOT GROW THIS FILE. No matrix, no OS spread, no node-version spread, no
+# build, no lint, no tsc. The fleet burned 3,000 Actions minutes in one day on
+# over-engineered pipelines; this shape is the one that does not become that.
+# Anything beyond one job and one command is a new decision, not an edit.
+#
+# Specifically excluded, with reasons:
+#   - `pnpm build` — its first step connects to a live Turso database. It is
+#     safe only behind SKIP_DB_MIGRATIONS=1, which makes it a compile check
+#     rather than a build check. That belongs in a deliberate step, not an
+#     automatic one.
+#   - `tsc --noEmit` — currently reports ~210 errors, all in test files, which
+#     `next build` never reaches. Gating on an unmeasured backlog just gets the
+#     gate disabled. That is _R1#107 task 2.
+#   - lint — warnings only today; would add noise without adding signal.
+#
+# `pull_request`, NOT `pull_request_target`: our PRs come from a fork, and
+# pull_request_target would run fork code with access to repository secrets.
+# This job needs no secrets — the suite never touches a live database.
+name: PR tests
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: vitest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm test:run

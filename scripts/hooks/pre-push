@@ -1,0 +1,32 @@
+#!/bin/sh
+# Local pre-push test run (_R1#107, part 1).
+#
+# THIS IS NOT A GATE. It lives in .git, it is not cloned, `--no-verify` walks
+# straight past it, and it protects only machines that ran the installer. It
+# catches the honest mistake cheaply. It does not remove ambiguity, and it
+# would not have caught the PR #128 breakage if the pusher had skipped it.
+#
+# The actual gate is .github/workflows/pr-tests.yml, which runs on the PR
+# where everyone can see the result. Do not let anyone describe this file as
+# the gate. See docs/runway/test-gates.md.
+#
+# Escape hatches, both deliberate:
+#   git push --no-verify     one-off
+#   RUNWAY_SKIP_PREPUSH=1    session-wide
+set -e
+
+if [ "${RUNWAY_SKIP_PREPUSH:-}" = "1" ]; then
+  echo "pre-push: skipped (RUNWAY_SKIP_PREPUSH=1). The PR check still runs."
+  exit 0
+fi
+
+echo "pre-push: running the test suite. Skip with --no-verify if you mean to."
+
+if ! pnpm test:run; then
+  echo ""
+  echo "pre-push: SUITE IS RED. Push refused."
+  echo "pre-push: pushing anyway is a choice, not an accident: git push --no-verify"
+  exit 1
+fi
+
+echo "pre-push: suite green."
