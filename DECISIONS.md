@@ -47,6 +47,7 @@ Date: pre-2026-05-23 (formalized 2026-05-23)
 Decision: Every AI feature in Runway (Slack bot interpretation, chat, background tasks) uses `claude-haiku-4-5-20251001` as the default model. Sonnet (`claude-sonnet-4-6`) is only used when the operator explicitly requests it.
 Why: 12× cost gap (Haiku $0.25/$1.25 vs Sonnet $3.00/$15.00 per 1M tokens). Haiku is sufficient for the structured-output tool-use patterns Runway needs (parse natural language → call MCP/bot tool). Operator-locked to keep prod LLM costs predictable. Prompt caching is mandatory; tool usage caps via `maxUses` prevent runaway loops; token usage tracked per-workspace via `tokenUsage` table.
 Locks: New AI features default to Haiku. Switching a feature to Sonnet requires operator approval and a tracked cost-monitoring plan.
+Scope note (2026-08-13): D-05 governs the shipped product's runtime inference model only (cost control on prod Slack bot / chat / background tasks). It does NOT govern which model a development seat (Runway-TP, CC) runs on. Seat model routing is a separate operating mandate: base Opus orchestrates, Sonnet subagents do the building work under ~200k each, never Haiku for judgment. See `docs/planning/whats-changed-2026-08-13.md`.
 Refs: `CLAUDE.md` (working agreements), `src/lib/chat/index.ts`, `tokenUsage` table.
 
 ## D-06 — All upstream PRs target `runway`, never `main`
