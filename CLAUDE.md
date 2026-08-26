@@ -72,7 +72,29 @@ pnpm runway:sheet-sync # Sheet→Runway diff report (read-only, Phase 1a; fixtur
 **Product runtime (shipped Runway features).** Runway's own AI features (Slack bot, chat, background tasks) default to Claude Haiku; Sonnet only on explicit operator request. (D-05) This is a prod-inference cost control. It does NOT govern which model a dev seat runs on.
 - Always implement prompt caching. Cap tool usage with `maxUses`. Track tokens via `recordTokenUsage()`.
 
-**Dev seat model routing (Runway-TP + CC).** Base session runs Opus and orchestrates only: it does zero building or heavy analysis. All building and analysis goes to Sonnet subagents (Sonnet 4.6 is the ceiling), each task kept under ~200k context. Never Haiku for judgment work. Programmatic-first and token-efficient are the north stars (locked 2026-08-13). Detail: `docs/planning/whats-changed-2026-08-13.md`.
+**Dev seat model routing (Runway-TP + CC).** Base session runs Opus and orchestrates only: it does zero building or heavy analysis. Building and analysis run on Sonnet (Sonnet 4.6 is the ceiling), each task kept under ~200k context. Never Haiku for judgment work. Programmatic-first and token-efficient are the north stars (locked 2026-08-13). Detail: `docs/planning/whats-changed-2026-08-13.md`. **Where that work runs is set by Dispatch routing below, not here.**
+
+## Dispatch routing
+
+**DEFAULT: dispatch to a STANDING SEAT, never to an ephemeral subagent.** Operator, verbatim, 2026-08-26: "use them as part of protocol for coding tasks and gate 1 qa." Standing, not per-ticket.
+
+| Work | Seat | Where |
+|---|---|---|
+| Any coding task | **Runway (CC)** `92d042f7…dd74` | Buzz room `46290a49-2e54-40a9-99ec-f79652a83337`, one dispatch per ticket |
+| Gate-1 QA on that build | **QA-Scout-1** `d56bffc9…3f25` | Same room, dispatched after CC reports a pushed SHA |
+
+`--mention` needs the full 64-char hex; the `@Name` in the body wakes nobody. Never put backticks in `--content`; write a file and pass `"$(cat file)"`.
+
+Chain: CC builds → QA-Scout-1 in-lane → TP weighs and routes → Overwatch gate-1 (independent) → Holdout blind gate-2 → **operator merges** → Holdout closes. Scout output is EVIDENCE, not a verdict; it cannot be the independent gate because TP commissions it. CC never self-grades.
+
+**EXCEPTION** is allowed only when one of these is true, and **say which one applies when you use it**:
+1. No standing seat covers the work.
+2. Every relevant seat is over its compact band.
+3. It is a one-shot read that costs more to hand over than to run.
+
+**Why this is here and not in memory:** a practice that lives only in memory loses to a written instruction that says otherwise, every time. CLAUDE.md is injected each session as authoritative; memory arrives as background context that says it is not an instruction. When the two conflict the file wins by construction. This section previously said all work goes to *subagents*, which is why four PRs got built without the bots ever being opened. If a decision should change what you do, it goes here. Memory is for lessons; the file is for the action.
+
+**Follow up on dispatch.** Operator, 2026-08-26: "just be sure you follow up with your bots regularly." Do not dispatch and drift. Anchor any watcher on the last event id actually observed, never on a guessed timestamp.
 
 ## Memory rules
 
