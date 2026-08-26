@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
 import * as schema from "./runway-schema";
+import { assertRunwayProdWriteAllowed } from "./runway-prod-write-guard";
 
 /**
  * Explicitly pinned connection, set once per process before anything opens one.
@@ -16,6 +17,17 @@ let _pinned: { url: string; authToken?: string } | null = null;
 
 function getRunwayClient() {
   const url = _pinned?.url ?? process.env.RUNWAY_DATABASE_URL;
+
+  // The #100 prod-write guard, fed the url this client is ABOUT TO OPEN
+  // rather than process.env.RUNWAY_DATABASE_URL.
+  //
+  // Upstream calls it with the raw env. That was correct while the env var
+  // WAS the connection, but a pinned connection can differ from it, and a
+  // guard reading one url while the client opens another is exactly the
+  // defect #103 fixed one layer down. Composing the two branches naively
+  // would have rebuilt that hole inside the guard itself.
+  assertRunwayProdWriteAllowed({ ...process.env, RUNWAY_DATABASE_URL: url });
+
   if (!url) {
     throw new Error(
       "RUNWAY_DATABASE_URL is not set. Runway requires a separate Turso database."

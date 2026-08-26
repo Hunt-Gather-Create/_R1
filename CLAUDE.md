@@ -51,7 +51,7 @@ pnpm runway:sheet-sync # Sheet→Runway diff report (read-only, Phase 1a; fixtur
 
 ### Post-build pipeline (run in order before pushing)
 
-1. `/code-review` — DRY, prop drilling, hooks/context, test coverage
+1. `/gsd:code-review` -- GSD structured review (bugs, security, quality); alias `/code-review` for DRY, prop drilling, hooks/context, test coverage
 2. `/update-docs` — sync `/docs` if patterns/versions changed
 3. `/pr-ready` — debug statements, unused imports, final cleanup
 4. `/preflight` — build + grep gate + tests + lint
@@ -69,8 +69,10 @@ pnpm runway:sheet-sync # Sheet→Runway diff report (read-only, Phase 1a; fixtur
 
 ### AI
 
-- Default model: Claude Haiku. Sonnet only on explicit operator request. (D-05)
+**Product runtime (shipped Runway features).** Runway's own AI features (Slack bot, chat, background tasks) default to Claude Haiku; Sonnet only on explicit operator request. (D-05) This is a prod-inference cost control. It does NOT govern which model a dev seat runs on.
 - Always implement prompt caching. Cap tool usage with `maxUses`. Track tokens via `recordTokenUsage()`.
+
+**Dev seat model routing (Runway-TP + CC).** Base session runs Opus and orchestrates only: it does zero building or heavy analysis. All building and analysis goes to Sonnet subagents (Sonnet 4.6 is the ceiling), each task kept under ~200k context. Never Haiku for judgment work. Programmatic-first and token-efficient are the north stars (locked 2026-08-13). Detail: `docs/planning/whats-changed-2026-08-13.md`.
 
 ## Memory rules
 
