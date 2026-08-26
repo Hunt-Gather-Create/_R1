@@ -5,13 +5,12 @@
  * to eliminate boilerplate across scripts.
  */
 
-import { drizzle } from "drizzle-orm/libsql";
-import { createClient } from "@libsql/client";
 import { loadEnvLocal } from "./load-env";
+import { getRunwayDb, pinRunwayConnection, resolvedRunwayUrl } from "@/lib/db/runway";
 
 loadEnvLocal();
 
-type DrizzleDb = ReturnType<typeof drizzle>;
+type DrizzleDb = ReturnType<typeof getRunwayDb>;
 
 /**
  * Create a Drizzle DB connection for the Runway database.
@@ -27,9 +26,15 @@ export function createRunwayDb(opts?: { staging?: boolean }): { db: DrizzleDb; u
   const authToken = opts?.staging
     ? process.env.RUNWAY_STAGING_AUTH_TOKEN
     : process.env.RUNWAY_AUTH_TOKEN;
-  const client = createClient({ url, authToken });
-  const db = drizzle(client);
-  return { db, url };
+
+  // ONE resolution per process. Pin it on the shared module before opening
+  // anything, then hand back that same connection. Previously this built a
+  // private connection while the operations layer resolved its own from
+  // RUNWAY_DATABASE_URL, so a caller could validate one database and write to
+  // another (issue #103). pinRunwayConnection throws if a connection is
+  // already open, which makes a second, conflicting resolution loud.
+  pinRunwayConnection(url, authToken);
+  return { db: getRunwayDb(), url: resolvedRunwayUrl() };
 }
 
 /**

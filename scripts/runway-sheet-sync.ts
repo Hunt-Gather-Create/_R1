@@ -134,7 +134,13 @@ export async function runSheet(
     const applyResult = await applyPayloads(db, payloads, { runId, apply: true, force });
     const postBundle = await readClientBundle(db, config.clientSlug);
     postVerifyDiff(bundle, postBundle, runId, SNAP_DIR);
-    appliedCount = applyResult.applied.length;
+    // `applied` is the ledger of ATTEMPTS and deliberately records failures
+    // (including the unknown-op default branch, which never ran an operation).
+    // The reported count must be attempts that actually succeeded, or a run
+    // that wrote nothing still reports work done.
+    appliedCount = applyResult.applied.filter(
+      (a) => (a.response as { ok?: boolean } | null)?.ok === true,
+    ).length;
     reviewCount = applyResult.review.length;
   }
 
