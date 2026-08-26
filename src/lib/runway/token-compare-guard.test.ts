@@ -20,20 +20,42 @@
  * delete the call to introduce the compare. This checks the call site, not
  * the import - a bypass can leave the import line untouched.
  *
+ * Round 3: a text-matching call-site check (`\btimingSafeTokenMatch\s*\(`)
+ * is itself beatable by the exact regression this ticket exists to catch -
+ * comment out the real call and drop a padded plain-equality compare next
+ * to it, and the regex still "counts" the call because it matches text, not
+ * code. The call-site check is now an AST walk via the TypeScript compiler
+ * API (parsed with the strict TS parser, so a commented-out or
+ * string-literal call is not a node in the tree and does not count),
+ * scoped to the two KNOWN_AUTH_ROUTES files only. It is not extended to the
+ * broad sweep below on purpose - see the scope-limits note.
+ *
  * The v2 shape-match sweep is kept below as a broad secondary net over the
  * wider `src/app/api` tree (routes with no known auth helper yet, future
- * files, etc). It is not the primary control anymore.
+ * files, etc). It is not the primary control.
  *
- * Scope limits: the shape-match sweep is a heuristic that a sufficiently
- * distant or restructured compare defeats - see the padding bypass this
- * guard was rewritten to survive. The call-site assertion is what actually
- * holds the line for the two routes it covers; it does not (yet) cover a
- * future third auth route, which would need to be added to
- * KNOWN_AUTH_ROUTES by hand.
+ * Scope limits:
+ * - The shape-match sweep is a heuristic that a sufficiently distant or
+ *   restructured compare defeats - see the padding bypass this guard was
+ *   rewritten to survive.
+ * - The call-site assertion proves the call EXISTS somewhere in the file's
+ *   syntax tree. It does not prove the call GATES the request - a real call
+ *   to timingSafeTokenMatch sitting in dead code, an unreachable branch, or
+ *   with its result discarded would satisfy this check. Proving the call is
+ *   reachable from the exported route handler is call-graph analysis, which
+ *   this guard does not attempt.
+ * - A compare that is isolated far from any token/apiKey identifier, in a
+ *   file that also still contains a real, reachable timingSafeTokenMatch
+ *   call elsewhere, is caught by nothing here: the call-site check only
+ *   asserts a call exists, and the shape sweep's window (200) would not
+ *   reach a sufficiently distant compare.
+ * - It does not (yet) cover a future third auth route, which would need to
+ *   be added to KNOWN_AUTH_ROUTES by hand.
  */
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
+import * as ts from "typescript";
 
 const ROOT = path.resolve(__dirname, "../../..");
 const AUTH_ROOT = path.join(ROOT, "src/app/api");
@@ -53,12 +75,33 @@ const KNOWN_AUTH_ROUTES = [
   path.join(AUTH_ROOT, "runway/gantt-generate/route.ts"),
 ];
 
-// Counts CALL sites, not the import line: `import { timingSafeTokenMatch }`
-// matches an import-only bypass that deleted every call, so this requires
-// the open-paren that only a call site has.
-function countTimingSafeCalls(source: string): number {
-  const matches = source.match(/\btimingSafeTokenMatch\s*\(/g);
-  return matches ? matches.length : 0;
+// Counts real CALL EXPRESSIONS to timingSafeTokenMatch by parsing the file
+// with the TypeScript compiler API, not by matching text. A regex on the
+// source text matches a commented-out call
+// (`// timingSafeTokenMatch(token, apiKey);`) or one sitting in a string
+// literal exactly as readily as a live one - a bypass that comments out the
+// real call and drops in a plain-equality compare next to it stayed green
+// under the old regex version of this check with a call "count" of 1. A
+// comment or a string literal is not a node in the parsed AST, so walking
+// the tree for actual CallExpression nodes closes that gap by construction.
+// Scoped to the two KNOWN_AUTH_ROUTES files only - this does not extend to
+// the broad sweep below, which stays text-based on purpose (see the
+// scope-limits note at the top of this file for why).
+function countTimingSafeCallExpressions(source: string, fileName: string): number {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  let count = 0;
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "timingSafeTokenMatch"
+    ) {
+      count++;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return count;
 }
 
 function collectSourceFiles(dir: string): string[] {
@@ -108,9 +151,43 @@ function hasTokenEqualityShape(source: string): boolean {
 const allFiles = collectSourceFiles(AUTH_ROOT);
 
 describe("token-compare guard: known auth routes must call timingSafeTokenMatch", () => {
-  it.each(KNOWN_AUTH_ROUTES)("%s contains at least one timingSafeTokenMatch call", (file) => {
+  it.each(KNOWN_AUTH_ROUTES)("%s contains at least one real timingSafeTokenMatch call expression", (file) => {
     const content = fs.readFileSync(file, "utf-8");
-    expect(countTimingSafeCalls(content)).toBeGreaterThanOrEqual(1);
+    expect(countTimingSafeCallExpressions(content, file)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does not count a commented-out call as a real call expression", () => {
+    const commentedOut = `
+      // timingSafeTokenMatch(token, apiKey); disabled for canary rollout
+      function validateAuth(token, apiKey) {
+        return token === apiKey;
+      }
+    `;
+    expect(countTimingSafeCallExpressions(commentedOut, "fixture.ts")).toBe(0);
+  });
+
+  it("does not count a call inside a string literal as a real call expression", () => {
+    const inString = `
+      const note = "call timingSafeTokenMatch(token, apiKey) here later";
+      function validateAuth(token, apiKey) {
+        return token === apiKey;
+      }
+    `;
+    expect(countTimingSafeCallExpressions(inString, "fixture.ts")).toBe(0);
+  });
+
+  it("still counts the call after a legitimate reformat (multi-line args, added parens)", () => {
+    const reformatted = `
+      function validateAuth(token, apiKey) {
+        return (
+          timingSafeTokenMatch(
+            token,
+            apiKey,
+          )
+        );
+      }
+    `;
+    expect(countTimingSafeCallExpressions(reformatted, "fixture.ts")).toBe(1);
   });
 });
 
