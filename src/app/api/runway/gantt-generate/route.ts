@@ -17,6 +17,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { generateGanttShare } from "@/lib/runway/gantt/server";
 import type { Theme } from "@/lib/runway/gantt/types";
+import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
 
 function validateAuth(request: NextRequest): boolean {
   const apiKey = process.env.RUNWAY_MCP_API_KEY;
@@ -28,7 +29,7 @@ function validateAuth(request: NextRequest): boolean {
     return false;
   }
   const token = authHeader.slice("Bearer ".length);
-  return token === apiKey;
+  return timingSafeTokenMatch(token, apiKey);
 }
 
 export async function POST(request: NextRequest) {

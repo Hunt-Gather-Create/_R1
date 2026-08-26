@@ -6,6 +6,7 @@
  */
 
 import { createRunwayMcpServer } from "@/lib/mcp/runway-server";
+import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { NextRequest } from "next/server";
 
@@ -21,7 +22,7 @@ function validateAuth(request: NextRequest): boolean {
   }
 
   const token = authHeader.slice(7);
-  return token === apiKey;
+  return timingSafeTokenMatch(token, apiKey);
 }
 
 export async function POST(request: NextRequest) {
