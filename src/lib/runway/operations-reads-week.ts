@@ -5,6 +5,7 @@
 import { getRunwayDb } from "@/lib/db/runway";
 import { clients, projects, weekItems } from "@/lib/db/runway-schema";
 import { and, asc, eq, isNull } from "drizzle-orm";
+import { chicagoISODate } from "./date-chicago";
 import {
   getClientBySlug,
   getClientNameMap,
@@ -303,17 +304,13 @@ function bucketProject(status: string | null | undefined): keyof PersonWorkload[
 /**
  * Return YYYY-MM-DD in America/Chicago, stable across server timezones.
  * Used to anchor "today" + week-bucket boundaries.
+ *
+ * The implementation now lives in the shared pure module date-chicago.ts so
+ * client components can converge on the same bucket (issue #43). It is
+ * imported at the top of this file (used internally) and re-exported here so
+ * existing server callers are unchanged.
  */
-export function chicagoISODate(date: Date): string {
-  // en-CA formatter produces YYYY-MM-DD directly.
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Chicago",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  return fmt.format(date);
-}
+export { chicagoISODate };
 
 /**
  * Monday ISO-date (YYYY-MM-DD) of the week containing `dateISO`,

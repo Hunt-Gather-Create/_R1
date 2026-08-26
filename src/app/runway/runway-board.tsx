@@ -7,7 +7,7 @@ import type { DayItem, Account, PipelineItem } from "./types";
 import type { UnifiedAccount } from "./unified-view";
 import type { RunwayFlag } from "@/lib/runway/flags";
 import type { SeverityCounts, ClientRundownData } from "@/lib/runway/gantt/types";
-import { parseISODate } from "./date-utils";
+import { chicagoToday } from "@/lib/runway/date-chicago";
 import { mergeWeekendDays, groupByWeek, filterSpanningFromDayCells } from "./runway-board-utils";
 import { DayColumn } from "./components/day-column";
 import { TodaySection } from "./components/today-section";
@@ -89,7 +89,9 @@ function useBoardData(
   // Recompute every render so the TV dashboard rolls over at midnight.
   // The board only re-renders when the version poll detects a change, so
   // the dashboard may sit idle for long stretches between renders.
-  const todayStr = new Date().toDateString();
+  // One Chicago day-bucket everywhere (issue #43): day.date is already a
+  // YYYY-MM-DD Chicago date, so compare ISO strings directly.
+  const todayISO = chicagoToday();
 
   const pipelineTotal = useMemo(
     () =>
@@ -103,23 +105,17 @@ function useBoardData(
   );
 
   const todayColumn = useMemo(
-    () =>
-      thisWeek.find(
-        (day) => parseISODate(day.date).toDateString() === todayStr
-      ) ?? null,
-    [thisWeek, todayStr]
+    () => thisWeek.find((day) => day.date === todayISO) ?? null,
+    [thisWeek, todayISO]
   );
 
   const restOfWeek = useMemo(() => {
-    const todayISO = new Date().toISOString().slice(0, 10);
     // dashboard-cleanup item 4: remove actively-spanning rows from day cells.
     // Once startDate <= today, the row lives in Today / In Flight, not the
     // day-grid cell anchored on its startDate.
-    const nonTodayDays = thisWeek.filter(
-      (day) => parseISODate(day.date).toDateString() !== todayStr
-    );
+    const nonTodayDays = thisWeek.filter((day) => day.date !== todayISO);
     return mergeWeekendDays(filterSpanningFromDayCells(nonTodayDays, todayISO));
-  }, [thisWeek, todayStr]);
+  }, [thisWeek, todayISO]);
 
   const upcomingWeeks = useMemo(
     () => groupByWeek(mergeWeekendDays(upcoming)),
