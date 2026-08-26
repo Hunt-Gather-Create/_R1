@@ -47,6 +47,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "category",
       newValue: "completed",
       updatedBy: BATCH_ID,
+      source: "migration",
     });
     if (!cat.ok) throw new Error(`updateProjectField(category) failed: ${cat.error}`);
     ctx.log(cat.message);
@@ -58,6 +59,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       projectName: PROJECT,
       newStatus: "completed",
       updatedBy: BATCH_ID,
+      source: "migration",
     });
     if (!st.ok) throw new Error(`updateProjectStatus failed: ${st.error}`);
     ctx.log(st.message);
@@ -67,6 +69,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "contractStatus",
       newValue: "expired",
       updatedBy: BATCH_ID,
+      source: "migration",
     });
     if (!c.ok) throw new Error(`updateClientField(contractStatus) failed: ${c.error}`);
     ctx.log(c.message);

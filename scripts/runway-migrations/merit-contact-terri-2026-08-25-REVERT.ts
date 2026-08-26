@@ -30,6 +30,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       field: "clientContacts",
       newValue: "[]",
       updatedBy: BATCH_ID,
+      source: "migration",
     });
     if (!res.ok) throw new Error(`revert failed: ${res.error}`);
     ctx.log(`${res.message} (NULL -> [], not byte-exact)`);

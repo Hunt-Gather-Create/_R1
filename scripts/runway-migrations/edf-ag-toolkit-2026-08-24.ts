@@ -163,6 +163,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
     title: "Freelance Developer",
     roleCategory: "contractor",
     updatedBy: UPDATED_BY,
+    source: "migration",
   }));
   ctx.log("Martin created (contractor, Freelance Developer). Slack ID not set — cannot self-report yet.");
 
@@ -190,6 +191,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
     endDate: "2026-11-06",
     notes: "EDF-2606-01. Built from the client schedule sheet 2026-08-24. Design locks 8/27, dev handoff 8/28 with no cushion between them. Sign-off 11/6.",
     updatedBy: UPDATED_BY,
+    source: "migration",
   }));
   const proj = (await db.select({ id: projects.id })
     .from(projects)
@@ -210,6 +212,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
       startDate: s.start,
       endDate: s.end,
       updatedBy: UPDATED_BY,
+      source: "migration",
     })) as { sectionId: string };
     sectionN++;
     ctx.log(`  SECTION ${s.title} -> ${created.sectionId.slice(0, 8)} [${s.status}]`);
@@ -225,6 +228,7 @@ export async function up(ctx: MigrationContext): Promise<void> {
         owner: t.owner,
         resources: t.resources,
         updatedBy: UPDATED_BY,
+        source: "migration",
       }));
       taskN++;
       ctx.log(`     ${t.no} ${t.title} [${t.status}]`);
