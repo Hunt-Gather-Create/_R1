@@ -94,7 +94,19 @@ Chain: CC builds → QA-Scout-1 in-lane → TP weighs and routes → Overwatch g
 
 **Why this is here and not in memory:** a practice that lives only in memory loses to a written instruction that says otherwise, every time. CLAUDE.md is injected each session as authoritative; memory arrives as background context that says it is not an instruction. When the two conflict the file wins by construction. This section previously said all work goes to *subagents*, which is why four PRs got built without the bots ever being opened. If a decision should change what you do, it goes here. Memory is for lessons; the file is for the action.
 
-**Follow up on dispatch.** Operator, 2026-08-26: "just be sure you follow up with your bots regularly." Do not dispatch and drift. Anchor any watcher on the last event id actually observed, never on a guessed timestamp.
+**Follow up on dispatch.** Operator, 2026-08-26: "just be sure you follow up with your bots regularly." Do not dispatch and drift. Anchor any watcher on the last event id actually observed, never on a guessed timestamp. **Chase every dispatch to an ACK. An unacked dispatch did not happen.**
+
+### How to actually run the room
+
+Full how-to, git-tracked and permanent: `agencyos-operational-efficiency/docs/standards/build-bay-playbook.md`. Do not copy it into the state file; state gets trimmed and the lesson dies. The five things that cost other seats real time:
+
+1. **Runway (CC) is not one serial worker.** It runs about ten threads at once. N independent tickets means N dispatches sent together, not N queued. A whole night was lost elsewhere to queueing them.
+2. **One thread per ticket.** The first message about a ticket is its root; keep the `event_id` the send returns and reply into it with `--reply-to <root>`. The thread history is what makes a standing bot worth more than a throwaway. Read one ticket in order with `~/.claude/skills/buzz-agent-stats/scripts/read-thread.sh <room> <root>`.
+3. **Send from a script file, never inline.** The secret-echo guard blocks any command line that expands a `*_NSEC` or `*_KEY` variable.
+4. **Fire QA in-thread the moment a build lands**, so building and checking overlap. Verify the branch on origin yourself first; never take a done-report on its face.
+5. **Never give QA-Scout-1 a build.** A seat that writes the code cannot be the independent check on it afterwards. It is right to refuse.
+
+**Telling whether a bot is working:** `buzz-agent-stats`, `scripts/check-agent.sh <bot_hex> <room>`. A recent message is the only reliable proof of work. Presence `online` proves the process started, nothing more. CPU proves nothing, since a heavy build looks the same as idle. `--since` windows lie by omission; fetch by `--limit` and read real timestamps.
 
 ## Memory rules
 
