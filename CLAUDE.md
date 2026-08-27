@@ -80,8 +80,24 @@ pnpm runway:sheet-sync # Sheet→Runway diff report (read-only, Phase 1a; fixtur
 
 | Work | Seat | Where |
 |---|---|---|
-| Any coding task | **Runway (CC)** `92d042f7…dd74` | Buzz room `46290a49-2e54-40a9-99ec-f79652a83337`, one dispatch per ticket |
-| Gate-1 QA on that build | **QA-Scout-1** `d56bffc9…3f25` | Same room, dispatched after CC reports a pushed SHA |
+| Any coding task | **Runway (CC)** | Buzz room below, one thread per ticket |
+| Gate-1 QA on that build | **QA-Scout-1** | Same room, dispatched after CC reports a pushed SHA |
+
+#### Seat table (this file is the source of truth for these values)
+
+Runway owns these and git tracks them here. Anything else holding a copy, the fleet registry, `~/.claude/skills/buzz-agent-stats/seats.json`, a chat relay, is downstream and syncs FROM this table. A relay plus an attestation about the relay is still a relay.
+
+| Seat | Buzz pubkey (64 hex) | Room |
+|---|---|---|
+| Runway (TP), this seat | `daa41621daeed01241c9e1f4ef38b5e928328e91efe31e19f15ed6d862f3429e` | see below |
+| Runway (CC), dev bot | `92d042f73f88940b27c7a7385563e10b590b6b1ddd58cce85f16f020bd0ddf74` | `46290a49-2e54-40a9-99ec-f79652a83337` |
+| QA-Scout-1, gate-1 bot | `d56bffc9f330b7e73848bc3f6b916bfc7b117631ac9f2f43414243f536123f25` | `46290a49-2e54-40a9-99ec-f79652a83337` |
+
+Room `46290a49-2e54-40a9-99ec-f79652a83337` is named `Runway (TP) <=> Runway (CC)`. It is NOT the Overwatch coordination room, which is `1f439c2c-8876-4fa6-9ed2-2ecf88348252`. A seeded config once confused the two; fire a dispatch into the wrong one and it lands as a record that wakes no bot.
+
+All three verified 2026-08-27 with `buzz channels members --channel 46290a49-...`, which returns role `bot` for the two bots. Re-verify from that command, never from memory or from another seat's copy.
+
+**Runway (CC) accepts messages from this seat only.** Its `respond_to` allowlist is `['daa41621']`, one entry. That is why another seat cannot dispatch to it even holding the right key, and it is deliberate: this seat owns its own bots. QA-Scout-1's allowlist is wider, eight seats. Both were misconfigured on 2026-08-26 and silently dropped every dispatch until repaired; a bot that cannot hear you looks exactly like a bot ignoring you.
 
 `--mention` needs the full 64-char hex; the `@Name` in the body wakes nobody. Never put backticks in `--content`; write a file and pass `"$(cat file)"`.
 
