@@ -1124,8 +1124,12 @@ ${filler}
     // direct-return shape `findUnguardedEqualityReturns` inspects, so this
     // is a hole in what the CHECK can verify, not a hole in auth - a
     // correctly written route and an unguarded one are indistinguishable to
-    // this check. If a future round closes it, this assertion starts
-    // failing; flip it to `toHaveLength(1)` rather than deleting it.
+    // this check. Pinned against BOTH checks, not just co-occurrence -
+    // findUnguardedEqualityReturns misses it too, because the compare sits
+    // inside `isAllowed`, which neither check looks into. If a future round
+    // closes it via EITHER check, that check's assertion starts failing;
+    // flip the one that closed it to `toHaveLength(1)` rather than deleting
+    // the test.
     const bypass = `
       import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
       function validateAuth(token, apiKey) {
@@ -1140,6 +1144,7 @@ ${filler}
       }
     `;
     expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(0);
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(0);
   });
 
   it("flags a plain-equality compare via a method-call RECEIVER, not an argument (round 9, shape 9)", () => {
