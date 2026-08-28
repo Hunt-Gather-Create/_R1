@@ -107,6 +107,23 @@
  * co-occurrence in its own right, not only via the other check. See the
  * scope-limits note for what taint propagation still does not cover.
  *
+ * Round 10 (dispatcher): the domain stated as a claim the co-occurrence
+ * check can actually make, per Overwatch's ruling that the check kept
+ * growing broader without ever saying what it covered, so each new shape
+ * arrived as an ambush instead of a case already decided not to handle.
+ * COVERED: any expression that SYNTACTICALLY contains a tainted identifier
+ * at the point it becomes an operand or argument, no matter how many
+ * operations wrap it inline. NOT COVERED: a value that leaves that subtree
+ * through a binding (an assignment or declaration) and is read back later -
+ * the binding severs the syntactic link the walk depends on, and there is
+ * no dataflow analysis here to reconnect it. The first is finite and
+ * statable; "any wrapper, anywhere" is not - only the reject direction can
+ * ever be complete. This is a hole in what the check can verify, not a
+ * hole in auth - a correctly written route and an unguarded one are
+ * indistinguishable to this check. Tracked as #110, not fixed here; pinned
+ * as a test below: see "KNOWN UNCOVERED ... (refs #110)" in the
+ * co-occurrence test block.
+ *
  * Scope limits:
  * - `findCoOccurrenceViolations` COVERS: any node in a KNOWN_AUTH_ROUTES
  *   file where an identifier resolving (by name, see below) to the `token`
@@ -153,7 +170,8 @@
  *   "token-tainted", which is a boolean, not the token). Deliberately not
  *   extended past the inline case this round to avoid that broader,
  *   harder-to-reason-about false-positive surface; a wrap-then-alias-then-
- *   pass shape remains open.
+ *   pass shape remains open, tracked as #110, and pinned as a known-
+ *   uncovered test below rather than left as prose only.
  * - It does not resolve callee-name SHADOWING: a locally declared
  *   `function timingSafeTokenMatch(a, b) { return a === b; }` in the same
  *   file produces a CallExpression whose callee text matches the real
@@ -172,10 +190,21 @@
  *   deleting the relic, accepted because the relic's wide-tree coverage was
  *   itself only ever the same defeatable text-proximity heuristic, not
  *   because the gap doesn't matter.
- * - `findUnguardedEqualityReturns` (round 5-7) is left in place as a second
- *   layer for the known routes even though co-occurrence now covers
- *   everything it covers; it is not the primary control any more, and
- *   nothing here relies on it.
+ * - `findUnguardedEqualityReturns` (round 5-7) is NOT redundant with
+ *   co-occurrence and must not be removed. Round 10 (dispatcher, real-route-
+ *   proven): `const t = String(token); return t === apiKey;` is caught ONLY
+ *   by `findUnguardedEqualityReturns` (route.ts:36, "no return path that
+ *   resolves to a plain equality compare") - `findCoOccurrenceViolations`
+ *   stays green on it, because binding the wrapped value to `const t`
+ *   before comparing breaks the inline subtree the co-occurrence walk
+ *   inspects; there is no single node where both `token` and `apiKey`
+ *   co-occur. What separates this shape from the ones co-occurrence does
+ *   catch (e.g. round 9's `isAllowed(String(token), apiKey)`) is not the
+ *   `String()` wrap - it is that the compare here is still a direct
+ *   RETURN, which is exactly the shape `findUnguardedEqualityReturns`
+ *   exists to catch and co-occurrence structurally cannot see once a
+ *   binding sits between the wrap and the compare. The two checks remain
+ *   complementary; each is load-bearing for a shape the other misses.
  */
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
@@ -820,6 +849,32 @@ describe("token-compare guard: the guarded function has no reachable plain-equal
     expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
   });
 
+  it("LOAD-BEARING: catches a wrapped-then-bound direct-return compare that co-occurrence structurally cannot see (round 10, shape 12a)", () => {
+    // This is the shape that disproves "findUnguardedEqualityReturns is
+    // redundant now that co-occurrence covers everything it covers" - see
+    // the corrected scope-limits bullet at the top of this file. Binding the
+    // wrap to `const t` before the compare breaks the inline subtree
+    // `findCoOccurrenceViolations` inspects (there is no single node where
+    // `token` and `apiKey` co-occur), but the compare is still a direct
+    // RETURN, which is exactly this check's own value-flow target and does
+    // not depend on the two values ever sharing a syntax node. Confirmed
+    // live against the real route file by the dispatcher at round 10: RED,
+    // route.ts:36, restored, md5 matched; the co-occurrence check stayed
+    // green on the identical mutation.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const t = String(token);
+        return t === apiKey;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(0);
+  });
+
   it("does not flag a throw gated by a non-equality condition", () => {
     // No-false-positive check for the round-7 terminator generalization: an
     // ordinary guard clause like a missing-header check throws too, but its
@@ -1060,6 +1115,31 @@ ${filler}
       }
     `;
     expect(findCoOccurrenceViolations(bypassPadded, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("KNOWN UNCOVERED: a value rebound through a wrap and compared inside a helper needs local dataflow, not subtree taint (refs #110)", () => {
+    // A decision, not an oversight - mechanism, severity, and domain now
+    // live in #110, not here. One sentence: the binding breaks the subtree
+    // `findCoOccurrenceViolations` inspects, and the helper call breaks the
+    // direct-return shape `findUnguardedEqualityReturns` inspects, so this
+    // is a hole in what the CHECK can verify, not a hole in auth - a
+    // correctly written route and an unguarded one are indistinguishable to
+    // this check. If a future round closes it, this assertion starts
+    // failing; flip it to `toHaveLength(1)` rather than deleting it.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const wrapped = String(token);
+        return isAllowed(wrapped, apiKey);
+      }
+      function isAllowed(supplied, expected) {
+        return supplied === expected;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(0);
   });
 
   it("flags a plain-equality compare via a method-call RECEIVER, not an argument (round 9, shape 9)", () => {
