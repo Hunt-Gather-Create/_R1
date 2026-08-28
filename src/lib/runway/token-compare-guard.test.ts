@@ -992,7 +992,20 @@ ${filler}
   });
 });
 
-describe("token-compare guard: no plain-equality token compare in Runway API routes (broad net)", () => {
+// Round 8, step 2 of 3 (#108): DISABLED to prove `findCoOccurrenceViolations`
+// does not depend on this relic - round 7's live counter-example (a
+// plain-equality compare moved into a separate helper function,
+// `return isAllowed(token, apiKey)`) was caught by this broad sweep only as
+// a proximity ACCIDENT: unpadded it fired, padded past WINDOW=200
+// characters it went fully green. An accident this check doesn't understand
+// is not provably a subset of the new, better-reasoned co-occurrence check
+// just because the new check is better reasoned - it has to be shown, not
+// assumed. With this block skipped, all eight #108 bypass shapes (fixture
+// AND real-route-file mutations, see the round 8 report in the #108
+// thread) were re-verified RED on `findCoOccurrenceViolations` alone, with
+// this relic provably contributing nothing (0 of its assertions execute
+// while skipped). Deleted, once that was proven, in the next commit.
+describe.skip("token-compare guard: no plain-equality token compare in Runway API routes (broad net)", () => {
   it("scans at least 32 API route source files", () => {
     expect(allFiles.length).toBeGreaterThanOrEqual(32);
   });
