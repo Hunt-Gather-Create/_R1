@@ -57,6 +57,17 @@
  * the return statement's text has. This is still one call's enclosing
  * function chain, not a call graph, per Overwatch's #106 gate-1 ruling.
  *
+ * Round 7 (dispatcher, confirmed live against gantt-generate/route.ts): the
+ * compare doesn't have to gate a `return` either - `if (a !== b) { throw
+ * ... } return true;` moves the safe compare to dead code and lets a plain
+ * `!==` decide the outcome via a `throw` instead. The route's try/catch
+ * still rejects a bad token (a 500 instead of a 401, but still a rejection),
+ * so this shape is not an authorization bypass; it is a timing-safety
+ * bypass - the exact property timingSafeTokenMatch exists to guarantee gets
+ * decided by a variable-time compare instead. The if-gate check now treats
+ * `throw` as a terminator alongside `return`, so it follows the compare's
+ * value to whichever one the branch reaches.
+ *
  * Scope limits:
  * - The shape-match sweep is a heuristic that a sufficiently distant or
  *   restructured compare defeats - see the padding bypass this guard was
@@ -66,12 +77,20 @@
  *   gap is now covered, within one function's enclosing-function chain, by
  *   `findUnguardedEqualityReturns` above (see #108).
  * - `findUnguardedEqualityReturns` COVERS: a plain-equality comparison whose
- *   boolean result reaches a return in the guarded function (or any function
- *   that encloses the real call), whether that happens through a direct
- *   return, a `const x = a === b` alias later returned, a ternary branch, or
- *   an `if (a === b)` that gates a `return` in either branch - regardless of
- *   feature flags, dead branches, renaming, padding, or reformatting, since
- *   none of this is text- or distance-based.
+ *   boolean result reaches a TERMINATOR (`return` or `throw`) in the guarded
+ *   function (or any function that encloses the real call), whether that
+ *   happens through a direct return, a `const x = a === b` alias later
+ *   returned, a ternary branch, or an `if (a === b)` that gates a `return`
+ *   or a `throw` in either branch - regardless of feature flags, dead
+ *   branches, renaming, padding, or reformatting, since none of this is
+ *   text- or distance-based. It follows the compare's value only to those
+ *   two terminators, not to every way a function can end or a branch can
+ *   decide something: it does NOT follow a plain-equality result that is
+ *   assigned to an outer-scope variable via a later `=` (as opposed to a
+ *   `const`/`let` declaration's own initializer) and read by an unrelated
+ *   `if` further down, and it does NOT cover other exit mechanisms
+ *   (`process.exit`, an unhandled promise rejection, calling a separate
+ *   allow/deny helper function). Those are open, not closed, by this round.
  * - `findUnguardedEqualityReturns` DOES NOT COVER a call graph spanning
  *   multiple functions or files where the equality compare lives in a
  *   SEPARATE helper function that is not itself an ancestor of the real
@@ -229,15 +248,24 @@ function collectIfStatementsInFunctionScope(root: ts.Node): ts.IfStatement[] {
   return out;
 }
 
-// True if a ReturnStatement exists anywhere under `node` without crossing
-// into a nested function - used to ask "does this if-branch decide the
-// function's return" without caring what the returned value is.
-function statementContainsReturn(node: ts.Node): boolean {
+// True if a Return OR Throw statement exists anywhere under `node` without
+// crossing into a nested function - used to ask "does this if-branch decide
+// the function's OUTCOME" without caring whether that outcome is expressed
+// as an allow (`return`) or a deny (`throw`). Round 7: the dispatcher proved
+// a real route where the equality compare gated a `throw` instead of a
+// `return` (`if (suppliedAlias !== expectedAlias) { throw ... } return true;`).
+// The route's own try/catch turns that throw into a 500, so the allow/deny
+// ANSWER stays correct - but the DECISION was made by a variable-time `!==`
+// instead of timingSafeTokenMatch, which is the entire reason that function
+// exists. Treating throw as a terminator alongside return closes this
+// without adding a throw-specific rule: both are just "this branch decides
+// the function's outcome."
+function statementContainsTerminator(node: ts.Node): boolean {
   let found = false;
   const visit = (child: ts.Node, isRoot: boolean) => {
     if (found) return;
     if (!isRoot && isFunctionLike(child)) return;
-    if (ts.isReturnStatement(child)) {
+    if (ts.isReturnStatement(child) || ts.isThrowStatement(child)) {
       found = true;
       return;
     }
@@ -324,8 +352,17 @@ function isEqualityDerived(expr: ts.Expression, scope: ts.Node, seen: Set<string
  * branch. It follows the VALUE, not the syntax position, which is what lets
  * it survive the flag/alias/nesting/if-gate shapes without needing a
  * separate rule per shape. Still one call's enclosing-function chain, not a
- * call graph, per Overwatch's #106 gate-1 ruling. See the scope-limits note
- * at the top of this file for what it still does not cover.
+ * call graph, per Overwatch's #106 gate-1 ruling.
+ *
+ * Round 7: the dispatcher proved a real route where the compare gated a
+ * `throw` instead of a `return` - the safe compare stayed dead code and a
+ * plain `!==` decided whether the request was rejected. The if-gate check
+ * now treats `throw` as a terminator alongside `return` (see
+ * `statementContainsTerminator`), so it follows the compare's value to
+ * whichever terminator - allow or deny - the branch actually reaches,
+ * instead of only recognizing `return`-shaped decisions. See the
+ * scope-limits note at the top of this file for what it still does not
+ * cover.
  */
 function findUnguardedEqualityReturns(source: string, fileName: string): string[] {
   const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
@@ -353,13 +390,13 @@ function findUnguardedEqualityReturns(source: string, fileName: string): string[
     }
     for (const ifStmt of collectIfStatementsInFunctionScope(fn)) {
       if (!isEqualityDerived(ifStmt.expression, fn)) continue;
-      const gatesReturn =
-        statementContainsReturn(ifStmt.thenStatement) ||
-        (ifStmt.elseStatement !== undefined && statementContainsReturn(ifStmt.elseStatement));
-      if (gatesReturn) {
+      const gatesTerminator =
+        statementContainsTerminator(ifStmt.thenStatement) ||
+        (ifStmt.elseStatement !== undefined && statementContainsTerminator(ifStmt.elseStatement));
+      if (gatesTerminator) {
         const { line } = sourceFile.getLineAndCharacterOfPosition(ifStmt.getStart(sourceFile));
         offenders.push(
-          `${fileName}:${line + 1}: plain-equality compare gates a return: ${ifStmt.expression.getText(sourceFile).trim()}`,
+          `${fileName}:${line + 1}: plain-equality compare gates a return or throw: ${ifStmt.expression.getText(sourceFile).trim()}`,
         );
       }
     }
@@ -570,6 +607,48 @@ describe("token-compare guard: the guarded function has no reachable plain-equal
       }
     `;
     expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare used as an if-condition that gates a throw instead of a return (round 7)", () => {
+    // The shape the dispatcher proved live against gantt-generate/route.ts:
+    // the compare doesn't gate a `return` at all, it gates a `throw` in the
+    // mismatch branch, and the match branch falls through to an unconditional
+    // `return true`. The route's try/catch still rejects a bad token, so the
+    // observable allow/deny answer is correct - but the decision was made by
+    // a variable-time `!==` instead of timingSafeTokenMatch, which is the
+    // bypass this check exists to catch.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const suppliedAlias = token;
+        const expectedAlias = apiKey;
+        if (suppliedAlias !== expectedAlias) {
+          throw new Error("Unauthorized");
+        }
+        return true;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("does not flag a throw gated by a non-equality condition", () => {
+    // No-false-positive check for the round-7 terminator generalization: an
+    // ordinary guard clause like a missing-header check throws too, but its
+    // condition is not an equality comparison, so it must not be flagged
+    // just because the enclosing function also calls timingSafeTokenMatch.
+    const clean = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (!token) {
+          throw new Error("missing token");
+        }
+        return timingSafeTokenMatch(token, apiKey);
+      }
+    `;
+    expect(findUnguardedEqualityReturns(clean, "fixture.ts")).toHaveLength(0);
   });
 
   it("does not flag the real call through a trivial intermediate variable and multi-line formatting", () => {
