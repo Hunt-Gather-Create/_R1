@@ -27,12 +27,17 @@
  * code. The call-site check is now an AST walk via the TypeScript compiler
  * API (parsed with the strict TS parser, so a commented-out or
  * string-literal call is not a node in the tree and does not count),
- * scoped to the two KNOWN_AUTH_ROUTES files only. It is not extended to the
- * broad sweep below on purpose - see the scope-limits note.
+ * scoped to the two KNOWN_AUTH_ROUTES files only.
  *
- * The v2 shape-match sweep is kept below as a broad secondary net over the
- * wider `src/app/api` tree (routes with no known auth helper yet, future
- * files, etc). It is not the primary control.
+ * A v2 windowed shape-match sweep (a broad secondary net over the wider
+ * `src/app/api` tree - routes with no known auth helper yet, future files,
+ * etc) lived here from round 3 through round 7. Round 8 deleted it: it only
+ * ever caught round 7's helper-function-extraction shape as a proximity
+ * accident (unpadded it fired, padded past its WINDOW it went fully green -
+ * see the round 8 paragraph below), and disabling it and re-running every
+ * known bypass shape proved `findCoOccurrenceViolations` does not depend on
+ * it for any of them. Deleting it loses the wider-tree, future-file net it
+ * provided; see the scope-limits note for what that costs.
  *
  * #108: the call-site check above proves the call EXISTS in the syntax
  * tree. It does not prove the call is REACHED - a feature flag that
@@ -69,13 +74,13 @@
  * value to whichever one the branch reaches.
  *
  * Round 8: `findUnguardedEqualityReturns` still only recognizes RETURN and
- * THROW as terminators - round 6's live counter-example, a compare moved
- * into a separate helper function (`return isAllowed(token, apiKey)`),
- * matches neither, and was only caught by the WINDOW=200 broad sweep below
- * as a proximity accident (unpadded it fired; padded past 200 characters it
- * went fully green - see round 7's report). Overwatch's ruling: stop
- * enumerating shapes. `findCoOccurrenceViolations` asserts the one property
- * that has to hold regardless of shape - the supplied token and the
+ * THROW as terminators - the dispatcher's live counter-example after round
+ * 7, a compare moved into a separate helper function
+ * (`return isAllowed(token, apiKey)`), matches neither, and was only caught
+ * by the (now-deleted) WINDOW=200 broad sweep as a proximity accident
+ * (unpadded it fired; padded past 200 characters it went fully green).
+ * Overwatch's ruling: stop enumerating shapes. `findCoOccurrenceViolations`
+ * asserts the one property that has to hold regardless of shape - the supplied token and the
  * expected secret may meet at exactly one place in the program, the call to
  * timingSafeTokenMatch - by marking every alias of each value and flagging
  * any OTHER node where both appear together as binary operands or call
@@ -122,9 +127,15 @@
  * - It does not (yet) cover a future third auth route, which would need to
  *   be added to KNOWN_AUTH_ROUTES by hand.
  * - It is scoped to the two KNOWN_AUTH_ROUTES files, same as the call-site
- *   check and `findUnguardedEqualityReturns`. It does not extend to files
- *   with no known auth helper yet or future files the way the WINDOW=200
- *   broad sweep below did - see that sweep's own remaining scope note.
+ *   check and `findUnguardedEqualityReturns`. Deleting the WINDOW=200 broad
+ *   sweep in this round (see above) means there is now NO net at all over
+ *   files with no known auth helper yet or future files - a plain-equality
+ *   token/apiKey compare introduced anywhere outside the two known routes
+ *   would not be caught by anything in this file until that route is added
+ *   to KNOWN_AUTH_ROUTES by hand. This is a real coverage loss from
+ *   deleting the relic, accepted because the relic's wide-tree coverage was
+ *   itself only ever the same defeatable text-proximity heuristic, not
+ *   because the gap doesn't matter.
  * - `findUnguardedEqualityReturns` (round 5-7) is left in place as a second
  *   layer for the known routes even though co-occurrence now covers
  *   everything it covers; it is not the primary control any more, and
@@ -137,14 +148,6 @@ import * as ts from "typescript";
 
 const ROOT = path.resolve(__dirname, "../../..");
 const AUTH_ROOT = path.join(ROOT, "src/app/api");
-const THIS_FILE = path.resolve(__filename);
-
-// How far (in characters, on whitespace-normalized source) an equality
-// operator may sit from a token/apiKey mention and still count as the same
-// compare, for the broad secondary sweep below. Left at 200 deliberately -
-// see the scope-limits note above for why no value of this constant is a
-// real fix.
-const WINDOW = 200;
 
 // The Runway auth routes known to gate on RUNWAY_MCP_API_KEY via
 // timingSafeTokenMatch. This is the primary control's coverage list.
@@ -162,9 +165,8 @@ const KNOWN_AUTH_ROUTES = [
 // under the old regex version of this check with a call "count" of 1. A
 // comment or a string literal is not a node in the parsed AST, so walking
 // the tree for actual CallExpression nodes closes that gap by construction.
-// Scoped to the two KNOWN_AUTH_ROUTES files only - this does not extend to
-// the broad sweep below, which stays text-based on purpose (see the
-// scope-limits note at the top of this file for why).
+// Scoped to the two KNOWN_AUTH_ROUTES files only (see the scope-limits note
+// at the top of this file for what that leaves uncovered).
 function countTimingSafeCallExpressions(source: string, fileName: string): number {
   const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
   let count = 0;
@@ -510,52 +512,6 @@ function findCoOccurrenceViolations(source: string, fileName: string): string[] 
   visit(sourceFile);
   return offenders;
 }
-
-function collectSourceFiles(dir: string): string[] {
-  const results: string[] = [];
-  if (!fs.existsSync(dir)) return results;
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...collectSourceFiles(full));
-    } else if (
-      entry.isFile() &&
-      (full.endsWith(".ts") || full.endsWith(".tsx")) &&
-      !full.endsWith(".test.ts") &&
-      !full.endsWith(".test.tsx") &&
-      path.resolve(full) !== THIS_FILE
-    ) {
-      results.push(full);
-    }
-  }
-  return results;
-}
-
-/**
- * True if `source` contains a `==`/`===` operator with both a `token` and
- * an `apiKey` mention (bare identifier, or `process.env.*`) within WINDOW
- * characters of it on whitespace-normalized source. Shape-based on purpose:
- * it does not require the identifiers to sit directly next to the operator,
- * so it still catches a compare fed by freshly-aliased variables.
- */
-function hasTokenEqualityShape(source: string): boolean {
-  const normalized = source.replace(/\s+/g, " ");
-  const opPattern = /(?<![=!])={2,3}(?!=)/g;
-  let match: RegExpExecArray | null;
-  while ((match = opPattern.exec(normalized)) !== null) {
-    const start = Math.max(0, match.index - WINDOW);
-    const end = Math.min(normalized.length, match.index + match[0].length + WINDOW);
-    const windowText = normalized.slice(start, end);
-    const hasToken = /\btoken\b/.test(windowText);
-    const hasApiKey = /\bapiKey\b/.test(windowText) || /process\.env\b/.test(windowText);
-    if (hasToken && hasApiKey) {
-      return true;
-    }
-  }
-  return false;
-}
-
-const allFiles = collectSourceFiles(AUTH_ROOT);
 
 describe("token-compare guard: known auth routes must call timingSafeTokenMatch", () => {
   it.each(KNOWN_AUTH_ROUTES)("%s contains at least one real timingSafeTokenMatch call expression", (file) => {
@@ -989,86 +945,5 @@ ${filler}
       }
     `;
     expect(findCoOccurrenceViolations(reformatted, "fixture.ts")).toHaveLength(0);
-  });
-});
-
-// Round 8, step 2 of 3 (#108): DISABLED to prove `findCoOccurrenceViolations`
-// does not depend on this relic - round 7's live counter-example (a
-// plain-equality compare moved into a separate helper function,
-// `return isAllowed(token, apiKey)`) was caught by this broad sweep only as
-// a proximity ACCIDENT: unpadded it fired, padded past WINDOW=200
-// characters it went fully green. An accident this check doesn't understand
-// is not provably a subset of the new, better-reasoned co-occurrence check
-// just because the new check is better reasoned - it has to be shown, not
-// assumed. With this block skipped, all eight #108 bypass shapes (fixture
-// AND real-route-file mutations, see the round 8 report in the #108
-// thread) were re-verified RED on `findCoOccurrenceViolations` alone, with
-// this relic provably contributing nothing (0 of its assertions execute
-// while skipped). Deleted, once that was proven, in the next commit.
-describe.skip("token-compare guard: no plain-equality token compare in Runway API routes (broad net)", () => {
-  it("scans at least 32 API route source files", () => {
-    expect(allFiles.length).toBeGreaterThanOrEqual(32);
-  });
-
-  it("no API route source contains an equality-shaped token/apiKey compare", () => {
-    const offenders: string[] = [];
-    for (const file of allFiles) {
-      const content = fs.readFileSync(file, "utf-8");
-      if (hasTokenEqualityShape(content)) {
-        offenders.push(file);
-      }
-    }
-    expect(
-      offenders,
-      `Equality-shaped token/apiKey compare found:\n${offenders.join("\n")}`,
-    ).toHaveLength(0);
-  });
-
-  describe("positive controls: the detector actually fires on known bypasses", () => {
-    it("flags the original literal compare (token === apiKey)", () => {
-      const bypass = `
-        function validateAuth(token, apiKey) {
-          return token === apiKey;
-        }
-      `;
-      expect(hasTokenEqualityShape(bypass)).toBe(true);
-    });
-
-    it("flags the scout's renamed-alias bypass that beat the first version of this guard", () => {
-      // Exact shape QA reported live at 1029edd9a436dd9f636b26f033ce84a3916b3ead:
-      // rename token/apiKey to supplied/expected immediately before the
-      // compare, and split `==` onto its own line. The substring-matching
-      // guard stayed green against this. This one must not.
-      const bypass = `
-        function validateAuth(request) {
-          const apiKey = process.env.RUNWAY_MCP_API_KEY;
-          const token = authHeader.slice(7);
-          const supplied = token;
-          const expected = apiKey;
-          return supplied
-            ==
-            expected;
-        }
-      `;
-      expect(hasTokenEqualityShape(bypass)).toBe(true);
-    });
-
-    it("does not flag the real, constant-time compare shape", () => {
-      // A fixture string, not a read of a live route file: the live route
-      // is covered by the sweep above, and a control that reads the same
-      // file it is meant to control moves in lockstep with it (see #106
-      // bounce 2, lines 130-138 of the prior version) - it is not a control.
-      const safe = `
-        import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
-
-        function validateAuth(request) {
-          const apiKey = process.env.RUNWAY_MCP_API_KEY;
-          const authHeader = request.headers.get("authorization");
-          const token = authHeader.slice(7);
-          return timingSafeTokenMatch(token, apiKey);
-        }
-      `;
-      expect(hasTokenEqualityShape(safe)).toBe(false);
-    });
   });
 });
