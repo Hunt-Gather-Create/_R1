@@ -39,14 +39,23 @@
  * defaults off, a staged-rollout branch, or a killswitch left on after an
  * incident can wrap the real call in a branch that never runs and fall
  * through to a plain `===` below it, and the call-site check stays green
- * because the CallExpression node is still there. `findUnguardedEqualityReturns`
- * closes this for the single-function-body case: it finds the function that
- * directly calls timingSafeTokenMatch and walks every return statement
- * reachable inside THAT SAME function (crossing if/else/try/switch/loop, not
- * crossing into a nested function), flagging any return that resolves to a
- * plain ==, ===, !=, or !== comparison. This is deliberately scoped to one
- * function body, not a call graph, per Overwatch's #106 gate-1 ruling that a
- * cheaper AST-level check could cover the described attack.
+ * because the CallExpression node is still there. Round 5's
+ * `findUnguardedEqualityReturns` closed the direct-return shape of this
+ * (`return supplied === expected;`) but matched on syntax position, not
+ * value: it only looked at what a return statement's own expression WAS.
+ * Round 6 (gate-1 QA, then confirmed live by the dispatcher against
+ * gantt-generate/route.ts) showed the compare doesn't have to sit in the
+ * return expression to decide the outcome - it can gate an `if` whose
+ * branches return literals, get assigned to a variable that is returned
+ * later, or live inside a nested function while an outer function carries
+ * the unreachable branch. `findUnguardedEqualityReturns` is now a small
+ * value-flow check: for every function that (directly, or through nested
+ * functions inside it) calls timingSafeTokenMatch, it asks whether a plain
+ * equality comparison's boolean result can reach that function's own
+ * return - via direct return, variable aliasing, a ternary branch, or as
+ * the test of an `if` that gates a return - rather than asking what shape
+ * the return statement's text has. This is still one call's enclosing
+ * function chain, not a call graph, per Overwatch's #106 gate-1 ruling.
  *
  * Scope limits:
  * - The shape-match sweep is a heuristic that a sufficiently distant or
@@ -54,20 +63,30 @@
  *   rewritten to survive.
  * - The call-site assertion proves the call EXISTS somewhere in the file's
  *   syntax tree. It does not prove the call GATES the request; that reachability
- *   gap is now covered, within one function body, by
+ *   gap is now covered, within one function's enclosing-function chain, by
  *   `findUnguardedEqualityReturns` above (see #108).
- * - `findUnguardedEqualityReturns` COVERS: a plain-equality return reachable
- *   in the same function as the real timingSafeTokenMatch call, regardless
- *   of feature flags, dead branches, aliasing, renaming, padding, or
- *   reformatting, because it walks return-statement shape in the AST, not
- *   text or distance.
+ * - `findUnguardedEqualityReturns` COVERS: a plain-equality comparison whose
+ *   boolean result reaches a return in the guarded function (or any function
+ *   that encloses the real call), whether that happens through a direct
+ *   return, a `const x = a === b` alias later returned, a ternary branch, or
+ *   an `if (a === b)` that gates a `return` in either branch - regardless of
+ *   feature flags, dead branches, renaming, padding, or reformatting, since
+ *   none of this is text- or distance-based.
  * - `findUnguardedEqualityReturns` DOES NOT COVER a call graph spanning
- *   multiple functions or files - e.g. validateAuth calling a SEPARATE
- *   helper function that itself does a plain-equality compare and is
- *   invoked instead of / in addition to timingSafeTokenMatch under some
- *   condition. That is genuine call-graph analysis (tracing which function
- *   the route handler actually invokes, and what THAT function returns
- *   under which inputs) and this guard does not attempt it.
+ *   multiple functions or files where the equality compare lives in a
+ *   SEPARATE helper function that is not itself an ancestor of the real
+ *   call - e.g. validateAuth calling a sibling helper that does a
+ *   plain-equality compare and is invoked instead of / in addition to
+ *   timingSafeTokenMatch under some condition. That is genuine call-graph
+ *   analysis (tracing which function the route handler actually invokes,
+ *   and what THAT function returns under which inputs) and this guard does
+ *   not attempt it.
+ * - Variable resolution for the aliasing case is name-based within the
+ *   function body being walked, not full scope/symbol binding. A variable
+ *   deliberately shadowed under the same name in a nested block within the
+ *   same function could resolve to the wrong declaration. This is a
+ *   contrived shape, not the ordinary-engineering shapes this ticket is
+ *   named for, and is noted here rather than chased.
  * - It also does not resolve callee-name SHADOWING: a locally declared
  *   `function timingSafeTokenMatch(a, b) { return a === b; }` in the same
  *   file produces a CallExpression whose callee text matches the real
@@ -165,13 +184,20 @@ function unwrapParens(expr: ts.Expression): ts.Expression {
   return current;
 }
 
-function findEnclosingFunction(node: ts.Node): ts.Node | undefined {
+// Every function-like ancestor of `node`, innermost first. Round 5 used only
+// the nearest one, which is why a real call sitting in a NESTED inner
+// function left the outer function - the one that actually carries an
+// unreachable branch and a plain-equality fallback - uninspected. Marking
+// every ancestor as "guarded" closes that: the outer function's own returns
+// get walked too, not just the inner function's.
+function findAllEnclosingFunctions(node: ts.Node): ts.Node[] {
+  const out: ts.Node[] = [];
   let current: ts.Node | undefined = node.parent;
   while (current) {
-    if (isFunctionLike(current)) return current;
+    if (isFunctionLike(current)) out.push(current);
     current = current.parent;
   }
-  return undefined;
+  return out;
 }
 
 // Collects every ReturnStatement reachable from `root` without crossing into
@@ -190,6 +216,90 @@ function collectReturnsInFunctionScope(root: ts.Node): ts.ReturnStatement[] {
   return out;
 }
 
+// Same traversal rule as collectReturnsInFunctionScope, for IfStatement
+// nodes instead of returns.
+function collectIfStatementsInFunctionScope(root: ts.Node): ts.IfStatement[] {
+  const out: ts.IfStatement[] = [];
+  const visit = (node: ts.Node, isRoot: boolean) => {
+    if (!isRoot && isFunctionLike(node)) return;
+    if (ts.isIfStatement(node)) out.push(node);
+    ts.forEachChild(node, (child) => visit(child, false));
+  };
+  visit(root, true);
+  return out;
+}
+
+// True if a ReturnStatement exists anywhere under `node` without crossing
+// into a nested function - used to ask "does this if-branch decide the
+// function's return" without caring what the returned value is.
+function statementContainsReturn(node: ts.Node): boolean {
+  let found = false;
+  const visit = (child: ts.Node, isRoot: boolean) => {
+    if (found) return;
+    if (!isRoot && isFunctionLike(child)) return;
+    if (ts.isReturnStatement(child)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(child, (grandchild) => visit(grandchild, false));
+  };
+  visit(node, true);
+  return found;
+}
+
+function isEqualityBinary(node: ts.Node): node is ts.BinaryExpression {
+  return ts.isBinaryExpression(node) && EQUALITY_OPERATOR_KINDS.has(node.operatorToken.kind);
+}
+
+// Resolves a plain identifier to its nearest `const`/`let` declaration's
+// initializer within `scope`, by name. Not full scope/symbol binding - a
+// heuristic good enough to follow the ordinary "alias a value, return the
+// alias" shapes this ticket is about, called out as a scope limit above for
+// the deliberately-shadowed-name edge case it does not handle.
+function findVariableInitializer(scope: ts.Node, name: string): ts.Expression | undefined {
+  let found: ts.Expression | undefined;
+  const visit = (node: ts.Node, isRoot: boolean) => {
+    if (found) return;
+    if (!isRoot && isFunctionLike(node)) return;
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === name &&
+      node.initializer
+    ) {
+      found = node.initializer;
+      return;
+    }
+    ts.forEachChild(node, (child) => visit(child, false));
+  };
+  visit(scope, true);
+  return found;
+}
+
+// True if `expr`'s value can resolve to a plain equality comparison's
+// boolean result - directly, through a chain of `const x = <expr>`
+// aliasing, or through a ternary that picks between equality-derived
+// branches. This is the value-flow step that lets the check follow WHERE
+// the compare's result goes instead of matching WHERE the compare sits in
+// the syntax tree.
+function isEqualityDerived(expr: ts.Expression, scope: ts.Node, seen: Set<string> = new Set()): boolean {
+  const unwrapped = unwrapParens(expr);
+  if (isEqualityBinary(unwrapped)) return true;
+  if (ts.isIdentifier(unwrapped)) {
+    if (seen.has(unwrapped.text)) return false;
+    seen.add(unwrapped.text);
+    const initializer = findVariableInitializer(scope, unwrapped.text);
+    if (!initializer) return false;
+    return isEqualityDerived(initializer, scope, seen);
+  }
+  if (ts.isConditionalExpression(unwrapped)) {
+    return (
+      isEqualityDerived(unwrapped.whenTrue, scope, seen) || isEqualityDerived(unwrapped.whenFalse, scope, seen)
+    );
+  }
+  return false;
+}
+
 /**
  * #108: token-compare-guard.test.ts proved a call to timingSafeTokenMatch
  * EXISTS in a file's syntax tree. It did not prove that call is REACHED. An
@@ -200,19 +310,22 @@ function collectReturnsInFunctionScope(root: ts.Node): ts.ReturnStatement[] {
  * still finds its CallExpression node and stays green while the constant-
  * time compare is fully bypassed at runtime.
  *
- * This finds every function that directly calls timingSafeTokenMatch (the
- * "guarded function" - validateAuth in both known routes today), then walks
- * every return statement reachable inside THAT SAME function body and flags
- * any whose expression is a top-level ==, ===, !=, or !== comparison. That
- * is a single-function-body reachability check, not a call graph: it does
- * not trace whether the guarded function itself is called from the route
- * handler, only whether a plain-equality return exists alongside the real
- * call inside it. Because it works on return-statement shape, not text, it
- * does not care how far the plain compare sits from a token/apiKey mention,
- * whether identifiers were renamed or aliased, or how the file is
- * reformatted - unlike the WINDOW-based sweep below, no amount of padding
- * defeats it. See the scope-limits note at the top of this file for what it
- * still does not cover.
+ * Round 6: the round-5 version of this check only looked at whether a
+ * RETURN STATEMENT'S OWN EXPRESSION was a plain equality comparison. Gate-1
+ * QA showed, and the dispatcher confirmed live against a real route file,
+ * that the compare doesn't have to be the return expression to decide the
+ * outcome - it can gate an `if` whose branches return, feed a variable that
+ * gets returned later, or live in a nested function while an outer function
+ * carries the unreachable branch. This version marks every function that
+ * ENCLOSES the real call (not just the nearest one) as guarded, then for
+ * each such function asks whether a plain equality comparison's boolean
+ * result can reach that function's own return, via direct return, variable
+ * aliasing, a ternary branch, or an `if` that gates a return in either
+ * branch. It follows the VALUE, not the syntax position, which is what lets
+ * it survive the flag/alias/nesting/if-gate shapes without needing a
+ * separate rule per shape. Still one call's enclosing-function chain, not a
+ * call graph, per Overwatch's #106 gate-1 ruling. See the scope-limits note
+ * at the top of this file for what it still does not cover.
  */
 function findUnguardedEqualityReturns(source: string, fileName: string): string[] {
   const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
@@ -223,8 +336,7 @@ function findUnguardedEqualityReturns(source: string, fileName: string): string[
       ts.isIdentifier(node.expression) &&
       node.expression.text === "timingSafeTokenMatch"
     ) {
-      const enclosing = findEnclosingFunction(node);
-      if (enclosing) guardedFunctions.add(enclosing);
+      for (const enclosing of findAllEnclosingFunctions(node)) guardedFunctions.add(enclosing);
     }
     ts.forEachChild(node, visit);
   };
@@ -234,10 +346,21 @@ function findUnguardedEqualityReturns(source: string, fileName: string): string[
   for (const fn of guardedFunctions) {
     for (const ret of collectReturnsInFunctionScope(fn)) {
       if (!ret.expression) continue;
-      const expr = unwrapParens(ret.expression);
-      if (ts.isBinaryExpression(expr) && EQUALITY_OPERATOR_KINDS.has(expr.operatorToken.kind)) {
+      if (isEqualityDerived(ret.expression, fn)) {
         const { line } = sourceFile.getLineAndCharacterOfPosition(ret.getStart(sourceFile));
         offenders.push(`${fileName}:${line + 1}: ${ret.getText(sourceFile).trim()}`);
+      }
+    }
+    for (const ifStmt of collectIfStatementsInFunctionScope(fn)) {
+      if (!isEqualityDerived(ifStmt.expression, fn)) continue;
+      const gatesReturn =
+        statementContainsReturn(ifStmt.thenStatement) ||
+        (ifStmt.elseStatement !== undefined && statementContainsReturn(ifStmt.elseStatement));
+      if (gatesReturn) {
+        const { line } = sourceFile.getLineAndCharacterOfPosition(ifStmt.getStart(sourceFile));
+        offenders.push(
+          `${fileName}:${line + 1}: plain-equality compare gates a return: ${ifStmt.expression.getText(sourceFile).trim()}`,
+        );
       }
     }
   }
@@ -386,6 +509,64 @@ describe("token-compare guard: the guarded function has no reachable plain-equal
         const filler9 = 9;
         const filler10 = 10;
         return suppliedAlias === expectedAlias;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare used as an if-condition that gates literal returns (round 6)", () => {
+    // The shape QA found and the dispatcher reproduced live at
+    // gantt-generate/route.ts: the compare doesn't sit in the return
+    // expression at all, it sits in the if-CONDITION, and the branches
+    // return literal true/false. Round 5's return-expression-shape check
+    // missed this entirely.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const suppliedAlias = token;
+        const expectedAlias = apiKey;
+        if (suppliedAlias === expectedAlias) {
+          return true;
+        }
+        return false;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare assigned to a variable that is returned later (round 6)", () => {
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const ok = token === apiKey;
+        return ok;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags an outer function's plain-equality return when the real call lives in a nested inner function (round 6)", () => {
+    // Round 5's findEnclosingFunction attributed the call to the INNER
+    // function only, so the outer function - the one actually carrying the
+    // unreachable branch and the plain-equality fallback - was never
+    // inspected. Marking every enclosing function, not just the nearest,
+    // closes this.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        function callRealCompare() {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        if (false) {
+          return callRealCompare();
+        }
+        return token === apiKey;
       }
     `;
     expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
