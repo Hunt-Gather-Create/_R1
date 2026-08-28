@@ -124,6 +124,19 @@
  * as a test below: see "KNOWN UNCOVERED ... (refs #110)" in the
  * co-occurrence test block.
  *
+ * Round 11 (dispatcher, TP/Overwatch self-bounced twice on this one):
+ * `findAllGuardViolations` is the union of both checks and is now the ONLY
+ * function the two real-route tests below call - "the guard reports
+ * nothing" is one statable claim, independent of how many checks the guard
+ * happens to be made of today. Asserting against the two checks by name
+ * (round 10's fix) only proves TODAY's inventory stays green; a future
+ * third check closing a gap would leave both name-based assertions green
+ * and nobody told. Because the real-route tests only run through the
+ * aggregator, a future check that isn't added to it protects no real route
+ * and is visibly dead code in its own describe block, rather than silently
+ * absent - the same failure mode #109 named for KNOWN_AUTH_ROUTES, avoided
+ * here rather than relocated.
+ *
  * Scope limits:
  * - `findCoOccurrenceViolations` COVERS: any node in a KNOWN_AUTH_ROUTES
  *   file where an identifier resolving (by name, see below) to the `token`
@@ -634,6 +647,60 @@ function findCoOccurrenceViolations(source: string, fileName: string): string[] 
   return offenders;
 }
 
+// Round 11 (dispatcher, self-corrected by TP/Overwatch): the guard's whole
+// output for a source, not "today's two checks" hand-listed at every call
+// site. A KNOWN-UNCOVERED tripwire (or a real-route test) that asserts
+// against `findUnguardedEqualityReturns` and `findCoOccurrenceViolations`
+// by name only proves the two checks that exist right now stay green - a
+// future third check closing the gap leaves both of those assertions green
+// and nobody is told. Asserting against this instead makes the claim "the
+// guard reports nothing" independent of how many checks the guard is made
+// of. This is also now the ONLY path the two real-route tests below run
+// through, so a future check that isn't wired in here protects no real
+// route and is visibly dead code, rather than silently absent the way
+// #109's KNOWN_AUTH_ROUTES gap was.
+function findAllGuardViolations(source: string, fileName: string): string[] {
+  return [
+    ...findUnguardedEqualityReturns(source, fileName),
+    ...findCoOccurrenceViolations(source, fileName),
+  ];
+}
+
+describe("token-compare guard: findAllGuardViolations aggregates the whole guard (#108 round 11)", () => {
+  it("unions a shape findUnguardedEqualityReturns uniquely carries (round 10, shape 12a)", () => {
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const t = String(token);
+        return t === apiKey;
+      }
+    `;
+    expect(findAllGuardViolations(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("unions a shape findCoOccurrenceViolations uniquely carries (round 9, shape 8/11, padded helper)", () => {
+    const filler = Array.from({ length: 70 }, (_, i) => `        const pad${i} = "x${i}";`).join("\n");
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+${filler}
+        return isAllowed(String(token), apiKey);
+      }
+      function isAllowed(supplied, expected) {
+${filler}
+        return supplied === expected;
+      }
+    `;
+    expect(findAllGuardViolations(bypass, "fixture.ts")).toHaveLength(1);
+  });
+});
+
 describe("token-compare guard: known auth routes must call timingSafeTokenMatch", () => {
   it.each(KNOWN_AUTH_ROUTES)("%s contains at least one real timingSafeTokenMatch call expression", (file) => {
     const content = fs.readFileSync(file, "utf-8");
@@ -679,11 +746,15 @@ describe("token-compare guard: the guarded function has no reachable plain-equal
   it.each(KNOWN_AUTH_ROUTES)(
     "%s's guarded function has no return path that resolves to a plain equality compare",
     (file) => {
+      // Round 11: routed through findAllGuardViolations, the guard's whole
+      // output, not this one check by name - see the aggregator's comment.
+      // Per-offender messages still name the file, line, and offending
+      // text, since each collector already embeds those in what it returns.
       const content = fs.readFileSync(file, "utf-8");
-      const offenders = findUnguardedEqualityReturns(content, file);
+      const offenders = findAllGuardViolations(content, file);
       expect(
         offenders,
-        `Plain-equality return found in the guarded function:\n${offenders.join("\n")}`,
+        `Guard violation found:\n${offenders.join("\n")}`,
       ).toHaveLength(0);
     },
   );
@@ -916,9 +987,12 @@ describe("token-compare guard: the guarded function has no reachable plain-equal
 
 describe("token-compare guard: token and apiKey may only co-occur inside timingSafeTokenMatch (#108 round 8)", () => {
   it.each(KNOWN_AUTH_ROUTES)("%s has no co-occurrence outside the approved timingSafeTokenMatch call", (file) => {
+    // Round 11: routed through findAllGuardViolations, same as the check
+    // above - see the aggregator's comment. Per-offender messages still
+    // name the file, line, and offending text.
     const content = fs.readFileSync(file, "utf-8");
-    const offenders = findCoOccurrenceViolations(content, file);
-    expect(offenders, `Co-occurrence found outside the approved call:\n${offenders.join("\n")}`).toHaveLength(0);
+    const offenders = findAllGuardViolations(content, file);
+    expect(offenders, `Guard violation found:\n${offenders.join("\n")}`).toHaveLength(0);
   });
 
   it("flags an if (false) bypass with aliasing and padding (shape 1)", () => {
@@ -1124,12 +1198,17 @@ ${filler}
     // direct-return shape `findUnguardedEqualityReturns` inspects, so this
     // is a hole in what the CHECK can verify, not a hole in auth - a
     // correctly written route and an unguarded one are indistinguishable to
-    // this check. Pinned against BOTH checks, not just co-occurrence -
-    // findUnguardedEqualityReturns misses it too, because the compare sits
-    // inside `isAllowed`, which neither check looks into. If a future round
-    // closes it via EITHER check, that check's assertion starts failing;
-    // flip the one that closed it to `toHaveLength(1)` rather than deleting
-    // the test.
+    // this check. Round 11: the primary claim is on findAllGuardViolations,
+    // the guard's whole output - "the guard reports nothing" is the
+    // statable fact, and it holds independent of how many checks exist or
+    // which one eventually closes this. The two per-check assertions below
+    // are today's inventory, not the claim: they document WHICH door is
+    // open right now, but neither is load-bearing for the tripwire - delete
+    // either without deleting the aggregator assertion and this test still
+    // does its job. If a future round closes this by ANY mechanism,
+    // including a check nobody has written yet, the aggregator assertion
+    // starts failing; flip it to `toHaveLength(1)` rather than deleting the
+    // test, and update whichever per-check assertion also flipped.
     const bypass = `
       import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
       function validateAuth(token, apiKey) {
@@ -1143,6 +1222,7 @@ ${filler}
         return supplied === expected;
       }
     `;
+    expect(findAllGuardViolations(bypass, "fixture.ts")).toHaveLength(0);
     expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(0);
     expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(0);
   });
