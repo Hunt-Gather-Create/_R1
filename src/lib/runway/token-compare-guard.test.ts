@@ -87,6 +87,26 @@
  * arguments. This is now the PRIMARY control for the two known routes. See
  * the scope-limits note for what "the same place" does not cover.
  *
+ * Round 9 (dispatcher, real-route-proven): round 8's co-occurrence check
+ * matched an operand/argument only when it WAS the bare identifier `token`
+ * or `apiKey`. `isAllowed(String(token), apiKey)` defeated it -
+ * `String(token)` is a CallExpression, not an Identifier, so the argument
+ * matched nothing, and `findUnguardedEqualityReturns` never sees inside
+ * `isAllowed` either, so both checks stayed green (28/28) on the real route
+ * file. The dispatcher also invented two shapes that stayed direct-equality
+ * RETURNS under a receiver or template-literal
+ * (`token.localeCompare(apiKey) === 0`, `` `${token}` === `${apiKey}` ``) -
+ * both were already caught by `findUnguardedEqualityReturns`, proving the
+ * two checks are complementary, not that co-occurrence subsumes returns.
+ * The fix generalizes co-occurrence from "IS this operand the tainted
+ * identifier" to "does this operand's SUBTREE carry the tainted identifier"
+ * (`subtreeCarriesTaintedName`), so a wrapped value is still the value no
+ * matter how many operations wrap it, and the call-argument check now scans
+ * the whole call node (callee + arguments), not just `.arguments`, so a
+ * method-call receiver (`token.localeCompare(apiKey)`) is also caught as a
+ * co-occurrence in its own right, not only via the other check. See the
+ * scope-limits note for what taint propagation still does not cover.
+ *
  * Scope limits:
  * - `findCoOccurrenceViolations` COVERS: any node in a KNOWN_AUTH_ROUTES
  *   file where an identifier resolving (by name, see below) to the `token`
@@ -118,6 +138,22 @@
  *   would be treated as the same value. This is the same limit
  *   `findUnguardedEqualityReturns` already had for its own aliasing, now
  *   also true of the co-occurrence check.
+ * - Round 9's taint propagation (`subtreeCarriesTaintedName`) covers a
+ *   wrapped value used INLINE at the co-occurrence site itself -
+ *   `isAllowed(String(token), apiKey)`, `foo(token.trim(), apiKey)` - because
+ *   the wrapping expression's subtree is inspected at the moment it becomes
+ *   an operand/argument. It does NOT extend alias resolution
+ *   (`resolveAliasNames`): a variable assigned from a WRAPPED value,
+ *   `const wrapped = String(token); ...; isAllowed(wrapped, apiKey);`, is not
+ *   added to the tainted-name set, because `resolveAliasNames` only chains
+ *   through a bare-identifier (or ternary-of-bare-identifier) initializer,
+ *   by design - extending it to any subtree containing a tainted name would
+ *   also taint values that merely DERIVE from token/apiKey without carrying
+ *   them (e.g. `const ok = token === apiKey;` would make `ok` itself
+ *   "token-tainted", which is a boolean, not the token). Deliberately not
+ *   extended past the inline case this round to avoid that broader,
+ *   harder-to-reason-about false-positive surface; a wrap-then-alias-then-
+ *   pass shape remains open.
  * - It does not resolve callee-name SHADOWING: a locally declared
  *   `function timingSafeTokenMatch(a, b) { return a === b; }` in the same
  *   file produces a CallExpression whose callee text matches the real
@@ -474,18 +510,63 @@ function resolveAliasNames(sourceFile: ts.SourceFile, seedName: string): Set<str
  * were in the same place. See the scope-limits note at the top of this file
  * for what "the same place" does not cover.
  */
+// True if `names` contains the text of any identifier reachable from `node`
+// WITHOUT going through it as a value - the taint-propagation step that lets
+// the co-occurrence check follow the VALUE through a wrapping expression
+// (`String(token)`, `token.trim()`, `` `${token}` ``) instead of only
+// recognising a bare identifier. Round 9 (#108): the dispatcher proved
+// `isAllowed(String(token), apiKey)` defeats identifier-only classification -
+// `String(token)` is a CallExpression, not the identifier `token`, so the old
+// `classify` (which required `ts.isIdentifier(unwrapped)`) saw no match at
+// that argument at all. An expression's SUBTREE containing a tainted
+// identifier means the expression still carries that value: `String(token)`,
+// `token.trim()`, `token.slice(0)`, and `` `${token}` `` are all still the
+// token, no matter how many operations wrap it. A PropertyAccessExpression's
+// `.name` (e.g. the `token` in `someUnrelatedObject.token`) is deliberately
+// NOT treated as a reference - only its `.expression` (the receiver) is
+// descended into - or an unrelated object literal property named "token"
+// would false-positive as if it carried the seed value.
+function subtreeCarriesTaintedName(node: ts.Node, names: Set<string>): boolean {
+  let found = false;
+  const visit = (current: ts.Node) => {
+    if (found) return;
+    if (ts.isPropertyAccessExpression(current)) {
+      visit(current.expression);
+      return;
+    }
+    if (ts.isIdentifier(current) && names.has(current.text)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return found;
+}
+
+// Round 9 (#108): the dispatcher invented three more shapes after round 8
+// shipped. Two (`token.localeCompare(apiKey) === 0`, a template-literal
+// compare) were direct-equality RETURNS, still caught by
+// `findUnguardedEqualityReturns`, not by this check - the two checks are
+// COMPLEMENTARY, and this one is not expected to catch every shape the other
+// one does. The third, `isAllowed(String(token), apiKey)`, defeated BOTH:
+// `findUnguardedEqualityReturns` never sees inside `isAllowed`, and the old
+// identifier-only `classify` here required an argument to BE the bare
+// identifier `token`, so `String(token)` - a CallExpression, not an
+// Identifier - matched nothing. `findCoOccurrenceViolations` now asks each
+// operand/argument "does ANY node in your subtree carry the tainted name",
+// via `subtreeCarriesTaintedName`, instead of "ARE you the tainted
+// identifier". `String(token)`, `token.trim()`, and `` `${token}` `` all
+// still carry the token value no matter what wraps them, so shape 11 dies at
+// the `isAllowed(...)` call site the same way `isAllowed(token, apiKey)` did
+// in round 8 - the mechanism generalizes instead of adding a `String()` case.
 function findCoOccurrenceViolations(source: string, fileName: string): string[] {
   const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
   const tokenNames = resolveAliasNames(sourceFile, "token");
   const apiKeyNames = resolveAliasNames(sourceFile, "apiKey");
 
-  const classify = (expr: ts.Expression): "token" | "apiKey" | null => {
-    const unwrapped = unwrapParens(expr);
-    if (!ts.isIdentifier(unwrapped)) return null;
-    if (tokenNames.has(unwrapped.text)) return "token";
-    if (apiKeyNames.has(unwrapped.text)) return "apiKey";
-    return null;
-  };
+  const carriesToken = (node: ts.Node): boolean => subtreeCarriesTaintedName(unwrapParens(node as ts.Expression), tokenNames);
+  const carriesApiKey = (node: ts.Node): boolean => subtreeCarriesTaintedName(unwrapParens(node as ts.Expression), apiKeyNames);
 
   const isApprovedCall = (node: ts.CallExpression): boolean =>
     ts.isIdentifier(node.expression) && node.expression.text === "timingSafeTokenMatch";
@@ -500,12 +581,23 @@ function findCoOccurrenceViolations(source: string, fileName: string): string[] 
 
   const visit = (node: ts.Node) => {
     if (ts.isBinaryExpression(node)) {
-      const left = classify(node.left);
-      const right = classify(node.right);
-      if (left && right && left !== right) record(node);
+      const leftToken = carriesToken(node.left);
+      const leftApiKey = carriesApiKey(node.left);
+      const rightToken = carriesToken(node.right);
+      const rightApiKey = carriesApiKey(node.right);
+      if ((leftToken && rightApiKey) || (leftApiKey && rightToken)) record(node);
     } else if (ts.isCallExpression(node) && !isApprovedCall(node)) {
-      const classes = new Set(node.arguments.map(classify).filter((c): c is "token" | "apiKey" => c !== null));
-      if (classes.has("token") && classes.has("apiKey")) record(node);
+      // Scans the WHOLE call node (callee + arguments), not just
+      // `.arguments`, so a method call where the RECEIVER is one value and
+      // an ARGUMENT is the other (`token.localeCompare(apiKey)`) is also a
+      // co-occurrence - the two values meet at this call just as surely as
+      // they would as two arguments. Self-caught while breaking round 9's
+      // own fix before reporting it: `.arguments`-only would have missed
+      // this receiver+argument shape the same way the old identifier-only
+      // `classify` missed `String(token)`.
+      const hasToken = carriesToken(node);
+      const hasApiKey = carriesApiKey(node);
+      if (hasToken && hasApiKey) record(node);
     }
     ts.forEachChild(node, visit);
   };
@@ -692,6 +784,37 @@ describe("token-compare guard: the guarded function has no reachable plain-equal
           throw new Error("Unauthorized");
         }
         return true;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare via a method-call RECEIVER, not an argument (round 9, shape 9)", () => {
+    // TP invented this one and proved it live: `token.localeCompare(apiKey)`
+    // is still a direct-equality RETURN once compared to 0, so this shape
+    // was already caught by the same return-expression value-flow this
+    // check already had - it's here as a named regression pin, not new
+    // mechanism.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        return token.localeCompare(apiKey) === 0;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare with both operands wrapped in template literals (round 9, shape 10)", () => {
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        return \`\${token}\` === \`\${apiKey}\`;
       }
     `;
     expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
@@ -896,6 +1019,94 @@ ${filler}
       }
     `;
     expect(findCoOccurrenceViolations(bypassPadded, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a helper call where one argument WRAPS the value instead of being it, unpadded and padded (round 9, shape 8/11)", () => {
+    // The dispatcher's round-9 counter-example, proven live at 28/28 green
+    // against the real route file before this fix: `String(token)` is a
+    // CallExpression, not the bare Identifier `token`, so the pre-round-9
+    // `classify` (which required `ts.isIdentifier(unwrapped)`) matched
+    // nothing at this argument, and `findUnguardedEqualityReturns` never
+    // looks inside `isAllowed` either - both checks stayed green. This is
+    // the fixture proof that `subtreeCarriesTaintedName` closes it: the
+    // argument's SUBTREE still carries `token` no matter what wraps it.
+    const bypassUnpadded = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        return isAllowed(String(token), apiKey);
+      }
+      function isAllowed(supplied, expected) {
+        return supplied === expected;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypassUnpadded, "fixture.ts")).toHaveLength(1);
+
+    const filler = Array.from({ length: 70 }, (_, i) => `        const pad${i} = "x${i}";`).join("\n");
+    const bypassPadded = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+${filler}
+        return isAllowed(String(token), apiKey);
+      }
+      function isAllowed(supplied, expected) {
+${filler}
+        return supplied === expected;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypassPadded, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare via a method-call RECEIVER, not an argument (round 9, shape 9)", () => {
+    // The receiver `token` in `token.localeCompare(apiKey)` is not one of
+    // the CallExpression's `.arguments` - it lives on the callee's
+    // PropertyAccessExpression. Scanning the whole call node (callee +
+    // arguments), not just `.arguments`, catches this as a co-occurrence in
+    // its own right, independent of `findUnguardedEqualityReturns` also
+    // catching the outer `=== 0` return.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        return token.localeCompare(apiKey) === 0;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare with both operands wrapped in template literals (round 9, shape 10)", () => {
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        return \`\${token}\` === \`\${apiKey}\`;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("does not flag a property named 'token' or 'apiKey' on an unrelated object as if it carried the seed value", () => {
+    // No-false-positive check for the PropertyAccessExpression special-case
+    // in `subtreeCarriesTaintedName`: a `.name` like the `token` in
+    // `logger.token` is a property name, not a reference to the `token`
+    // parameter, and must not be treated as tainted just because its text
+    // matches.
+    const clean = `
+      function logRequest(logger, apiKey) {
+        logger.token = "unrelated-value";
+        return logger.token !== apiKey.length;
+      }
+    `;
+    expect(findCoOccurrenceViolations(clean, "fixture.ts")).toHaveLength(0);
   });
 
   it("does not flag token used alone with no apiKey present", () => {
