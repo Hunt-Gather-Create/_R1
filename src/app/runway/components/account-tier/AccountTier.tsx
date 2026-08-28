@@ -209,12 +209,34 @@ function SectionStatusChip({ status }: { status: string }) {
  * when own dates are null the derived child rollup renders grayed — even on
  * an otherwise-actionable section. Nothing is stored either way.
  */
+/**
+ * _R1#105 — the open-task count and the label must agree about what they
+ * mean. `weekItemsForSection` correctly drops completed/canceled rows for
+ * this active view (that filter is right and stays untouched). But handing
+ * that filtered count straight to "N task(s)" makes a FINISHED section
+ * ("0 tasks") read identically to a section that never had any rows at all
+ * — which reads as a failed import, not completed work.
+ *
+ * Three distinct facts, three distinct labels:
+ *   - openCount > 0        -> "N open"   (there is open work)
+ *   - openCount === 0,
+ *     totalCount > 0       -> "all done" (rows exist, all terminal)
+ *   - totalCount === 0     -> "no tasks" (genuinely empty section)
+ */
+function formatTaskCountLabel(openCount: number, totalCount: number): string {
+  if (totalCount === 0) return "no tasks";
+  if (openCount === 0) return "all done";
+  return `${openCount} open`;
+}
+
 function SectionBand({
   l3,
-  taskCount,
+  openCount,
+  totalCount,
 }: {
   l3: L3SectionDisplay;
-  taskCount: number;
+  openCount: number;
+  totalCount: number;
 }) {
   const hasOwnDates = l3.startDate !== null || l3.endDate !== null;
   const ownDates = formatDateLine(l3.startDate, l3.endDate);
@@ -245,7 +267,7 @@ function SectionBand({
         </span>
       ) : null}
       <span className="text-xs text-muted-foreground">
-        {taskCount} {taskCount === 1 ? "task" : "tasks"}
+        {formatTaskCountLabel(openCount, totalCount)}
       </span>
     </div>
   );
@@ -457,6 +479,20 @@ function L1Section({
     }
   }
 
+  // _R1#105 — the label needs a fact `weekItemsForSection` doesn't carry:
+  // whether the section has ANY rows at all, terminal or not. That's the
+  // difference between "all done" (rows exist, all completed/canceled) and
+  // "no tasks" (genuinely nothing was ever scheduled here). We deliberately
+  // do NOT change the filter — we count the unfiltered rows from
+  // `section.data.rows` separately, purely for the label.
+  const totalCountByL3 = new Map<string, number>();
+  for (const row of section.data.rows) {
+    if (row.kind !== "weekitem") continue;
+    const sid = row.sectionId;
+    if (!sid) continue;
+    totalCountByL3.set(sid, (totalCountByL3.get(sid) ?? 0) + 1);
+  }
+
   const renderCards = (rows: AnnotatedRow[]) => (
     <div className="flex flex-wrap gap-2 pl-2 pt-2">
       {rows.map((wi, index) => (
@@ -511,9 +547,10 @@ function L1Section({
         <div className="space-y-2 pt-2">
           {l3s.map((l3) => {
             const l3Items = itemsByL3.get(l3.id) ?? [];
+            const totalCount = totalCountByL3.get(l3.id) ?? 0;
             return (
               <div key={l3.id} className="pl-2">
-                <SectionBand l3={l3} taskCount={l3Items.length} />
+                <SectionBand l3={l3} openCount={l3Items.length} totalCount={totalCount} />
                 {l3Items.length > 0 ? renderCards(l3Items) : null}
               </div>
             );
