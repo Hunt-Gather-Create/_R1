@@ -6,14 +6,15 @@ import { join } from "node:path";
 /**
  * Regression guard for _R1#114: vitest.config.mts had no `exclude`, so
  * running the suite from a checkout that has sibling git worktrees under
- * `.worktrees/` (every builder in this fleet does) collects and runs each
- * worktree's copy of every test file too — on whatever branch that worktree
- * happens to be sitting on. That produced the exact "green here, red there,
- * identical commits" shape #111 was filed for, one layer up: the main
- * checkout failed a suite that every worktree passed, because it was also
- * running four other worktrees' stale copies of the same test.
+ * `.worktrees/`, which every builder in this fleet does, collects and
+ * runs each worktree's copy of every test file too, on whatever branch
+ * that worktree happens to be sitting on. That produced the exact "green
+ * here, red there, identical commits" shape #111 was filed for, one layer
+ * up: the main checkout failed a suite that every worktree passed,
+ * because it was also running four other worktrees' stale copies of the
+ * same test.
  *
- * This asserts on the COLLECTED FILE LIST, not the run result — a green
+ * This asserts on the COLLECTED FILE LIST, not the run result. A green
  * suite is exactly what this bug produces from inside a worktree with no
  * nested worktrees of its own, so a passing `vitest run` proves nothing.
  * The list comes from `vitest list`, the same collection path the real
@@ -46,11 +47,11 @@ function removeFixtureWorktree(): void {
   try {
     execFileSync("git", ["branch", "-D", FIXTURE_BRANCH], { cwd: ROOT, stdio: "pipe" });
   } catch {
-    // Branch may not exist if a prior run already cleaned up — fine.
+    // Branch may not exist if a prior run already cleaned up, fine.
   }
 }
 
-describe("vitest config: worktree exclusion (#114)", () => {
+describe("vitest config: worktree exclusion, _R1#114", () => {
   it(
     "does not collect test files from nested .worktrees/ directories",
     () => {
@@ -80,10 +81,10 @@ describe("vitest config: worktree exclusion (#114)", () => {
   );
 
   it(
-    "still excludes node_modules from collection (proves the fix didn't replace configDefaults.exclude)",
+    "still excludes node_modules from collection, proving the fix did not replace configDefaults.exclude",
     () => {
-      // Plants a real, matching test file inside a node_modules directory —
-      // the same technique used above for .worktrees/ — rather than relying
+      // Plants a real, matching test file inside a node_modules directory,
+      // the same technique used above for .worktrees/, rather than relying
       // on whatever incidental .test.ts files happen to ship inside real
       // npm packages. This is a plain directory outside .worktrees/, not
       // the symlinked top-level node_modules shared with other worktrees
