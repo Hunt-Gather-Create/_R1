@@ -4,6 +4,9 @@
 **Author:** Runway (TP), 2026-08-29.
 **Unit of execution:** this milestone, planned end to end and dispatched as parallel threads
 into the Runway build bay. Not one ticket at a time.
+**Waiter:** this seat. `#111` refuses every push from the main checkout, so the roadmap and
+decision commits written today are stuck behind it. A milestone with no waiter is not this
+month's work; this one has one, and it is blocking.
 
 ---
 
@@ -75,9 +78,30 @@ the concept word for `authkitMiddleware`. `#88` stays independent of everything 
 | #112 | Add `gantt-embed` to `KNOWN_AUTH_ROUTES` **first**, watch the guard go red, **then** fix the route with `timingSafeTokenMatch`, watch it go green. | The red state must be observed and reported. A guard entry added after the fix proves nothing about whether the guard would have caught it. |
 | #88 | JSON `/api/*` requests must not bypass session enforcement in authkit middleware. | A request with a JSON content-type and no session is rejected. Show the pre-fix request succeeding. |
 
-Do not hand `#111` and `#112` to the same thread. They are independent and the bay runs about
-ten threads at once. Serial dispatch here is wasted wall clock, which is the exact mistake this
-seat made all week.
+Fire all three at once. **The reason is not the one this seat has been giving.**
+
+`CLAUDE.md` states that CC "runs about ten threads at once" and that N tickets means N
+dispatches, not N queued. Overwatch reports that the near-identical claim in its own always-
+loaded file was root-caused as false today: an unverified property of a live instrument,
+written down and then believed by everyone who read it. Its builder works its lanes in order.
+
+Asked directly, CC gave the honest answer rather than the flattering one: **it cannot observe
+its own cross-thread scheduling.** Within one turn it is strictly serial. Whether the harness
+runs three ticket roots as three concurrent copies or queues them into one session is a
+property of the dispatch layer that CC has no instrument to see. It declined to extend a fact
+it does have, that it can fan out to subagents inside a turn, into a claim about how top-level
+threads are scheduled.
+
+So the ten-threads line is unverified, in this file and in the fleet's. **The correct reason to
+fire all three at once holds either way: a ticket with a live thread knocks, and a ticket
+without one does not exist to an event-driven bot.** Parallel dispatch beats serial dispatch
+even when execution serializes, because the alternative is that ticket two does not exist until
+ticket one finishes.
+
+**Wave 1 is also the experiment.** Three roots inside one minute, then compare CC's reply
+timestamps: interleaved means concurrent, start-to-finish in order means serial. That settles
+the claim for the cost of watching a clock. The result goes to the operator, since correcting
+`CLAUDE.md` is his call and not a peer's.
 
 ### Wave 2 — two threads, each gated on its wave-1 predecessor
 
@@ -117,12 +141,33 @@ Verify the branch exists on origin own-hands first. A done-report is not evidenc
 The `Fixes jasonburks23/_R1#<n>` keyword is the intent, not the closing step. After each merge,
 verify the issue actually closed. Five tickets sat open for weeks this way.
 
-## Open, to be filled after Overwatch answers
+## Dispatch shape, from Overwatch's answer
 
-- Ticket shape: what fields and what done-when wording Ops uses so a one-shot executes without
-  a second round trip.
-- Bot configuration: parallelism, turn timeout, and how Ops keeps N concurrent threads legible.
-- Mid-flight tracking: what Ops reads to tell advancing from stalled without trusting
-  `active=True`.
-- Failure modes from the recent Ops one-shots, and where one-shotting a milestone rather than an
-  epic breaks.
+Every brief carries all six of these. CC cannot read GitHub issues at all, so a brief that
+references a ticket by number without carrying its content gets refused, correctly.
+
+1. **The decision is already made.** Where a builder could reasonably choose, choose. Offering
+   three options is how you get a round trip, or all three built.
+2. **Measurements in the brief, not just the ticket.** Exact file, exact line, exact current
+   value, and how it was measured.
+3. **Scope exclusions stated as loudly as inclusions.** Builders expand scope to be helpful.
+4. **A done-when the defect cannot produce.** Not "tests pass": a green suite is producible by
+   a broken system. Ask whether the evidence could still be produced if the bug were still
+   there. `#111`'s acceptance turns on this, since green in a worktree is exactly what the bug
+   produces.
+5. **The anti-vacuity line, every time.** Test the call site, not the function. The dominant
+   gate-1 failure in this fleet is a perfect, fully tested helper that nothing calls.
+6. **The hazard line.** If a verification step can touch a real credential, database, or host,
+   say so and name the isolated way to run it. A command whose safety depends on a prefix will
+   be run without the prefix. Runway's prod database is one env var away from every migration
+   script in the tree, and this seat has no hazard line anywhere today.
+
+## Tracking, from the same source
+
+A recent message is the only reliable signal. Presence lies and CPU lies. Chase every dispatch
+to an ACK; silence past 30 to 45 minutes gets investigated rather than assumed heads-down.
+Require a fixed report shape, so a degraded report is visible as one: branch, tip SHA,
+merge-base, `--numstat` diffstat, the mutation run with control before and after, and the exact
+test command. Keep "built and waiting" a distinct state from "building".
+
+There is no token telemetry gauge for a bot. Anyone who says there is, is wrong.
