@@ -173,6 +173,19 @@ references a ticket by number without carrying its content gets refused, correct
    **That was a defect in this brief, not in the build.** The rule had never appeared in any
    dispatch I sent, so the bot could not have known it.
 
+9. **The premise recheck, and it runs first.** Before building anything, the bot re-verifies the
+   ticket's central claim against the code as it exists today, and reports CONFIRMED, CHANGED or
+   GONE. A ticket whose premise is GONE gets closed, not built.
+   Operator ruling 2026-08-29: tickets in this backlog were written weeks apart and things move
+   fast, so a written finding is a claim about a past tree, not a fact about the current one.
+   Cost that bought it: #88 and #118 both rested on #52's observation that the authkit login layer
+   waves JSON requests through. Reading shipped authkit 2.13.0 showed its auth gate has no
+   Accept-header branch at all. The one Accept check sits inside `isInitialDocumentRequest`,
+   reached only when `eagerAuth` is on, and `eagerAuth` is set nowhere in our source. I had
+   repeated the dead premise to the operator twice as fact before reading the package.
+   This part is cheap and it runs before the expensive part, which is the whole argument for it.
+
+
 ## Two properties of the bay, learned 2026-08-29 at cost
 
 **A dispatch can be delivered twice while being sent once.** Verified: event
