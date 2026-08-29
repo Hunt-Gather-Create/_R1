@@ -1,21 +1,38 @@
 /**
- * _R1#115: proves the base-ancestry gate actually refuses on a stale/diverged
- * base, passes on a correctly-based candidate, and renders an unreachable
- * remote distinctly from both — the three states from the done-when, and no
- * two of them may render the same (the #107 defect this ticket names).
+ * _R1#115: proves the base-ancestry gate actually refuses on a stale or
+ * diverged base, passes on a correctly-based candidate, and renders an
+ * unreachable remote distinctly from both. Those are the three states from
+ * the done-when, and no two of them may render the same, which is the
+ * #107 defect this ticket names.
  *
  * Fixtures are local, offline git repos built with execFileSync so the suite
  * is deterministic and never depends on GitHub being reachable. The real,
- * live check against the actual stale fork (origin/runway at bc953b0 vs
- * Hunt-Gather-Create/_R1 runway at d1c65ff) was run by hand outside this
- * suite and is quoted verbatim in the ticket report — a live network call in
- * a committed test would make CI flaky on any outage, which is not what
- * "non-vacuous" means here.
+ * live check against the actual stale fork, origin/runway at bc953b0
+ * against Hunt-Gather-Create/_R1 runway at d1c65ff, was run by hand outside
+ * this suite and is quoted verbatim in the ticket report. A live network
+ * call in a committed test would make CI flaky on any outage, which is not
+ * what non-vacuous means here.
  *
- * Both the CLI entrypoint (spawned as a real subprocess, exercising the
- * actual call site: arg parsing, exit code, stderr/stdout routing) and the
- * exported function are covered, per the anti-vacuity note in the ticket —
- * a correct function nobody actually invokes through main() proves nothing.
+ * Both the CLI entrypoint, spawned as a real subprocess to exercise the
+ * actual call site of arg parsing, exit code, and stderr/stdout routing,
+ * and the exported function are covered, per the anti-vacuity note in the
+ * ticket. A correct function nobody actually invokes through main proves
+ * nothing.
+ *
+ * Every git call this file makes strips GIT_DIR, GIT_WORK_TREE,
+ * GIT_INDEX_FILE, and GIT_COMMON_DIR from the spawned process's
+ * environment. git push runs its pre-push hook with those variables set in
+ * the hook's own process environment, and a hook that shells out to
+ * pnpm test:run passes that environment straight through to vitest and
+ * every child process it spawns. Without stripping them, git honors the
+ * inherited GIT_DIR over the cwd this file passes, so every init and
+ * commit meant for an isolated tmp fixture instead lands on the real
+ * worktree branch running the suite. That happened once, here, on this
+ * ticket's own worktree, and every fixture repo in this file quietly
+ * fought over the same real repository for the rest of that run. It only
+ * ever showed up when the suite ran under git push's hook, never when run
+ * directly by hand, which is what pointed at the environment rather than
+ * this file's own logic.
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
@@ -25,19 +42,38 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { checkBaseAncestry, formatResult, TRUTH_BRANCH } from "./check-base-ancestry";
 
 const SCRIPT_PATH = join(__dirname, "check-base-ancestry.ts");
-// -c flags instead of GIT_AUTHOR_*/GIT_COMMITTER_* env vars: happy-dom's
-// process.env does not spread cleanly (PATH drops out), which turned every
-// execFileSync("git", ...) into ENOENT the moment an env override was
-// passed. Config flags avoid touching env at all.
+
+// See the file header. This is the fix for the real defect this ticket's
+// own build hit: a leaked GIT_DIR silently redirecting every git call
+// below onto the real worktree repository instead of the isolated tmp
+// fixture each test builds.
+const ISOLATED_GIT_ENV = { ...process.env };
+delete ISOLATED_GIT_ENV.GIT_DIR;
+delete ISOLATED_GIT_ENV.GIT_WORK_TREE;
+delete ISOLATED_GIT_ENV.GIT_INDEX_FILE;
+delete ISOLATED_GIT_ENV.GIT_COMMON_DIR;
+
+// -c flags instead of GIT_AUTHOR_*/GIT_COMMITTER_* env vars: this repo's
+// happy-dom test environment does not spread process.env cleanly through
+// an object literal, which previously turned every git spawn into ENOENT
+// the moment any env override was passed. Config flags avoid touching env
+// for identity, and gc.auto=0 keeps a background auto gc from ever firing
+// against one of these small, short-lived fixture repos.
 const GIT_IDENTITY = [
   "-c",
   "user.name=gate-test",
   "-c",
   "user.email=gate-test@example.invalid",
+  "-c",
+  "gc.auto=0",
 ];
 
 function git(args: string[], cwd: string): string {
-  return execFileSync("git", [...GIT_IDENTITY, ...args], { cwd, encoding: "utf8" }).trim();
+  return execFileSync("git", [...GIT_IDENTITY, ...args], {
+    cwd,
+    encoding: "utf8",
+    env: ISOLATED_GIT_ENV,
+  }).trim();
 }
 
 function initRepo(dir: string, branch: string): void {
@@ -46,9 +82,13 @@ function initRepo(dir: string, branch: string): void {
   git(["commit", "--quiet", "--allow-empty", "-m", "root"], dir);
 }
 
-/** Builds a "truth" repo (the stand-in for Hunt-Gather-Create/_R1) with two
+/**
+ * Builds a "truth" repo, the stand-in for Hunt-Gather-Create/_R1, with two
  * commits, and a "candidate" repo that either does or doesn't contain the
- * truth tip, depending on `behind`. */
+ * truth tip, depending on `behind`. The candidate is its own independent
+ * git init plus a fetch from truthDir, the same shape checkBaseAncestry
+ * itself uses against a real remote, rather than a local clone.
+ */
 function buildFixture(root: string, behind: boolean) {
   const truthDir = join(root, "truth");
   initRepo(truthDir, TRUTH_BRANCH);
@@ -57,23 +97,27 @@ function buildFixture(root: string, behind: boolean) {
   const truthTipSha = git(["rev-parse", "HEAD"], truthDir);
 
   const candidateDir = join(root, "candidate");
+  mkdirSync(candidateDir, { recursive: true });
+  git(["init", "--quiet", "-b", TRUTH_BRANCH], candidateDir);
   if (behind) {
-    // Candidate only ever saw the root commit — truth's tip never reached it.
-    // This is the real shape of the incident: origin/runway had the shared
-    // history but not the 12 commits upstream gained after it.
-    git(["clone", "--quiet", "--branch", TRUTH_BRANCH, truthDir, candidateDir], root);
-    git(["reset", "--quiet", "--hard", truthRootSha], candidateDir);
+    // Candidate only ever fetches the root commit. Truth's tip never
+    // reaches it. This is the real shape of the incident: origin/runway
+    // had the shared history but not the 12 commits upstream gained
+    // after it.
+    git(["fetch", "--quiet", truthDir, truthRootSha], candidateDir);
+    git(["checkout", "--quiet", "FETCH_HEAD"], candidateDir);
   } else {
-    // Candidate is a clone that has the truth tip (a correctly-based branch
-    // built from current upstream), plus one commit of its own on top.
-    git(["clone", "--quiet", "--branch", TRUTH_BRANCH, truthDir, candidateDir], root);
+    // Candidate fetches the truth tip, a correctly-based branch built
+    // from current upstream, then adds one commit of its own on top.
+    git(["fetch", "--quiet", truthDir, TRUTH_BRANCH], candidateDir);
+    git(["checkout", "--quiet", "FETCH_HEAD"], candidateDir);
     git(["commit", "--quiet", "--allow-empty", "-m", "ticket work"], candidateDir);
   }
 
   return { truthDir, truthTipSha, candidateDir };
 }
 
-describe("checkBaseAncestry — exported function", () => {
+describe("checkBaseAncestry, the exported function", () => {
   let root: string;
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "base-ancestry-"));
@@ -82,7 +126,7 @@ describe("checkBaseAncestry — exported function", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("refuses when the candidate is behind truth (the real origin/runway shape)", () => {
+  it("refuses when the candidate is behind truth, the real origin/runway shape", () => {
     const { truthDir, candidateDir } = buildFixture(root, true);
     const result = checkBaseAncestry("HEAD", candidateDir, truthDir, TRUTH_BRANCH);
     expect(result.status).toBe("wrong-base");
@@ -127,7 +171,7 @@ describe("checkBaseAncestry — exported function", () => {
   });
 });
 
-describe("check-base-ancestry.ts — the actual CLI call site", () => {
+describe("check-base-ancestry.ts, the actual CLI call site", () => {
   let root: string;
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "base-ancestry-cli-"));
@@ -138,10 +182,17 @@ describe("check-base-ancestry.ts — the actual CLI call site", () => {
 
   function runCli(candidateDir: string, args: string[]): { stdout: string; stderr: string; status: number } {
     try {
-      const stdout = execFileSync("npx", ["tsx", SCRIPT_PATH, ...args], {
-        cwd: candidateDir,
-        encoding: "utf8",
-      });
+      // node --experimental-strip-types instead of npx tsx: tsx is not a
+      // project dependency, so npx resolves it through its own on demand
+      // install cache on every call, adding a few seconds of npm overhead
+      // per spawn for no benefit here. Node's built in stripping runs the
+      // identical script file with identical argv parsing and exit code
+      // handling, without that cost.
+      const stdout = execFileSync(
+        process.execPath,
+        ["--experimental-strip-types", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", SCRIPT_PATH, ...args],
+        { cwd: candidateDir, encoding: "utf8", env: ISOLATED_GIT_ENV },
+      );
       return { stdout, stderr: "", status: 0 };
     } catch (err) {
       const e = err as { stdout?: string; stderr?: string; status?: number };
@@ -163,17 +214,14 @@ describe("check-base-ancestry.ts — the actual CLI call site", () => {
     expect(stdout).toMatch(/^PASS:/);
   });
 
-  it("exits with a third, distinct code when the remote itself is unreachable from the CLI", () => {
+  it("exits with a third, distinct code when the remote itself is unreachable, and a usage error is its own fourth thing", () => {
     const { candidateDir } = buildFixture(root, false);
-    const { status, stderr } = runCli(candidateDir, ["HEAD", join(root, "does-not-exist"), TRUTH_BRANCH]);
-    expect(status).toBe(2);
-    expect(stderr).toMatch(/REFUSE \(unreachable remote\)/);
-  });
+    const unreachable = runCli(candidateDir, ["HEAD", join(root, "does-not-exist"), TRUTH_BRANCH]);
+    expect(unreachable.status).toBe(2);
+    expect(unreachable.stderr).toMatch(/REFUSE \(unreachable remote\)/);
 
-  it("usage error (no candidate ref) is its own thing, not confused with any of the three states", () => {
-    const { candidateDir } = buildFixture(root, false);
-    const { status, stderr } = runCli(candidateDir, []);
-    expect(status).toBe(64);
-    expect(stderr).toMatch(/usage:/);
+    const usage = runCli(candidateDir, []);
+    expect(usage.status).toBe(64);
+    expect(usage.stderr).toMatch(/usage:/);
   });
 });
