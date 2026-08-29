@@ -121,7 +121,7 @@ export function formatResult(result: AncestryResult, truthBranch: string = TRUTH
       return {
         exitCode: 1,
         message:
-          `REFUSE (wrong base): Hunt-Gather-Create/_R1 ${truthBranch} tip ${result.truthTip} ` +
+          `REFUSE, WRONG BASE: Hunt-Gather-Create/_R1 ${truthBranch} tip ${result.truthTip} ` +
           `is NOT an ancestor of ${result.candidate} (${result.candidateSha}). ` +
           `${result.candidate} is stale or has diverged from upstream truth. ` +
           `Any merge-base or diff scope computed against it cannot be trusted.`,
@@ -130,7 +130,7 @@ export function formatResult(result: AncestryResult, truthBranch: string = TRUTH
       return {
         exitCode: 2,
         message:
-          `REFUSE (unreachable remote): could not fetch ${result.branch} from ${result.remoteUrl}. ` +
+          `REFUSE, UNREACHABLE REMOTE: could not fetch ${result.branch} from ${result.remoteUrl}. ` +
           `Cannot determine upstream truth, so no base can be validated. ` +
           `This is distinct from a wrong base: it means "unknown", not "known bad". ` +
           `Detail: ${result.detail.split("\n")[0]}`,

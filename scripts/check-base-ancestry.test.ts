@@ -132,7 +132,7 @@ describe("checkBaseAncestry, the exported function", () => {
     expect(result.status).toBe("wrong-base");
     const { exitCode, message } = formatResult(result);
     expect(exitCode).toBe(1);
-    expect(message).toMatch(/REFUSE \(wrong base\)/);
+    expect(message).toMatch(/REFUSE, WRONG BASE/);
   });
 
   it("passes when the candidate contains the truth tip", () => {
@@ -151,7 +151,7 @@ describe("checkBaseAncestry, the exported function", () => {
     expect(result.status).toBe("unreachable-remote");
     const { exitCode, message } = formatResult(result);
     expect(exitCode).toBe(2);
-    expect(message).toMatch(/REFUSE \(unreachable remote\)/);
+    expect(message).toMatch(/REFUSE, UNREACHABLE REMOTE/);
   });
 
   it("the three outcomes render three distinct exit codes and three distinct message prefixes", () => {
@@ -208,7 +208,7 @@ describe("check-base-ancestry.ts, the actual CLI call site", () => {
     const { truthDir, candidateDir } = buildFixture(root, true);
     const { status, stderr } = runCli(candidateDir, ["HEAD", truthDir, TRUTH_BRANCH]);
     expect(status).toBe(1);
-    expect(stderr).toMatch(/REFUSE \(wrong base\)/);
+    expect(stderr).toMatch(/REFUSE, WRONG BASE/);
   });
 
   it("exits zero and prints PASS on the subprocess call site for a correctly-based candidate", () => {
@@ -222,7 +222,7 @@ describe("check-base-ancestry.ts, the actual CLI call site", () => {
     const { candidateDir } = buildFixture(root, false);
     const unreachable = runCli(candidateDir, ["HEAD", join(root, "does-not-exist"), TRUTH_BRANCH]);
     expect(unreachable.status).toBe(2);
-    expect(unreachable.stderr).toMatch(/REFUSE \(unreachable remote\)/);
+    expect(unreachable.stderr).toMatch(/REFUSE, UNREACHABLE REMOTE/);
 
     const usage = runCli(candidateDir, []);
     expect(usage.status).toBe(64);
@@ -265,6 +265,6 @@ describe("check-base-ancestry.ts, the actual CLI call site", () => {
     });
 
     expect(status).toBe(1);
-    expect(stderr).toMatch(/REFUSE \(wrong base\)/);
+    expect(stderr).toMatch(/REFUSE, WRONG BASE/);
   });
 });
