@@ -7,7 +7,7 @@ and GitHub gets corrected.
 **GitHub Issues remains the source of truth for the content of an individual item:**
 https://github.com/jasonburks23/_R1/issues
 
-**Last refreshed:** 2026-08-29
+**Last refreshed:** 2026-08-29, second pass after the first merges landed
 
 ---
 
@@ -65,18 +65,26 @@ executor (PR #131), #43 timezone convergence (PR #130).
 
 ### 02 Auth and secret guards
 
-| # | Title |
-|---|---|
-| #111 | source-coverage guard scans gitignored files, so the pre-push hook refuses every push from the main checkout |
-| #112 | gantt-embed compares its shared secret with plain !==, and the guard never opens that file |
-| #109 | Auth-guard coverage stops at a hand-maintained route list, so a new route is silently unguarded |
-| #107 | P1: the PR gate carries no information — red, green, and never-ran all render identically |
-| #108 | Runway auth guard passes when the call is present but not reached (a feature flag defeats it) |
-| #110 | Token-compare guard cannot see a compare that is both rebound and moved into a helper |
-| #88 | authkit middleware lets JSON /api/* requests bypass session enforcement |
-| #90 | Rotate Runway env secrets (housekeeping) |
+| # | Title | State |
+|---|---|---|
+| #111 | source-coverage guard scans gitignored files, so the pre-push hook refuses every push from the main checkout | PR #138 open, blocked on #119 |
+| #114 | vitest has no exclude, so the suite runs every worktree's copy of every test | PR #139 open, blocked on #119 |
+| #112 | gantt-embed compares its shared secret with plain equality | PR #140 open, blocked on #119 |
+| #117 | the sweep requires the literal words token and apiKey | measured, fix direction chosen, not built |
+| #109 | auth-guard coverage stops at a hand-maintained route list | true only after #108 merged, now live |
+| #110 | guard cannot see a compare that is both rebound and moved into a helper | unblocked by #108, dispatchable |
+| #107 | the PR gate carries no information | headline shipped, two remainders |
+| #88 | authkit lets JSON requests bypass session enforcement | premise in doubt, recheck dispatched |
+| #118 | four chat routes have no auth check | downstream of #88's recheck |
+| #90 | rotate Runway env secrets | operator-only, no dispatch |
 
-Shipped: #98 timing-safe MCP bearer check (PR #129), #106 AST call-site guard (PR #134).
+#111 and #114 are a PAIR. #111 alone does not unblock pushes from the main checkout; with only #111, four of six collected test files still fail. Merge both or neither.
+
+Shipped: #98 timing-safe MCP bearer check (PR #129), #106 AST call-site guard (PR #134),
+**#108 reachability guard (PR #136, `fa6bd3f`)**.
+
+Closed without shipping: **#116**, superseded by #108. Its one-line fix lived inside
+`hasTokenEqualityShape`, which #108 deleted. The ordering warning held and nothing was lost.
 
 ### 03 DB safety tool
 
@@ -155,6 +163,8 @@ mutations. See D-10.
 
 | # | Title |
 |---|---|
+| #119 | **Board midnight test asserts against the machine's timezone, so CI is red on every PR.** Blocks four PRs. |
+| #115 | Base-ancestry gate refuses a stale or diverged base ref. PR #137 open, blocked on #119. |
 | #97 | Post-merge smoke gate wired to deploy signal |
 | #48 | Worktree scripts hardcode main as base — patch for runway + add .claude/worktrees to gitignore |
 | #45 | Missing FK indexes on hot-path columns |
