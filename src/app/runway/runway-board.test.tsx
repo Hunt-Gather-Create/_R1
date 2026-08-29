@@ -341,9 +341,22 @@ describe("RunwayBoard", () => {
   // The TV dashboard runs continuously for days. todayStr was previously
   // memoized at mount, so the "Today" indicator silently went stale at
   // midnight. Confirm a re-render after midnight picks up the new day.
+  //
+  // Both instants are given as explicit UTC, refs _R1#119. The board
+  // resolves today in America/Chicago on purpose, per _R1#43, so the
+  // instants here must genuinely straddle Chicago midnight regardless of
+  // the machine running the suite. An unsuffixed date-time string parses
+  // as local time on that machine, so the same two literals meant
+  // different real instants depending on where the suite ran. On a
+  // Chicago machine the second literal already meant Chicago midnight and
+  // this test passed. Under UTC, as CI runs, the same literal meant
+  // 19:00:30 Chicago time, still Monday, and this test failed for a
+  // correct board. April 6 and April 7, 2026 are both CDT, UTC minus 5,
+  // confirmed with Intl.DateTimeFormat against America/Chicago rather
+  // than assumed, so no DST transition falls between these two instants.
   it("today indicator advances when system clock crosses midnight", () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-06T23:59:59"));
+    vi.setSystemTime(new Date("2026-04-07T04:59:59Z")); // 23:59:59 CDT, Monday
 
     const week: DayItem[] = [
       {
@@ -366,7 +379,7 @@ describe("RunwayBoard", () => {
     expect(within(todaySectionBefore).getByText("Monday Item")).toBeInTheDocument();
     expect(within(todaySectionBefore).queryByText("Tuesday Item")).toBeNull();
 
-    vi.setSystemTime(new Date("2026-04-07T00:00:30"));
+    vi.setSystemTime(new Date("2026-04-07T05:00:30Z")); // 00:00:30 CDT, Tuesday
     rerender(<RunwayBoard {...defaultProps} thisWeek={week} />);
 
     const todaySectionAfter = screen.getByText("Today").closest("section")!;
