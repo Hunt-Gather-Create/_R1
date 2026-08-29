@@ -4,13 +4,13 @@
  * `updates` audit table after Wave 0d (pre-plan v7 §A5).
  *
  * Approach: enumerate the production source files git actually tracks under
- * `src/` and `scripts/` (excluding test / mock / source-files-of-the-helpers
- * themselves), pull every helper call by regex, and assert each call's
+ * `src/` and `scripts/`, excluding test, mock, and source-files-of-the-helpers
+ * themselves, pull every helper call by regex, and assert each call's
  * argument object contains a `source:` key.
  *
  * File list comes from `git ls-files`, not a filesystem walk. A file git
- * does not track — e.g. a one-shot migration script matched by a
- * `.gitignore` glob — is not a production call site by definition, so it
+ * does not track, such as a one-shot migration script matched by a
+ * `.gitignore` glob, is not a production call site by definition, so it
  * must never reach the sweep. Walking the filesystem instead would pick up
  * whatever untracked litter happens to sit in a working tree, which is a
  * property of that tree, not of the code being guarded.
@@ -83,10 +83,10 @@ function shouldSkipFile(absPath: string): boolean {
 /**
  * Collect production .ts/.tsx files under a directory from the git index,
  * not the filesystem. A file git does not track is not a production call
- * site by definition — this is what keeps gitignored one-shot scripts
- * (e.g. scripts/runway-migrations/*-2026-06-*.ts) out of the sweep without
- * a second, hand-maintained exclusion list that has to be kept in sync with
- * .gitignore.
+ * site by definition, which is what keeps gitignored one-shot scripts,
+ * such as scripts/runway-migrations/*-2026-06-*.ts, out of the sweep
+ * without a second, hand-maintained exclusion list that has to be kept in
+ * sync with .gitignore.
  */
 function gitTrackedFiles(relDir: string): string[] {
   const output = execFileSync("git", ["ls-files", "--", relDir], {
@@ -341,13 +341,13 @@ describe("source-coverage lint guard", () => {
     ).toEqual([]);
   });
 
-  it("does not flag call sites inside files git does not track (planted negative)", () => {
-    // .gitignore line 103 ignores scripts/runway-migrations/*-2026-06-*.ts —
+  it("does not flag call sites inside files git does not track, the planted negative control", () => {
+    // .gitignore line 103 ignores scripts/runway-migrations/*-2026-06-*.ts,
     // one-shot data-integrity migrations that already ran and live in Drive
     // by standing rule, never in the repo. Plant a file matching that glob
     // with a bare, untagged call site and assert the sweep does not surface
     // it. This is the control for _R1#111: it must fail red against a
-    // filesystem walk (which cannot tell an ignored file from a tracked one)
+    // filesystem walk, which cannot tell an ignored file from a tracked one,
     // and pass green once the sweep is scoped to the git index.
     const plantedRelPath = "scripts/runway-migrations/999-source-coverage-control-2026-06-01.ts";
     const plantedAbsPath = join(ROOT, plantedRelPath);
