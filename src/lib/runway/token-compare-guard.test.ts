@@ -232,6 +232,7 @@ const AUTH_ROOT = path.join(ROOT, "src/app/api");
 const KNOWN_AUTH_ROUTES = [
   path.join(AUTH_ROOT, "mcp/runway/route.ts"),
   path.join(AUTH_ROOT, "runway/gantt-generate/route.ts"),
+  path.join(AUTH_ROOT, "runway/gantt-embed/route.ts"),
 ];
 
 // Counts real CALL EXPRESSIONS to timingSafeTokenMatch by parsing the file
