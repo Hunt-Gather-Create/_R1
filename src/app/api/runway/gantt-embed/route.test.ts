@@ -7,11 +7,11 @@ import { NextRequest } from "next/server";
  * timingSafeTokenMatch, the same helper mcp/runway and gantt-generate use.
  *
  * These calls run the real exported GET handler, not the helper in
- * isolation — timingSafeTokenMatch already has its own unit test
- * (timing-safe-token.test.ts). What was untested is that this handler
+ * isolation. timingSafeTokenMatch already has its own unit test,
+ * timing-safe-token.test.ts. What was untested is that this handler
  * actually calls it. No clientId is supplied, so a request that clears the
  * auth gate falls through to the 400 "clientId required" branch instead of
- * a 401 — that transition from 401 to non-401 is what proves the gate
+ * a 401. That transition from 401 to non-401 is what proves the gate
  * opened, without needing to mock the DB or the renderer.
  */
 function makeRequest(secretHeader?: string | null): NextRequest {
@@ -39,11 +39,11 @@ describe("GET /api/runway/gantt-embed auth (#112)", () => {
     expect(res.status).toBe(401);
   });
 
-  it("passes the auth gate for the correct secret (not 401)", async () => {
+  it("passes the auth gate for the correct secret, not 401", async () => {
     const { GET } = await import("./route");
     const res = await GET(makeRequest("test_embed_secret"));
     expect(res.status).not.toBe(401);
-    // No clientId query param supplied — falls through to the next
+    // No clientId query param supplied, so this falls through to the next
     // validation branch, which is the proof the auth gate actually opened.
     expect(res.status).toBe(400);
   });
