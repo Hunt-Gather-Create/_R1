@@ -165,6 +165,13 @@ references a ticket by number without carrying its content gets refused, correct
    the ACK. Operator instruction. Without it the messages do not render as addressed and the
    room reads as dead from his side, which happened during wave 1 across 35 messages and four
    builds. A seat that looks idle gets treated as idle.
+8. **The voice rule.** No em dashes, no en dashes, no parentheses, anywhere a person can read.
+   That scope explicitly includes **code comments**, commit messages, docs and ticket text. The
+   only carve-out is AI-to-AI messages on Buzz. End the sentence or use a comma; a hyphen or a
+   parenthesis substituted for a dash is the same tell wearing a different hat.
+   Added 2026-08-29 after QA-Scout-1 caught eight em dashes across two otherwise clean branches.
+   **That was a defect in this brief, not in the build.** The rule had never appeared in any
+   dispatch I sent, so the bot could not have known it.
 
 ## Two properties of the bay, learned 2026-08-29 at cost
 
