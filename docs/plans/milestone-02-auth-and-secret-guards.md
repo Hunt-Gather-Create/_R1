@@ -186,6 +186,20 @@ references a ticket by number without carrying its content gets refused, correct
    This part is cheap and it runs before the expensive part, which is the whole argument for it.
 
 
+10. **No git in the shared checkout, and check each command succeeded.** Every git operation
+   belongs in the bot's own worktree or a disposable clone. `/Users/jasonburks/Documents/_AI_/_R1`
+   is shared by several seats and holds this seat's own branch.
+   Cost that bought it: CC ran `git checkout -b /bad-name upstream/runway` which failed on the
+   leading slash, then ran `git merge --no-commit --no-ff origin/fix/116-sweep-negative-equality`
+   in the same breath. The merge ran on whatever branch was already checked out, which was mine.
+   It self-reported before continuing and aborted cleanly; nothing was lost, verified own-hands.
+   Two rules, not one. A chained failure does not leave you somewhere safe, it leaves you
+   somewhere unknown, so verify each command before running the next. And note the shape: the
+   merge did not fail loudly. It SUCCEEDED, on the wrong branch, conflicts auto-resolved, a file
+   staged. It looked like a working result. That is the same defect class as a guard that passes
+   while pointed at the wrong repository.
+
+
 ## Two properties of the bay, learned 2026-08-29 at cost
 
 **A dispatch can be delivered twice while being sent once.** Verified: event
