@@ -180,7 +180,11 @@ describe("check-base-ancestry.ts, the actual CLI call site", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  function runCli(candidateDir: string, args: string[]): { stdout: string; stderr: string; status: number } {
+  function runCli(
+    candidateDir: string,
+    args: string[],
+    extraEnv: Record<string, string> = {},
+  ): { stdout: string; stderr: string; status: number } {
     try {
       // node --experimental-strip-types instead of npx tsx: tsx is not a
       // project dependency, so npx resolves it through its own on demand
@@ -191,7 +195,7 @@ describe("check-base-ancestry.ts, the actual CLI call site", () => {
       const stdout = execFileSync(
         process.execPath,
         ["--experimental-strip-types", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", SCRIPT_PATH, ...args],
-        { cwd: candidateDir, encoding: "utf8", env: ISOLATED_GIT_ENV },
+        { cwd: candidateDir, encoding: "utf8", env: { ...ISOLATED_GIT_ENV, ...extraEnv } },
       );
       return { stdout, stderr: "", status: 0 };
     } catch (err) {
@@ -223,5 +227,44 @@ describe("check-base-ancestry.ts, the actual CLI call site", () => {
     const usage = runCli(candidateDir, []);
     expect(usage.status).toBe(64);
     expect(usage.stderr).toMatch(/usage:/);
+  });
+
+  it("cwd decides the verdict even when a decoy GIT_DIR that would pass is already set in the environment", () => {
+    // This is the real incident this ticket's own build hit today. A caller
+    // running from inside a git hook, such as pre push, has GIT_DIR already
+    // set in its process environment. If this gate does not strip it, git
+    // honors that inherited GIT_DIR over the cwd argument this gate was
+    // actually handed, so it can silently check a completely different
+    // repository and report success on one nobody asked about.
+    //
+    // The decoy must descend from the SAME truthDir the gate is actually
+    // asked about, not a separately built fixture with its own unrelated
+    // truth. Two independent buildFixture calls would produce two
+    // unrelated commit graphs, and merge-base would correctly refuse no
+    // matter which repository GIT_DIR pointed at, proving nothing about
+    // whether cwd or GIT_DIR decided the answer. So the decoy is built by
+    // hand here, as its own repo fetching from the real, behind
+    // candidate's own truthDir, which does make it a genuine descendant
+    // of the exact truth tip this invocation checks against.
+    const { truthDir, candidateDir } = buildFixture(root, true);
+
+    const decoyDir = join(root, "decoy");
+    mkdirSync(decoyDir, { recursive: true });
+    git(["init", "--quiet", "-b", TRUTH_BRANCH], decoyDir);
+    git(["fetch", "--quiet", truthDir, TRUTH_BRANCH], decoyDir);
+    git(["checkout", "--quiet", "FETCH_HEAD"], decoyDir);
+    const decoyGitDir = git(["rev-parse", "--absolute-git-dir"], decoyDir);
+
+    // Sanity check on the decoy itself: it must actually pass on its own
+    // terms, or this proves nothing about a decoy that would pass.
+    const decoyOwnResult = checkBaseAncestry("HEAD", decoyDir, truthDir, TRUTH_BRANCH);
+    expect(decoyOwnResult.status).toBe("pass");
+
+    const { status, stderr } = runCli(candidateDir, ["HEAD", truthDir, TRUTH_BRANCH], {
+      GIT_DIR: decoyGitDir,
+    });
+
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/REFUSE \(wrong base\)/);
   });
 });
