@@ -88,10 +88,25 @@ function shouldSkipFile(absPath: string): boolean {
  * without a second, hand-maintained exclusion list that has to be kept in
  * sync with .gitignore.
  */
+// A caller that runs this suite from inside a git hook, such as pre push,
+// has GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, or GIT_COMMON_DIR already
+// set in its process environment, since that is how git invokes hooks.
+// Left in place, git honors those inherited variables over the cwd this
+// call passes, so ls-files would silently read a different repository's
+// index than ROOT, and this sweep would measure the wrong file set
+// without any error to say so. Stripping them makes cwd the only thing
+// that decides which index this call reads.
+const GIT_ENV_WITHOUT_INHERITED_REPO = { ...process.env };
+delete GIT_ENV_WITHOUT_INHERITED_REPO.GIT_DIR;
+delete GIT_ENV_WITHOUT_INHERITED_REPO.GIT_WORK_TREE;
+delete GIT_ENV_WITHOUT_INHERITED_REPO.GIT_INDEX_FILE;
+delete GIT_ENV_WITHOUT_INHERITED_REPO.GIT_COMMON_DIR;
+
 function gitTrackedFiles(relDir: string): string[] {
   const output = execFileSync("git", ["ls-files", "--", relDir], {
     cwd: ROOT,
     encoding: "utf8",
+    env: GIT_ENV_WITHOUT_INHERITED_REPO,
   });
   const out: string[] = [];
   for (const line of output.split("\n")) {
