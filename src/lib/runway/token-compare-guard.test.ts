@@ -27,30 +27,197 @@
  * code. The call-site check is now an AST walk via the TypeScript compiler
  * API (parsed with the strict TS parser, so a commented-out or
  * string-literal call is not a node in the tree and does not count),
- * scoped to the two KNOWN_AUTH_ROUTES files only. It is not extended to the
- * broad sweep below on purpose - see the scope-limits note.
+ * scoped to the two KNOWN_AUTH_ROUTES files only.
  *
- * The v2 shape-match sweep is kept below as a broad secondary net over the
- * wider `src/app/api` tree (routes with no known auth helper yet, future
- * files, etc). It is not the primary control.
+ * A v2 windowed shape-match sweep (a broad secondary net over the wider
+ * `src/app/api` tree - routes with no known auth helper yet, future files,
+ * etc) lived here from round 3 through round 7. Round 8 deleted it: it only
+ * ever caught round 7's helper-function-extraction shape as a proximity
+ * accident (unpadded it fired, padded past its WINDOW it went fully green -
+ * see the round 8 paragraph below), and disabling it and re-running every
+ * known bypass shape proved `findCoOccurrenceViolations` does not depend on
+ * it for any of them. Deleting it loses the wider-tree, future-file net it
+ * provided; see the scope-limits note for what that costs.
+ *
+ * #108: the call-site check above proves the call EXISTS in the syntax
+ * tree. It does not prove the call is REACHED - a feature flag that
+ * defaults off, a staged-rollout branch, or a killswitch left on after an
+ * incident can wrap the real call in a branch that never runs and fall
+ * through to a plain `===` below it, and the call-site check stays green
+ * because the CallExpression node is still there. Round 5's
+ * `findUnguardedEqualityReturns` closed the direct-return shape of this
+ * (`return supplied === expected;`) but matched on syntax position, not
+ * value: it only looked at what a return statement's own expression WAS.
+ * Round 6 (gate-1 QA, then confirmed live by the dispatcher against
+ * gantt-generate/route.ts) showed the compare doesn't have to sit in the
+ * return expression to decide the outcome - it can gate an `if` whose
+ * branches return literals, get assigned to a variable that is returned
+ * later, or live inside a nested function while an outer function carries
+ * the unreachable branch. `findUnguardedEqualityReturns` is now a small
+ * value-flow check: for every function that (directly, or through nested
+ * functions inside it) calls timingSafeTokenMatch, it asks whether a plain
+ * equality comparison's boolean result can reach that function's own
+ * return - via direct return, variable aliasing, a ternary branch, or as
+ * the test of an `if` that gates a return - rather than asking what shape
+ * the return statement's text has. This is still one call's enclosing
+ * function chain, not a call graph, per Overwatch's #106 gate-1 ruling.
+ *
+ * Round 7 (dispatcher, confirmed live against gantt-generate/route.ts): the
+ * compare doesn't have to gate a `return` either - `if (a !== b) { throw
+ * ... } return true;` moves the safe compare to dead code and lets a plain
+ * `!==` decide the outcome via a `throw` instead. The route's try/catch
+ * still rejects a bad token (a 500 instead of a 401, but still a rejection),
+ * so this shape is not an authorization bypass; it is a timing-safety
+ * bypass - the exact property timingSafeTokenMatch exists to guarantee gets
+ * decided by a variable-time compare instead. The if-gate check now treats
+ * `throw` as a terminator alongside `return`, so it follows the compare's
+ * value to whichever one the branch reaches.
+ *
+ * Round 8: `findUnguardedEqualityReturns` still only recognizes RETURN and
+ * THROW as terminators - the dispatcher's live counter-example after round
+ * 7, a compare moved into a separate helper function
+ * (`return isAllowed(token, apiKey)`), matches neither, and was only caught
+ * by the (now-deleted) WINDOW=200 broad sweep as a proximity accident
+ * (unpadded it fired; padded past 200 characters it went fully green).
+ * Overwatch's ruling: stop enumerating shapes. `findCoOccurrenceViolations`
+ * asserts the one property that has to hold regardless of shape - the supplied token and the
+ * expected secret may meet at exactly one place in the program, the call to
+ * timingSafeTokenMatch - by marking every alias of each value and flagging
+ * any OTHER node where both appear together as binary operands or call
+ * arguments. This is now the PRIMARY control for the two known routes. See
+ * the scope-limits note for what "the same place" does not cover.
+ *
+ * Round 9 (dispatcher, real-route-proven): round 8's co-occurrence check
+ * matched an operand/argument only when it WAS the bare identifier `token`
+ * or `apiKey`. `isAllowed(String(token), apiKey)` defeated it -
+ * `String(token)` is a CallExpression, not an Identifier, so the argument
+ * matched nothing, and `findUnguardedEqualityReturns` never sees inside
+ * `isAllowed` either, so both checks stayed green (28/28) on the real route
+ * file. The dispatcher also invented two shapes that stayed direct-equality
+ * RETURNS under a receiver or template-literal
+ * (`token.localeCompare(apiKey) === 0`, `` `${token}` === `${apiKey}` ``) -
+ * both were already caught by `findUnguardedEqualityReturns`, proving the
+ * two checks are complementary, not that co-occurrence subsumes returns.
+ * The fix generalizes co-occurrence from "IS this operand the tainted
+ * identifier" to "does this operand's SUBTREE carry the tainted identifier"
+ * (`subtreeCarriesTaintedName`), so a wrapped value is still the value no
+ * matter how many operations wrap it, and the call-argument check now scans
+ * the whole call node (callee + arguments), not just `.arguments`, so a
+ * method-call receiver (`token.localeCompare(apiKey)`) is also caught as a
+ * co-occurrence in its own right, not only via the other check. See the
+ * scope-limits note for what taint propagation still does not cover.
+ *
+ * Round 10 (dispatcher): the domain stated as a claim the co-occurrence
+ * check can actually make, per Overwatch's ruling that the check kept
+ * growing broader without ever saying what it covered, so each new shape
+ * arrived as an ambush instead of a case already decided not to handle.
+ * COVERED: any expression that SYNTACTICALLY contains a tainted identifier
+ * at the point it becomes an operand or argument, no matter how many
+ * operations wrap it inline. NOT COVERED: a value that leaves that subtree
+ * through a binding (an assignment or declaration) and is read back later -
+ * the binding severs the syntactic link the walk depends on, and there is
+ * no dataflow analysis here to reconnect it. The first is finite and
+ * statable; "any wrapper, anywhere" is not - only the reject direction can
+ * ever be complete. This is a hole in what the check can verify, not a
+ * hole in auth - a correctly written route and an unguarded one are
+ * indistinguishable to this check. Tracked as #110, not fixed here; pinned
+ * as a test below: see "KNOWN UNCOVERED ... (refs #110)" in the
+ * co-occurrence test block.
+ *
+ * Round 11 (dispatcher, TP/Overwatch self-bounced twice on this one):
+ * `findAllGuardViolations` is the union of both checks and is now the ONLY
+ * function the two real-route tests below call - "the guard reports
+ * nothing" is one statable claim, independent of how many checks the guard
+ * happens to be made of today. Asserting against the two checks by name
+ * (round 10's fix) only proves TODAY's inventory stays green; a future
+ * third check closing a gap would leave both name-based assertions green
+ * and nobody told. Because the real-route tests only run through the
+ * aggregator, a future check that isn't added to it protects no real route
+ * and is visibly dead code in its own describe block, rather than silently
+ * absent - the same failure mode #109 named for KNOWN_AUTH_ROUTES, avoided
+ * here rather than relocated.
  *
  * Scope limits:
- * - The shape-match sweep is a heuristic that a sufficiently distant or
- *   restructured compare defeats - see the padding bypass this guard was
- *   rewritten to survive.
- * - The call-site assertion proves the call EXISTS somewhere in the file's
- *   syntax tree. It does not prove the call GATES the request - a real call
- *   to timingSafeTokenMatch sitting in dead code, an unreachable branch, or
- *   with its result discarded would satisfy this check. Proving the call is
- *   reachable from the exported route handler is call-graph analysis, which
- *   this guard does not attempt.
- * - A compare that is isolated far from any token/apiKey identifier, in a
- *   file that also still contains a real, reachable timingSafeTokenMatch
- *   call elsewhere, is caught by nothing here: the call-site check only
- *   asserts a call exists, and the shape sweep's window (200) would not
- *   reach a sufficiently distant compare.
+ * - `findCoOccurrenceViolations` COVERS: any node in a KNOWN_AUTH_ROUTES
+ *   file where an identifier resolving (by name, see below) to the `token`
+ *   value and an identifier resolving to the `apiKey` value appear together
+ *   as the two operands of a binary expression (any operator, not just
+ *   equality) or as two arguments of the same call - REGARDLESS of which
+ *   function the node is in, whether that function is reachable, what
+ *   terminator (if any) consumes the result, or whether the values reach
+ *   the node through a return, a throw, an if-gate, a ternary, or a helper
+ *   function call in the same file or a different one. It does not need to
+ *   recognise the construct because it is not matching constructs.
+ * - `findCoOccurrenceViolations` DOES NOT COVER two values that never
+ *   SYNTACTICALLY co-occur as operands/arguments at all - e.g. both stashed
+ *   as properties on a module-level object and read back and compared
+ *   through a third variable that aliases neither name directly, or
+ *   compared via `Object.is(...)`-style reflection that doesn't put both
+ *   identifiers in the same argument list this walk inspects. This is
+ *   acceptable against the threat model this ticket is named for: ordinary
+ *   engineering by someone who never heard of the guard - a feature flag
+ *   defaulting off, a staged rollout, a killswitch, a helper extracted
+ *   during a tidy-up. None of those people are trying to keep the two
+ *   values apart, which is exactly why co-occurrence works on them and
+ *   would not work on someone who was. The limit travels with the control:
+ *   it does not defend against deliberate evasion, only ordinary
+ *   engineering that happens to reintroduce the bypass.
+ * - Alias resolution is NAME-based, over the whole file, not full
+ *   scope/symbol binding. A variable deliberately shadowed under the same
+ *   name (e.g. a nested block redeclaring `token` for an unrelated value)
+ *   would be treated as the same value. This is the same limit
+ *   `findUnguardedEqualityReturns` already had for its own aliasing, now
+ *   also true of the co-occurrence check.
+ * - Round 9's taint propagation (`subtreeCarriesTaintedName`) covers a
+ *   wrapped value used INLINE at the co-occurrence site itself -
+ *   `isAllowed(String(token), apiKey)`, `foo(token.trim(), apiKey)` - because
+ *   the wrapping expression's subtree is inspected at the moment it becomes
+ *   an operand/argument. It does NOT extend alias resolution
+ *   (`resolveAliasNames`): a variable assigned from a WRAPPED value,
+ *   `const wrapped = String(token); ...; isAllowed(wrapped, apiKey);`, is not
+ *   added to the tainted-name set, because `resolveAliasNames` only chains
+ *   through a bare-identifier (or ternary-of-bare-identifier) initializer,
+ *   by design - extending it to any subtree containing a tainted name would
+ *   also taint values that merely DERIVE from token/apiKey without carrying
+ *   them (e.g. `const ok = token === apiKey;` would make `ok` itself
+ *   "token-tainted", which is a boolean, not the token). Deliberately not
+ *   extended past the inline case this round to avoid that broader,
+ *   harder-to-reason-about false-positive surface; a wrap-then-alias-then-
+ *   pass shape remains open, tracked as #110, and pinned as a known-
+ *   uncovered test below rather than left as prose only.
+ * - It does not resolve callee-name SHADOWING: a locally declared
+ *   `function timingSafeTokenMatch(a, b) { return a === b; }` in the same
+ *   file produces a CallExpression whose callee text matches the real
+ *   import, so a call to the shadow is treated as the approved call.
+ *   Resolving the callee identifier back to its import binding is not done
+ *   here - open since round 5, not closed by this change.
  * - It does not (yet) cover a future third auth route, which would need to
  *   be added to KNOWN_AUTH_ROUTES by hand.
+ * - It is scoped to the two KNOWN_AUTH_ROUTES files, same as the call-site
+ *   check and `findUnguardedEqualityReturns`. Deleting the WINDOW=200 broad
+ *   sweep in this round (see above) means there is now NO net at all over
+ *   files with no known auth helper yet or future files - a plain-equality
+ *   token/apiKey compare introduced anywhere outside the two known routes
+ *   would not be caught by anything in this file until that route is added
+ *   to KNOWN_AUTH_ROUTES by hand. This is a real coverage loss from
+ *   deleting the relic, accepted because the relic's wide-tree coverage was
+ *   itself only ever the same defeatable text-proximity heuristic, not
+ *   because the gap doesn't matter.
+ * - `findUnguardedEqualityReturns` (round 5-7) is NOT redundant with
+ *   co-occurrence and must not be removed. Round 10 (dispatcher, real-route-
+ *   proven): `const t = String(token); return t === apiKey;` is caught ONLY
+ *   by `findUnguardedEqualityReturns` (route.ts:36, "no return path that
+ *   resolves to a plain equality compare") - `findCoOccurrenceViolations`
+ *   stays green on it, because binding the wrapped value to `const t`
+ *   before comparing breaks the inline subtree the co-occurrence walk
+ *   inspects; there is no single node where both `token` and `apiKey`
+ *   co-occur. What separates this shape from the ones co-occurrence does
+ *   catch (e.g. round 9's `isAllowed(String(token), apiKey)`) is not the
+ *   `String()` wrap - it is that the compare here is still a direct
+ *   RETURN, which is exactly the shape `findUnguardedEqualityReturns`
+ *   exists to catch and co-occurrence structurally cannot see once a
+ *   binding sits between the wrap and the compare. The two checks remain
+ *   complementary; each is load-bearing for a shape the other misses.
  */
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
@@ -59,14 +226,6 @@ import * as ts from "typescript";
 
 const ROOT = path.resolve(__dirname, "../../..");
 const AUTH_ROOT = path.join(ROOT, "src/app/api");
-const THIS_FILE = path.resolve(__filename);
-
-// How far (in characters, on whitespace-normalized source) an equality
-// operator may sit from a token/apiKey mention and still count as the same
-// compare, for the broad secondary sweep below. Left at 200 deliberately -
-// see the scope-limits note above for why no value of this constant is a
-// real fix.
-const WINDOW = 200;
 
 // The Runway auth routes known to gate on RUNWAY_MCP_API_KEY via
 // timingSafeTokenMatch. This is the primary control's coverage list.
@@ -84,9 +243,8 @@ const KNOWN_AUTH_ROUTES = [
 // under the old regex version of this check with a call "count" of 1. A
 // comment or a string literal is not a node in the parsed AST, so walking
 // the tree for actual CallExpression nodes closes that gap by construction.
-// Scoped to the two KNOWN_AUTH_ROUTES files only - this does not extend to
-// the broad sweep below, which stays text-based on purpose (see the
-// scope-limits note at the top of this file for why).
+// Scoped to the two KNOWN_AUTH_ROUTES files only (see the scope-limits note
+// at the top of this file for what that leaves uncovered).
 function countTimingSafeCallExpressions(source: string, fileName: string): number {
   const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
   let count = 0;
@@ -104,51 +262,444 @@ function countTimingSafeCallExpressions(source: string, fileName: string): numbe
   return count;
 }
 
-function collectSourceFiles(dir: string): string[] {
-  const results: string[] = [];
-  if (!fs.existsSync(dir)) return results;
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...collectSourceFiles(full));
-    } else if (
-      entry.isFile() &&
-      (full.endsWith(".ts") || full.endsWith(".tsx")) &&
-      !full.endsWith(".test.ts") &&
-      !full.endsWith(".test.tsx") &&
-      path.resolve(full) !== THIS_FILE
-    ) {
-      results.push(full);
-    }
-  }
-  return results;
+const EQUALITY_OPERATOR_KINDS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.EqualsEqualsToken,
+  ts.SyntaxKind.EqualsEqualsEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsEqualsToken,
+]);
+
+function isFunctionLike(node: ts.Node): boolean {
+  return (
+    ts.isFunctionDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isArrowFunction(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isGetAccessor(node) ||
+    ts.isSetAccessor(node) ||
+    ts.isConstructorDeclaration(node)
+  );
 }
 
-/**
- * True if `source` contains a `==`/`===` operator with both a `token` and
- * an `apiKey` mention (bare identifier, or `process.env.*`) within WINDOW
- * characters of it on whitespace-normalized source. Shape-based on purpose:
- * it does not require the identifiers to sit directly next to the operator,
- * so it still catches a compare fed by freshly-aliased variables.
- */
-function hasTokenEqualityShape(source: string): boolean {
-  const normalized = source.replace(/\s+/g, " ");
-  const opPattern = /(?<![=!])={2,3}(?!=)/g;
-  let match: RegExpExecArray | null;
-  while ((match = opPattern.exec(normalized)) !== null) {
-    const start = Math.max(0, match.index - WINDOW);
-    const end = Math.min(normalized.length, match.index + match[0].length + WINDOW);
-    const windowText = normalized.slice(start, end);
-    const hasToken = /\btoken\b/.test(windowText);
-    const hasApiKey = /\bapiKey\b/.test(windowText) || /process\.env\b/.test(windowText);
-    if (hasToken && hasApiKey) {
-      return true;
+function unwrapParens(expr: ts.Expression): ts.Expression {
+  let current = expr;
+  while (ts.isParenthesizedExpression(current)) {
+    current = current.expression;
+  }
+  return current;
+}
+
+// Every function-like ancestor of `node`, innermost first. Round 5 used only
+// the nearest one, which is why a real call sitting in a NESTED inner
+// function left the outer function - the one that actually carries an
+// unreachable branch and a plain-equality fallback - uninspected. Marking
+// every ancestor as "guarded" closes that: the outer function's own returns
+// get walked too, not just the inner function's.
+function findAllEnclosingFunctions(node: ts.Node): ts.Node[] {
+  const out: ts.Node[] = [];
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    if (isFunctionLike(current)) out.push(current);
+    current = current.parent;
+  }
+  return out;
+}
+
+// Collects every ReturnStatement reachable from `root` without crossing into
+// a nested function - if/else, try/catch, switch, and loop bodies are
+// followed, but a nested function/arrow declared inside `root` is not
+// descended into, since a return inside IT belongs to a different function's
+// contract.
+function collectReturnsInFunctionScope(root: ts.Node): ts.ReturnStatement[] {
+  const out: ts.ReturnStatement[] = [];
+  const visit = (node: ts.Node, isRoot: boolean) => {
+    if (!isRoot && isFunctionLike(node)) return;
+    if (ts.isReturnStatement(node)) out.push(node);
+    ts.forEachChild(node, (child) => visit(child, false));
+  };
+  visit(root, true);
+  return out;
+}
+
+// Same traversal rule as collectReturnsInFunctionScope, for IfStatement
+// nodes instead of returns.
+function collectIfStatementsInFunctionScope(root: ts.Node): ts.IfStatement[] {
+  const out: ts.IfStatement[] = [];
+  const visit = (node: ts.Node, isRoot: boolean) => {
+    if (!isRoot && isFunctionLike(node)) return;
+    if (ts.isIfStatement(node)) out.push(node);
+    ts.forEachChild(node, (child) => visit(child, false));
+  };
+  visit(root, true);
+  return out;
+}
+
+// True if a Return OR Throw statement exists anywhere under `node` without
+// crossing into a nested function - used to ask "does this if-branch decide
+// the function's OUTCOME" without caring whether that outcome is expressed
+// as an allow (`return`) or a deny (`throw`). Round 7: the dispatcher proved
+// a real route where the equality compare gated a `throw` instead of a
+// `return` (`if (suppliedAlias !== expectedAlias) { throw ... } return true;`).
+// The route's own try/catch turns that throw into a 500, so the allow/deny
+// ANSWER stays correct - but the DECISION was made by a variable-time `!==`
+// instead of timingSafeTokenMatch, which is the entire reason that function
+// exists. Treating throw as a terminator alongside return closes this
+// without adding a throw-specific rule: both are just "this branch decides
+// the function's outcome."
+function statementContainsTerminator(node: ts.Node): boolean {
+  let found = false;
+  const visit = (child: ts.Node, isRoot: boolean) => {
+    if (found) return;
+    if (!isRoot && isFunctionLike(child)) return;
+    if (ts.isReturnStatement(child) || ts.isThrowStatement(child)) {
+      found = true;
+      return;
     }
+    ts.forEachChild(child, (grandchild) => visit(grandchild, false));
+  };
+  visit(node, true);
+  return found;
+}
+
+function isEqualityBinary(node: ts.Node): node is ts.BinaryExpression {
+  return ts.isBinaryExpression(node) && EQUALITY_OPERATOR_KINDS.has(node.operatorToken.kind);
+}
+
+// Resolves a plain identifier to its nearest `const`/`let` declaration's
+// initializer within `scope`, by name. Not full scope/symbol binding - a
+// heuristic good enough to follow the ordinary "alias a value, return the
+// alias" shapes this ticket is about, called out as a scope limit above for
+// the deliberately-shadowed-name edge case it does not handle.
+function findVariableInitializer(scope: ts.Node, name: string): ts.Expression | undefined {
+  let found: ts.Expression | undefined;
+  const visit = (node: ts.Node, isRoot: boolean) => {
+    if (found) return;
+    if (!isRoot && isFunctionLike(node)) return;
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === name &&
+      node.initializer
+    ) {
+      found = node.initializer;
+      return;
+    }
+    ts.forEachChild(node, (child) => visit(child, false));
+  };
+  visit(scope, true);
+  return found;
+}
+
+// True if `expr`'s value can resolve to a plain equality comparison's
+// boolean result - directly, through a chain of `const x = <expr>`
+// aliasing, or through a ternary that picks between equality-derived
+// branches. This is the value-flow step that lets the check follow WHERE
+// the compare's result goes instead of matching WHERE the compare sits in
+// the syntax tree.
+function isEqualityDerived(expr: ts.Expression, scope: ts.Node, seen: Set<string> = new Set()): boolean {
+  const unwrapped = unwrapParens(expr);
+  if (isEqualityBinary(unwrapped)) return true;
+  if (ts.isIdentifier(unwrapped)) {
+    if (seen.has(unwrapped.text)) return false;
+    seen.add(unwrapped.text);
+    const initializer = findVariableInitializer(scope, unwrapped.text);
+    if (!initializer) return false;
+    return isEqualityDerived(initializer, scope, seen);
+  }
+  if (ts.isConditionalExpression(unwrapped)) {
+    return (
+      isEqualityDerived(unwrapped.whenTrue, scope, seen) || isEqualityDerived(unwrapped.whenFalse, scope, seen)
+    );
   }
   return false;
 }
 
-const allFiles = collectSourceFiles(AUTH_ROOT);
+/**
+ * #108: token-compare-guard.test.ts proved a call to timingSafeTokenMatch
+ * EXISTS in a file's syntax tree. It did not prove that call is REACHED. An
+ * ordinary feature flag, a staged rollout, or a killswitch left on after an
+ * incident can wrap the real call in a branch that never runs
+ * (`if (USE_TIMING_SAFE) { return timingSafeTokenMatch(...) }`) and fall
+ * through to a plain `===` compare below it - the call-site check above
+ * still finds its CallExpression node and stays green while the constant-
+ * time compare is fully bypassed at runtime.
+ *
+ * Round 6: the round-5 version of this check only looked at whether a
+ * RETURN STATEMENT'S OWN EXPRESSION was a plain equality comparison. Gate-1
+ * QA showed, and the dispatcher confirmed live against a real route file,
+ * that the compare doesn't have to be the return expression to decide the
+ * outcome - it can gate an `if` whose branches return, feed a variable that
+ * gets returned later, or live in a nested function while an outer function
+ * carries the unreachable branch. This version marks every function that
+ * ENCLOSES the real call (not just the nearest one) as guarded, then for
+ * each such function asks whether a plain equality comparison's boolean
+ * result can reach that function's own return, via direct return, variable
+ * aliasing, a ternary branch, or an `if` that gates a return in either
+ * branch. It follows the VALUE, not the syntax position, which is what lets
+ * it survive the flag/alias/nesting/if-gate shapes without needing a
+ * separate rule per shape. Still one call's enclosing-function chain, not a
+ * call graph, per Overwatch's #106 gate-1 ruling.
+ *
+ * Round 7: the dispatcher proved a real route where the compare gated a
+ * `throw` instead of a `return` - the safe compare stayed dead code and a
+ * plain `!==` decided whether the request was rejected. The if-gate check
+ * now treats `throw` as a terminator alongside `return` (see
+ * `statementContainsTerminator`), so it follows the compare's value to
+ * whichever terminator - allow or deny - the branch actually reaches,
+ * instead of only recognizing `return`-shaped decisions. See the
+ * scope-limits note at the top of this file for what it still does not
+ * cover.
+ */
+function findUnguardedEqualityReturns(source: string, fileName: string): string[] {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const guardedFunctions = new Set<ts.Node>();
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "timingSafeTokenMatch"
+    ) {
+      for (const enclosing of findAllEnclosingFunctions(node)) guardedFunctions.add(enclosing);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+
+  const offenders: string[] = [];
+  for (const fn of guardedFunctions) {
+    for (const ret of collectReturnsInFunctionScope(fn)) {
+      if (!ret.expression) continue;
+      if (isEqualityDerived(ret.expression, fn)) {
+        const { line } = sourceFile.getLineAndCharacterOfPosition(ret.getStart(sourceFile));
+        offenders.push(`${fileName}:${line + 1}: ${ret.getText(sourceFile).trim()}`);
+      }
+    }
+    for (const ifStmt of collectIfStatementsInFunctionScope(fn)) {
+      if (!isEqualityDerived(ifStmt.expression, fn)) continue;
+      const gatesTerminator =
+        statementContainsTerminator(ifStmt.thenStatement) ||
+        (ifStmt.elseStatement !== undefined && statementContainsTerminator(ifStmt.elseStatement));
+      if (gatesTerminator) {
+        const { line } = sourceFile.getLineAndCharacterOfPosition(ifStmt.getStart(sourceFile));
+        offenders.push(
+          `${fileName}:${line + 1}: plain-equality compare gates a return or throw: ${ifStmt.expression.getText(sourceFile).trim()}`,
+        );
+      }
+    }
+  }
+  return offenders;
+}
+
+// Resolves the set of identifier NAMES that are provably the same value as
+// `seedName` (e.g. "token"), by name-based alias resolution over the WHOLE
+// file: `seedName` itself, plus any `const`/`let` declaration whose
+// initializer is (or, through a ternary, may be) a bare identifier already
+// in the set. Runs to a fixed point so a chain of aliases (`const a = token;
+// const b = a;`) resolves fully. Deliberately not scoped to one function or
+// one function's enclosing chain - round 8's property does not care which
+// function a co-occurrence happens in, only whether it happens at all.
+function resolveAliasNames(sourceFile: ts.SourceFile, seedName: string): Set<string> {
+  const tainted = new Set<string>([seedName]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const visit = (node: ts.Node) => {
+      if (
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.initializer &&
+        !tainted.has(node.name.text)
+      ) {
+        const init = unwrapParens(node.initializer);
+        const candidates = ts.isConditionalExpression(init)
+          ? [unwrapParens(init.whenTrue), unwrapParens(init.whenFalse)]
+          : [init];
+        if (candidates.some((c) => ts.isIdentifier(c) && tainted.has(c.text))) {
+          tainted.add(node.name.text);
+          changed = true;
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
+  return tainted;
+}
+
+/**
+ * Round 8 (#108): seven rounds of finding a new shape that reaches a plain
+ * compare (feature flag, alias, if-gate, throw-gate, nested function) and
+ * writing a rule for that one shape never converged, because the FORBIDDEN
+ * set is infinite - there is always a construct nobody wrote a rule for yet
+ * (round 7's own live counter-example: a helper function extracted during a
+ * tidy-up, `return isAllowed(token, apiKey)`, caught nothing in
+ * `findUnguardedEqualityReturns` at all, and was only caught by the
+ * WINDOW=200 broad sweep as a proximity accident - unpadded it worked, and
+ * padded past 200 characters it went fully green). Overwatch's ruling that
+ * ends the lineage: the PERMITTED set has exactly one entry. The supplied
+ * token and the expected secret may meet at exactly one place in the
+ * program, and that place is a call to timingSafeTokenMatch. Only the
+ * reject direction can ever be complete, because it doesn't enumerate
+ * constructs - it marks every identifier that IS the token value (or a
+ * name-based alias of it) and every identifier that IS the apiKey value (or
+ * a name-based alias of it), then walks the file for any node where one of
+ * each appears together as the two operands of a binary expression or as
+ * two arguments of the same call, and flags every such node that is not the
+ * approved timingSafeTokenMatch call. It does not need to recognise a
+ * feature flag, a throw, a helper function, or nesting, because it is not
+ * looking for any of those - it is looking for the one fact that has to be
+ * true regardless of how the surrounding code is shaped: the two values
+ * were in the same place. See the scope-limits note at the top of this file
+ * for what "the same place" does not cover.
+ */
+// True if `names` contains the text of any identifier reachable from `node`
+// WITHOUT going through it as a value - the taint-propagation step that lets
+// the co-occurrence check follow the VALUE through a wrapping expression
+// (`String(token)`, `token.trim()`, `` `${token}` ``) instead of only
+// recognising a bare identifier. Round 9 (#108): the dispatcher proved
+// `isAllowed(String(token), apiKey)` defeats identifier-only classification -
+// `String(token)` is a CallExpression, not the identifier `token`, so the old
+// `classify` (which required `ts.isIdentifier(unwrapped)`) saw no match at
+// that argument at all. An expression's SUBTREE containing a tainted
+// identifier means the expression still carries that value: `String(token)`,
+// `token.trim()`, `token.slice(0)`, and `` `${token}` `` are all still the
+// token, no matter how many operations wrap it. A PropertyAccessExpression's
+// `.name` (e.g. the `token` in `someUnrelatedObject.token`) is deliberately
+// NOT treated as a reference - only its `.expression` (the receiver) is
+// descended into - or an unrelated object literal property named "token"
+// would false-positive as if it carried the seed value.
+function subtreeCarriesTaintedName(node: ts.Node, names: Set<string>): boolean {
+  let found = false;
+  const visit = (current: ts.Node) => {
+    if (found) return;
+    if (ts.isPropertyAccessExpression(current)) {
+      visit(current.expression);
+      return;
+    }
+    if (ts.isIdentifier(current) && names.has(current.text)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return found;
+}
+
+// Round 9 (#108): the dispatcher invented three more shapes after round 8
+// shipped. Two (`token.localeCompare(apiKey) === 0`, a template-literal
+// compare) were direct-equality RETURNS, still caught by
+// `findUnguardedEqualityReturns`, not by this check - the two checks are
+// COMPLEMENTARY, and this one is not expected to catch every shape the other
+// one does. The third, `isAllowed(String(token), apiKey)`, defeated BOTH:
+// `findUnguardedEqualityReturns` never sees inside `isAllowed`, and the old
+// identifier-only `classify` here required an argument to BE the bare
+// identifier `token`, so `String(token)` - a CallExpression, not an
+// Identifier - matched nothing. `findCoOccurrenceViolations` now asks each
+// operand/argument "does ANY node in your subtree carry the tainted name",
+// via `subtreeCarriesTaintedName`, instead of "ARE you the tainted
+// identifier". `String(token)`, `token.trim()`, and `` `${token}` `` all
+// still carry the token value no matter what wraps them, so shape 11 dies at
+// the `isAllowed(...)` call site the same way `isAllowed(token, apiKey)` did
+// in round 8 - the mechanism generalizes instead of adding a `String()` case.
+function findCoOccurrenceViolations(source: string, fileName: string): string[] {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const tokenNames = resolveAliasNames(sourceFile, "token");
+  const apiKeyNames = resolveAliasNames(sourceFile, "apiKey");
+
+  const carriesToken = (node: ts.Node): boolean => subtreeCarriesTaintedName(unwrapParens(node as ts.Expression), tokenNames);
+  const carriesApiKey = (node: ts.Node): boolean => subtreeCarriesTaintedName(unwrapParens(node as ts.Expression), apiKeyNames);
+
+  const isApprovedCall = (node: ts.CallExpression): boolean =>
+    ts.isIdentifier(node.expression) && node.expression.text === "timingSafeTokenMatch";
+
+  const offenders: string[] = [];
+  const record = (node: ts.Node) => {
+    const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    offenders.push(
+      `${fileName}:${line + 1}: token and apiKey co-occur outside timingSafeTokenMatch: ${node.getText(sourceFile).trim()}`,
+    );
+  };
+
+  const visit = (node: ts.Node) => {
+    if (ts.isBinaryExpression(node)) {
+      const leftToken = carriesToken(node.left);
+      const leftApiKey = carriesApiKey(node.left);
+      const rightToken = carriesToken(node.right);
+      const rightApiKey = carriesApiKey(node.right);
+      if ((leftToken && rightApiKey) || (leftApiKey && rightToken)) record(node);
+    } else if (ts.isCallExpression(node) && !isApprovedCall(node)) {
+      // Scans the WHOLE call node (callee + arguments), not just
+      // `.arguments`, so a method call where the RECEIVER is one value and
+      // an ARGUMENT is the other (`token.localeCompare(apiKey)`) is also a
+      // co-occurrence - the two values meet at this call just as surely as
+      // they would as two arguments. Self-caught while breaking round 9's
+      // own fix before reporting it: `.arguments`-only would have missed
+      // this receiver+argument shape the same way the old identifier-only
+      // `classify` missed `String(token)`.
+      const hasToken = carriesToken(node);
+      const hasApiKey = carriesApiKey(node);
+      if (hasToken && hasApiKey) record(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return offenders;
+}
+
+// Round 11 (dispatcher, self-corrected by TP/Overwatch): the guard's whole
+// output for a source, not "today's two checks" hand-listed at every call
+// site. A KNOWN-UNCOVERED tripwire (or a real-route test) that asserts
+// against `findUnguardedEqualityReturns` and `findCoOccurrenceViolations`
+// by name only proves the two checks that exist right now stay green - a
+// future third check closing the gap leaves both of those assertions green
+// and nobody is told. Asserting against this instead makes the claim "the
+// guard reports nothing" independent of how many checks the guard is made
+// of. This is also now the ONLY path the two real-route tests below run
+// through, so a future check that isn't wired in here protects no real
+// route and is visibly dead code, rather than silently absent the way
+// #109's KNOWN_AUTH_ROUTES gap was.
+function findAllGuardViolations(source: string, fileName: string): string[] {
+  return [
+    ...findUnguardedEqualityReturns(source, fileName),
+    ...findCoOccurrenceViolations(source, fileName),
+  ];
+}
+
+describe("token-compare guard: findAllGuardViolations aggregates the whole guard (#108 round 11)", () => {
+  it("unions a shape findUnguardedEqualityReturns uniquely carries (round 10, shape 12a)", () => {
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const t = String(token);
+        return t === apiKey;
+      }
+    `;
+    expect(findAllGuardViolations(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("unions a shape findCoOccurrenceViolations uniquely carries (round 9, shape 8/11, padded helper)", () => {
+    const filler = Array.from({ length: 70 }, (_, i) => `        const pad${i} = "x${i}";`).join("\n");
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+${filler}
+        return isAllowed(String(token), apiKey);
+      }
+      function isAllowed(supplied, expected) {
+${filler}
+        return supplied === expected;
+      }
+    `;
+    expect(findAllGuardViolations(bypass, "fixture.ts")).toHaveLength(1);
+  });
+});
 
 describe("token-compare guard: known auth routes must call timingSafeTokenMatch", () => {
   it.each(KNOWN_AUTH_ROUTES)("%s contains at least one real timingSafeTokenMatch call expression", (file) => {
@@ -191,70 +742,584 @@ describe("token-compare guard: known auth routes must call timingSafeTokenMatch"
   });
 });
 
-describe("token-compare guard: no plain-equality token compare in Runway API routes (broad net)", () => {
-  it("scans at least 32 API route source files", () => {
-    expect(allFiles.length).toBeGreaterThanOrEqual(32);
-  });
-
-  it("no API route source contains an equality-shaped token/apiKey compare", () => {
-    const offenders: string[] = [];
-    for (const file of allFiles) {
+describe("token-compare guard: the guarded function has no reachable plain-equality return (#108)", () => {
+  it.each(KNOWN_AUTH_ROUTES)(
+    "%s's guarded function has no return path that resolves to a plain equality compare",
+    (file) => {
+      // Round 11: routed through findAllGuardViolations, the guard's whole
+      // output, not this one check by name - see the aggregator's comment.
+      // Per-offender messages still name the file, line, and offending
+      // text, since each collector already embeds those in what it returns.
       const content = fs.readFileSync(file, "utf-8");
-      if (hasTokenEqualityShape(content)) {
-        offenders.push(file);
-      }
-    }
-    expect(
-      offenders,
-      `Equality-shaped token/apiKey compare found:\n${offenders.join("\n")}`,
-    ).toHaveLength(0);
-  });
+      const offenders = findAllGuardViolations(content, file);
+      expect(
+        offenders,
+        `Guard violation found:\n${offenders.join("\n")}`,
+      ).toHaveLength(0);
+    },
+  );
 
-  describe("positive controls: the detector actually fires on known bypasses", () => {
-    it("flags the original literal compare (token === apiKey)", () => {
-      const bypass = `
-        function validateAuth(token, apiKey) {
-          return token === apiKey;
-        }
-      `;
-      expect(hasTokenEqualityShape(bypass)).toBe(true);
-    });
-
-    it("flags the scout's renamed-alias bypass that beat the first version of this guard", () => {
-      // Exact shape QA reported live at 1029edd9a436dd9f636b26f033ce84a3916b3ead:
-      // rename token/apiKey to supplied/expected immediately before the
-      // compare, and split `==` onto its own line. The substring-matching
-      // guard stayed green against this. This one must not.
-      const bypass = `
-        function validateAuth(request) {
-          const apiKey = process.env.RUNWAY_MCP_API_KEY;
-          const token = authHeader.slice(7);
-          const supplied = token;
-          const expected = apiKey;
-          return supplied
-            ==
-            expected;
-        }
-      `;
-      expect(hasTokenEqualityShape(bypass)).toBe(true);
-    });
-
-    it("does not flag the real, constant-time compare shape", () => {
-      // A fixture string, not a read of a live route file: the live route
-      // is covered by the sweep above, and a control that reads the same
-      // file it is meant to control moves in lockstep with it (see #106
-      // bounce 2, lines 130-138 of the prior version) - it is not a control.
-      const safe = `
-        import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
-
-        function validateAuth(request) {
-          const apiKey = process.env.RUNWAY_MCP_API_KEY;
-          const authHeader = request.headers.get("authorization");
-          const token = authHeader.slice(7);
+  it("flags a feature-flag bypass where the plain-equality return is reachable when the flag is off", () => {
+    // The #108 attack: the real call still exists in the syntax tree (the
+    // call-site check above stays green), but USE_TIMING_SAFE is never
+    // true, so the reachable return is the plain compare below it.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      const USE_TIMING_SAFE = false;
+      function validateAuth(token, apiKey) {
+        if (USE_TIMING_SAFE) {
           return timingSafeTokenMatch(token, apiKey);
         }
-      `;
-      expect(hasTokenEqualityShape(safe)).toBe(false);
-    });
+        const supplied = token;
+        const expected = apiKey;
+        return supplied === expected;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags an if (false) bypass with aliasing and padding between the two returns", () => {
+    // The exact repro described in #108: wrap the real return in
+    // `if (false)`, alias token/apiKey below it, pad ~10 filler lines to
+    // clear the broad sweep's WINDOW, and return a plain `===`.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const suppliedAlias = token;
+        const expectedAlias = apiKey;
+        const filler1 = 1;
+        const filler2 = 2;
+        const filler3 = 3;
+        const filler4 = 4;
+        const filler5 = 5;
+        const filler6 = 6;
+        const filler7 = 7;
+        const filler8 = 8;
+        const filler9 = 9;
+        const filler10 = 10;
+        return suppliedAlias === expectedAlias;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare used as an if-condition that gates literal returns (round 6)", () => {
+    // The shape QA found and the dispatcher reproduced live at
+    // gantt-generate/route.ts: the compare doesn't sit in the return
+    // expression at all, it sits in the if-CONDITION, and the branches
+    // return literal true/false. Round 5's return-expression-shape check
+    // missed this entirely.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const suppliedAlias = token;
+        const expectedAlias = apiKey;
+        if (suppliedAlias === expectedAlias) {
+          return true;
+        }
+        return false;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare assigned to a variable that is returned later (round 6)", () => {
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const ok = token === apiKey;
+        return ok;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags an outer function's plain-equality return when the real call lives in a nested inner function (round 6)", () => {
+    // Round 5's findEnclosingFunction attributed the call to the INNER
+    // function only, so the outer function - the one actually carrying the
+    // unreachable branch and the plain-equality fallback - was never
+    // inspected. Marking every enclosing function, not just the nearest,
+    // closes this.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        function callRealCompare() {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        if (false) {
+          return callRealCompare();
+        }
+        return token === apiKey;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare used as an if-condition that gates a throw instead of a return (round 7)", () => {
+    // The shape the dispatcher proved live against gantt-generate/route.ts:
+    // the compare doesn't gate a `return` at all, it gates a `throw` in the
+    // mismatch branch, and the match branch falls through to an unconditional
+    // `return true`. The route's try/catch still rejects a bad token, so the
+    // observable allow/deny answer is correct - but the decision was made by
+    // a variable-time `!==` instead of timingSafeTokenMatch, which is the
+    // bypass this check exists to catch.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const suppliedAlias = token;
+        const expectedAlias = apiKey;
+        if (suppliedAlias !== expectedAlias) {
+          throw new Error("Unauthorized");
+        }
+        return true;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare via a method-call RECEIVER, not an argument (round 9, shape 9)", () => {
+    // TP invented this one and proved it live: `token.localeCompare(apiKey)`
+    // is still a direct-equality RETURN once compared to 0, so this shape
+    // was already caught by the same return-expression value-flow this
+    // check already had - it's here as a named regression pin, not new
+    // mechanism.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        return token.localeCompare(apiKey) === 0;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare with both operands wrapped in template literals (round 9, shape 10)", () => {
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        return \`\${token}\` === \`\${apiKey}\`;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("LOAD-BEARING: catches a wrapped-then-bound direct-return compare that co-occurrence structurally cannot see (round 10, shape 12a)", () => {
+    // This is the shape that disproves "findUnguardedEqualityReturns is
+    // redundant now that co-occurrence covers everything it covers" - see
+    // the corrected scope-limits bullet at the top of this file. Binding the
+    // wrap to `const t` before the compare breaks the inline subtree
+    // `findCoOccurrenceViolations` inspects (there is no single node where
+    // `token` and `apiKey` co-occur), but the compare is still a direct
+    // RETURN, which is exactly this check's own value-flow target and does
+    // not depend on the two values ever sharing a syntax node. Confirmed
+    // live against the real route file by the dispatcher at round 10: RED,
+    // route.ts:36, restored, md5 matched; the co-occurrence check stayed
+    // green on the identical mutation.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const t = String(token);
+        return t === apiKey;
+      }
+    `;
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(1);
+    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(0);
+  });
+
+  it("does not flag a throw gated by a non-equality condition", () => {
+    // No-false-positive check for the round-7 terminator generalization: an
+    // ordinary guard clause like a missing-header check throws too, but its
+    // condition is not an equality comparison, so it must not be flagged
+    // just because the enclosing function also calls timingSafeTokenMatch.
+    const clean = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (!token) {
+          throw new Error("missing token");
+        }
+        return timingSafeTokenMatch(token, apiKey);
+      }
+    `;
+    expect(findUnguardedEqualityReturns(clean, "fixture.ts")).toHaveLength(0);
+  });
+
+  it("does not flag the real call through a trivial intermediate variable and multi-line formatting", () => {
+    // No-false-positive check: this is not text-matching on the exact
+    // one-liner `return timingSafeTokenMatch(token, apiKey);` - the call can
+    // be reformatted or its result assigned to a variable first, and the
+    // check must still see zero plain-equality RETURNS (it is not scoring
+    // the call site itself - that is the job of the check above).
+    const reformatted = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        const result = timingSafeTokenMatch(
+          token,
+          apiKey,
+        );
+        return (
+          result
+        );
+      }
+    `;
+    expect(findUnguardedEqualityReturns(reformatted, "fixture.ts")).toHaveLength(0);
+  });
+});
+
+describe("token-compare guard: token and apiKey may only co-occur inside timingSafeTokenMatch (#108 round 8)", () => {
+  it.each(KNOWN_AUTH_ROUTES)("%s has no co-occurrence outside the approved timingSafeTokenMatch call", (file) => {
+    // Round 11: routed through findAllGuardViolations, same as the check
+    // above - see the aggregator's comment. Per-offender messages still
+    // name the file, line, and offending text.
+    const content = fs.readFileSync(file, "utf-8");
+    const offenders = findAllGuardViolations(content, file);
+    expect(offenders, `Guard violation found:\n${offenders.join("\n")}`).toHaveLength(0);
+  });
+
+  it("flags an if (false) bypass with aliasing and padding (shape 1)", () => {
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const suppliedAlias = token;
+        const expectedAlias = apiKey;
+        const filler1 = 1;
+        const filler2 = 2;
+        const filler3 = 3;
+        const filler4 = 4;
+        const filler5 = 5;
+        const filler6 = 6;
+        const filler7 = 7;
+        const filler8 = 8;
+        const filler9 = 9;
+        const filler10 = 10;
+        return suppliedAlias === expectedAlias;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare used as an if-condition gating literal returns (shape 2)", () => {
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const suppliedAlias = token;
+        const expectedAlias = apiKey;
+        if (suppliedAlias === expectedAlias) {
+          return true;
+        }
+        return false;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare assigned to a variable returned later (shape 3)", () => {
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const ok = token === apiKey;
+        return ok;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags an outer function's plain-equality return when the real call lives in a nested inner function (shape 4)", () => {
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        function callRealCompare() {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        if (false) {
+          return callRealCompare();
+        }
+        return token === apiKey;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare gating a throw instead of a return, padded (shape 5)", () => {
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const suppliedAlias = token;
+        const expectedAlias = apiKey;
+        if (suppliedAlias !== expectedAlias) {
+          throw new Error("Unauthorized");
+        }
+        return true;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare assigned via a later `=` and read by an unrelated if (shape 6, outer-scope assignment)", () => {
+    // Previously open ("does NOT follow a plain-equality result that is
+    // assigned to an outer-scope variable via a later `=`"): the boolean
+    // RESULT is what findUnguardedEqualityReturns follows, and it only
+    // follows `const`/`let` initializers, not reassignment. Co-occurrence
+    // doesn't care what happens to the boolean result at all - it catches
+    // `token === apiKey` at the moment token and apiKey meet, regardless of
+    // where the result goes afterward.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        let authorized;
+        authorized = token === apiKey;
+        if (!authorized) {
+          throw new Error("Unauthorized");
+        }
+        return true;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a call to a separate helper function that receives both values, unpadded and padded (shape 7, cross-file/helper)", () => {
+    // Previously open ("DOES NOT COVER a call graph spanning multiple
+    // functions or files"). The guard never looks inside isAllowed, or
+    // needs to find it, or cares what file it's in - the CALL SITE
+    // `isAllowed(token, apiKey)` is itself the violation, since it's a node
+    // where token and apiKey co-occur as call arguments outside the
+    // approved call.
+    const bypassUnpadded = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        return isAllowed(token, apiKey);
+      }
+      function isAllowed(supplied, expected) {
+        return supplied === expected;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypassUnpadded, "fixture.ts")).toHaveLength(1);
+
+    const filler = Array.from({ length: 70 }, (_, i) => `        const pad${i} = "x${i}";`).join("\n");
+    const bypassPadded = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+${filler}
+        return isAllowed(token, apiKey);
+      }
+      function isAllowed(supplied, expected) {
+${filler}
+        return supplied === expected;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypassPadded, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a helper call where one argument WRAPS the value instead of being it, unpadded and padded (round 9, shape 8/11)", () => {
+    // The dispatcher's round-9 counter-example, proven live at 28/28 green
+    // against the real route file before this fix: `String(token)` is a
+    // CallExpression, not the bare Identifier `token`, so the pre-round-9
+    // `classify` (which required `ts.isIdentifier(unwrapped)`) matched
+    // nothing at this argument, and `findUnguardedEqualityReturns` never
+    // looks inside `isAllowed` either - both checks stayed green. This is
+    // the fixture proof that `subtreeCarriesTaintedName` closes it: the
+    // argument's SUBTREE still carries `token` no matter what wraps it.
+    const bypassUnpadded = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        return isAllowed(String(token), apiKey);
+      }
+      function isAllowed(supplied, expected) {
+        return supplied === expected;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypassUnpadded, "fixture.ts")).toHaveLength(1);
+
+    const filler = Array.from({ length: 70 }, (_, i) => `        const pad${i} = "x${i}";`).join("\n");
+    const bypassPadded = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+${filler}
+        return isAllowed(String(token), apiKey);
+      }
+      function isAllowed(supplied, expected) {
+${filler}
+        return supplied === expected;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypassPadded, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("KNOWN UNCOVERED: a value rebound through a wrap and compared inside a helper needs local dataflow, not subtree taint (refs #110)", () => {
+    // A decision, not an oversight - mechanism, severity, and domain now
+    // live in #110, not here. One sentence: the binding breaks the subtree
+    // `findCoOccurrenceViolations` inspects, and the helper call breaks the
+    // direct-return shape `findUnguardedEqualityReturns` inspects, so this
+    // is a hole in what the CHECK can verify, not a hole in auth - a
+    // correctly written route and an unguarded one are indistinguishable to
+    // this check. Round 11: the primary claim is on findAllGuardViolations,
+    // the guard's whole output - "the guard reports nothing" is the
+    // statable fact, and it holds independent of how many checks exist or
+    // which one eventually closes this. The two per-check assertions below
+    // are today's inventory, not the claim: they document WHICH door is
+    // open right now, but neither is load-bearing for the tripwire - delete
+    // either without deleting the aggregator assertion and this test still
+    // does its job. If a future round closes this by ANY mechanism,
+    // including a check nobody has written yet, the aggregator assertion
+    // starts failing; flip it to `toHaveLength(1)` rather than deleting the
+    // test, and update whichever per-check assertion also flipped.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        const wrapped = String(token);
+        return isAllowed(wrapped, apiKey);
+      }
+      function isAllowed(supplied, expected) {
+        return supplied === expected;
+      }
+    `;
+    expect(findAllGuardViolations(bypass, "fixture.ts")).toHaveLength(0);
+    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(0);
+    expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(0);
+  });
+
+  it("flags a plain-equality compare via a method-call RECEIVER, not an argument (round 9, shape 9)", () => {
+    // The receiver `token` in `token.localeCompare(apiKey)` is not one of
+    // the CallExpression's `.arguments` - it lives on the callee's
+    // PropertyAccessExpression. Scanning the whole call node (callee +
+    // arguments), not just `.arguments`, catches this as a co-occurrence in
+    // its own right, independent of `findUnguardedEqualityReturns` also
+    // catching the outer `=== 0` return.
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        return token.localeCompare(apiKey) === 0;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("flags a plain-equality compare with both operands wrapped in template literals (round 9, shape 10)", () => {
+    const bypass = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        if (false) {
+          return timingSafeTokenMatch(token, apiKey);
+        }
+        return \`\${token}\` === \`\${apiKey}\`;
+      }
+    `;
+    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(1);
+  });
+
+  it("does not flag a property named 'token' or 'apiKey' on an unrelated object as if it carried the seed value", () => {
+    // No-false-positive check for the PropertyAccessExpression special-case
+    // in `subtreeCarriesTaintedName`: a `.name` like the `token` in
+    // `logger.token` is a property name, not a reference to the `token`
+    // parameter, and must not be treated as tainted just because its text
+    // matches.
+    const clean = `
+      function logRequest(logger, apiKey) {
+        logger.token = "unrelated-value";
+        return logger.token !== apiKey.length;
+      }
+    `;
+    expect(findCoOccurrenceViolations(clean, "fixture.ts")).toHaveLength(0);
+  });
+
+  it("does not flag token used alone with no apiKey present", () => {
+    const clean = `
+      function logRequest(token) {
+        console.log("saw token of length", token.length);
+      }
+    `;
+    expect(findCoOccurrenceViolations(clean, "fixture.ts")).toHaveLength(0);
+  });
+
+  it("does not flag apiKey used alone with no token present", () => {
+    const clean = `
+      function checkConfigured(apiKey) {
+        return apiKey !== undefined;
+      }
+    `;
+    expect(findCoOccurrenceViolations(clean, "fixture.ts")).toHaveLength(0);
+  });
+
+  it("does not flag token and apiKey used separately in unrelated operations that never co-occur", () => {
+    const clean = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        const tokenLen = token.length;
+        const hasKey = apiKey !== undefined;
+        if (tokenLen === 0 || !hasKey) {
+          throw new Error("bad input");
+        }
+        return timingSafeTokenMatch(token, apiKey);
+      }
+    `;
+    expect(findCoOccurrenceViolations(clean, "fixture.ts")).toHaveLength(0);
+  });
+
+  it("does not flag the real call through a trivial intermediate variable and multi-line formatting", () => {
+    const reformatted = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      function validateAuth(token, apiKey) {
+        const result = timingSafeTokenMatch(
+          token,
+          apiKey,
+        );
+        return (
+          result
+        );
+      }
+    `;
+    expect(findCoOccurrenceViolations(reformatted, "fixture.ts")).toHaveLength(0);
   });
 });
