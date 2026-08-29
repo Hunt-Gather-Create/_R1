@@ -43,19 +43,25 @@ time is a merge conflict I planned rather than discovered.
 | `src/lib/runway/source-coverage.test.ts` | #111 |
 | `src/app/api/runway/gantt-embed/route.ts` | #112 |
 | `scripts/hooks/pre-push`, CI workflow | #107 |
-| `src/middleware.ts` | #88 |
+| `proxy.ts` at the repo root | #88 |
 | no code | #90 |
 
 **The guard test file is the contention point.** Three tickets rewrite it, so those three are
 strictly serial. Everything else is genuinely independent.
 
-`#107` is listed separately from `#111` on purpose. They are different files, so they could run
-concurrently, but `#107` is about whether the gate reports honestly, and judging that while the
-suite is still red from `#111` means judging it against a broken input. Sequence it after.
+`#107` is listed separately from `#111` on purpose, and CC found the collision is worse than
+different-files suggests. `package.json`'s `test:run` is bare `vitest run` with no path filter,
+so the pre-push hook always runs the whole suite including `source-coverage.test.ts`. Any
+worktree cut before `#111` lands inherits a red suite for a reason unrelated to `#107`, which is
+precisely the false signal `#107` exists to fix. Sequenced after `#111`, and now for a
+verified reason rather than a cautious one.
 
-Pending CC's own read: I asked CC to answer this from the code rather than from the ticket text,
-because it knows the files better than I do. If its answer differs from this table, its answer
-wins and this plan gets redrawn before dispatch.
+**CC checked this table against `upstream/runway` at `d1c65ff` and confirmed all five scopes.**
+One correction, which was mine: `#88` is not `src/middleware.ts`. That file does not exist in
+this tree. Next 16 renamed it and the file is `proxy.ts` at the repo root. The table above is
+corrected. CC also flagged that `#88`'s ticket text might be stale for the same reason; I
+checked and it is not, the body already says `proxy.ts` at line 5 and uses "middleware" only as
+the concept word for `authkitMiddleware`. `#88` stays independent of everything in wave 1.
 
 ---
 
