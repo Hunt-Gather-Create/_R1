@@ -38,6 +38,7 @@ import { GanttSectionDark } from "@/lib/runway/gantt/gantt-section-dark";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { toISODateString } from "@/app/runway/date-utils";
 import type { RenderedRundownSection } from "@/app/runway/types";
+import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   // Shared-secret gate. Read at request time (not module init) so
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   } else {
     const auth = request.headers.get("x-embed-secret");
-    if (auth !== embedSecret) {
+    if (!auth || !timingSafeTokenMatch(auth, embedSecret)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
