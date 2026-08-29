@@ -161,6 +161,10 @@ references a ticket by number without carrying its content gets refused, correct
    say so and name the isolated way to run it. A command whose safety depends on a prefix will
    be run without the prefix. Runway's prod database is one env var away from every migration
    script in the tree, and this seat has no hazard line anywhere today.
+7. **The reply-opener.** Every message the bot sends back opens with `@Runway (TP)`, including
+   the ACK. Operator instruction. Without it the messages do not render as addressed and the
+   room reads as dead from his side, which happened during wave 1 across 35 messages and four
+   builds. A seat that looks idle gets treated as idle.
 
 ## Tracking, from the same source
 
