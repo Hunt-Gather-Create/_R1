@@ -166,6 +166,39 @@ references a ticket by number without carrying its content gets refused, correct
    room reads as dead from his side, which happened during wave 1 across 35 messages and four
    builds. A seat that looks idle gets treated as idle.
 
+## Two properties of the bay, learned 2026-08-29 at cost
+
+**A dispatch can be delivered twice while being sent once.** Verified: event
+`30d81bee` appears exactly once on the relay, and CC's second turn was handed that same event id
+and timestamp, byte identical. The duplication happens between the relay and the agent runtime,
+and neither seat can see into that layer.
+
+The consequence is about ticket shape, not about the bug. `#111` survived because it is a no-op
+on re-entry. **`#112` would not have.** Its acceptance is order-dependent: add the route to the
+guard list first, observe the red, only then fix. A silent replay lands on a tree where the fix
+already exists, so the red can never be observed, and the replay produces a green that proves
+nothing while looking exactly like proof.
+
+**Any ticket whose evidence is a before-state is unsafe under silent redelivery.** That is a
+large class: every mutation proof and every non-vacuity control in this milestone. The mitigation
+is not a code change. It is that a bot arriving at a finished ticket must verify, not redo, and
+must say the ticket arrived twice. That turns a silent replay into an arriving message.
+
+**A bot's turn context is a snapshot, so a standing rule cannot reach an in-flight turn.** The
+handle rule was sent at 16:16:42Z. CC applied it on its next message at 16:24:10Z, then appeared
+to drop it at 16:40 and 16:43. It had not. Those messages came from the replayed turn, whose
+context held only the original 15:31:43Z dispatch. From inside that turn the rule did not exist.
+
+**An in-flight turn is not governed by anything sent while it runs.** Not a correction, not a
+stop, not a scope change. If a bot must be stopped mid-ticket, a message may do nothing until
+that turn ends.
+
+This interacts with the inline-content rule above. A brief that says "you need to fetch nothing"
+is also saying "do not look for what changed since." That is correct for ticket content, because
+CC cannot read GitHub at all. It is wrong for standing rules, and the fix is not to tell briefs
+to fetch room history, which reintroduces the problem inline content solved. Know the property
+instead.
+
 ## Tracking, from the same source
 
 A recent message is the only reliable signal. Presence lies and CPU lies. Chase every dispatch
