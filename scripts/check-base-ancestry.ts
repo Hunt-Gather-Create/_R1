@@ -115,14 +115,14 @@ export function formatResult(result: AncestryResult, truthBranch: string = TRUTH
         exitCode: 0,
         message:
           `PASS: Hunt-Gather-Create/_R1 ${truthBranch} tip ${result.truthTip} is an ancestor ` +
-          `of ${result.candidate} (${result.candidateSha}). This base reflects upstream truth.`,
+          `of ${result.candidate}, commit ${result.candidateSha}. This base reflects upstream truth.`,
       };
     case "wrong-base":
       return {
         exitCode: 1,
         message:
           `REFUSE, WRONG BASE: Hunt-Gather-Create/_R1 ${truthBranch} tip ${result.truthTip} ` +
-          `is NOT an ancestor of ${result.candidate} (${result.candidateSha}). ` +
+          `is NOT an ancestor of ${result.candidate}, commit ${result.candidateSha}. ` +
           `${result.candidate} is stale or has diverged from upstream truth. ` +
           `Any merge-base or diff scope computed against it cannot be trusted.`,
       };
