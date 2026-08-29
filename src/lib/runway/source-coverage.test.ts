@@ -3,10 +3,17 @@
  * must include a `source:` argument. NULL `source` rows must not exist in the
  * `updates` audit table after Wave 0d (pre-plan v7 §A5).
  *
- * Approach: walk the production source files (everything in `src/` and
- * `scripts/` excluding test / mock / source-files-of-the-helpers themselves),
- * pull every helper call by regex, and assert each call's argument object
- * contains a `source:` key.
+ * Approach: enumerate the production source files git actually tracks under
+ * `src/` and `scripts/` (excluding test / mock / source-files-of-the-helpers
+ * themselves), pull every helper call by regex, and assert each call's
+ * argument object contains a `source:` key.
+ *
+ * File list comes from `git ls-files`, not a filesystem walk. A file git
+ * does not track — e.g. a one-shot migration script matched by a
+ * `.gitignore` glob — is not a production call site by definition, so it
+ * must never reach the sweep. Walking the filesystem instead would pick up
+ * whatever untracked litter happens to sit in a working tree, which is a
+ * property of that tree, not of the code being guarded.
  *
  * Test files are excluded — mocks don't write real audit rows. Helper source
  * files (`operations-add.ts` etc.) are excluded too — those define the
@@ -24,7 +31,8 @@
  *   - updateWeekItemField
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync, readdirSync, statSync } from "fs";
+import { readFileSync, writeFileSync, unlinkSync, existsSync } from "fs";
+import { execFileSync } from "node:child_process";
 import { join, extname } from "path";
 
 const HELPERS = [
@@ -72,41 +80,26 @@ function shouldSkipFile(absPath: string): boolean {
   return false;
 }
 
-/** Recursively collect production .ts/.tsx files under a directory. */
-function walkDir(dir: string): string[] {
+/**
+ * Collect production .ts/.tsx files under a directory from the git index,
+ * not the filesystem. A file git does not track is not a production call
+ * site by definition — this is what keeps gitignored one-shot scripts
+ * (e.g. scripts/runway-migrations/*-2026-06-*.ts) out of the sweep without
+ * a second, hand-maintained exclusion list that has to be kept in sync with
+ * .gitignore.
+ */
+function gitTrackedFiles(relDir: string): string[] {
+  const output = execFileSync("git", ["ls-files", "--", relDir], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
   const out: string[] = [];
-  let entries: string[];
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    return out;
-  }
-  for (const entry of entries) {
-    const abs = join(dir, entry);
-    let s: ReturnType<typeof statSync>;
-    try {
-      s = statSync(abs);
-    } catch {
-      continue;
-    }
-    if (s.isDirectory()) {
-      // Skip node_modules / .next / .git / dist / build / .vercel
-      if (
-        entry === "node_modules" ||
-        entry === ".next" ||
-        entry === ".git" ||
-        entry === "dist" ||
-        entry === "build" ||
-        entry === ".vercel" ||
-        entry === "coverage"
-      ) {
-        continue;
-      }
-      out.push(...walkDir(abs));
-      continue;
-    }
-    const ext = extname(abs);
+  for (const line of output.split("\n")) {
+    const rel = line.trim();
+    if (!rel) continue;
+    const ext = extname(rel);
     if (ext !== ".ts" && ext !== ".tsx") continue;
+    const abs = join(ROOT, rel);
     if (shouldSkipFile(abs)) continue;
     out.push(abs);
   }
@@ -308,7 +301,7 @@ describe("source-coverage lint guard", () => {
   it("can scan production source files (sanity)", () => {
     const files: string[] = [];
     for (const dir of SCAN_DIRS) {
-      files.push(...walkDir(join(ROOT, dir)));
+      files.push(...gitTrackedFiles(dir));
     }
     expect(files.length).toBeGreaterThan(0);
   });
@@ -316,7 +309,7 @@ describe("source-coverage lint guard", () => {
   it("every production call site of operations-layer write helpers includes `source:`", () => {
     const files: string[] = [];
     for (const dir of SCAN_DIRS) {
-      files.push(...walkDir(join(ROOT, dir)));
+      files.push(...gitTrackedFiles(dir));
     }
 
     const offenders: Array<{ file: string; helper: string; line: number; body: string }> = [];
@@ -346,5 +339,44 @@ describe("source-coverage lint guard", () => {
           )
           .join("\n\n"),
     ).toEqual([]);
+  });
+
+  it("does not flag call sites inside files git does not track (planted negative)", () => {
+    // .gitignore line 103 ignores scripts/runway-migrations/*-2026-06-*.ts —
+    // one-shot data-integrity migrations that already ran and live in Drive
+    // by standing rule, never in the repo. Plant a file matching that glob
+    // with a bare, untagged call site and assert the sweep does not surface
+    // it. This is the control for _R1#111: it must fail red against a
+    // filesystem walk (which cannot tell an ignored file from a tracked one)
+    // and pass green once the sweep is scoped to the git index.
+    const plantedRelPath = "scripts/runway-migrations/999-source-coverage-control-2026-06-01.ts";
+    const plantedAbsPath = join(ROOT, plantedRelPath);
+    writeFileSync(
+      plantedAbsPath,
+      `import { createWeekItem } from "@/lib/runway/operations-writes-week";\n\ncreateWeekItem({});\n`,
+    );
+    try {
+      const files: string[] = [];
+      for (const dir of SCAN_DIRS) {
+        files.push(...gitTrackedFiles(dir));
+      }
+      const offenders: Array<{ file: string; helper: string }> = [];
+      for (const file of files) {
+        const src = readFileSync(file, "utf8");
+        for (const call of findHelperCalls(file, src)) {
+          if (!isCallTagged(call.body)) {
+            offenders.push({ file: file.replace(ROOT + "/", ""), helper: call.helper });
+          }
+        }
+      }
+      const plantedOffender = offenders.find((o) => o.file === plantedRelPath);
+      expect(
+        plantedOffender,
+        `Expected the planted, gitignored file ${plantedRelPath} to be excluded from the sweep, ` +
+          `but it was flagged. The sweep is reading the filesystem instead of the git index.`,
+      ).toBeUndefined();
+    } finally {
+      if (existsSync(plantedAbsPath)) unlinkSync(plantedAbsPath);
+    }
   });
 });
