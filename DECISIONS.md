@@ -66,6 +66,19 @@ Why: GitHub's auto-close mechanism normally fires on same-repo references. The c
 Locks: Not every PR has a linked issue (that's fine). When one exists, the `Fixes` line is required. PRs that close multiple issues use `Fixes #A, #B, #C` syntax.
 Refs: `CLAUDE.md` Pull Request Rules section, recent PR bodies (#103, #104).
 
+**AMENDED 2026-08-29.** The claim above that the keyword closes the issue "without manual
+follow-up" is not true in practice. Five issues shipped in merged upstream PRs whose bodies
+carried the keyword correctly and stayed open anyway: #43 via PR #130, #98 via PR #129, #102
+via PR #122, #103 via PR #131, #106 via PR #134. #101 did close the same way via PR #121, so
+the behaviour is intermittent and the mechanism is not established. Filed as
+jasonburks23/_R1#113.
+
+The keyword stays required. What changes is what counts as closing the ticket: **the keyword
+is the intent, the verified issue state is the closing step.** Whoever routes a merge checks
+that the referenced issue actually closed. The failure is silent and one-directional, since a
+ticket never falsely closes and only ever falsely stays open, so it accumulates and reads as
+work debt.
+
 ## D-08 — Runway uses a separate Turso DB, not the R1 main database
 
 Date: pre-2026-05-23 (formalized 2026-05-23)

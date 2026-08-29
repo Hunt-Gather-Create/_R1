@@ -47,6 +47,7 @@ pnpm runway:sheet-sync # Sheet→Runway diff report (read-only, Phase 1a; fixtur
 
 - All upstream PRs target `Hunt-Gather-Create:runway`, NEVER `main`. (D-06)
 - Cross-repo issue auto-close: include `Fixes jasonburks23/_R1#<n>` in PR body when applicable. (D-07)
+  **The keyword is the intent, not the closing step.** It fires on some merges and not others, so verify the issue actually closed after the merge and close it by hand if it did not. Five shipped tickets sat open this way. (jasonburks23/_R1#113)
 - Branch naming: `fix/<issue>-...`, `feat/<issue>-...`, `chore/...`.
 
 ### Post-build pipeline (run in order before pushing)
