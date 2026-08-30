@@ -223,7 +223,6 @@ import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 import * as ts from "typescript";
-import { execFileSync } from "node:child_process";
 import {
   buildEnvTracedNames,
   isProvablyNotSecretCompare,
@@ -1429,13 +1428,21 @@ describe("token-compare guard: the env var discriminator does not blind the guar
     expect(findAllGuardViolations(source, "fixture.ts")).toHaveLength(0);
   });
 
-  it("still flags the real pre-#112 gantt-embed source, pulled from git history, not a hand written fixture", () => {
+  it("still flags the real pre-#112 gantt-embed source, a committed fixture, not a hand written approximation", () => {
+    // Refs _R1#120. This fixture is a verbatim copy of the real, historical
+    // file, committed rather than fetched from git at test time. See the
+    // fixture's own provenance header for why: the source commit is not an
+    // ancestor of upstream/runway after this repo's squash merges and
+    // would not resolve in a depth one CI checkout either. A prior version
+    // of this test shelled out to git show at run time and would have
+    // failed in CI for exactly that reason, caught before it ever pushed.
     const file = path.join(AUTH_ROOT, "runway/gantt-embed/route.ts");
-    const preFixSha = "0887278^";
-    const content = execFileSync("git", ["show", `${preFixSha}:src/app/api/runway/gantt-embed/route.ts`], {
-      cwd: ROOT,
-      encoding: "utf8",
-    });
+    const fixturePath = path.join(ROOT, "src/lib/runway/__fixtures__/gantt-embed-pre-112.route.txt");
+    const fixtureRaw = fs.readFileSync(fixturePath, "utf8");
+    const provenanceMarker = "=== END PROVENANCE, ORIGINAL FILE CONTENT STARTS BELOW ===";
+    const markerIndex = fixtureRaw.indexOf(provenanceMarker);
+    expect(markerIndex).toBeGreaterThan(-1);
+    const content = fixtureRaw.slice(markerIndex + provenanceMarker.length).replace(/^\n+/, "");
     expect(content).not.toContain("timingSafeTokenMatch");
     expect(content).toContain("auth !== embedSecret");
     const offenders = findAllGuardViolations(content, file);
