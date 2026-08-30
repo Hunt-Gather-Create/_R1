@@ -20,19 +20,21 @@
 # it created has finished, success or failure, so a run triggered by it
 # is checking the build that actually exists at that URL right now.
 #
-# THIS DOES NOT FILTER ON deployment.environment, AND THAT IS A REAL
-# FINDING, NOT AN OVERSIGHT. Checked against this repo's own deployment
-# history with the GitHub API before writing this file: every deployment
-# for a commit that landed on runway in the last several days reports
-# environment Preview, never Production, including 994a4bc, the current
-# runway tip. The two GitHub Environments this repo has, Preview and
-# Production, both exist, so Vercel is choosing Preview for these
-# deploys on purpose, most likely because its own project level
-# production branch setting was never updated to runway when this repo
-# adopted runway as the actual integration branch. A trigger condition
-# of `environment == 'production'` would never fire for a real runway
-# merge under the deploy behavior measured here. That is worth the
-# operator's attention on its own, independent of this ticket.
+# THIS DOES NOT FILTER ON deployment.environment, ON PURPOSE. _R1 is
+# not runway. runway is our portion of a larger product, a feature
+# branch here, not the production branch, and it was never meant to
+# be one.
+# Checked against this repo's own deployment history with the GitHub
+# API before writing this file: every deployment for a commit that
+# landed on runway in the last several days reports environment
+# Preview, never Production, including 994a4bc, the current runway
+# tip. That is the correct label for a feature branch deploy, not a
+# misconfiguration. A trigger condition of `environment == 'production'`
+# would therefore never fire for a real runway merge, permanently and
+# by design, so the gate below checks something else entirely: whether
+# the commit the deployment was built from is actually on runway right
+# now, which is the reliable signal here regardless of what label
+# Vercel puts on the environment.
 #
 # So the gate below checks something deployment_status always carries
 # correctly regardless of the environment label: whether the commit the
