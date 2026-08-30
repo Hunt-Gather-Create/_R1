@@ -1,0 +1,146 @@
+# Post-merge smoke against the live host, _R1#97.
+#
+# Merging to runway triggers a Vercel deploy. Nothing watched that deploy
+# before this file. pnpm runway:smoke exists and runs Playwright against
+# runway.startround1.com, but only when a person remembers to run it,
+# which is not a control. Seven changes merged the day before this file
+# was written and not one was observed running.
+#
+# ONE job, ONE command, matching pr-tests.yml's standing note. No matrix,
+# no OS spread, no node-version spread.
+#
+# TRIGGER, AND WHY deployment_status RATHER THAN push.
+#
+# A run that starts on push to runway tests the OLD deployment, since the
+# new one has not finished building yet, and passes for the wrong reason.
+# That is the same shape of defect as reading a sender side delivered
+# count: the artifact looks identical whether or not the real thing
+# happened. deployment_status fires when Vercel reports the deployment
+# it created has finished, success or failure, so a run triggered by it
+# is checking the build that actually exists at that URL right now.
+#
+# THIS DOES NOT FILTER ON deployment.environment, AND THAT IS A REAL
+# FINDING, NOT AN OVERSIGHT. Checked against this repo's own deployment
+# history with the GitHub API before writing this file: every deployment
+# for a commit that landed on runway in the last several days reports
+# environment Preview, never Production, including 994a4bc, the current
+# runway tip. The two GitHub Environments this repo has, Preview and
+# Production, both exist, so Vercel is choosing Preview for these
+# deploys on purpose, most likely because its own project level
+# production branch setting was never updated to runway when this repo
+# adopted runway as the actual integration branch. A trigger condition
+# of `environment == 'production'` would never fire for a real runway
+# merge under the deploy behavior measured here. That is worth the
+# operator's attention on its own, independent of this ticket.
+#
+# So the gate below checks something deployment_status always carries
+# correctly regardless of the environment label: whether the commit the
+# deployment was built from is actually on runway right now. A shallow
+# checkout cannot answer that, so this step fetches runway specifically
+# and asks git.
+#
+# RED, GREEN, AND NEVER-RAN.
+#
+# Never-ran: no deployment_status event fired at all, so no run appears
+# in the Actions tab for that merge. That absence is itself a signal
+# something upstream broke, the same reasoning as _R1#107's own gate.
+# Skipped, not applicable: a deployment_status event fired for a commit
+# that is not on runway, a PR preview deploy for example. The confirm
+# step records that plainly and the smoke step is skipped, which GitHub
+# renders as a distinct grey state, never as green.
+# Green: the deployment was for runway and the smoke suite passed.
+# Red: the deployment was for runway and the smoke suite failed.
+# Those three never collapse into one rendering, which is the whole
+# reason this file exists in the shape it does.
+name: Post-merge smoke
+
+on:
+  deployment_status:
+
+permissions:
+  contents: read
+  deployments: read
+
+concurrency:
+  group: post-merge-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: playwright smoke against the live deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event.deployment_status.state == 'success'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: confirm this deployment was built from a commit on runway
+        id: gate
+        env:
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin runway --quiet
+          if git merge-base --is-ancestor "$DEPLOY_SHA" origin/runway; then
+            echo "Deployment $DEPLOY_SHA is on runway. Proceeding to smoke."
+            echo "on_runway=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Deployment $DEPLOY_SHA is not on runway, environment was ${{ github.event.deployment.environment }}. Skipping smoke, this deployment is not the one this workflow watches."
+            echo "on_runway=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: pnpm/action-setup@v4
+        if: steps.gate.outputs.on_runway == 'true'
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.on_runway == 'true'
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+        if: steps.gate.outputs.on_runway == 'true'
+
+      - run: pnpm exec playwright install --with-deps chromium
+        if: steps.gate.outputs.on_runway == 'true'
+
+      - name: confirm the smoke suite's required secret is present, never its value
+        if: steps.gate.outputs.on_runway == 'true'
+        env:
+          PLAYWRIGHT_RUNWAY_PASSWORD: ${{ secrets.PLAYWRIGHT_RUNWAY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PLAYWRIGHT_RUNWAY_PASSWORD:-}" ]; then
+            echo "PLAYWRIGHT_RUNWAY_PASSWORD is not set in this repository's Actions secrets. The smoke suite needs it to authenticate against runway.startround1.com. This is an operator item, not something this workflow can work around."
+            exit 1
+          fi
+          echo "PLAYWRIGHT_RUNWAY_PASSWORD is present."
+
+      - run: pnpm runway:smoke
+        if: steps.gate.outputs.on_runway == 'true'
+        env:
+          PLAYWRIGHT_RUNWAY_PASSWORD: ${{ secrets.PLAYWRIGHT_RUNWAY_PASSWORD }}
+          # Deliberately not setting RUNWAY_SMOKE_BASE_URL from
+          # github.event.deployment_status.target_url. Checked a real
+          # payload before deciding this: target_url on a Preview labeled
+          # deployment is a per deployment address such as
+          # r1 seven char hash hunt gather create.vercel.app, not the
+          # stable custom domain. That address can sit behind Vercel's own
+          # deployment protection, which would fail this suite for a
+          # reason that has nothing to do with the app. playwright.config.ts
+          # already defaults RUNWAY_SMOKE_BASE_URL to
+          # runway.startround1.com, the same domain a person runs this
+          # suite against by hand, so leaving it unset here tests the same
+          # target a human would.
+
+      - name: upload the playwright report on failure
+        if: steps.gate.outputs.on_runway == 'true' && failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
