@@ -6,8 +6,9 @@
 # which is not a control. Seven changes merged the day before this file
 # was written and not one was observed running.
 #
-# ONE job, ONE command, matching pr-tests.yml's standing note. No matrix,
-# no OS spread, no node-version spread.
+# TWO jobs, not the ONE job pr-tests.yml uses, and the reason is below in
+# the RED, GREEN, NEVER-RAN section. Each job still runs exactly ONE real
+# command. No matrix, no OS spread, no node-version spread.
 #
 # TRIGGER, AND WHY deployment_status RATHER THAN push.
 #
@@ -44,23 +45,33 @@
 # Never-ran: no deployment_status event fired at all, so no run appears
 # in the Actions tab for that merge. That absence is itself a signal
 # something upstream broke, the same reasoning as _R1#107's own gate.
+#
 # Skipped, not applicable: a deployment_status event fired for a commit
-# PROVABLY not on runway, a PR preview deploy for example. The gate
-# step records that plainly, sets on_runway to false, and every later
-# step is skipped, which GitHub renders as a distinct grey state, never
-# as green.
+# PROVABLY not on runway, a PR preview deploy for example. Split into a
+# separate gate job for exactly this reason. A single job whose later
+# steps all carry a step level if renders as an overall SUCCESS the
+# moment zero steps fail, even when every real step was skipped, because
+# GitHub computes a job's conclusion from step conclusions and a run
+# with no failures is green regardless of how many steps never executed.
+# A reviewer glancing at the checks list on a commit or a PR cannot tell
+# that green apart from a real pass without opening the run and reading
+# step level detail. Gating at the JOB level with `needs` and a job
+# level `if` instead makes GitHub report the smoke job itself as
+# Skipped, a distinct badge, whenever the deployment is not on runway.
+#
 # Cannot determine: the gate could not answer the ancestry question at
 # all, whether the fetch failed, FETCH_HEAD would not resolve, or
 # merge-base --is-ancestor exited with neither 0 nor 1. This must never
 # render the same as skipped. A cannot determine answer means the gate
 # itself is broken or blind, which is worse than a real skip, so the
-# gate step exits non zero and fails the job, a genuine red, rather
-# than quietly setting on_runway to false and looking like an ordinary
+# gate job exits non zero and fails outright, a genuine red, rather
+# than quietly reporting not on runway and looking like an ordinary
 # skip forever.
+#
 # Green: the deployment was provably on runway and the smoke suite
 # passed.
-# Red: either the deployment was provably on runway and the smoke suite
-# failed, or the gate could not determine ancestry at all.
+# Red: either the gate could not determine ancestry at all, or the
+# deployment was provably on runway and the smoke suite failed.
 # Those four never collapse into one rendering, which is the whole
 # reason this file exists in the shape it does.
 name: Post-merge smoke
@@ -72,16 +83,24 @@ permissions:
   contents: read
   deployments: read
 
-concurrency:
-  group: post-merge-smoke
-  cancel-in-progress: false
-
 jobs:
-  smoke:
-    name: playwright smoke against the live deploy
+  gate:
+    name: confirm this deployment was built from a commit on runway
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     if: github.event.deployment_status.state == 'success'
+    # Scoped to the deployment's own sha, not a single shared bucket.
+    # A bucket shared across every deployment in the repo means an
+    # unrelated deployment's run could cancel a real runway run that was
+    # only pending, or a second unrelated event could bump a runway run
+    # out of the queue entirely before it executes, rendering as
+    # Cancelled rather than the tracked never-ran, skip, red, or green
+    # states this file exists to keep distinguishable.
+    concurrency:
+      group: post-merge-smoke-${{ github.event.deployment.sha }}
+      cancel-in-progress: false
+    outputs:
+      on_runway: ${{ steps.gate.outputs.on_runway }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -120,7 +139,7 @@ jobs:
             echo "Deployment $DEPLOY_SHA is on runway, which is at $RUNWAY_SHA. Proceeding to smoke."
             echo "on_runway=true" >> "$GITHUB_OUTPUT"
           elif [ "$ANCESTOR_EXIT" -eq 1 ]; then
-            echo "Deployment $DEPLOY_SHA is provably not on runway, which is at $RUNWAY_SHA. Environment was ${{ github.event.deployment.environment }}. Skipping smoke, this deployment is not the one this workflow watches."
+            echo "Deployment $DEPLOY_SHA is provably not on runway, which is at $RUNWAY_SHA. Environment was ${{ github.event.deployment.environment }}. The smoke job will report as skipped, this deployment is not the one this workflow watches."
             echo "on_runway=false" >> "$GITHUB_OUTPUT"
           else
             echo "git merge-base --is-ancestor exited $ANCESTOR_EXIT, neither a confirmed ancestor nor a confirmed non ancestor, most likely because $DEPLOY_SHA itself could not be resolved in this checkout. Cannot determine whether this deployment is on runway."
@@ -128,14 +147,17 @@ jobs:
             exit 1
           fi
 
-      # Checked right after the gate and before any install, on purpose.
-      # This used to sit after pnpm install and the playwright browser
-      # install, so the first real run against a repository with the
-      # secret missing would spend several minutes installing a browser
-      # before saying the one thing already knowable up front. Moving it
-      # here turns a slow red into an instant one.
+  smoke:
+    name: playwright smoke against the live deploy
+    needs: gate
+    if: needs.gate.outputs.on_runway == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Checked before any install, on purpose, so a repository missing
+      # the secret fails in seconds instead of after several minutes of
+      # installing a browser it was never going to use.
       - name: confirm the smoke suite's required secret is present, never its value
-        if: steps.gate.outputs.on_runway == 'true'
         env:
           PLAYWRIGHT_RUNWAY_PASSWORD: ${{ secrets.PLAYWRIGHT_RUNWAY_PASSWORD }}
         run: |
@@ -146,25 +168,41 @@ jobs:
           fi
           echo "PLAYWRIGHT_RUNWAY_PASSWORD is present."
 
+      - uses: actions/checkout@v4
+
       - uses: pnpm/action-setup@v4
-        if: steps.gate.outputs.on_runway == 'true'
         with:
           version: 10
 
       - uses: actions/setup-node@v4
-        if: steps.gate.outputs.on_runway == 'true'
         with:
           node-version: 24
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-        if: steps.gate.outputs.on_runway == 'true'
+
+      # Cached on the installed Playwright package version, so a merge
+      # that does not bump @playwright/test reuses the browser binary
+      # instead of downloading and reinstalling Chromium and its OS
+      # deps from scratch on every single runway merge, the same
+      # Actions minutes concern pr-tests.yml's own header names.
+      - name: resolve the installed playwright version for the cache key
+        id: playwright-version
+        run: echo "version=$(pnpm list @playwright/test --depth 0 --json | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>console.log(JSON.parse(d)[0].devDependencies["@playwright/test"].version))')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
 
       - run: pnpm exec playwright install --with-deps chromium
-        if: steps.gate.outputs.on_runway == 'true'
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+
+      - run: pnpm exec playwright install-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
 
       - run: pnpm runway:smoke
-        if: steps.gate.outputs.on_runway == 'true'
         env:
           PLAYWRIGHT_RUNWAY_PASSWORD: ${{ secrets.PLAYWRIGHT_RUNWAY_PASSWORD }}
           # Deliberately not setting RUNWAY_SMOKE_BASE_URL from
@@ -181,7 +219,7 @@ jobs:
           # target a human would.
 
       - name: upload the playwright report on failure
-        if: steps.gate.outputs.on_runway == 'true' && failure()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
