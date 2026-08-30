@@ -39,18 +39,29 @@
 # checkout cannot answer that, so this step fetches runway specifically
 # and asks git.
 #
-# RED, GREEN, AND NEVER-RAN.
+# RED, GREEN, NEVER-RAN, AND A FOURTH STATE THAT MUST ALSO BE RED.
 #
 # Never-ran: no deployment_status event fired at all, so no run appears
 # in the Actions tab for that merge. That absence is itself a signal
 # something upstream broke, the same reasoning as _R1#107's own gate.
 # Skipped, not applicable: a deployment_status event fired for a commit
-# that is not on runway, a PR preview deploy for example. The confirm
-# step records that plainly and the smoke step is skipped, which GitHub
-# renders as a distinct grey state, never as green.
-# Green: the deployment was for runway and the smoke suite passed.
-# Red: the deployment was for runway and the smoke suite failed.
-# Those three never collapse into one rendering, which is the whole
+# PROVABLY not on runway, a PR preview deploy for example. The gate
+# step records that plainly, sets on_runway to false, and every later
+# step is skipped, which GitHub renders as a distinct grey state, never
+# as green.
+# Cannot determine: the gate could not answer the ancestry question at
+# all, whether the fetch failed, FETCH_HEAD would not resolve, or
+# merge-base --is-ancestor exited with neither 0 nor 1. This must never
+# render the same as skipped. A cannot determine answer means the gate
+# itself is broken or blind, which is worse than a real skip, so the
+# gate step exits non zero and fails the job, a genuine red, rather
+# than quietly setting on_runway to false and looking like an ordinary
+# skip forever.
+# Green: the deployment was provably on runway and the smoke suite
+# passed.
+# Red: either the deployment was provably on runway and the smoke suite
+# failed, or the gate could not determine ancestry at all.
+# Those four never collapse into one rendering, which is the whole
 # reason this file exists in the shape it does.
 name: Post-merge smoke
 
@@ -81,15 +92,59 @@ jobs:
         env:
           DEPLOY_SHA: ${{ github.event.deployment.sha }}
         run: |
-          set -euo pipefail
-          git fetch origin runway --quiet
-          if git merge-base --is-ancestor "$DEPLOY_SHA" origin/runway; then
-            echo "Deployment $DEPLOY_SHA is on runway. Proceeding to smoke."
-            echo "on_runway=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Deployment $DEPLOY_SHA is not on runway, environment was ${{ github.event.deployment.environment }}. Skipping smoke, this deployment is not the one this workflow watches."
-            echo "on_runway=false" >> "$GITHUB_OUTPUT"
+          set -uo pipefail
+          # actions/checkout narrows remote.origin.fetch to only the ref it
+          # checked out, verified by hand against a real clone before
+          # writing this: after that narrowing, git fetch origin runway
+          # populates FETCH_HEAD correctly but does not create or update
+          # origin/runway at all, so a later reference to origin/runway
+          # fails with unknown revision, a completely different failure
+          # from runway genuinely not containing this commit. Comparing
+          # against FETCH_HEAD directly sidesteps that ref entirely.
+          if ! git fetch origin runway --quiet; then
+            echo "Could not fetch runway from origin. Cannot determine whether $DEPLOY_SHA is on runway. This is not the same as confirming it is not, and the smoke run must not proceed on an unknown answer."
+            echo "on_runway=unknown" >> "$GITHUB_OUTPUT"
+            exit 1
           fi
+
+          RUNWAY_SHA=$(git rev-parse FETCH_HEAD 2>&1)
+          if [ $? -ne 0 ]; then
+            echo "Fetched runway but could not resolve FETCH_HEAD to a commit: $RUNWAY_SHA. Cannot determine whether $DEPLOY_SHA is on runway."
+            echo "on_runway=unknown" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          git merge-base --is-ancestor "$DEPLOY_SHA" "$RUNWAY_SHA"
+          ANCESTOR_EXIT=$?
+          if [ "$ANCESTOR_EXIT" -eq 0 ]; then
+            echo "Deployment $DEPLOY_SHA is on runway, which is at $RUNWAY_SHA. Proceeding to smoke."
+            echo "on_runway=true" >> "$GITHUB_OUTPUT"
+          elif [ "$ANCESTOR_EXIT" -eq 1 ]; then
+            echo "Deployment $DEPLOY_SHA is provably not on runway, which is at $RUNWAY_SHA. Environment was ${{ github.event.deployment.environment }}. Skipping smoke, this deployment is not the one this workflow watches."
+            echo "on_runway=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "git merge-base --is-ancestor exited $ANCESTOR_EXIT, neither a confirmed ancestor nor a confirmed non ancestor, most likely because $DEPLOY_SHA itself could not be resolved in this checkout. Cannot determine whether this deployment is on runway."
+            echo "on_runway=unknown" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      # Checked right after the gate and before any install, on purpose.
+      # This used to sit after pnpm install and the playwright browser
+      # install, so the first real run against a repository with the
+      # secret missing would spend several minutes installing a browser
+      # before saying the one thing already knowable up front. Moving it
+      # here turns a slow red into an instant one.
+      - name: confirm the smoke suite's required secret is present, never its value
+        if: steps.gate.outputs.on_runway == 'true'
+        env:
+          PLAYWRIGHT_RUNWAY_PASSWORD: ${{ secrets.PLAYWRIGHT_RUNWAY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PLAYWRIGHT_RUNWAY_PASSWORD:-}" ]; then
+            echo "PLAYWRIGHT_RUNWAY_PASSWORD is not set in this repository's Actions secrets. The smoke suite needs it to authenticate against runway.startround1.com. This is an operator item, not something this workflow can work around."
+            exit 1
+          fi
+          echo "PLAYWRIGHT_RUNWAY_PASSWORD is present."
 
       - uses: pnpm/action-setup@v4
         if: steps.gate.outputs.on_runway == 'true'
@@ -107,18 +162,6 @@ jobs:
 
       - run: pnpm exec playwright install --with-deps chromium
         if: steps.gate.outputs.on_runway == 'true'
-
-      - name: confirm the smoke suite's required secret is present, never its value
-        if: steps.gate.outputs.on_runway == 'true'
-        env:
-          PLAYWRIGHT_RUNWAY_PASSWORD: ${{ secrets.PLAYWRIGHT_RUNWAY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [ -z "${PLAYWRIGHT_RUNWAY_PASSWORD:-}" ]; then
-            echo "PLAYWRIGHT_RUNWAY_PASSWORD is not set in this repository's Actions secrets. The smoke suite needs it to authenticate against runway.startround1.com. This is an operator item, not something this workflow can work around."
-            exit 1
-          fi
-          echo "PLAYWRIGHT_RUNWAY_PASSWORD is present."
 
       - run: pnpm runway:smoke
         if: steps.gate.outputs.on_runway == 'true'
