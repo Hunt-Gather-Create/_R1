@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { z } from "zod";
 
 const { mockPostMutationUpdate, mockOps } = vi.hoisted(() => {
   const mockPostMutationUpdate = vi.fn().mockResolvedValue(undefined);
@@ -85,6 +86,26 @@ vi.mock("@/lib/runway/gantt/share-orchestrator", () => ({
 
 import { createBotTools } from "./bot-tools";
 
+// Shape shared by every tool execute() result this file inspects, refs
+// _R1#107b. Each tool's real return type is a union of a result shape,
+// an error shape, or an AsyncIterable, and every field this file reads
+// off a resolved result is one of these three, so a cast to this type
+// overlaps every union member instead of needing an unknown intermediate.
+type ToolTextResult = { result?: string; error?: string; available?: string[] };
+
+// get_week_items.execute's real parameter type has weekOf as a required
+// string, since the AI SDK types execute's argument from the schema's
+// post default output, where weekOf is always filled in by the time the
+// framework calls execute for real. These specific tests call execute
+// directly to check its own raw pass through behavior below that layer,
+// intentionally without weekOf, so they need the pre default input
+// shape rather than the post default one. Extracted from the tool
+// itself with Parameters and NonNullable rather than duplicated by hand,
+// so it cannot drift from the real signature.
+type WeekItemsRawArgs = Parameters<
+  NonNullable<ReturnType<typeof createBotTools>["get_week_items"]["execute"]>
+>[0];
+
 describe("createBotTools", () => {
   let tools: ReturnType<typeof createBotTools>;
 
@@ -118,13 +139,13 @@ describe("createBotTools", () => {
   });
 
   it("get_clients calls getClientsWithCounts", async () => {
-    const result = await tools.get_clients.execute({}, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    const result = await tools.get_clients.execute!({}, { toolCallId: "", messages: [], abortSignal: undefined as never });
     expect(mockOps.getClientsWithCounts).toHaveBeenCalledWith({ includeProjects: undefined });
     expect(result).toEqual([{ name: "Convergix" }]);
   });
 
   it("get_clients passes includeProjects when provided", async () => {
-    await tools.get_clients.execute(
+    await tools.get_clients.execute!(
       { includeProjects: true },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -132,19 +153,19 @@ describe("createBotTools", () => {
   });
 
   it("get_projects calls getProjectsFiltered with params", async () => {
-    const result = await tools.get_projects.execute({ clientSlug: "convergix", owner: "Kathy" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    const result = await tools.get_projects.execute!({ clientSlug: "convergix", owner: "Kathy" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
     expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: "convergix", owner: "Kathy", waitingOn: undefined, engagementType: undefined, parentProjectId: undefined });
     expect(result).toHaveLength(1);
     expect((result as Record<string, unknown>[])[0].name).toBe("CDS");
   });
 
   it("get_projects passes waitingOn filter", async () => {
-    await tools.get_projects.execute({ waitingOn: "Daniel" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    await tools.get_projects.execute!({ waitingOn: "Daniel" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
     expect(mockOps.getProjectsFiltered).toHaveBeenCalledWith({ clientSlug: undefined, owner: undefined, waitingOn: "Daniel", engagementType: undefined, parentProjectId: undefined });
   });
 
   it("get_projects passes engagementType filter (PR #88 Chunk B)", async () => {
-    await tools.get_projects.execute(
+    await tools.get_projects.execute!(
       { engagementType: "retainer" },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -158,7 +179,7 @@ describe("createBotTools", () => {
   });
 
   it("get_projects forwards engagementType='__null__' sentinel", async () => {
-    await tools.get_projects.execute(
+    await tools.get_projects.execute!(
       { engagementType: "__null__" },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -172,7 +193,7 @@ describe("createBotTools", () => {
   });
 
   it("get_projects passes parentProjectId filter (PR #88 Chunk F)", async () => {
-    await tools.get_projects.execute(
+    await tools.get_projects.execute!(
       { parentProjectId: "pj-wrap" },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -186,7 +207,7 @@ describe("createBotTools", () => {
   });
 
   it("get_projects forwards parentProjectId='__null__' sentinel", async () => {
-    await tools.get_projects.execute(
+    await tools.get_projects.execute!(
       { parentProjectId: "__null__" },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -204,11 +225,11 @@ describe("createBotTools", () => {
       ok: true, message: "Updated",
       data: { clientName: "Convergix", projectName: "CDS", previousStatus: "active", newStatus: "done" },
     });
-    const result = await tools.update_project_status.execute(
+    const result = await tools.update_project_status.execute!(
       { clientSlug: "convergix", projectName: "CDS", newStatus: "done" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect((result as Record<string, string>).result).toContain("Was: active, now: done");
+    expect((result as ToolTextResult).result).toContain("Was: active, now: done");
     expect(mockPostMutationUpdate).toHaveBeenCalledWith(expect.objectContaining({
       fallbackClientName: "convergix", updatedBy: "Kathy Horn",
     }));
@@ -216,7 +237,7 @@ describe("createBotTools", () => {
 
   it("update_project_status returns error on failure", async () => {
     mockOps.updateProjectStatus.mockResolvedValue({ ok: false, error: "Not found", available: ["CDS"] });
-    const result = await tools.update_project_status.execute(
+    const result = await tools.update_project_status.execute!(
       { clientSlug: "convergix", projectName: "nope", newStatus: "done" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -231,11 +252,11 @@ describe("createBotTools", () => {
     });
     // safePostUpdate catches errors internally — mock it to resolve normally
     mockPostMutationUpdate.mockResolvedValueOnce(undefined);
-    const result = await tools.update_project_status.execute(
+    const result = await tools.update_project_status.execute!(
       { clientSlug: "convergix", projectName: "CDS", newStatus: "done" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect((result as Record<string, string>).result).toContain("Was: active, now: done");
+    expect((result as ToolTextResult).result).toContain("Was: active, now: done");
   });
 
   it("add_update posts to updates channel on success", async () => {
@@ -243,7 +264,7 @@ describe("createBotTools", () => {
       ok: true, message: "Logged",
       data: { clientName: "Convergix", projectName: "CDS" },
     });
-    const result = await tools.add_update.execute(
+    const result = await tools.add_update.execute!(
       { clientSlug: "convergix", summary: "Client approved" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -253,7 +274,7 @@ describe("createBotTools", () => {
 
   it("add_update returns error on failure", async () => {
     mockOps.addUpdate.mockResolvedValue({ ok: false, error: "Client not found" });
-    const result = await tools.add_update.execute(
+    const result = await tools.add_update.execute!(
       { clientSlug: "unknown", summary: "Test" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -266,7 +287,7 @@ describe("createBotTools", () => {
       ok: true, message: "Updated",
       data: { clientName: "Convergix", projectName: "CDS", previousStatus: "active", newStatus: "done" },
     });
-    await tools.update_project_status.execute(
+    await tools.update_project_status.execute!(
       { clientSlug: "convergix", projectName: "CDS", newStatus: "done" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -280,7 +301,7 @@ describe("createBotTools", () => {
       ok: true, message: "Updated",
       data: { clientName: "Convergix", projectName: "CDS", previousStatus: "active", newStatus: "done" },
     });
-    await tools.update_project_status.execute(
+    await tools.update_project_status.execute!(
       { clientSlug: "convergix", projectName: "CDS", newStatus: "done", notes: "R1 approved" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -291,12 +312,12 @@ describe("createBotTools", () => {
 
   it("update_project_status falls back to message when result.data is undefined", async () => {
     mockOps.updateProjectStatus.mockResolvedValue({ ok: true, message: "Updated (duplicate)" });
-    const result = await tools.update_project_status.execute(
+    const result = await tools.update_project_status.execute!(
       { clientSlug: "convergix", projectName: "CDS", newStatus: "done" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(mockPostMutationUpdate).not.toHaveBeenCalled();
-    expect((result as Record<string, string>).result).toBe("Updated (duplicate)");
+    expect((result as ToolTextResult).result).toBe("Updated (duplicate)");
   });
 
   it("add_update succeeds even if safePostUpdate fails", async () => {
@@ -306,7 +327,7 @@ describe("createBotTools", () => {
     });
     // safePostUpdate catches errors internally — mock it to resolve normally
     mockPostMutationUpdate.mockResolvedValueOnce(undefined);
-    const result = await tools.add_update.execute(
+    const result = await tools.add_update.execute!(
       { clientSlug: "convergix", summary: "Test note" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -315,7 +336,7 @@ describe("createBotTools", () => {
 
   it("add_update skips postUpdate when result.data is undefined", async () => {
     mockOps.addUpdate.mockResolvedValue({ ok: true, message: "Logged" });
-    await tools.add_update.execute(
+    await tools.add_update.execute!(
       { clientSlug: "convergix", summary: "Test" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -323,13 +344,13 @@ describe("createBotTools", () => {
   });
 
   it("get_pipeline calls getPipelineData", async () => {
-    const result = await tools.get_pipeline.execute({}, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    const result = await tools.get_pipeline.execute!({}, { toolCallId: "", messages: [], abortSignal: undefined as never });
     expect(mockOps.getPipelineData).toHaveBeenCalledOnce();
     expect(result).toEqual([]);
   });
 
   it("get_week_items passes weekOf, owner, resource, and person parameters", async () => {
-    await tools.get_week_items.execute(
+    await tools.get_week_items.execute!(
       { weekOf: "2026-04-06", owner: "Kathy", resource: "Roz", person: "Lane" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -337,49 +358,49 @@ describe("createBotTools", () => {
   });
 
   it("get_week_items passes undefined when no params given", async () => {
-    await tools.get_week_items.execute({}, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    await tools.get_week_items.execute!({} as WeekItemsRawArgs, { toolCallId: "", messages: [], abortSignal: undefined as never });
     expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined, undefined, undefined, undefined, undefined);
   });
 
   it("get_week_items passes status filter (PR #88 Chunk B)", async () => {
-    await tools.get_week_items.execute(
-      { weekOf: "2026-04-06", status: "blocked" },
+    await tools.get_week_items.execute!(
+      { weekOf: "2026-04-06", status: "blocked" } as WeekItemsRawArgs,
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
     expect(mockOps.getWeekItemsData).toHaveBeenCalledWith("2026-04-06", undefined, undefined, undefined, "blocked", undefined);
   });
 
   it("get_week_items passes clientSlug filter (PR #88 Chunk B)", async () => {
-    await tools.get_week_items.execute(
-      { clientSlug: "convergix" },
+    await tools.get_week_items.execute!(
+      { clientSlug: "convergix" } as WeekItemsRawArgs,
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
     expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined, undefined, undefined, undefined, "convergix");
   });
 
   it("get_week_items forwards status='scheduled' sentinel", async () => {
-    await tools.get_week_items.execute(
-      { status: "scheduled" },
+    await tools.get_week_items.execute!(
+      { status: "scheduled" } as WeekItemsRawArgs,
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
     expect(mockOps.getWeekItemsData).toHaveBeenCalledWith(undefined, undefined, undefined, undefined, "scheduled", undefined);
   });
 
   it("get_person_workload calls getPersonWorkload", async () => {
-    const result = await tools.get_person_workload.execute({ personName: "Kathy" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    const result = await tools.get_person_workload.execute!({ personName: "Kathy" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
     expect(mockOps.getPersonWorkload).toHaveBeenCalledWith("Kathy");
     expect(result).toEqual(expect.objectContaining({ person: "Kathy" }));
   });
 
   it("get_client_contacts returns contacts from DB", async () => {
-    const result = await tools.get_client_contacts.execute({ clientSlug: "convergix" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    const result = await tools.get_client_contacts.execute!({ clientSlug: "convergix" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
     expect(mockGetClientContactsStructured).toHaveBeenCalledWith("convergix");
     expect(result).toEqual(expect.objectContaining({ client: "convergix", contacts: [{ name: "Daniel", role: "Marketing Director" }] }));
   });
 
   it("get_client_contacts returns note when no contacts found", async () => {
     mockGetClientContactsStructured.mockResolvedValueOnce([]);
-    const result = await tools.get_client_contacts.execute({ clientSlug: "lppc" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
+    const result = await tools.get_client_contacts.execute!({ clientSlug: "lppc" }, { toolCallId: "", messages: [], abortSignal: undefined as never });
     expect(result).toEqual(expect.objectContaining({ note: "No contacts on file for this client" }));
   });
 
@@ -392,11 +413,11 @@ describe("createBotTools", () => {
         cascadedItems: ["CDS Review", "CDS Delivery"],
       },
     });
-    const result = await tools.update_project_status.execute(
+    const result = await tools.update_project_status.execute!(
       { clientSlug: "convergix", projectName: "CDS", newStatus: "completed" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    const text = (result as Record<string, string>).result;
+    const text = (result as ToolTextResult).result;
     expect(text).toContain("Was: in-production, now: completed");
     expect(text).toContain("Also updated 2 linked week item(s)");
     expect(text).toContain("CDS Review");
@@ -412,7 +433,7 @@ describe("createBotTools", () => {
         cascadedItems: ["Item A", "Item B"],
       },
     });
-    await tools.update_project_status.execute(
+    await tools.update_project_status.execute!(
       { clientSlug: "convergix", projectName: "CDS", newStatus: "completed" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -430,11 +451,11 @@ describe("createBotTools", () => {
         cascadedItems: [],
       },
     });
-    const result = await tools.update_project_status.execute(
+    const result = await tools.update_project_status.execute!(
       { clientSlug: "convergix", projectName: "CDS", newStatus: "completed" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    const text = (result as Record<string, string>).result;
+    const text = (result as ToolTextResult).result;
     expect(text).toContain("Was: active, now: completed");
     expect(text).not.toContain("Also updated");
   });
@@ -446,7 +467,7 @@ describe("createBotTools", () => {
       ok: true, message: "Added project 'Widget Design' to Wilsonart.",
       data: { clientName: "Wilsonart", projectName: "Widget Design" },
     });
-    const result = await tools.create_project.execute(
+    const result = await tools.create_project.execute!(
       { clientSlug: "wilsonart", name: "Widget Design", owner: "Lane", dueDate: "2026-04-25" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -456,7 +477,7 @@ describe("createBotTools", () => {
     expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ fallbackClientName: "wilsonart", updateText: "New project created" })
     );
-    const text = (result as Record<string, string>).result;
+    const text = (result as ToolTextResult).result;
     expect(text).toContain("Widget Design");
     expect(text).toContain("Wilsonart");
     expect(text).toContain("Owner: Lane");
@@ -468,7 +489,7 @@ describe("createBotTools", () => {
       ok: true, message: "Added project 'Widget Design' to Wilsonart.",
       data: { clientName: "Wilsonart", projectName: "Widget Design" },
     });
-    await tools.create_project.execute(
+    await tools.create_project.execute!(
       { clientSlug: "wilsonart", name: "Widget Design", waitingOn: "Daniel for assets" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -479,11 +500,11 @@ describe("createBotTools", () => {
 
   it("create_project returns error on failure", async () => {
     mockOps.addProject.mockResolvedValue({ ok: false, error: "Client 'unknown' not found." });
-    const result = await tools.create_project.execute(
+    const result = await tools.create_project.execute!(
       { clientSlug: "unknown", name: "Test" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect((result as Record<string, string>).error).toContain("unknown");
+    expect((result as ToolTextResult).error).toContain("unknown");
   });
 
   it("create_project bot-direct fallback passes auditObserver (Wave 14 carryover)", async () => {
@@ -491,7 +512,7 @@ describe("createBotTools", () => {
       ok: true, message: "Added.",
       data: { clientName: "Wilsonart", projectName: "Widget Design" },
     });
-    await tools.create_project.execute(
+    await tools.create_project.execute!(
       { clientSlug: "wilsonart", name: "Widget Design" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -508,7 +529,7 @@ describe("createBotTools", () => {
       ok: true, message: "Added.",
       data: { clientName: "Convergix", title: "Brief" },
     });
-    await tools.create_week_item.execute(
+    await tools.create_week_item.execute!(
       { clientSlug: "convergix", weekOf: "2026-04-27", title: "Brief", date: "2026-04-29" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -524,7 +545,7 @@ describe("createBotTools", () => {
     mockOps.createTeamMember.mockResolvedValue({
       ok: true, message: "Added.", data: { memberName: "Lane" },
     });
-    await tools.create_team_member.execute(
+    await tools.create_team_member.execute!(
       { name: "Lane" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -541,7 +562,7 @@ describe("createBotTools", () => {
       ok: true, message: "Updated dueDate for Convergix / CDS.",
       data: { clientName: "Convergix", projectName: "CDS", field: "dueDate", previousValue: "2026-04-15", newValue: "2026-04-25" },
     });
-    const result = await tools.update_project_field.execute(
+    const result = await tools.update_project_field.execute!(
       { clientSlug: "convergix", projectName: "CDS", field: "dueDate", newValue: "2026-04-25" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -551,7 +572,7 @@ describe("createBotTools", () => {
     expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ updateText: expect.stringContaining("→") })
     );
-    const text = (result as Record<string, string>).result;
+    const text = (result as ToolTextResult).result;
     expect(text).toContain('Was: "2026-04-15"');
     expect(text).toContain('now: "2026-04-25"');
     expect(text).toContain("dueDate");
@@ -561,11 +582,11 @@ describe("createBotTools", () => {
     mockOps.updateProjectField.mockResolvedValue({
       ok: false, error: "Project not found", available: ["CDS", "Website"],
     });
-    const result = await tools.update_project_field.execute(
+    const result = await tools.update_project_field.execute!(
       { clientSlug: "convergix", projectName: "Nonexistent", field: "owner", newValue: "Lane" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect((result as Record<string, string[]>).available).toEqual(["CDS", "Website"]);
+    expect((result as ToolTextResult).available).toEqual(["CDS", "Website"]);
   });
 
   it("update_project_field forwards parentProjectId field (PR #88 Chunk F)", async () => {
@@ -580,7 +601,7 @@ describe("createBotTools", () => {
         newValue: "pj-wrap",
       },
     });
-    await tools.update_project_field.execute(
+    await tools.update_project_field.execute!(
       { clientSlug: "convergix", projectName: "CDS", field: "parentProjectId", newValue: "pj-wrap" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -594,14 +615,14 @@ describe("createBotTools", () => {
       ok: true, message: "Added 'CDS Review' to week of 2026-04-06.",
       data: { clientName: "Convergix", title: "CDS Review" },
     });
-    const result = await tools.create_week_item.execute(
+    const result = await tools.create_week_item.execute!(
       { clientSlug: "convergix", title: "CDS Review", weekOf: "2026-04-06" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(mockOps.createWeekItem).toHaveBeenCalledWith(
       expect.objectContaining({ title: "CDS Review", updatedBy: "Kathy Horn" })
     );
-    expect((result as Record<string, string>).result).toContain("CDS Review");
+    expect((result as ToolTextResult).result).toContain("CDS Review");
   });
 
   it("create_week_item posts to updates channel when client exists", async () => {
@@ -609,7 +630,7 @@ describe("createBotTools", () => {
       ok: true, message: "Added.",
       data: { clientName: "Convergix", title: "CDS Review" },
     });
-    await tools.create_week_item.execute(
+    await tools.create_week_item.execute!(
       { clientSlug: "convergix", title: "CDS Review", weekOf: "2026-04-06" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -623,14 +644,14 @@ describe("createBotTools", () => {
       ok: true, message: "Updated status for 'CDS Review'.",
       data: { weekItemTitle: "CDS Review", field: "status", previousValue: "", newValue: "completed", reverseCascaded: false },
     });
-    const result = await tools.update_week_item.execute(
+    const result = await tools.update_week_item.execute!(
       { weekOf: "2026-04-06", weekItemTitle: "CDS Review", field: "status", newValue: "completed" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(mockOps.updateWeekItemField).toHaveBeenCalledWith(
       expect.objectContaining({ weekItemTitle: "CDS Review", updatedBy: "Kathy Horn" })
     );
-    expect((result as Record<string, string>).result).toContain("CDS Review");
+    expect((result as ToolTextResult).result).toContain("CDS Review");
   });
 
   it("undo_last_change calls undoLastChange and posts update", async () => {
@@ -638,27 +659,27 @@ describe("createBotTools", () => {
       ok: true, message: 'Undone: reverted status from "completed" back to "in-production".',
       data: { undoneUpdateId: "u1", revertedFrom: "completed", revertedTo: "in-production" },
     });
-    const result = await tools.undo_last_change.execute(
+    const result = await tools.undo_last_change.execute!(
       {}, { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
     expect(mockOps.undoLastChange).toHaveBeenCalledWith({ updatedBy: "Kathy Horn" });
     expect(mockPostMutationUpdate).toHaveBeenCalled();
-    expect((result as Record<string, string>).result).toContain("reverted");
+    expect((result as ToolTextResult).result).toContain("reverted");
   });
 
   it("undo_last_change returns error when nothing to undo", async () => {
     mockOps.undoLastChange.mockResolvedValue({ ok: false, error: "No recent change to undo." });
-    const result = await tools.undo_last_change.execute(
+    const result = await tools.undo_last_change.execute!(
       {}, { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect((result as Record<string, string>).error).toContain("No recent change");
+    expect((result as ToolTextResult).error).toContain("No recent change");
   });
 
   it("get_recent_updates calls getRecentUpdates with userName", async () => {
     mockOps.getRecentUpdates.mockResolvedValue([
       { clientName: "Convergix", projectName: "CDS", updateType: "status-change", summary: "test" },
     ]);
-    const result = await tools.get_recent_updates.execute(
+    const result = await tools.get_recent_updates.execute!(
       { clientSlug: "convergix" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -673,7 +694,7 @@ describe("createBotTools", () => {
       ok: true, message: "Updated status for 'CDS Review'.",
       data: { weekItemTitle: "CDS Review", field: "status", previousValue: "", newValue: "completed", reverseCascaded: false },
     });
-    await tools.update_week_item.execute(
+    await tools.update_week_item.execute!(
       { weekOf: "2026-04-06", weekItemTitle: "CDS Review", field: "status", newValue: "completed" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -686,11 +707,11 @@ describe("createBotTools", () => {
     mockOps.updateWeekItemField.mockResolvedValue({
       ok: false, error: "Week item not found", available: ["CDS Review", "Widget Delivery"],
     });
-    const result = await tools.update_week_item.execute(
+    const result = await tools.update_week_item.execute!(
       { weekOf: "2026-04-06", weekItemTitle: "Nonexistent", field: "status", newValue: "completed" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
-    expect((result as Record<string, string[]>).available).toEqual(["CDS Review", "Widget Delivery"]);
+    expect((result as ToolTextResult).available).toEqual(["CDS Review", "Widget Delivery"]);
   });
 
   // ── No-op guard tests ─────────────────────────────────────
@@ -700,7 +721,7 @@ describe("createBotTools", () => {
       ok: true, message: "Updated",
       data: { clientName: "Convergix", projectName: "CDS", previousStatus: "done", newStatus: "done" },
     });
-    await tools.update_project_status.execute(
+    await tools.update_project_status.execute!(
       { clientSlug: "convergix", projectName: "CDS", newStatus: "done" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -712,7 +733,7 @@ describe("createBotTools", () => {
       ok: true, message: "Updated dueDate for Convergix / CDS.",
       data: { clientName: "Convergix", projectName: "CDS", field: "dueDate", previousValue: "2026-04-28", newValue: "2026-04-28" },
     });
-    await tools.update_project_field.execute(
+    await tools.update_project_field.execute!(
       { clientSlug: "convergix", projectName: "CDS", field: "dueDate", newValue: "2026-04-28" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -724,7 +745,7 @@ describe("createBotTools", () => {
       ok: true, message: "Updated status for 'CDS Review'.",
       data: { weekItemTitle: "CDS Review", field: "status", previousValue: "completed", newValue: "completed", reverseCascaded: false },
     });
-    await tools.update_week_item.execute(
+    await tools.update_week_item.execute!(
       { weekOf: "2026-04-06", weekItemTitle: "CDS Review", field: "status", newValue: "completed" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -740,7 +761,7 @@ describe("createBotTools", () => {
         cascadedItems: ["Code handoff", "Go live"],
       },
     });
-    await tools.update_project_field.execute(
+    await tools.update_project_field.execute!(
       { clientSlug: "convergix", projectName: "CDS", field: "dueDate", newValue: "2026-04-28" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -758,7 +779,7 @@ describe("createBotTools", () => {
         cascadedItems: [],
       },
     });
-    await tools.update_project_field.execute(
+    await tools.update_project_field.execute!(
       { clientSlug: "convergix", projectName: "CDS", field: "dueDate", newValue: "2026-04-28" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -770,7 +791,7 @@ describe("createBotTools", () => {
       ok: true, message: "Updated",
       data: { clientName: "Convergix", projectName: "CDS", previousStatus: "done", newStatus: "done" },
     });
-    await tools.update_project_status.execute(
+    await tools.update_project_status.execute!(
       { clientSlug: "convergix", projectName: "CDS", newStatus: "done", notes: "Client confirmed delivery" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -784,7 +805,7 @@ describe("createBotTools", () => {
       ok: true, message: "Updated date for 'CDS Deadline'.",
       data: { weekItemTitle: "CDS Deadline", field: "date", previousValue: "2026-04-15", newValue: "2026-04-28", reverseCascaded: true },
     });
-    await tools.update_week_item.execute(
+    await tools.update_week_item.execute!(
       { weekOf: "2026-04-06", weekItemTitle: "CDS Deadline", field: "date", newValue: "2026-04-28" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -798,7 +819,7 @@ describe("createBotTools", () => {
       ok: true, message: "Updated date for 'CDS Deadline'.",
       data: { weekItemTitle: "CDS Deadline", field: "date", previousValue: "2026-04-28", newValue: "2026-04-28", reverseCascaded: true },
     });
-    await tools.update_week_item.execute(
+    await tools.update_week_item.execute!(
       { weekOf: "2026-04-06", weekItemTitle: "CDS Deadline", field: "date", newValue: "2026-04-28" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -814,7 +835,7 @@ describe("createBotTools", () => {
       ok: true, message: "Deleted project 'Brand Refresh'.",
       data: { clientName: "Convergix" },
     });
-    const result = await tools.delete_project.execute(
+    const result = await tools.delete_project.execute!(
       { clientSlug: "convergix", projectName: "Brand Refresh" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -824,12 +845,12 @@ describe("createBotTools", () => {
     expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ fallbackClientName: "convergix", updateText: "Deleted project: Brand Refresh" })
     );
-    expect((result as Record<string, string>).result).toContain("Brand Refresh");
+    expect((result as ToolTextResult).result).toContain("Brand Refresh");
   });
 
   it("delete_project returns error on failure", async () => {
     mockOps.deleteProject.mockResolvedValue({ ok: false, error: "Not found", available: ["CDS"] });
-    const result = await tools.delete_project.execute(
+    const result = await tools.delete_project.execute!(
       { clientSlug: "convergix", projectName: "nope" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -839,7 +860,7 @@ describe("createBotTools", () => {
 
   it("delete_project falls back to clientSlug when clientName missing", async () => {
     mockOps.deleteProject.mockResolvedValue({ ok: true, message: "Deleted.", data: {} });
-    await tools.delete_project.execute(
+    await tools.delete_project.execute!(
       { clientSlug: "convergix", projectName: "X" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -853,7 +874,7 @@ describe("createBotTools", () => {
       ok: true, message: "Deleted week item 'CDS Review'.",
       data: { clientName: "Convergix" },
     });
-    const result = await tools.delete_week_item.execute(
+    const result = await tools.delete_week_item.execute!(
       { weekOf: "2026-04-06", weekItemTitle: "CDS Review" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -863,12 +884,12 @@ describe("createBotTools", () => {
     expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ fallbackClientName: "Calendar", updateText: "Removed: CDS Review" })
     );
-    expect((result as Record<string, string>).result).toContain("CDS Review");
+    expect((result as ToolTextResult).result).toContain("CDS Review");
   });
 
   it("delete_week_item returns error on failure", async () => {
     mockOps.deleteWeekItem.mockResolvedValue({ ok: false, error: "Week item not found", available: ["CDS Review"] });
-    const result = await tools.delete_week_item.execute(
+    const result = await tools.delete_week_item.execute!(
       { weekOf: "2026-04-06", weekItemTitle: "nope" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -878,7 +899,7 @@ describe("createBotTools", () => {
 
   it("delete_week_item falls back to Calendar when no clientName", async () => {
     mockOps.deleteWeekItem.mockResolvedValue({ ok: true, message: "Deleted.", data: {} });
-    await tools.delete_week_item.execute(
+    await tools.delete_week_item.execute!(
       { weekOf: "2026-04-06", weekItemTitle: "Team Standup" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -892,7 +913,7 @@ describe("createBotTools", () => {
       ok: true, message: "Created pipeline item 'New SOW'.",
       data: { clientName: "Bonterra" },
     });
-    const result = await tools.create_pipeline_item.execute(
+    const result = await tools.create_pipeline_item.execute!(
       { clientSlug: "bonterra", name: "New SOW", status: "scoping" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -902,12 +923,12 @@ describe("createBotTools", () => {
     expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ fallbackClientName: "bonterra", updateText: "New pipeline item: New SOW" })
     );
-    expect((result as Record<string, string>).result).toContain("New SOW");
+    expect((result as ToolTextResult).result).toContain("New SOW");
   });
 
   it("create_pipeline_item returns error on failure", async () => {
     mockOps.createPipelineItem.mockResolvedValue({ ok: false, error: "Client not found" });
-    const result = await tools.create_pipeline_item.execute(
+    const result = await tools.create_pipeline_item.execute!(
       { clientSlug: "nope", name: "SOW" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -920,7 +941,7 @@ describe("createBotTools", () => {
       ok: true, message: "Updated status for 'New SOW'.",
       data: { clientName: "Bonterra" },
     });
-    const result = await tools.update_pipeline_item.execute(
+    const result = await tools.update_pipeline_item.execute!(
       { clientSlug: "bonterra", pipelineName: "New SOW", field: "status", newValue: "proposal" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -930,12 +951,12 @@ describe("createBotTools", () => {
     expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ fallbackClientName: "bonterra", updateText: "Pipeline New SOW: status updated" })
     );
-    expect((result as Record<string, string>).result).toContain("New SOW");
+    expect((result as ToolTextResult).result).toContain("New SOW");
   });
 
   it("update_pipeline_item returns error with available list", async () => {
     mockOps.updatePipelineItem.mockResolvedValue({ ok: false, error: "Not found", available: ["Existing SOW"] });
-    const result = await tools.update_pipeline_item.execute(
+    const result = await tools.update_pipeline_item.execute!(
       { clientSlug: "bonterra", pipelineName: "nope", field: "status", newValue: "signed" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -948,7 +969,7 @@ describe("createBotTools", () => {
       ok: true, message: "Deleted pipeline item 'Old SOW'.",
       data: { clientName: "Bonterra" },
     });
-    const result = await tools.delete_pipeline_item.execute(
+    const result = await tools.delete_pipeline_item.execute!(
       { clientSlug: "bonterra", pipelineName: "Old SOW" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -958,12 +979,12 @@ describe("createBotTools", () => {
     expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ fallbackClientName: "bonterra", updateText: "Removed pipeline item: Old SOW" })
     );
-    expect((result as Record<string, string>).result).toContain("Old SOW");
+    expect((result as ToolTextResult).result).toContain("Old SOW");
   });
 
   it("delete_pipeline_item returns error on failure", async () => {
     mockOps.deletePipelineItem.mockResolvedValue({ ok: false, error: "Pipeline item not found", available: ["Existing SOW"] });
-    const result = await tools.delete_pipeline_item.execute(
+    const result = await tools.delete_pipeline_item.execute!(
       { clientSlug: "bonterra", pipelineName: "nope" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -976,7 +997,7 @@ describe("createBotTools", () => {
       ok: true, message: "Updated team for Convergix.",
       data: { clientName: "Convergix" },
     });
-    const result = await tools.update_client_field.execute(
+    const result = await tools.update_client_field.execute!(
       { clientSlug: "convergix", field: "team", newValue: "Kathy, Lane" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -986,12 +1007,12 @@ describe("createBotTools", () => {
     expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ fallbackClientName: "convergix", updateText: "team updated" })
     );
-    expect((result as Record<string, string>).result).toContain("Convergix");
+    expect((result as ToolTextResult).result).toContain("Convergix");
   });
 
   it("update_client_field returns error on failure", async () => {
     mockOps.updateClientField.mockResolvedValue({ ok: false, error: "Client not found" });
-    const result = await tools.update_client_field.execute(
+    const result = await tools.update_client_field.execute!(
       { clientSlug: "nope", field: "team", newValue: "X" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -1003,7 +1024,7 @@ describe("createBotTools", () => {
     mockOps.createTeamMember.mockResolvedValue({
       ok: true, message: "Created team member 'Lane'.",
     });
-    const result = await tools.create_team_member.execute(
+    const result = await tools.create_team_member.execute!(
       { name: "Lane", fullName: "Lane Davis", title: "Developer" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -1013,12 +1034,12 @@ describe("createBotTools", () => {
     expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ fallbackClientName: "Team", updateText: "New member: Lane" })
     );
-    expect((result as Record<string, string>).result).toContain("Lane");
+    expect((result as ToolTextResult).result).toContain("Lane");
   });
 
   it("create_team_member returns error on failure", async () => {
     mockOps.createTeamMember.mockResolvedValue({ ok: false, error: "Member already exists" });
-    const result = await tools.create_team_member.execute(
+    const result = await tools.create_team_member.execute!(
       { name: "Kathy" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -1031,7 +1052,7 @@ describe("createBotTools", () => {
       ok: true, message: "Updated title for Lane.",
       data: { clientName: "Team" },
     });
-    const result = await tools.update_team_member.execute(
+    const result = await tools.update_team_member.execute!(
       { memberName: "Lane", field: "title", newValue: "Senior Developer" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -1041,12 +1062,12 @@ describe("createBotTools", () => {
     expect(mockPostMutationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ fallbackClientName: "Team", updateText: "Lane: title updated" })
     );
-    expect((result as Record<string, string>).result).toContain("Lane");
+    expect((result as ToolTextResult).result).toContain("Lane");
   });
 
   it("update_team_member returns error with available list", async () => {
     mockOps.updateTeamMember.mockResolvedValue({ ok: false, error: "Not found", available: ["Kathy", "Lane"] });
-    const result = await tools.update_team_member.execute(
+    const result = await tools.update_team_member.execute!(
       { memberName: "Nobody", field: "title", newValue: "X" },
       { toolCallId: "", messages: [], abortSignal: undefined as never }
     );
@@ -1057,7 +1078,7 @@ describe("createBotTools", () => {
   // ── Tier 2 read tool mirrors (PR #86 v4) ──────────────────
 
   it("get_client_detail calls getClientDetail and returns deep view", async () => {
-    const result = await tools.get_client_detail.execute(
+    const result = await tools.get_client_detail.execute!(
       { slug: "convergix" },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -1066,7 +1087,7 @@ describe("createBotTools", () => {
   });
 
   it("get_client_detail passes recentUpdatesLimit", async () => {
-    await tools.get_client_detail.execute(
+    await tools.get_client_detail.execute!(
       { slug: "convergix", recentUpdatesLimit: 5 },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -1075,7 +1096,7 @@ describe("createBotTools", () => {
 
   it("get_client_detail returns error when client not found", async () => {
     mockOps.getClientDetail.mockResolvedValueOnce(null);
-    const result = await tools.get_client_detail.execute(
+    const result = await tools.get_client_detail.execute!(
       { slug: "nope" },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -1083,7 +1104,7 @@ describe("createBotTools", () => {
   });
 
   it("get_orphan_week_items calls getOrphanWeekItems", async () => {
-    const result = await tools.get_orphan_week_items.execute(
+    const result = await tools.get_orphan_week_items.execute!(
       {}, { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
     expect(mockOps.getOrphanWeekItems).toHaveBeenCalledWith(undefined);
@@ -1091,7 +1112,7 @@ describe("createBotTools", () => {
   });
 
   it("get_orphan_week_items passes clientSlug", async () => {
-    await tools.get_orphan_week_items.execute(
+    await tools.get_orphan_week_items.execute!(
       { clientSlug: "convergix" },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -1099,7 +1120,7 @@ describe("createBotTools", () => {
   });
 
   it("get_week_items_range passes all params", async () => {
-    await tools.get_week_items_range.execute(
+    await tools.get_week_items_range.execute!(
       { fromDate: "2026-04-01", toDate: "2026-04-30", clientSlug: "convergix", owner: "Kathy", category: "deadline" },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -1114,7 +1135,7 @@ describe("createBotTools", () => {
       updatedBy: "Kathy", updateType: "status-change", batchId: "b1",
       projectName: "CDS", limit: 50,
     };
-    const result = await tools.find_updates.execute(
+    const result = await tools.find_updates.execute!(
       params, { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
     expect(mockOps.findUpdates).toHaveBeenCalledWith(params);
@@ -1122,7 +1143,7 @@ describe("createBotTools", () => {
   });
 
   it("get_update_chain passes updateId", async () => {
-    const result = await tools.get_update_chain.execute(
+    const result = await tools.get_update_chain.execute!(
       { updateId: "u1" },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -1133,7 +1154,7 @@ describe("createBotTools", () => {
   // ── Tier 3 observability mirrors (PR #86 v4) ──────────────
 
   it("get_flags calls getFlags", async () => {
-    const result = await tools.get_flags.execute(
+    const result = await tools.get_flags.execute!(
       {}, { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
     expect(mockOps.getFlags).toHaveBeenCalledWith({ clientSlug: undefined, personName: undefined });
@@ -1141,7 +1162,7 @@ describe("createBotTools", () => {
   });
 
   it("get_flags passes clientSlug and personName", async () => {
-    await tools.get_flags.execute(
+    await tools.get_flags.execute!(
       { clientSlug: "convergix", personName: "Kathy" },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -1149,7 +1170,7 @@ describe("createBotTools", () => {
   });
 
   it("get_data_health returns snapshot", async () => {
-    const result = await tools.get_data_health.execute(
+    const result = await tools.get_data_health.execute!(
       {}, { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
     expect(mockOps.getDataHealth).toHaveBeenCalledOnce();
@@ -1157,7 +1178,7 @@ describe("createBotTools", () => {
   });
 
   it("get_current_batch returns active=false when idle", async () => {
-    const result = await tools.get_current_batch.execute(
+    const result = await tools.get_current_batch.execute!(
       {}, { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
     expect(mockOps.getCurrentBatch).toHaveBeenCalledOnce();
@@ -1165,7 +1186,7 @@ describe("createBotTools", () => {
   });
 
   it("get_batch_contents passes batchId", async () => {
-    await tools.get_batch_contents.execute(
+    await tools.get_batch_contents.execute!(
       { batchId: "cleanup-2026-04-18" },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -1173,7 +1194,7 @@ describe("createBotTools", () => {
   });
 
   it("get_cascade_log passes windowMinutes", async () => {
-    await tools.get_cascade_log.execute(
+    await tools.get_cascade_log.execute!(
       { windowMinutes: 30 },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -1181,14 +1202,14 @@ describe("createBotTools", () => {
   });
 
   it("get_cascade_log works without windowMinutes", async () => {
-    await tools.get_cascade_log.execute(
+    await tools.get_cascade_log.execute!(
       {}, { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
     expect(mockOps.getCascadeLog).toHaveBeenCalledWith(undefined);
   });
 
   it("get_rows_changed_since passes since + filters", async () => {
-    await tools.get_rows_changed_since.execute(
+    await tools.get_rows_changed_since.execute!(
       { since: "2026-04-20T00:00:00.000Z", tables: ["projects"], clientSlug: "convergix" },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -1199,7 +1220,7 @@ describe("createBotTools", () => {
   });
 
   it("get_rows_changed_since works with only `since`", async () => {
-    await tools.get_rows_changed_since.execute(
+    await tools.get_rows_changed_since.execute!(
       { since: "2026-04-20T00:00:00.000Z" },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -1245,7 +1266,7 @@ describe("createBotTools", () => {
       message: "Added project 'AG1 Pro 2026' to AG1.",
       data: { clientName: "AG1", projectName: "AG1 Pro 2026" },
     });
-    await tools.create_project.execute(
+    await tools.create_project.execute!(
       {
         clientSlug: "ag1",
         name: "AG1 Pro 2026",
@@ -1277,7 +1298,7 @@ describe("createBotTools", () => {
       message: "Added project 'Q1 Brief' to AG1.",
       data: { clientName: "AG1", projectName: "Q1 Brief" },
     });
-    await tools.create_project.execute(
+    await tools.create_project.execute!(
       {
         clientSlug: "ag1",
         name: "Q1 Brief",
@@ -1340,7 +1361,7 @@ describe("createBotTools", () => {
         newValue: "retainer",
       },
     });
-    await tools.update_project_field.execute(
+    await tools.update_project_field.execute!(
       { clientSlug: "ag1", projectName: "AG1 Pro 2026", field: "engagementType", newValue: "retainer" },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
     );
@@ -1380,7 +1401,7 @@ describe("createBotTools", () => {
     });
 
     it("render_client_gantt — calls generateGanttShare with theme hardcoded to 'light-branded'", async () => {
-      await (tools.render_client_gantt as { execute: (args: unknown, ctx: unknown) => Promise<unknown> }).execute(
+      await tools.render_client_gantt.execute!(
         { clientSlugOrId: "ag1" },
         execCtx,
       );
@@ -1391,7 +1412,7 @@ describe("createBotTools", () => {
     });
 
     it("render_client_gantt — formats success result as markdown with shareUrl + expires + summary", async () => {
-      const result = await (tools.render_client_gantt as { execute: (args: unknown, ctx: unknown) => Promise<unknown> }).execute(
+      const result = await tools.render_client_gantt.execute!(
         { clientSlugOrId: "ag1" },
         execCtx,
       ) as { result: string };
@@ -1404,7 +1425,7 @@ describe("createBotTools", () => {
 
     it("render_client_gantt — returns { error } on resolver failure", async () => {
       mockGenerateGanttShare.mockRejectedValueOnce(new Error("Client not found: \"bad-slug\""));
-      const result = await (tools.render_client_gantt as { execute: (args: unknown, ctx: unknown) => Promise<unknown> }).execute(
+      const result = await tools.render_client_gantt.execute!(
         { clientSlugOrId: "bad-slug" },
         execCtx,
       ) as { error: string };
@@ -1413,7 +1434,7 @@ describe("createBotTools", () => {
 
     it("render_project_gantt — passes both clientSlugOrId and projectSlugOrId", async () => {
       mockGenerateGanttShare.mockResolvedValueOnce(successProjectResult);
-      await (tools.render_project_gantt as { execute: (args: unknown, ctx: unknown) => Promise<unknown> }).execute(
+      await tools.render_project_gantt.execute!(
         { clientSlugOrId: "ag1", projectSlugOrId: "AG1 PRO Content" },
         execCtx,
       );
@@ -1426,7 +1447,7 @@ describe("createBotTools", () => {
 
     it("render_project_gantt — formats success result as markdown with project + client name", async () => {
       mockGenerateGanttShare.mockResolvedValueOnce(successProjectResult);
-      const result = await (tools.render_project_gantt as { execute: (args: unknown, ctx: unknown) => Promise<unknown> }).execute(
+      const result = await tools.render_project_gantt.execute!(
         { clientSlugOrId: "ag1", projectSlugOrId: "AG1 PRO Content" },
         execCtx,
       ) as { result: string };
@@ -1439,7 +1460,7 @@ describe("createBotTools", () => {
 
     it("render_project_gantt — returns { error } on resolver failure", async () => {
       mockGenerateGanttShare.mockRejectedValueOnce(new Error("Project not found: \"missing-proj\""));
-      const result = await (tools.render_project_gantt as { execute: (args: unknown, ctx: unknown) => Promise<unknown> }).execute(
+      const result = await tools.render_project_gantt.execute!(
         { clientSlugOrId: "ag1", projectSlugOrId: "missing-proj" },
         execCtx,
       ) as { error: string };
@@ -1447,9 +1468,15 @@ describe("createBotTools", () => {
     });
 
     it("render_client_gantt inputSchema.shape does NOT contain theme", () => {
-      const tool = tools.render_client_gantt as { inputSchema: { shape: Record<string, unknown> } };
-      expect(Object.keys(tool.inputSchema.shape)).not.toContain("theme");
-      expect(Object.keys(tool.inputSchema.shape)).toContain("clientSlugOrId");
+      // inputSchema's declared type is the AI SDK's FlexibleSchema, which
+      // only guarantees a standard schema interface and does not expose
+      // zod's own shape property, even though this tool is built with a
+      // real z.object() underneath. Cast to the real zod object type
+      // rather than any or unknown as X, since that is what this value
+      // actually is at runtime.
+      const schema = tools.render_client_gantt.inputSchema as z.ZodObject<z.ZodRawShape>;
+      expect(Object.keys(schema.shape)).not.toContain("theme");
+      expect(Object.keys(schema.shape)).toContain("clientSlugOrId");
     });
   });
 });
