@@ -30,21 +30,84 @@ its tickets is known so parallel threads do not collide.
 
 ## Milestones
 
-| # | Milestone | Open | Done when |
-|---|---|---|---|
-| 01 | Schedule Sync | 4 | One real client engagement syncs Sheet to Runway prod with pre-snapshot, post-verify diff, `withBatchId` audit trail, zero unguarded writes, and Holdout verified on merged main. |
-| 02 | Auth and secret guards | 8 | No route compares a secret with plain equality, the guard discovers auth routes instead of reading a hand list, and the CI plus pre-push gate reports red, green, and never-ran distinctly. |
-| 03 | DB safety tool | 0 | A staging database and promotion path exist, so prod is no longer the first place a migration runs. Tickets not drafted. |
-| 04 | Meeting routing | 0 | Meeting transcripts route into Runway work items without hand transcription. Tickets not drafted. |
-| 05 | Board UX | 8 | The board reads correctly and reacts correctly: no misleading labels, undo behaves under rapid input, inactive clients hide without data loss. |
-| 06 | Slack correctness | 12 | Every Slack write path is atomic and idempotent, pickers filter what they claim to filter, and UI-originated changes reach the channel. |
-| 07 | Work model | 7 | The hierarchy users see matches the hierarchy the data enforces: wrapper, subtasks, L3, enums, milestones as a first-class concept. |
-| 08 | Data cascade | 15 | Cascade writes are transactional, emit an audit row, and cannot clobber a parent override. Prod data left behind by past cascade defects is cleaned. |
-| 09 | Infra and repo hygiene | 16 | Build, deploy, lint, indexes, and repo scripts stop producing recurring friction, and CI signal is trustworthy. |
+Planned to `one-shot-feature-planning-v1`. Every milestone carries **one observable event**,
+written at plan time, plus the seat that must witness it. The rules that shaped these:
 
-Sequencing note: 02 is ahead of 01 in practice right now, because #111 blocks pushes from the
-main checkout and #112 is a live defect in production. Both are cheap. 01 resumes as soon as
-they land.
+- **A milestone is DONE only when a named observer watched a named real event happen.**
+- The event is binary, cheap to check, and **impossible to satisfy with a green test suite**.
+- **An acceptance bar must name an artifact the defect cannot also produce.** If a broken
+  version of the feature yields the same artifact, the bar is inert and gets moved.
+
+`observed` stays empty until the event is witnessed. **Percent-to-done is counted from
+`observed`, never from closed tickets.** The 17 percent figure reported on 2026-08-29 counted
+closed tickets, which is the exact failure this SOP exists to prevent. The honest number today
+is below.
+
+| # | Milestone | Open | Observable event, one only | Observer | Observed |
+|---|---|---|---|---|---|
+| 01 | Schedule Sync | 4 | A row on the prod board changes to match its Google Sheet, and the operator sees the changed row on runway.startround1.com without anyone having typed it | operator | |
+| 02 | Auth and secret guards | 7 | A deliberately unsafe secret compare, planted on a real route on a branch, turns the PR test gate RED on the GitHub PR page | Runway TP | |
+| 03 | DB safety tool | 0 | A migration runs against staging and its diff is read there BEFORE it touches prod | operator | |
+| 04 | Meeting routing | 0 | A work item nobody typed appears on the prod board, traceable to a named meeting transcript | operator | |
+| 05 | Board UX | 8 | The operator loads runway.startround1.com and the named defect is visibly gone on the rendered page | operator | |
+| 06 | Slack correctness | 12 | A real slash command in the real Slack workspace produces the correct row, seen BOTH in Slack and on the prod board | operator | |
+| 07 | Work model | 7 | A real retainer with real subtasks renders its full hierarchy on the prod board | operator | |
+| 08 | Data cascade | 11 | A parent date override survives a child change in prod, and the audit row for it is read back from the prod DB | DI-TP | |
+| 09 | Infra and repo hygiene | 17 | A merge to `runway` is followed automatically by a smoke run whose result appears in GitHub Actions | Runway TP | |
+| 10 | Prod data corrections | 4 | Operator-walked. Not a dispatch target and not counted in percent-to-done. | operator | |
+
+### Why several of these moved
+
+Milestone 02's bar was "no route compares a secret with plain equality". **That bar is inert.**
+A guard that opens no files and a guard that opens every file both produce a green suite, which
+is precisely how `gantt-embed` stayed broken through two controls. The bar now requires the
+guard to actually STOP something, which a broken guard cannot fake.
+
+Milestone 05's bar was "the board reads correctly". A green component test produces that.
+Only a rendered page on the real host does not.
+
+Milestone 09's bar was "CI signal is trustworthy". Unfalsifiable as written. It is now the
+one event that proves it.
+
+---
+
+## Launch track, and it did not exist before 2026-08-30
+
+**This is the half the SOP exists to catch, and we were missing all of it.** Every milestone
+above was a build milestone. Merging to `runway` triggers a deploy, and nothing watches that
+deploy. Ten of our tickets could close green while prod is down, which is exactly the shape
+that produced incident RW-INC-2026-07-27-01, a prod dashboard returning 500 after a schema-push
+gap that no gate caught.
+
+`pnpm runway:smoke` already exists and runs Playwright against `runway.startround1.com`. It
+runs when a person remembers to run it. That is not a launch control.
+
+| # | Launch milestone | Ticket | Observable event | Observer | Observed |
+|---|---|---|---|---|---|
+| L1 | Install the watcher | #97 | The smoke workflow appears in GitHub Actions and fires ON ITS OWN after a merge to `runway`, with nobody having run it | Runway TP | |
+| L2 | Watch it come up | #97 | One real post-merge smoke run completes against the live host and its result is read in Actions | Runway TP | |
+| L3 | Confirm it stayed up | new | Across five consecutive merges the gate either passes cleanly or catches a real regression, and no merge lands unwatched | Runway TP | |
+
+**L1 is blocked on nothing and is currently unassigned.** It is the highest-leverage open
+ticket in the epic, because until it exists no milestone above can have its observable event
+witnessed automatically, and every one of them is a claim about production.
+
+L3 cannot be rushed. It needs five real merges to elapse. Planned and visible rather than
+assumed, per the SOP.
+
+---
+
+## Percent-to-done, computed honestly
+
+`observed` is empty on every row above. **By the SOP's arithmetic this epic is at 0 percent
+delivered**, with 14 tickets closed and 7 changes merged to `runway` yesterday.
+
+That is not a discouraging number, it is the correct one. It says the build half is moving and
+**nothing has been witnessed running in production by a named observer.** The gap between 14
+closed tickets and 0 observed events is exactly the gap that let two other epics close ten
+milestones and deliver nothing.
+
+The number starts moving the moment L1 lands.
 
 ---
 
