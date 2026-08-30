@@ -223,6 +223,13 @@ import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 import * as ts from "typescript";
+import {
+  buildEnvTracedNames,
+  isProvablyNotSecretCompare,
+  isSecretShapedEnvName,
+  resolvedEnvVarNames,
+  type EnvTrace,
+} from "./env-secret-trace";
 
 const ROOT = path.resolve(__dirname, "../../..");
 const AUTH_ROOT = path.join(ROOT, "src/app/api");
@@ -391,28 +398,56 @@ function findVariableInitializer(scope: ts.Node, name: string): ts.Expression | 
   return found;
 }
 
-// True if `expr`'s value can resolve to a plain equality comparison's
-// boolean result - directly, through a chain of `const x = <expr>`
-// aliasing, or through a ternary that picks between equality-derived
-// branches. This is the value-flow step that lets the check follow WHERE
-// the compare's result goes instead of matching WHERE the compare sits in
-// the syntax tree.
-function isEqualityDerived(expr: ts.Expression, scope: ts.Node, seen: Set<string> = new Set()): boolean {
+// Every equality binary expression `expr`'s value can resolve to,
+// directly, through a chain of `const x = <expr>` aliasing, or through a
+// ternary that picks between equality-derived branches. This is the
+// value-flow step that lets the check follow WHERE the compare's result
+// goes instead of matching WHERE the compare sits in the syntax tree.
+// Returns the actual binary nodes, not just whether one exists, so the
+// caller can judge each one against the env var discriminator below
+// rather than only knowing that some equality was reached.
+function collectEqualityDerivedBinaries(
+  expr: ts.Expression,
+  scope: ts.Node,
+  seen: Set<string> = new Set(),
+): ts.BinaryExpression[] {
   const unwrapped = unwrapParens(expr);
-  if (isEqualityBinary(unwrapped)) return true;
+  if (isEqualityBinary(unwrapped)) return [unwrapped];
   if (ts.isIdentifier(unwrapped)) {
-    if (seen.has(unwrapped.text)) return false;
+    if (seen.has(unwrapped.text)) return [];
     seen.add(unwrapped.text);
     const initializer = findVariableInitializer(scope, unwrapped.text);
-    if (!initializer) return false;
-    return isEqualityDerived(initializer, scope, seen);
+    if (!initializer) return [];
+    return collectEqualityDerivedBinaries(initializer, scope, seen);
   }
   if (ts.isConditionalExpression(unwrapped)) {
-    return (
-      isEqualityDerived(unwrapped.whenTrue, scope, seen) || isEqualityDerived(unwrapped.whenFalse, scope, seen)
-    );
+    return [
+      ...collectEqualityDerivedBinaries(unwrapped.whenTrue, scope, seen),
+      ...collectEqualityDerivedBinaries(unwrapped.whenFalse, scope, seen),
+    ];
   }
-  return false;
+  return [];
+}
+
+// True if `expr`'s value can resolve to a plain equality comparison's
+// boolean result AND at least one of those resolved comparisons is not
+// provably a non secret compare, per _R1#120. findUnguardedEqualityReturns
+// asks whether an equality gated return exists in a guarded function. It
+// never asked whether the equality involved the secret at all, so an
+// unrelated process.env.NODE_ENV check sitting in the same function as a
+// real timingSafeTokenMatch call tripped it. isProvablyNotSecretCompare
+// exempts a binary only when it can positively trace a side to a non
+// secret shaped env var name, never when neither side traces to any known
+// env var, so a bare `token === apiKey` with no env in scope, the shape
+// every earlier round of this guard was built to catch, still flags.
+function isEqualityDerived(
+  expr: ts.Expression,
+  scope: ts.Node,
+  sourceFile: ts.SourceFile,
+  trace: EnvTrace,
+): boolean {
+  const binaries = collectEqualityDerivedBinaries(expr, scope);
+  return binaries.some((binary) => !isProvablyNotSecretCompare(binary, sourceFile, trace));
 }
 
 /**
@@ -453,6 +488,7 @@ function isEqualityDerived(expr: ts.Expression, scope: ts.Node, seen: Set<string
  */
 function findUnguardedEqualityReturns(source: string, fileName: string): string[] {
   const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const trace = buildEnvTracedNames(sourceFile);
   const guardedFunctions = new Set<ts.Node>();
   const visit = (node: ts.Node) => {
     if (
@@ -470,13 +506,13 @@ function findUnguardedEqualityReturns(source: string, fileName: string): string[
   for (const fn of guardedFunctions) {
     for (const ret of collectReturnsInFunctionScope(fn)) {
       if (!ret.expression) continue;
-      if (isEqualityDerived(ret.expression, fn)) {
+      if (isEqualityDerived(ret.expression, fn, sourceFile, trace)) {
         const { line } = sourceFile.getLineAndCharacterOfPosition(ret.getStart(sourceFile));
         offenders.push(`${fileName}:${line + 1}: ${ret.getText(sourceFile).trim()}`);
       }
     }
     for (const ifStmt of collectIfStatementsInFunctionScope(fn)) {
-      if (!isEqualityDerived(ifStmt.expression, fn)) continue;
+      if (!isEqualityDerived(ifStmt.expression, fn, sourceFile, trace)) continue;
       const gatesTerminator =
         statementContainsTerminator(ifStmt.thenStatement) ||
         (ifStmt.elseStatement !== undefined && statementContainsTerminator(ifStmt.elseStatement));
@@ -660,10 +696,55 @@ function findCoOccurrenceViolations(source: string, fileName: string): string[] 
 // through, so a future check that isn't wired in here protects no real
 // route and is visibly dead code, rather than silently absent the way
 // #109's KNOWN_AUTH_ROUTES gap was.
+// Round 12, _R1#120: the two checks above both need a precondition that
+// the raw pre-#112 gantt-embed source never had. findUnguardedEqualityReturns
+// only looks inside a function that already calls timingSafeTokenMatch
+// somewhere, and a route that never adopted the helper has no such
+// function. findCoOccurrenceViolations only fires when the literal words
+// token and apiKey, or a same file alias of them, co-occur, and this
+// route's identifiers were auth and embedSecret, neither word present
+// anywhere in the file. Both checks are wiring or vocabulary dependent by
+// construction, so neither one could ever have caught this route before
+// it was fixed, independent of anything _R1#120 changes.
+//
+// This is the property based net that closes that gap: any equality or
+// inequality operator where either side traces, directly or through a
+// same file alias, to a secret shaped env var name, regardless of
+// whether timingSafeTokenMatch appears anywhere in the file and
+// regardless of what the local identifiers are called. It does not need
+// a prior call to exist and does not need any particular word to appear,
+// because an env var name is a deployment contract, not a naming choice
+// a route author makes, and RUNWAY_EMBED_SECRET does not change just
+// because the local variable holding it is named embedSecret or auth or
+// something else entirely.
+function findSecretEnvCompareViolations(source: string, fileName: string): string[] {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const trace = buildEnvTracedNames(sourceFile);
+  const offenders: string[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isBinaryExpression(node) && EQUALITY_OPERATOR_KINDS.has(node.operatorToken.kind)) {
+      if (!isProvablyNotSecretCompare(node, sourceFile, trace)) {
+        const leftNames = resolvedEnvVarNames(node.left, sourceFile, trace);
+        const rightNames = resolvedEnvVarNames(node.right, sourceFile, trace);
+        if ([...leftNames, ...rightNames].some(isSecretShapedEnvName)) {
+          const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+          offenders.push(
+            `${fileName}:${line + 1}: equality compare involves a secret shaped env var outside timingSafeTokenMatch: ${node.getText(sourceFile).trim()}`,
+          );
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return offenders;
+}
+
 function findAllGuardViolations(source: string, fileName: string): string[] {
   return [
     ...findUnguardedEqualityReturns(source, fileName),
     ...findCoOccurrenceViolations(source, fileName),
+    ...findSecretEnvCompareViolations(source, fileName),
   ];
 }
 
@@ -1322,5 +1403,67 @@ ${filler}
       }
     `;
     expect(findCoOccurrenceViolations(reformatted, "fixture.ts")).toHaveLength(0);
+  });
+});
+
+describe("token-compare guard: the env var discriminator does not blind the guard, refs _R1#120", () => {
+  it("does not flag a NODE_ENV mode check sharing a function with a real timingSafeTokenMatch call", () => {
+    const source = `
+      import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+      export async function GET(request) {
+        const embedSecret = process.env.RUNWAY_EMBED_SECRET;
+        if (!embedSecret) {
+          if (process.env.NODE_ENV === "production") {
+            return new Response("misconfigured", { status: 500 });
+          }
+        } else {
+          const auth = request.headers.get("x-embed-secret");
+          if (!timingSafeTokenMatch(auth, embedSecret)) {
+            return new Response("unauthorized", { status: 401 });
+          }
+        }
+        return new Response("ok");
+      }
+    `;
+    expect(findAllGuardViolations(source, "fixture.ts")).toHaveLength(0);
+  });
+
+  it("still flags the real pre-#112 gantt-embed source, a committed fixture, not a hand written approximation", () => {
+    // Refs _R1#120. This fixture is a verbatim copy of the real, historical
+    // file, committed rather than fetched from git at test time. See the
+    // fixture's own provenance header for why: the source commit is not an
+    // ancestor of upstream/runway after this repo's squash merges and
+    // would not resolve in a depth one CI checkout either. A prior version
+    // of this test shelled out to git show at run time and would have
+    // failed in CI for exactly that reason, caught before it ever pushed.
+    const file = path.join(AUTH_ROOT, "runway/gantt-embed/route.ts");
+    const fixturePath = path.join(ROOT, "src/lib/runway/__fixtures__/gantt-embed-pre-112.route.txt");
+    const fixtureRaw = fs.readFileSync(fixturePath, "utf8");
+    const provenanceMarker = "=== END PROVENANCE, ORIGINAL FILE CONTENT STARTS BELOW ===";
+    const markerIndex = fixtureRaw.indexOf(provenanceMarker);
+    expect(markerIndex).toBeGreaterThan(-1);
+    const content = fixtureRaw.slice(markerIndex + provenanceMarker.length).replace(/^\n+/, "");
+    expect(content).not.toContain("timingSafeTokenMatch");
+    expect(content).toContain("auth !== embedSecret");
+    const offenders = findAllGuardViolations(content, file);
+    expect(offenders.length).toBeGreaterThan(0);
+    expect(offenders.some((o) => o.includes("embedSecret"))).toBe(true);
+  });
+
+  it("plant and restore: auth === embedSecret in the real route goes red, then green once restored", () => {
+    const file = path.join(AUTH_ROOT, "runway/gantt-embed/route.ts");
+    const realSource = fs.readFileSync(file, "utf8");
+    expect(findAllGuardViolations(realSource, file)).toHaveLength(0);
+
+    const planted = realSource.replace(
+      "!timingSafeTokenMatch(auth, embedSecret)",
+      "auth === embedSecret",
+    );
+    expect(planted).not.toBe(realSource);
+    const plantedOffenders = findAllGuardViolations(planted, file);
+    expect(plantedOffenders.length).toBeGreaterThan(0);
+    expect(plantedOffenders.some((o) => o.includes("embedSecret"))).toBe(true);
+
+    expect(findAllGuardViolations(realSource, file)).toHaveLength(0);
   });
 });
