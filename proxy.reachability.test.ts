@@ -26,10 +26,18 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { NextRequest } from "next/server";
 
-// Run with vitest.reachability.config.mts, not the shared vitest.config.mts.
-// See that file's header comment for why: an ESM resolution quirk in
-// authkit-nextjs's own dependency tree, not a mock of anything this test
-// exercises.
+// Run with `pnpm test:reachability`, not the default `pnpm test:run`.
+// That script points at vitest.reachability.config.mts instead of the
+// shared vitest.config.mts. See that file's header comment for why: an
+// ESM resolution quirk in authkit-nextjs's own dependency tree, not a
+// mock of anything this test exercises.
+//
+// This suite is not wired into pr-tests.yml. It is a premise recheck,
+// refs _R1#88 and _R1#118, confirming a specific past claim rather than
+// standing permanent regression coverage, so it is run by name when
+// that premise needs rechecking rather than on every PR. If this file's
+// own routing claims should become a permanent CI gate instead, that is
+// a separate decision for whoever owns pr-tests.yml's step budget.
 
 const DUMMY_COOKIE_PASSWORD = "x".repeat(32);
 
@@ -42,7 +50,12 @@ beforeAll(() => {
   process.env.WORKOS_CLIENT_ID = "client_test_dummy_id";
   process.env.WORKOS_API_KEY = "sk_test_dummy_key";
   process.env.NEXT_PUBLIC_WORKOS_REDIRECT_URI = "https://example.invalid/callback";
-  expect(process.env.WORKOS_COOKIE_PASSWORD.length).toBeGreaterThanOrEqual(32);
+  // authkit-nextjs throws "cookiePassword must be at least 32 characters"
+  // during session sealing if this is too short, which would surface as
+  // every test below failing with that error instead of a redirect or
+  // pass-through classification. No separate self check of the literal
+  // is needed, and one that only compares this file's own constant to
+  // itself would pass no matter what value was assigned above.
 });
 
 type ProxyFn = (request: import("next/server").NextRequest) => Promise<Response>;
