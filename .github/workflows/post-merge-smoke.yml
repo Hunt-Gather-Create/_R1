@@ -1,0 +1,258 @@
+# Post-merge smoke against the live host, _R1#97.
+#
+# Merging to runway triggers a Vercel deploy. Nothing watched that deploy
+# before this file. pnpm runway:smoke exists and runs Playwright against
+# runway.startround1.com, but only when a person remembers to run it,
+# which is not a control. Seven changes merged the day before this file
+# was written and not one was observed running.
+#
+# TWO jobs, not the ONE job pr-tests.yml uses, and the reason is below in
+# the RED, GREEN, NEVER-RAN section. Each job still runs exactly ONE real
+# command. No matrix, no OS spread, no node-version spread.
+#
+# TRIGGER, AND WHY deployment_status RATHER THAN push.
+#
+# A run that starts on push to runway tests the OLD deployment, since the
+# new one has not finished building yet, and passes for the wrong reason.
+# That is the same shape of defect as reading a sender side delivered
+# count: the artifact looks identical whether or not the real thing
+# happened. deployment_status fires when Vercel reports the deployment
+# it created has finished, success or failure, so a run triggered by it
+# is checking the build that actually exists at that URL right now.
+#
+# THIS DOES NOT FILTER ON deployment.environment, ON PURPOSE. _R1 is
+# not runway. runway is our portion of a larger product, a feature
+# branch here, not the production branch, and it was never meant to
+# be one.
+# Checked against this repo's own deployment history with the GitHub
+# API before writing this file: every deployment for a commit that
+# landed on runway in the last several days reports environment
+# Preview, never Production, including 994a4bc, the current runway
+# tip. That is the correct label for a feature branch deploy, not a
+# misconfiguration. A trigger condition of `environment == 'production'`
+# would therefore never fire for a real runway merge, permanently and
+# by design, so the gate below checks something else entirely: whether
+# the commit the deployment was built from is actually on runway right
+# now, which is the reliable signal here regardless of what label
+# Vercel puts on the environment.
+#
+# So the gate below checks something deployment_status always carries
+# correctly regardless of the environment label: whether the commit the
+# deployment was built from is actually on runway right now. A shallow
+# checkout cannot answer that, so this step fetches runway specifically
+# and asks git.
+#
+# RED, GREEN, NEVER-RAN, AND A FOURTH STATE THAT MUST ALSO BE RED.
+#
+# Never-ran: no deployment_status event fired at all, so no run appears
+# in the Actions tab for that merge. That absence is itself a signal
+# something upstream broke, the same reasoning as _R1#107's own gate.
+#
+# Skipped, not applicable: a deployment_status event fired for a commit
+# PROVABLY not on runway, a PR preview deploy for example. Split into a
+# separate gate job for exactly this reason. A single job whose later
+# steps all carry a step level if renders as an overall SUCCESS the
+# moment zero steps fail, even when every real step was skipped, because
+# GitHub computes a job's conclusion from step conclusions and a run
+# with no failures is green regardless of how many steps never executed.
+# A reviewer glancing at the checks list on a commit or a PR cannot tell
+# that green apart from a real pass without opening the run and reading
+# step level detail. Gating at the JOB level with `needs` and a job
+# level `if` instead makes GitHub report the smoke job itself as
+# Skipped, a distinct badge, whenever the deployment is not on runway.
+#
+# Cannot determine: the gate could not answer the ancestry question at
+# all, whether the fetch failed, FETCH_HEAD would not resolve, or
+# merge-base --is-ancestor exited with neither 0 nor 1. This must never
+# render the same as skipped. A cannot determine answer means the gate
+# itself is broken or blind, which is worse than a real skip, so the
+# gate job exits non zero and fails outright, a genuine red, rather
+# than quietly reporting not on runway and looking like an ordinary
+# skip forever.
+#
+# Green: the deployment was provably on runway and the smoke suite
+# passed.
+# Red: either the gate could not determine ancestry at all, or the
+# deployment was provably on runway and the smoke suite failed.
+# Those four never collapse into one rendering, which is the whole
+# reason this file exists in the shape it does.
+name: Post-merge smoke
+
+on:
+  deployment_status:
+
+permissions:
+  contents: read
+  deployments: read
+
+jobs:
+  gate:
+    name: confirm this deployment was built from a commit on runway
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event.deployment_status.state == 'success'
+    # Scoped to the deployment's own sha, not a single shared bucket.
+    # A bucket shared across every deployment in the repo means an
+    # unrelated deployment's run could cancel a real runway run that was
+    # only pending, or a second unrelated event could bump a runway run
+    # out of the queue entirely before it executes, rendering as
+    # Cancelled rather than the tracked never-ran, skip, red, or green
+    # states this file exists to keep distinguishable.
+    concurrency:
+      group: post-merge-smoke-${{ github.event.deployment.sha }}
+      cancel-in-progress: false
+    outputs:
+      on_runway: ${{ steps.gate.outputs.on_runway }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: confirm this deployment was built from a commit on runway
+        id: gate
+        env:
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
+        run: |
+          set -uo pipefail
+          # actions/checkout narrows remote.origin.fetch to only the ref it
+          # checked out, verified by hand against a real clone before
+          # writing this: after that narrowing, git fetch origin runway
+          # populates FETCH_HEAD correctly but does not create or update
+          # origin/runway at all, so a later reference to origin/runway
+          # fails with unknown revision, a completely different failure
+          # from runway genuinely not containing this commit. Comparing
+          # against FETCH_HEAD directly sidesteps that ref entirely.
+          if ! git fetch origin runway --quiet; then
+            echo "Could not fetch runway from origin. Cannot determine whether $DEPLOY_SHA is on runway. This is not the same as confirming it is not, and the smoke run must not proceed on an unknown answer."
+            echo "on_runway=unknown" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          RUNWAY_SHA=$(git rev-parse FETCH_HEAD 2>&1)
+          if [ $? -ne 0 ]; then
+            echo "Fetched runway but could not resolve FETCH_HEAD to a commit: $RUNWAY_SHA. Cannot determine whether $DEPLOY_SHA is on runway."
+            echo "on_runway=unknown" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          # The question asked here is containment, is DEPLOY_SHA on
+          # runway at all, not equality, is DEPLOY_SHA the tip of runway.
+          # Equality is deliberately not the question: a commit that is
+          # on runway but behind the current tip is still a real runway
+          # deploy and must still be smoked, so demanding equality would
+          # make this gate skip legitimate deploys the moment a second
+          # merge lands while the first is still building.
+          git merge-base --is-ancestor "$DEPLOY_SHA" "$RUNWAY_SHA"
+          ANCESTOR_EXIT=$?
+          if [ "$ANCESTOR_EXIT" -eq 0 ]; then
+            echo "Deployment $DEPLOY_SHA is on runway, which is at $RUNWAY_SHA. Proceeding to smoke."
+            echo "on_runway=true" >> "$GITHUB_OUTPUT"
+          elif [ "$ANCESTOR_EXIT" -eq 1 ]; then
+            echo "Deployment $DEPLOY_SHA is provably not on runway, which is at $RUNWAY_SHA. Environment was ${{ github.event.deployment.environment }}. The smoke job will report as skipped, this deployment is not the one this workflow watches."
+            echo "on_runway=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "git merge-base --is-ancestor exited $ANCESTOR_EXIT, neither a confirmed ancestor nor a confirmed non ancestor, most likely because $DEPLOY_SHA itself could not be resolved in this checkout. Cannot determine whether this deployment is on runway."
+            echo "on_runway=unknown" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+  # A REAL LIMIT, STATED PLAINLY, NOT SOFTENED.
+  #
+  # This job tests runway.startround1.com, the stable domain, on purpose,
+  # since the per deployment address can sit behind Vercel's own
+  # deployment protection for reasons that have nothing to do with the
+  # app. That decision is correct and is not being revisited here.
+  #
+  # The consequence: if merge A's deployment_status fires while the
+  # domain is already serving merge B, this run tests B and records the
+  # result under A's sha. The concurrency group above serialises runs
+  # onto the same key per deployment, which widens that window rather
+  # than closing it, since a later run for a different sha can still
+  # execute after the domain has already moved past the sha it is
+  # nominally checking.
+  #
+  # A green here confirms the LIVE SITE was healthy at that moment. IT
+  # DOES NOT CONFIRM THAT THE SPECIFIC COMMIT NAMED IN THIS RUN WAS THE
+  # ONE ACTUALLY EXERCISED. Two runs for two different shas can both be
+  # green from testing the same live commit, and there is no way to
+  # tell that apart from this workflow's output alone. Pinning to the
+  # per deployment URL would close this gap and open a worse one, so it
+  # is not done. This limit is accepted, not fixed.
+  smoke:
+    name: playwright smoke against the live deploy
+    needs: gate
+    if: needs.gate.outputs.on_runway == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Checked before any install, on purpose, so a repository missing
+      # the secret fails in seconds instead of after several minutes of
+      # installing a browser it was never going to use.
+      - name: confirm the smoke suite's required secret is present, never its value
+        env:
+          PLAYWRIGHT_RUNWAY_PASSWORD: ${{ secrets.PLAYWRIGHT_RUNWAY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PLAYWRIGHT_RUNWAY_PASSWORD:-}" ]; then
+            echo "PLAYWRIGHT_RUNWAY_PASSWORD is not set in this repository's Actions secrets. The smoke suite needs it to authenticate against runway.startround1.com. This is an operator item, not something this workflow can work around."
+            exit 1
+          fi
+          echo "PLAYWRIGHT_RUNWAY_PASSWORD is present."
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Cached on the installed Playwright package version, so a merge
+      # that does not bump @playwright/test reuses the browser binary
+      # instead of downloading and reinstalling Chromium and its OS
+      # deps from scratch on every single runway merge, the same
+      # Actions minutes concern pr-tests.yml's own header names.
+      - name: resolve the installed playwright version for the cache key
+        id: playwright-version
+        run: echo "version=$(pnpm list @playwright/test --depth 0 --json | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>console.log(JSON.parse(d)[0].devDependencies["@playwright/test"].version))')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - run: pnpm exec playwright install --with-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+
+      - run: pnpm exec playwright install-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+
+      - run: pnpm runway:smoke
+        env:
+          PLAYWRIGHT_RUNWAY_PASSWORD: ${{ secrets.PLAYWRIGHT_RUNWAY_PASSWORD }}
+          # Deliberately not setting RUNWAY_SMOKE_BASE_URL from
+          # github.event.deployment_status.target_url. Checked a real
+          # payload before deciding this: target_url on a Preview labeled
+          # deployment is a per deployment address such as
+          # r1 seven char hash hunt gather create.vercel.app, not the
+          # stable custom domain. That address can sit behind Vercel's own
+          # deployment protection, which would fail this suite for a
+          # reason that has nothing to do with the app. playwright.config.ts
+          # already defaults RUNWAY_SMOKE_BASE_URL to
+          # runway.startround1.com, the same domain a person runs this
+          # suite against by hand, so leaving it unset here tests the same
+          # target a human would.
+
+      - name: upload the playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
