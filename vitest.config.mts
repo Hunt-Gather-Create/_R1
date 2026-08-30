@@ -17,7 +17,11 @@ export default defineConfig({
     // whatever branch that worktree happens to be sitting on. Spread the
     // defaults rather than replacing them. Replacing would silently
     // re-enable node_modules collection, see _R1#114.
-    exclude: [...configDefaults.exclude, "**/.worktrees/**"],
+    //
+    // proxy.reachability.test.ts, refs _R1#88 and _R1#118, imports the
+    // real authkit-nextjs package, which cannot load under this config.
+    // See vitest.reachability.config.mts for why and how to run it.
+    exclude: [...configDefaults.exclude, "**/.worktrees/**", "proxy.reachability.test.ts"],
     setupFiles: ["./vitest.setup.mts"],
   },
   resolve: {
