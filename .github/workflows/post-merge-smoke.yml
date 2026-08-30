@@ -135,6 +135,13 @@ jobs:
             exit 1
           fi
 
+          # The question asked here is containment, is DEPLOY_SHA on
+          # runway at all, not equality, is DEPLOY_SHA the tip of runway.
+          # Equality is deliberately not the question: a commit that is
+          # on runway but behind the current tip is still a real runway
+          # deploy and must still be smoked, so demanding equality would
+          # make this gate skip legitimate deploys the moment a second
+          # merge lands while the first is still building.
           git merge-base --is-ancestor "$DEPLOY_SHA" "$RUNWAY_SHA"
           ANCESTOR_EXIT=$?
           if [ "$ANCESTOR_EXIT" -eq 0 ]; then
@@ -149,6 +156,28 @@ jobs:
             exit 1
           fi
 
+  # A REAL LIMIT, STATED PLAINLY, NOT SOFTENED.
+  #
+  # This job tests runway.startround1.com, the stable domain, on purpose,
+  # since the per deployment address can sit behind Vercel's own
+  # deployment protection for reasons that have nothing to do with the
+  # app. That decision is correct and is not being revisited here.
+  #
+  # The consequence: if merge A's deployment_status fires while the
+  # domain is already serving merge B, this run tests B and records the
+  # result under A's sha. The concurrency group above serialises runs
+  # onto the same key per deployment, which widens that window rather
+  # than closing it, since a later run for a different sha can still
+  # execute after the domain has already moved past the sha it is
+  # nominally checking.
+  #
+  # A green here confirms the LIVE SITE was healthy at that moment. IT
+  # DOES NOT CONFIRM THAT THE SPECIFIC COMMIT NAMED IN THIS RUN WAS THE
+  # ONE ACTUALLY EXERCISED. Two runs for two different shas can both be
+  # green from testing the same live commit, and there is no way to
+  # tell that apart from this workflow's output alone. Pinning to the
+  # per deployment URL would close this gap and open a worse one, so it
+  # is not done. This limit is accepted, not fixed.
   smoke:
     name: playwright smoke against the live deploy
     needs: gate
