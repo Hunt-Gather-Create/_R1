@@ -87,6 +87,20 @@ jobs:
             exit 1
           fi
 
+          # gh pr list can exit 0 and still hand back something that is
+          # not a list, the JSON literal null or an empty object being
+          # the two shapes seen in practice. jq's length builtin accepts
+          # either one and reports zero, which would otherwise print the
+          # same confirmed-zero message a genuine empty listing prints.
+          # That collapse is exactly what this workflow exists to catch
+          # one layer up, so a response that is not an array is red and
+          # named here, never coalesced into an empty list and never
+          # treated as the same green a real zero produces.
+          if ! echo "$open_prs_json" | jq -e 'type == "array"' >/dev/null; then
+            echo "gh pr list returned something that is not a JSON array. Raw response: $open_prs_json. This is not the same as a confirmed zero. Failing red rather than treating a malformed response as an empty list."
+            exit 1
+          fi
+
           total=$(echo "$open_prs_json" | jq 'length')
           echo "Found $total open PRs targeting runway."
 
