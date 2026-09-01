@@ -17,6 +17,7 @@ import type {
   RawData,
   WeekItemRow,
 } from "./types";
+import { chicagoISODate } from "../date-chicago";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -274,8 +275,13 @@ function buildMonthlyColumns(start: Date, end: Date): AxisColumn[] {
 export function computeAxis(
   raw: RawData,
   rows: GanttRow[],
-  today: Date = new Date(),
+  today: Date = new Date(`${chicagoISODate(new Date())}T00:00:00Z`),
 ): AxisParams {
+  // Chicago, not the server's UTC clock, refs _R1#128. Both production
+  // callers in section-builders.ts already pass an explicit today built
+  // the same way from their own chicagoToday derived todayISO, so this
+  // default is currently unreachable, but it is the same latent trap
+  // isReadyToClose's default already was, fixed the same way.
   const todayISO = toISO(today);
   const dates = collectNonNullDates(raw, rows);
   if (dates.length === 0) return { kind: "no-axis", today: todayISO };
