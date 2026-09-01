@@ -521,8 +521,10 @@ export async function createWeekItem(
   const itemId = generateId();
   // Pre-generate the L2-create audit id so the cascade-date-change row can
   // link back via `triggered_by_update_id` (mirrors the parentAuditId pattern
-  // in updateProjectStatus). The L2 create audit row is still written after
-  // the transaction (with this id) per the existing flow.
+  // in updateProjectStatus). Refs _R1#86: the L2 create audit row is now
+  // written inside the same transaction as the child insert, using this id,
+  // so a parent insert failure cannot leave a committed cascade row pointing
+  // at a triggered_by_update_id that will never exist.
   const createAuditId = generateId();
   // v4 (Chunk 5): normalize resources string on write so storage is
   // canonical (`->` over alt arrows, trimmed entries). `null` preserved.
@@ -639,6 +641,23 @@ export async function createWeekItem(
       notes: notes ?? null,
       sortOrder: 999,
     });
+    // Refs _R1#86: parent audit insert moved inside the transaction, before
+    // the cascade call below, so the row a cascade insert's
+    // triggered_by_update_id points at is guaranteed to exist by the time
+    // this transaction commits.
+    await insertAuditRecord(
+      {
+        id: createAuditId,
+        idempotencyKey: idemKey,
+        clientId,
+        updatedBy,
+        updateType: "new-week-item",
+        newValue: title,
+        summary: `New week item${clientName ? ` (${clientName})` : ""}: ${title}`,
+        source: source ?? null,
+      },
+      tx,
+    );
     if (projectId) {
       await recomputeProjectDatesWith(tx, projectId, {
         updatedBy,
@@ -646,17 +665,6 @@ export async function createWeekItem(
         triggeredByUpdateId: createAuditId,
       });
     }
-  });
-
-  await insertAuditRecord({
-    id: createAuditId,
-    idempotencyKey: idemKey,
-    clientId,
-    updatedBy,
-    updateType: "new-week-item",
-    newValue: title,
-    summary: `New week item${clientName ? ` (${clientName})` : ""}: ${title}`,
-    source: source ?? null,
   });
 
   // Wave 0b §A4: emit AuditEvent for downstream observers.
@@ -838,11 +846,38 @@ export async function updateWeekItemField(
   // single transaction so the three writes commit (or roll back) atomically.
   let reverseCascaded = false;
 
+  // Surface null as the literal "(null)" marker in the human-readable summary
+  // so null writes render consistently. Computed before the transaction
+  // since it only depends on effectiveNewValue, already resolved above.
+  const summaryNewValue = effectiveNewValue ?? "(null)";
+
+  let auditId = fieldChangeAuditId;
+
   await db.transaction(async (tx) => {
     await tx
       .update(weekItems)
       .set({ [columnKey]: effectiveNewValue, updatedAt: new Date() })
       .where(eq(weekItems.id, item.id));
+
+    // Refs _R1#86: parent audit insert moved inside the transaction, before
+    // the reverse cascade and recompute calls below, so the row their
+    // triggered_by_update_id points at is guaranteed to exist by the time
+    // this transaction commits.
+    auditId = await insertAuditRecord(
+      {
+        id: fieldChangeAuditId,
+        idempotencyKey: idemKey,
+        clientId: item.clientId,
+        updatedBy,
+        updateType: "week-field-change",
+        previousValue,
+        newValue: effectiveNewValue,
+        summary: `Week item '${item.title}': ${field} changed from "${previousValue}" to "${summaryNewValue}"`,
+        metadata: JSON.stringify({ field }),
+        source: source ?? null,
+      },
+      tx,
+    );
 
     // Reverse cascade: deadline date changes sync back to project.dueDate
     if (typedField === "date" && item.category === "deadline" && item.projectId) {
@@ -876,23 +911,6 @@ export async function updateWeekItemField(
       newValue: effectiveNewValue,
     }));
   }
-
-  // Surface null as the literal "(null)" marker in the human-readable summary
-  // so null writes render consistently.
-  const summaryNewValue = effectiveNewValue ?? "(null)";
-
-  const auditId = await insertAuditRecord({
-    id: fieldChangeAuditId,
-    idempotencyKey: idemKey,
-    clientId: item.clientId,
-    updatedBy,
-    updateType: "week-field-change",
-    previousValue,
-    newValue: effectiveNewValue,
-    summary: `Week item '${item.title}': ${field} changed from "${previousValue}" to "${summaryNewValue}"`,
-    metadata: JSON.stringify({ field }),
-    source: source ?? null,
-  });
 
   // Populate reverseCascadeDetail only when the cascade fired AND we
   // successfully snapshotted the parent. A missing snapshot would leave the
@@ -997,22 +1015,27 @@ export async function deleteWeekItem(
   await db.transaction(async (tx) => {
     await tx.delete(weekItems).where(eq(weekItems.id, item.id));
     await getSheetSyncLedger(tx).markStateByRunwayId(item.id, "wi-deleted");
+    // Refs _R1#86: parent audit insert moved inside the transaction, before
+    // the recompute call below, so the row its triggered_by_update_id
+    // points at is guaranteed to exist by the time this transaction commits.
+    await insertAuditRecord(
+      {
+        id: deleteAuditId,
+        idempotencyKey: idemKey,
+        clientId: item.clientId,
+        updatedBy,
+        updateType: "delete-week-item",
+        previousValue: item.title,
+        summary: `Deleted week item: ${item.title}`,
+      },
+      tx,
+    );
     if (parentProjectId) {
       await recomputeProjectDatesWith(tx, parentProjectId, {
         updatedBy,
         triggeredByUpdateId: deleteAuditId,
       });
     }
-  });
-
-  await insertAuditRecord({
-    id: deleteAuditId,
-    idempotencyKey: idemKey,
-    clientId: item.clientId,
-    updatedBy,
-    updateType: "delete-week-item",
-    previousValue: item.title,
-    summary: `Deleted week item: ${item.title}`,
   });
 
   return {
@@ -1141,6 +1164,34 @@ export async function linkWeekItemToProject(
       if (entry) await ledger.markStateByRunwayId(weekItemId, "flagged");
     }
 
+    // Refs _R1#86: parent audit insert moved inside the transaction, before
+    // the recompute calls below, so the row their triggered_by_update_id
+    // points at is guaranteed to exist by the time this transaction commits.
+    await insertAuditRecord(
+      {
+        id: reparentAuditId,
+        idempotencyKey: idemKey,
+        projectId,
+        clientId: item.clientId,
+        updatedBy,
+        updateType: "week-reparent",
+        previousValue: previousProjectId ?? "(none)",
+        newValue: projectId,
+        summary: `Week item '${item.title}': re-parented from ${previousProjectId ?? "(none)"} to ${project.name}${
+          clearSectionLink ? " (section link + taskNo cleared, section belonged to the previous project)" : ""
+        }`,
+        ...(clearSectionLink
+          ? {
+              metadata: JSON.stringify({
+                demotedSectionId: item.sectionId,
+                clearedTaskNo: item.taskNo,
+              }),
+            }
+          : {}),
+      },
+      tx,
+    );
+
     const cascadeAuditContext: RecomputeAuditContext = {
       updatedBy,
       triggeredByUpdateId: reparentAuditId,
@@ -1149,28 +1200,6 @@ export async function linkWeekItemToProject(
       await recomputeProjectDatesWith(tx, previousProjectId, cascadeAuditContext);
     }
     await recomputeProjectDatesWith(tx, projectId, cascadeAuditContext);
-  });
-
-  await insertAuditRecord({
-    id: reparentAuditId,
-    idempotencyKey: idemKey,
-    projectId,
-    clientId: item.clientId,
-    updatedBy,
-    updateType: "week-reparent",
-    previousValue: previousProjectId ?? "(none)",
-    newValue: projectId,
-    summary: `Week item '${item.title}': re-parented from ${previousProjectId ?? "(none)"} to ${project.name}${
-      clearSectionLink ? " (section link + taskNo cleared — section belonged to the previous project)" : ""
-    }`,
-    ...(clearSectionLink
-      ? {
-          metadata: JSON.stringify({
-            demotedSectionId: item.sectionId,
-            clearedTaskNo: item.taskNo,
-          }),
-        }
-      : {}),
   });
 
   return {

@@ -345,11 +345,38 @@ export async function updateProjectField(
   const cascadedIds: string[] = [];
   const cascadedPrevDates: Array<string | null> = [];
 
+  // For audit summaries and idempotency keys, surface null as the literal
+  // "(null)" marker so humans and re-run collapsing both have something
+  // stable. Computed before the transaction since it only depends on
+  // effectiveNewValue, already resolved above.
+  const summaryNewValue = effectiveNewValue ?? "(null)";
+
   await db.transaction(async (tx) => {
     await tx
       .update(projects)
       .set({ [columnKey]: persistedValue, updatedAt: new Date() })
       .where(eq(projects.id, project.id));
+
+    // Refs _R1#86: parent audit insert moved inside the transaction, right
+    // after the field update, before the dueDate cascade below, so the row
+    // the cascade's and the recompute's triggered_by_update_id point at is
+    // guaranteed to exist by the time this transaction commits.
+    await insertAuditRecord(
+      {
+        id: parentAuditId,
+        idempotencyKey: idemKey,
+        projectId: project.id,
+        clientId: client.id,
+        updatedBy,
+        updateType: "field-change",
+        previousValue,
+        newValue: effectiveNewValue,
+        summary: `${client.name} / ${project.name}: ${field} changed from "${previousValue}" to "${summaryNewValue}"`,
+        metadata: JSON.stringify({ field }),
+        source: source ?? null,
+      },
+      tx,
+    );
 
     // Cascade dueDate changes to linked deadline week items.
     //
@@ -467,24 +494,6 @@ export async function updateProjectField(
       cascadedItems,
     }));
   }
-
-  // For audit summaries and idempotency keys, surface null as the literal
-  // "(null)" marker so humans and re-run collapsing both have something stable.
-  const summaryNewValue = effectiveNewValue ?? "(null)";
-
-  await insertAuditRecord({
-    id: parentAuditId,
-    idempotencyKey: idemKey,
-    projectId: project.id,
-    clientId: client.id,
-    updatedBy,
-    updateType: "field-change",
-    previousValue,
-    newValue: effectiveNewValue,
-    summary: `${client.name} / ${project.name}: ${field} changed from "${previousValue}" to "${summaryNewValue}"`,
-    metadata: JSON.stringify({ field }),
-    source: source ?? null,
-  });
 
   // v4 §8: emit child audit rows for each cascaded week item, linked to parent.
   // Capture each child's audit id for the structured `cascadeDetail`
