@@ -318,7 +318,11 @@ describe("AccountTier", () => {
     expect(screen.queryByText("Canceled Task")).toBeNull();
   });
 
-  it("renders L1 as empty (No Scheduled Tasks chip) when all its L2s are completed", () => {
+  // Issue #105: this used to assert the bug itself, that an L1 whose L2s
+  // are all completed or canceled rendered as empty. It does not. Updated
+  // to assert the all-done state's real behaviour rather than deleted,
+  // same principle as the #41 update below.
+  it("renders an all-done L1 with its completed and canceled children visible, not as empty", () => {
     const account = mockAccount();
     const rows = [
       makeWeekItemRow({ id: "wi-1", title: "Done A", status: "completed" }),
@@ -334,9 +338,10 @@ describe("AccountTier", () => {
         readyToCloseIds={new Set()}
       />,
     );
-    expect(screen.queryByText("Done A")).toBeNull();
-    expect(screen.queryByText("Done B")).toBeNull();
-    expect(screen.getByTestId("no-scheduled-tasks-chip")).toBeTruthy();
+    expect(screen.getByText("Done A")).toBeTruthy();
+    expect(screen.getByText("Done B")).toBeTruthy();
+    expect(screen.getByTestId("all-done-chip")).toBeTruthy();
+    expect(screen.queryByTestId("no-scheduled-tasks-chip")).toBeNull();
   });
 
   it("sorts L2 cards by startDate ascending with nulls last", () => {
@@ -451,12 +456,16 @@ describe("AccountTier", () => {
     expect(screen.queryByTestId("ready-to-close-chip")).toBeNull();
   });
 
-  // Issue #41: an L1 with zero scheduled items has nothing to be ready-to-close
-  // on. The ReadyToClose chip is suppressed in the empty branch so the empty
-  // state shows only "No Scheduled Tasks", never both chips at once.
-  it("suppresses ReadyToClose chip on an empty L1 even when its id is in readyToCloseIds (Issue #41)", () => {
+  // Issue #41: an L1 with zero weekItems EVER has nothing to be ready-to-close
+  // on. The ReadyToClose chip is suppressed in the truly-empty branch so
+  // that state shows only "No Scheduled Tasks", never both chips at once.
+  // Issue #105 narrowed this test's scope: it covers zero weekItems ever,
+  // not an L1 whose weekItems are all completed or canceled. See the
+  // "all done" tests below for that case, which is deliberately not the
+  // same suppression.
+  it("suppresses ReadyToClose chip on a genuinely empty L1 even when its id is in readyToCloseIds (Issue #41)", () => {
     const account = mockAccount();
-    // Empty L1 section — no weekItems at all.
+    // Empty L1 section, no weekItems at all, never had any.
     const rundown = mockRundown([
       makeSection("standalone", "Empty L1", [], undefined, "l1-empty-closing"),
     ]);
@@ -471,6 +480,67 @@ describe("AccountTier", () => {
     expect(screen.getByTestId("l1-empty")).toBeTruthy();
     expect(screen.getByTestId("no-scheduled-tasks-chip")).toBeTruthy();
     // But NOT the ReadyToClose chip — that would contradict the empty state.
+    expect(screen.queryByTestId("ready-to-close-chip")).toBeNull();
+  });
+
+  // Issue #105: an L1 whose weekItems all exist but are every one completed
+  // or canceled is not the same case as Issue #41's genuinely empty L1.
+  // weekItemsForSection filters terminal rows out, so this state used to
+  // collapse into the same "l1-empty" branch as a real empty L1, showing
+  // No Scheduled Tasks, suppressing ReadyToClose, and rendering no expand
+  // control. All three were wrong for this state.
+  it("renders an all-done L1 with the All Done label, a live ReadyToClose chip, and an expand control listing its completed children (Issue #105)", () => {
+    const account = mockAccount();
+    const rows = [
+      makeWeekItemRow({ id: "wi-1", title: "First deliverable", status: "completed", endDate: "2026-06-13" }),
+      makeWeekItemRow({ id: "wi-2", title: "Second deliverable", status: "completed", endDate: "2026-06-13" }),
+    ];
+    const rundown = mockRundown([
+      makeSection("standalone", "Convergix Partners Page Redesign", rows, undefined, "l1-all-done"),
+    ]);
+    const { container } = render(
+      <AccountTier
+        account={account}
+        rundown={rundown}
+        readyToCloseIds={new Set(["l1-all-done"])}
+      />,
+    );
+    // Not the genuinely-empty branch.
+    expect(screen.queryByTestId("l1-empty")).toBeNull();
+    expect(screen.queryByTestId("no-scheduled-tasks-chip")).toBeNull();
+    // All Done label, present.
+    expect(screen.getByTestId("all-done-chip")).toBeTruthy();
+    expect(container.textContent).toContain("All Done");
+    // ReadyToClose chip, live, not suppressed, present alongside All Done.
+    expect(screen.getByTestId("ready-to-close-chip")).toBeTruthy();
+    // Expandable: a real <details> for this L1, open by default, listing
+    // both completed children by name.
+    const detailsEls = container.querySelectorAll("details");
+    expect(detailsEls.length).toBeGreaterThan(0);
+    const cards = screen.getAllByTestId("l2-mini-card");
+    expect(cards.length).toBe(2);
+    expect(container.textContent).toContain("First deliverable");
+    expect(container.textContent).toContain("Second deliverable");
+  });
+
+  it("does not render the ReadyToClose or All Done chips on an all-done L1 whose id is not in readyToCloseIds", () => {
+    const account = mockAccount();
+    const rows = [
+      makeWeekItemRow({ id: "wi-1", title: "Only deliverable", status: "completed" }),
+    ];
+    const rundown = mockRundown([
+      makeSection("standalone", "Not Flagged Yet", rows, undefined, "l1-all-done-unflagged"),
+    ]);
+    render(
+      <AccountTier
+        account={account}
+        rundown={rundown}
+        readyToCloseIds={new Set()}
+      />,
+    );
+    // All Done still renders, it does not depend on readyToCloseIds.
+    expect(screen.getByTestId("all-done-chip")).toBeTruthy();
+    // ReadyToClose depends on the set and this id is not in it.
     expect(screen.queryByTestId("ready-to-close-chip")).toBeNull();
   });
 
