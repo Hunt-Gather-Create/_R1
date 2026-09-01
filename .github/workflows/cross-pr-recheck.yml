@@ -88,7 +88,7 @@ jobs:
           fi
 
           total=$(echo "$open_prs_json" | jq 'length')
-          echo "Found $total open PR(s) targeting runway."
+          echo "Found $total open PRs targeting runway."
 
           if [ "$total" -eq 0 ]; then
             echo "No open PRs targeting runway. This is a confirmed zero from a successful listing, not a failed lookup, so this run is green."
@@ -101,7 +101,7 @@ jobs:
 
           if [ "$dropped_count" -gt 0 ]; then
             dropped_numbers=$(echo "$open_prs_json" | jq --argjson n "$CROSS_PR_RECHECK_BOUND" -c '.[$n:] | map(.number)')
-            echo "BOUND is $CROSS_PR_RECHECK_BOUND open PRs per push. Dropping $dropped_count PR(s) past the bound, named here, not silently: $dropped_numbers"
+            echo "BOUND is $CROSS_PR_RECHECK_BOUND open PRs per push. Dropping $dropped_count PRs past the bound, named here, not silently: $dropped_numbers"
           fi
 
           failures=0
@@ -109,7 +109,7 @@ jobs:
           while IFS= read -r pr; do
             number=$(echo "$pr" | jq -r '.number')
             head_sha=$(echo "$pr" | jq -r '.headRefOid')
-            echo "PR #$number ($head_sha): looking up the latest pr-tests.yml run"
+            echo "PR #$number at $head_sha: looking up the latest pr-tests.yml run"
 
             # Filtered server side by head_sha, a fixed-format 40 character
             # hex string, not by branch name. Branch names are attacker
@@ -125,23 +125,23 @@ jobs:
               "repos/$GH_REPO/actions/workflows/pr-tests.yml/runs?event=pull_request&head_sha=$head_sha&per_page=1")
 
             if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
-              echo "COULD NOT FIND a pr-tests.yml run for PR #$number ($head_sha). A re-run cannot be dispatched for it. Marking this job red rather than skipping it quietly."
+              echo "COULD NOT FIND a pr-tests.yml run for PR #$number at $head_sha. A re-run cannot be dispatched for it. Marking this job red rather than skipping it quietly."
               failures=$((failures + 1))
               continue
             fi
 
-            echo "PR #$number ($head_sha): dispatching a re-run of pr-tests.yml run $run_id"
+            echo "PR #$number at $head_sha: dispatching a re-run of pr-tests.yml run $run_id"
             if gh api -X POST "repos/$GH_REPO/actions/runs/$run_id/rerun" >/dev/null; then
-              echo "PR #$number ($head_sha): re-run dispatched for workflow run $run_id, against runway's current tip."
+              echo "PR #$number at $head_sha: re-run dispatched for workflow run $run_id, against runway's current tip."
             else
-              echo "COULD NOT DISPATCH a re-run for PR #$number ($head_sha), run $run_id. Marking this job red rather than skipping it quietly."
+              echo "COULD NOT DISPATCH a re-run for PR #$number at $head_sha, run $run_id. Marking this job red rather than skipping it quietly."
               failures=$((failures + 1))
             fi
           done < <(echo "$bounded_json" | jq -c '.[]')
 
           if [ "$failures" -gt 0 ]; then
-            echo "$failures of $bounded_count PR(s) in the bounded set could not be re-checked. Failing red rather than reporting a quiet pass."
+            echo "$failures of $bounded_count PRs in the bounded set could not be re-checked. Failing red rather than reporting a quiet pass."
             exit 1
           fi
 
-          echo "Dispatched a re-run for all $bounded_count PR(s) in the bounded set."
+          echo "Dispatched a re-run for all $bounded_count PRs in the bounded set."

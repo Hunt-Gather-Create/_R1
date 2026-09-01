@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Reconstruction for _R1#120, run from _R1#121.
 #
-# _R1#108 (fix/108-guard-reachability, merged as fa6bd3f) and _R1#112
-# (fix/112-gantt-embed-timing-safe, merged as bbf9958) each landed green
+# _R1#108, fix/108-guard-reachability, merged as fa6bd3f, and _R1#112,
+# fix/112-gantt-embed-timing-safe, merged as bbf9958, each landed green
 # alone. _R1#120 exists because nothing re-ran the guard suite against
 # the two combined before both were on runway, and combined they fail.
 #
@@ -17,8 +17,8 @@
 #
 # d1c65ff5abe2aac9e00ecdf7436838b5a09a8e7f is the merge-base both PR
 # heads share, confirmed with `git merge-base` against each head before
-# generating these patches. It is itself a squash-merge commit (PR
-# #133) directly on runway history, so unlike the two feature branch
+# generating these patches. It is itself a squash-merge commit, PR
+# #133, directly on runway history, so unlike the two feature branch
 # tips, it stays reachable from runway forever and this script only
 # ever needs to resolve that one commit, never the two branch tips.
 #
@@ -96,9 +96,9 @@ echo
 echo "############################################################"
 echo "# SUMMARY"
 echo "############################################################"
-echo "112 alone exit code: $STATE1_EXIT (0 means green)"
-echo "108 alone exit code: $STATE2_EXIT (0 means green)"
-echo "both together exit code: $STATE3_EXIT (0 means green)"
+echo "112 alone exit code: $STATE1_EXIT, 0 means green"
+echo "108 alone exit code: $STATE2_EXIT, 0 means green"
+echo "both together exit code: $STATE3_EXIT, 0 means green"
 
 if [ "$STATE1_EXIT" -eq 0 ] && [ "$STATE2_EXIT" -eq 0 ] && [ "$STATE3_EXIT" -ne 0 ]; then
   echo "Reproduced the _R1#120 shape: green, green, red."

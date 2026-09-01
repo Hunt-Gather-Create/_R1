@@ -18,9 +18,9 @@ caller's own working tree.
 ## Result of the run captured for this report
 
 ```
-112 alone exit code: 0 (0 means green)
-108 alone exit code: 0 (0 means green)
-both together exit code: 1 (0 means green)
+112 alone exit code: 0, 0 means green
+108 alone exit code: 0, 0 means green
+both together exit code: 1, 0 means green
 Reproduced the _R1#120 shape: green, green, red.
 ```
 
@@ -56,17 +56,17 @@ the premise _R1#121 exists to give the fleet.
 Generated once, from commits that were still resolvable at generation
 time, with the exact commands recorded in each patch's own script
 header. The base commit, `d1c65ff5abe2aac9e00ecdf7436838b5a09a8e7f`, is
-itself a squash-merge commit on runway history (PR #133), so it stays
+itself a squash-merge commit on runway history, PR #133, so it stays
 reachable from runway indefinitely, unlike the two feature branch tips,
 which can be deleted after merge. The two patches are stored here rather
 than regenerated from the branch tips each time, so this reconstruction
 does not depend on `fix/108-guard-reachability` or
 `fix/112-gantt-embed-timing-safe` still existing on any remote.
 
-| PR | merge commit | branch tip patched against base |
-|---|---|---|
-| #108 (`fix/108-guard-reachability`) | `fa6bd3f497bdc8c0521d8c958096f5e69f9a95d7` | `8d286197eff942856acf6cc57980730ca4356ebd` |
-| #112 (`fix/112-gantt-embed-timing-safe`) | `bbf9958ab3eee71f3003ad3e0b6694e66979c173` | `0de6f1c77ee06f58d9dca888ee891ed82ae57292` |
+| PR | branch | merge commit | branch tip patched against base |
+|---|---|---|---|
+| #108 | `fix/108-guard-reachability` | `fa6bd3f497bdc8c0521d8c958096f5e69f9a95d7` | `8d286197eff942856acf6cc57980730ca4356ebd` |
+| #112 | `fix/112-gantt-embed-timing-safe` | `bbf9958ab3eee71f3003ad3e0b6694e66979c173` | `0de6f1c77ee06f58d9dca888ee891ed82ae57292` |
 
 Both branch tips share merge-base `d1c65ff5abe2aac9e00ecdf7436838b5a09a8e7f`
 with the base commit, confirmed with `git merge-base` against each tip
