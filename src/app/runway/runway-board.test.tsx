@@ -4,6 +4,7 @@ import { RunwayBoard } from "./runway-board";
 import { mergeWeekendDays, groupByWeek } from "./runway-board-utils";
 import { thisWeek, upcoming, accounts, pipeline } from "./runway-board-test-fixtures";
 import type { DayItem } from "./types";
+import { chicagoToday } from "@/lib/runway/date-chicago";
 
 const mockRefresh = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -254,12 +255,14 @@ describe("RunwayBoard", () => {
   });
 
   it("hides This Week section when restOfWeek is empty", () => {
-    // Use local date to match how the component detects "today"
-    const now = new Date();
-    const localISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    // The board resolves today via chicagoToday, refs _R1#43 and _R1#119,
+    // not the machine's local clock. Building this date from the local
+    // clock instead disagreed with the component every evening between
+    // 19:00 and midnight Central, refs _R1#126.
+    const todayISO = chicagoToday();
     const todayOnly: typeof thisWeek = [
       {
-        date: localISO,
+        date: todayISO,
         label: "Mon 4/6",
         items: [{ title: "Today Thing", account: "Test", type: "delivery" }],
       },
@@ -394,7 +397,14 @@ describe("RunwayBoard", () => {
   // future edits don't silently regress it.
   it("renders triage sections in document order: needs-update, today, in-flight, this-week", () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-06T12:00:00")); // Monday
+    // Explicit UTC instant, refs _R1#119 and _R1#126. The unsuffixed
+    // literal this replaced parsed as the runner's local time, so the
+    // same string meant a different real instant depending on where the
+    // suite ran, and under a machine far enough ahead of UTC it could
+    // resolve to a different Chicago calendar day than "2026-04-06"
+    // below assumes. 17:00:00Z is Chicago noon on April 6, 2026, CDT,
+    // confirmed with Intl.DateTimeFormat against America/Chicago.
+    vi.setSystemTime(new Date("2026-04-06T17:00:00Z")); // noon CDT, Monday
 
     const orderFixture = {
       thisWeek: [
