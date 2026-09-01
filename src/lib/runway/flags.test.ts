@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { analyzeFlags } from "./flags";
 import type { Account, DayItem, PipelineItem } from "@/app/runway/types";
 
-// Fix "today" so deadline detection is deterministic
-const FAKE_NOW = new Date("2026-04-07T12:00:00");
+// Fix "today" so deadline detection is deterministic. Explicit UTC
+// instant, refs _R1#128: noon CDT on 2026-04-07.
+const FAKE_NOW = new Date("2026-04-07T17:00:00Z");
 const TODAY_ISO = "2026-04-07";
 const TOMORROW_ISO = "2026-04-08";
 

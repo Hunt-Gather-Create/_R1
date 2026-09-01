@@ -515,7 +515,7 @@ describe("detectStaleItems", () => {
 describe("detectDeadlines", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, refs _R1#128
   });
 
   afterEach(() => {
