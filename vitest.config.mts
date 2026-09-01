@@ -32,7 +32,13 @@ export default defineConfig({
     // between the 10 run and 20 run samples, so 5511ms is a lower bound
     // on the worst case this host will ever produce, not the ceiling.
     // QA also measured this host degrading 2 to 2.3 times in a bad run.
-    // 5511 times 2.3 is roughly 12676, rounded up to 15000.
+    // 5511 times 2.3 is roughly 12676. 15000 is not a plain round-up of
+    // that number, it carries roughly 18 percent of headroom on top,
+    // deliberately, since the tail had not converged and 12676 is a
+    // lower bound rather than the true worst case. QA's own read is
+    // that this headroom is real but thin: if the worst observation
+    // this host ever produces passes roughly 6500ms, 5511 times 2.3
+    // exceeds 15000 and this number needs raising, not just re-derived.
     //
     // Both testTimeout and hookTimeout are set to the same value, on
     // purpose. Vitest's hookTimeout default is 10000ms, lower than the
