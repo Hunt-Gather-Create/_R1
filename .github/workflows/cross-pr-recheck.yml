@@ -1,0 +1,136 @@
+# Cross-PR re-test on runway push, _R1#121.
+#
+# _R1#120 is the reason this exists. #108 and #112 each landed green
+# alone. Nothing re-ran the guard suite against the two of them combined
+# before both were on runway, and combined they fail. See
+# scripts/cross-pr-recheck/RECONSTRUCTION-120-PAIR.md for the
+# reproduction: green, green, red, reconstructed from the actual patches.
+#
+# WHAT THIS DOES, IN ONE SENTENCE. On every push to runway, this
+# re-triggers pr-tests.yml's own existing check run for every open PR
+# targeting runway, so each PR's checks list shows a fresh result
+# against the new tip instead of a stale result against whatever runway
+# was when the PR last pushed.
+#
+# REUSE, NOT REIMPLEMENT. This file does not run pnpm test:run itself and
+# never checks this repo out. It calls the GitHub Actions rerun API on
+# pr-tests.yml's own most recent run for each PR. GitHub regenerates a
+# PR's refs/pull/<n>/merge ref whenever the base branch moves, as long
+# as the PR still merges cleanly, so pr-tests.yml's own checkout step
+# picks up the current runway tip on the rerun without this file
+# touching pr-tests.yml at all. If a PR conflicts with the new tip, the
+# rerun's checkout step fails and that PR shows red for a real reason,
+# a genuine merge conflict, not a bug in this file.
+#
+# THE BOUND. At most CROSS_PR_RECHECK_BOUND open PRs get a rerun
+# dispatched per push. Past the bound, the dropped PR numbers are
+# printed explicitly, never silently. An unbounded fan-out on a busy
+# runway day could dispatch dozens of reruns from one push; a bound
+# with a logged drop keeps that in view instead of pretending it did
+# not happen.
+#
+# RED VERSUS A QUIET SKIP, THE LESSON _R1#97 ALREADY PAID FOR. On #97
+# the shipped-and-reviewed gate could not tell "not applicable" apart
+# from "could not evaluate", so an infrastructure failure would have
+# rendered as a tidy grey skip forever. The same opening exists here: a
+# run that found zero open PRs and a run that could not list PRs at all
+# produce the same silence unless this file makes them differ. So a
+# failure to list open PRs, or a failure to find or dispatch a rerun for
+# any PR in the bounded set, fails this job outright. A genuine zero
+# open PRs is printed as exactly that, a confirmed zero from a
+# successful listing, and the job succeeds.
+#
+# THE WITNESSABLE ARTIFACT. Not "the workflow exists and parses". A
+# check re-run appearing on an open PR that nobody triggered by hand,
+# dated after an unrelated merge to runway. That is witnessable only
+# after a real merge with a real open PR present, which this file
+# cannot manufacture for itself at review time.
+#
+# HAZARD. No deployed host is touched. No pnpm build runs here, no
+# database is touched. GITHUB_TOKEN's value is never printed, echoed, or
+# logged, only its presence is relied on implicitly by gh and the
+# GitHub API client, the same shape as the secret presence check in
+# post-merge-smoke.yml.
+name: Cross-PR re-test on runway push
+
+on:
+  push:
+    branches:
+      - runway
+
+permissions:
+  actions: write
+  pull-requests: read
+  contents: read
+
+concurrency:
+  group: cross-pr-recheck-runway
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GH_REPO: ${{ github.repository }}
+  CROSS_PR_RECHECK_BOUND: 15
+
+jobs:
+  recheck:
+    name: re-run pr-tests.yml against every open PR targeting runway
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: re-run pr-tests.yml for every open PR targeting runway, bounded
+        run: |
+          set -euo pipefail
+
+          if ! open_prs_json=$(gh pr list --base runway --state open --json number,headRefName --limit 500); then
+            echo "COULD NOT LIST OPEN PRS TARGETING RUNWAY. This is an infrastructure failure, not a zero-PRs pass. Failing red rather than reporting a quiet skip."
+            exit 1
+          fi
+
+          total=$(echo "$open_prs_json" | jq 'length')
+          echo "Found $total open PR(s) targeting runway."
+
+          if [ "$total" -eq 0 ]; then
+            echo "No open PRs targeting runway. This is a confirmed zero from a successful listing, not a failed lookup, so this run is green."
+            exit 0
+          fi
+
+          bounded_json=$(echo "$open_prs_json" | jq --argjson n "$CROSS_PR_RECHECK_BOUND" '.[0:$n]')
+          bounded_count=$(echo "$bounded_json" | jq 'length')
+          dropped_count=$((total - bounded_count))
+
+          if [ "$dropped_count" -gt 0 ]; then
+            dropped_numbers=$(echo "$open_prs_json" | jq --argjson n "$CROSS_PR_RECHECK_BOUND" -c '.[$n:] | map(.number)')
+            echo "BOUND is $CROSS_PR_RECHECK_BOUND open PRs per push. Dropping $dropped_count PR(s) past the bound, named here, not silently: $dropped_numbers"
+          fi
+
+          failures=0
+
+          while IFS= read -r pr; do
+            number=$(echo "$pr" | jq -r '.number')
+            branch=$(echo "$pr" | jq -r '.headRefName')
+            echo "PR #$number ($branch): looking up the latest pr-tests.yml run"
+
+            run_id=$(gh api "repos/$GH_REPO/actions/workflows/pr-tests.yml/runs?event=pull_request&per_page=100" --jq ".workflow_runs[] | select(.head_branch==\"$branch\") | .id" | head -1)
+
+            if [ -z "$run_id" ]; then
+              echo "COULD NOT FIND a pr-tests.yml run for PR #$number ($branch). A re-run cannot be dispatched for it. Marking this job red rather than skipping it quietly."
+              failures=$((failures + 1))
+              continue
+            fi
+
+            echo "PR #$number ($branch): dispatching a re-run of pr-tests.yml run $run_id"
+            if gh api -X POST "repos/$GH_REPO/actions/runs/$run_id/rerun" >/dev/null; then
+              echo "PR #$number ($branch): re-run dispatched for workflow run $run_id, against runway's current tip."
+            else
+              echo "COULD NOT DISPATCH a re-run for PR #$number ($branch), run $run_id. Marking this job red rather than skipping it quietly."
+              failures=$((failures + 1))
+            fi
+          done < <(echo "$bounded_json" | jq -c '.[]')
+
+          if [ "$failures" -gt 0 ]; then
+            echo "$failures of $bounded_count PR(s) in the bounded set could not be re-checked. Failing red rather than reporting a quiet pass."
+            exit 1
+          fi
+
+          echo "Dispatched a re-run for all $bounded_count PR(s) in the bounded set."

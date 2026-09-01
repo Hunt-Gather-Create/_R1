@@ -1,0 +1,89 @@
+diff --git a/src/app/api/runway/gantt-embed/route.test.ts b/src/app/api/runway/gantt-embed/route.test.ts
+new file mode 100644
+index 0000000..05562df
+--- /dev/null
++++ b/src/app/api/runway/gantt-embed/route.test.ts
+@@ -0,0 +1,50 @@
++import { describe, it, expect, beforeEach } from "vitest";
++import { NextRequest } from "next/server";
++
++/**
++ * Regression test for #112: the route compared `x-embed-secret` to
++ * RUNWAY_EMBED_SECRET with plain `!==`. Fixed to route through
++ * timingSafeTokenMatch, the same helper mcp/runway and gantt-generate use.
++ *
++ * These calls run the real exported GET handler, not the helper in
++ * isolation. timingSafeTokenMatch already has its own unit test,
++ * timing-safe-token.test.ts. What was untested is that this handler
++ * actually calls it. No clientId is supplied, so a request that clears the
++ * auth gate falls through to the 400 "clientId required" branch instead of
++ * a 401. That transition from 401 to non-401 is what proves the gate
++ * opened, without needing to mock the DB or the renderer.
++ */
++function makeRequest(secretHeader?: string | null): NextRequest {
++  const headers: Record<string, string> = {};
++  if (secretHeader !== null && secretHeader !== undefined) {
++    headers["x-embed-secret"] = secretHeader;
++  }
++  return new NextRequest("http://localhost/api/runway/gantt-embed", { headers });
++}
++
++describe("GET /api/runway/gantt-embed auth (#112)", () => {
++  beforeEach(() => {
++    process.env.RUNWAY_EMBED_SECRET = "test_embed_secret";
++  });
++
++  it("returns 401 when no x-embed-secret header is sent", async () => {
++    const { GET } = await import("./route");
++    const res = await GET(makeRequest(null));
++    expect(res.status).toBe(401);
++  });
++
++  it("returns 401 when the secret is wrong", async () => {
++    const { GET } = await import("./route");
++    const res = await GET(makeRequest("wrong_secret"));
++    expect(res.status).toBe(401);
++  });
++
++  it("passes the auth gate for the correct secret, not 401", async () => {
++    const { GET } = await import("./route");
++    const res = await GET(makeRequest("test_embed_secret"));
++    expect(res.status).not.toBe(401);
++    // No clientId query param supplied, so this falls through to the next
++    // validation branch, which is the proof the auth gate actually opened.
++    expect(res.status).toBe(400);
++  });
++});
+diff --git a/src/app/api/runway/gantt-embed/route.ts b/src/app/api/runway/gantt-embed/route.ts
+index e7e1731..fab5612 100644
+--- a/src/app/api/runway/gantt-embed/route.ts
++++ b/src/app/api/runway/gantt-embed/route.ts
+@@ -38,6 +38,7 @@ import { GanttSectionDark } from "@/lib/runway/gantt/gantt-section-dark";
+ import { and, asc, eq, isNull } from "drizzle-orm";
+ import { toISODateString } from "@/app/runway/date-utils";
+ import type { RenderedRundownSection } from "@/app/runway/types";
++import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
+ 
+ export async function GET(request: NextRequest): Promise<NextResponse> {
+   // Shared-secret gate. Read at request time (not module init) so
+@@ -56,7 +57,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
+     );
+   } else {
+     const auth = request.headers.get("x-embed-secret");
+-    if (auth !== embedSecret) {
++    if (!auth || !timingSafeTokenMatch(auth, embedSecret)) {
+       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+     }
+   }
+diff --git a/src/lib/runway/token-compare-guard.test.ts b/src/lib/runway/token-compare-guard.test.ts
+index faaceaa..379850a 100644
+--- a/src/lib/runway/token-compare-guard.test.ts
++++ b/src/lib/runway/token-compare-guard.test.ts
+@@ -73,6 +73,7 @@ const WINDOW = 200;
+ const KNOWN_AUTH_ROUTES = [
+   path.join(AUTH_ROOT, "mcp/runway/route.ts"),
+   path.join(AUTH_ROOT, "runway/gantt-generate/route.ts"),
++  path.join(AUTH_ROOT, "runway/gantt-embed/route.ts"),
+ ];
+ 
+ // Counts real CALL EXPRESSIONS to timingSafeTokenMatch by parsing the file
