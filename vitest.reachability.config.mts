@@ -34,6 +34,17 @@ export default defineConfig({
         inline: [/@workos-inc\/authkit-nextjs/],
       },
     },
+    // Same values as vitest.config.mts, same measured reason, refs
+    // _R1#123. This suite is manually invoked today, so on its own it
+    // would not have hit the variance QA measured on the main suite.
+    // _R1#125 exists to wire this suite into CI, and the moment that
+    // lands it starts running on every PR, on this same host, under
+    // the same variance. A config that is only correct while nobody
+    // automates it is a trap with a date on it, so the numbers move
+    // now rather than waiting for _R1#125 to land and rediscover the
+    // same flake as a new problem instead of a known one.
+    testTimeout: 15000,
+    hookTimeout: 15000,
   },
   resolve: {
     alias: [{ find: /^next\/cache$/, replacement: "next/cache.js" }],

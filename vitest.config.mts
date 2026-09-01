@@ -23,6 +23,45 @@ export default defineConfig({
     // See vitest.reachability.config.mts for why and how to run it.
     exclude: [...configDefaults.exclude, "**/.worktrees/**", "proxy.reachability.test.ts"],
     setupFiles: ["./vitest.setup.mts"],
+    // Global, not a per-test override, refs _R1#123. QA measured this
+    // host across 20 full-suite runs at 61ca786. Worst single observation
+    // was 5511ms, on vitest-worktree-exclude.test.ts, a test that has
+    // never been reported flaky, so bot.test.ts crossing the old 5000ms
+    // default first was a symptom of where the timeout line sat, not a
+    // defect specific to that one file. The tail had not converged
+    // between the 10 run and 20 run samples, so 5511ms is a lower bound
+    // on the worst case this host will ever produce, not the ceiling.
+    // QA also measured this host degrading 2 to 2.3 times in a bad run.
+    // 5511 times 2.3 is roughly 12676. 15000 is not a plain round-up of
+    // that number, it carries roughly 18 percent of headroom on top,
+    // deliberately, since the tail had not converged and 12676 is a
+    // lower bound rather than the true worst case. QA's own read is
+    // that this headroom is real but thin: if the worst observation
+    // this host ever produces passes roughly 6500ms, 5511 times 2.3
+    // exceeds 15000 and this number needs raising, not just re-derived.
+    //
+    // Both testTimeout and hookTimeout are set to the same value, on
+    // purpose. Vitest's hookTimeout default is 10000ms, lower than the
+    // old 5000ms testTimeout default was high, and the same measured
+    // reasoning applies to a beforeEach or beforeAll on this host as to
+    // a test body: roughly 12676ms in a bad run is over 10000. Setting
+    // testTimeout alone would have closed this failure mode for tests
+    // and left it open for hooks, with a tighter limit, in the same
+    // file, in the same change, which is the shape this ticket exists
+    // to remove, not repeat one layer down.
+    //
+    // Per-test overrides and retry are deliberately excluded. A retry
+    // converts a real intermittent failure into a silent pass, which is
+    // worse than the flake it would hide. Scoping the timeout to one
+    // file would leave the actually-nearest test exposed and look like a
+    // fix until the day that one crossed the line instead.
+    //
+    // The trade this makes: a genuine hang still fails, it just takes up
+    // to 15 seconds instead of 5 or 10 to report. That is the correct
+    // trade, since a hang is caught either way, while a merely slow test
+    // or hook was being reported as broken under the old values.
+    testTimeout: 15000,
+    hookTimeout: 15000,
   },
   resolve: {
     alias: {
