@@ -40,7 +40,8 @@ import {
   updateTeamMember,
 } from "@/lib/runway/operations";
 import { getClientContactsStructured } from "@/lib/runway/operations-context";
-import { getMonday, toISODateString } from "@/app/runway/date-utils";
+import { getMonday, toISODateString, parseISODate } from "@/app/runway/date-utils";
+import { chicagoToday } from "@/lib/runway/date-chicago";
 import { isModalInterceptEnabled } from "@/lib/feature-flags";
 import {
   interceptCreateForModal,
@@ -70,7 +71,12 @@ export interface BotToolsOptions {
 
 export function createBotTools(
   userName: string,
-  now: Date = new Date(),
+  // Chicago, not the server's UTC clock, refs _R1#128. The one
+  // production caller, slack/bot.ts, already passes now explicitly,
+  // built the same way, so this default is currently unreachable, the
+  // same shape as isReadyToClose's and computeAxis's defaults already
+  // fixed elsewhere in this branch.
+  now: Date = parseISODate(chicagoToday()),
   options: BotToolsOptions = {},
 ) {
   const currentMonday = toISODateString(getMonday(now));
