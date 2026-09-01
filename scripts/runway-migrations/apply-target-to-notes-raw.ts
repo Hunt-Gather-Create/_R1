@@ -1,7 +1,8 @@
 /**
  * Raw-SQL equivalent of target-to-notes migration.
  *
- * The drizzle-based migration (2026-04-21-migrate-target-to-notes.ts) breaks
+ * The drizzle-based migration (2026-04-21-migrate-target-to-notes.ts,
+ * deleted, refs _R1#99) broke
  * because PR 88 already removed `target` from the runway-schema.ts drizzle
  * definition — referencing `projects.target` in a select yields undefined and
  * drizzle throws before the query even runs. This script bypasses drizzle

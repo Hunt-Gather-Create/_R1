@@ -98,9 +98,10 @@ export const weekItems = sqliteTable("week_items", {
   //   completed | in-progress | blocked | at-risk | scheduled | canceled | null (legacy)
   // `scheduled` is the explicit default for new L2s. NULL remains readable
   // during the rollout and is treated equivalently to 'scheduled' by the
-  // bucket + filter paths. The backfill script
-  // scripts/runway-migrations/2026-04-21-backfill-scheduled-status.ts flips
-  // existing NULLs to the explicit value.
+  // bucket + filter paths. The one-time backfill script that flipped
+  // existing NULLs to the explicit value was deleted, refs _R1#99, since
+  // it was dead code with an unsafe unset-DRY_RUN default, not ongoing
+  // logic this schema still depends on.
   status: text("status"),
   category: text("category"), // delivery, review, kickoff, deadline, approval, launch
   owner: text("owner"),
