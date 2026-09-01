@@ -31,6 +31,7 @@ import type {
   RundownSection,
   WeekItemRow,
 } from "./types";
+import { chicagoToday } from "../date-chicago";
 
 // Terminal status values used for the hide rule on both L1 projects and
 // weekItems. Operator-locked: `completed` and `canceled` only.
@@ -106,7 +107,11 @@ export function isReadyToClose(
     // Branch B: L1 has no L2 breakdown -- the project IS the deliverable.
     // Only flag when end date has passed and no terminal status yet.
     if (!l1.endDate) return false;
-    const today = todayISO ?? new Date().toISOString().slice(0, 10);
+    // Chicago, not the server's UTC clock, refs _R1#128. This default is
+    // currently unreachable from the only production call site, which
+    // always passes todayISO explicitly, but it is the same defect if a
+    // future caller ever omits the argument.
+    const today = todayISO ?? chicagoToday();
     return l1.endDate < today;
   }
 

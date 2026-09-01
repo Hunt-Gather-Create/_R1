@@ -26,6 +26,7 @@ import { useMemo } from "react";
 import type { DayItem, DayItemEntry } from "../types";
 import { filterInFlight } from "@/lib/runway/plate-summary";
 import { DayItemCard, type CardBottomBanner } from "./day-item-card";
+import { chicagoToday } from "@/lib/runway/date-chicago";
 
 type StatusBucket = CardBottomBanner;
 
@@ -220,7 +221,12 @@ export function StatusView({
   nowISO,
 }: StatusViewProps) {
   const groups = useMemo(() => {
-    const today = nowISO ?? new Date().toISOString().slice(0, 10);
+    // Chicago, not the viewer's own device clock, refs _R1#128. This is a
+    // client component, so the old fallback read whatever timezone the
+    // viewer's browser happened to be set to, not the server's clock and
+    // not necessarily Chicago either, disagreeing with todayColumn and
+    // staleItems below, which are already Chicago-computed server side.
+    const today = nowISO ?? chicagoToday();
     const items = computeStatusItems(
       staleItems,
       todayColumn,

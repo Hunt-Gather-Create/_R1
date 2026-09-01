@@ -8,6 +8,7 @@ import {
 import { eq, and, gte, lte, lt, or, isNull, isNotNull, asc, inArray } from "drizzle-orm";
 import type { ClientWithProjects, DayItemType, PipelineRow, WeekDay } from "./types";
 import { parseISODate, getMonday, getMondayISODate, toISODateString } from "./date-utils";
+import { chicagoToday } from "@/lib/runway/date-chicago";
 import { getClientNameMap, groupBy } from "@/lib/runway/operations";
 import { withRunwayRetry } from "@/lib/runway/retry";
 import { withClientsCache } from "@/lib/runway/clients-cache-als";
@@ -267,8 +268,13 @@ export async function getPipeline(): Promise<PipelineRow[]> {
 export async function getStaleWeekItems(): Promise<WeekDay[]> {
   return withClientsCache(async () => {
   const db = getRunwayDb();
-  const now = new Date();
-  const todayISO = toISODateString(now);
+  // Chicago, not the server's UTC clock, refs _R1#128. todayISO drives
+  // the past-due predicate for the Needs Update surface below; now is
+  // reconstructed at noon on that same Chicago day so getMonday's local
+  // field math stays correct regardless of what timezone the server
+  // process itself runs in.
+  const todayISO = chicagoToday();
+  const now = parseISODate(todayISO);
   const mondayISO = getMondayISODate(now);
 
   // Look back 180 days (~6 months) to catch range tasks whose weekOf is

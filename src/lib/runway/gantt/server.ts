@@ -41,6 +41,7 @@ import {
   renderClientRundown,
 } from "@/lib/runway/gantt/GanttTemplate";
 import { makePayload, signPayload } from "@/lib/runway/gantt/share-token";
+import { chicagoToday } from "@/lib/runway/date-chicago";
 import {
   foldChildDateRange,
   isSectionActionable,
@@ -422,7 +423,10 @@ export async function generateGanttShare(
   }
 
   const db = getRunwayDb();
-  const todayISO = new Date().toISOString().split("T")[0];
+  // Chicago, not the server's UTC clock, refs _R1#128. Same generatedAt
+  // and todayISO shared value shape as getClientRundowns in page.tsx,
+  // feeding the same detectWeekItemIssues and gantt axis today marker.
+  const todayISO = chicagoToday();
   const generatedAt = todayISO;
 
   // Resolve client

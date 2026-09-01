@@ -46,6 +46,7 @@ import {
   toISODate,
 } from "./plate-summary";
 import { getMondayISODate, parseISODate } from "@/app/runway/date-utils";
+import { chicagoToday } from "./date-chicago";
 
 export interface GetFlagsOptions {
   /** Narrow to a single client (matches UI Account.slug). */
@@ -73,7 +74,14 @@ export interface GetFlagsResult {
 export async function getFlags(
   opts: GetFlagsOptions = {}
 ): Promise<GetFlagsResult> {
-  const { clientSlug, personName, now = new Date() } = opts;
+  // Chicago, not the server's UTC clock, refs _R1#128. now flows through
+  // both toISODate, which slices UTC, and getMondayISODate, which reads
+  // local Date fields. Defaulting to noon on the Chicago calendar day
+  // makes both readings agree, since noon never crosses a UTC day
+  // boundary on the calendar day it names, regardless of which of the
+  // two functions interprets it. Feeds the MCP and bot flags output per
+  // this function's own doc comment above.
+  const { clientSlug, personName, now = parseISODate(chicagoToday()) } = opts;
   const db = getRunwayDb();
 
   const [allClients, allProjects, allWeekItems, allPipeline] = await Promise.all([

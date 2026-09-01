@@ -5,6 +5,7 @@
 import { createHash } from "crypto";
 import type { Account, DayItem, DayItemEntry } from "@/app/runway/types";
 import { parseISODate, toISODateString } from "@/app/runway/date-utils";
+import { chicagoToday } from "@/lib/runway/date-chicago";
 import type { FlagSeverity, RunwayFlag } from "./flags";
 
 export function flagId(type: string, ...parts: string[]): string {
@@ -233,8 +234,11 @@ export function detectStaleItems(accounts: Account[]): RunwayFlag[] {
  * actually DUE, regardless of which bucket the item lives in.
  */
 export function detectDeadlines(thisWeek: DayItem[]): RunwayFlag[] {
-  const now = new Date();
-  const todayStr = toISODateString(now);
+  // Chicago, not the server's UTC clock, refs _R1#128. "Due today" and
+  // "Due tomorrow" are business calendar labels shown directly on the
+  // flags rail.
+  const todayStr = chicagoToday();
+  const now = parseISODate(todayStr);
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowStr = toISODateString(tomorrow);
@@ -326,8 +330,10 @@ export function detectPastEndL2s(
   thisWeek: DayItem[],
   upcoming: DayItem[]
 ): RunwayFlag[] {
-  const now = new Date();
-  const todayISO = toISODateString(now);
+  // Chicago, not the server's UTC clock, refs _R1#128. Feeds both the
+  // global flags rail and the bot plate summary, per this function's own
+  // doc comment above.
+  const todayISO = chicagoToday();
   const flags: RunwayFlag[] = [];
   // Dedupe by item id when available — same L2 may appear in thisWeek + upcoming
   // if boundaries overlap. Title+account fallback for items lacking id.
@@ -413,7 +419,8 @@ export const RETAINER_RENEWAL_WINDOW_DAYS = 30;
  * returns the right-rail RunwayFlag shape.
  */
 export function detectRetainerRenewals(accounts: Account[]): RunwayFlag[] {
-  const todayISO = toISODateString(new Date());
+  // Chicago, not the server's UTC clock, refs _R1#128.
+  const todayISO = chicagoToday();
   const flags: RunwayFlag[] = [];
   for (const account of accounts) {
     for (const item of account.items) {
@@ -450,7 +457,8 @@ export function detectRetainerRenewals(accounts: Account[]): RunwayFlag[] {
  * expired.
  */
 export function detectWrapperCloseOut(accounts: Account[]): RunwayFlag[] {
-  const todayISO = toISODateString(new Date());
+  // Chicago, not the server's UTC clock, refs _R1#128.
+  const todayISO = chicagoToday();
   const flags: RunwayFlag[] = [];
   for (const account of accounts) {
     const referenced = new Set<string>();
