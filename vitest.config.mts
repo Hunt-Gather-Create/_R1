@@ -34,6 +34,16 @@ export default defineConfig({
     // QA also measured this host degrading 2 to 2.3 times in a bad run.
     // 5511 times 2.3 is roughly 12676, rounded up to 15000.
     //
+    // Both testTimeout and hookTimeout are set to the same value, on
+    // purpose. Vitest's hookTimeout default is 10000ms, lower than the
+    // old 5000ms testTimeout default was high, and the same measured
+    // reasoning applies to a beforeEach or beforeAll on this host as to
+    // a test body: roughly 12676ms in a bad run is over 10000. Setting
+    // testTimeout alone would have closed this failure mode for tests
+    // and left it open for hooks, with a tighter limit, in the same
+    // file, in the same change, which is the shape this ticket exists
+    // to remove, not repeat one layer down.
+    //
     // Per-test overrides and retry are deliberately excluded. A retry
     // converts a real intermittent failure into a silent pass, which is
     // worse than the flake it would hide. Scoping the timeout to one
@@ -41,10 +51,11 @@ export default defineConfig({
     // fix until the day that one crossed the line instead.
     //
     // The trade this makes: a genuine hang still fails, it just takes up
-    // to 15 seconds instead of 5 to report. That is the correct trade,
-    // since a hang is caught either way, while a merely slow test was
-    // being reported as broken under the old value.
+    // to 15 seconds instead of 5 or 10 to report. That is the correct
+    // trade, since a hang is caught either way, while a merely slow test
+    // or hook was being reported as broken under the old values.
     testTimeout: 15000,
+    hookTimeout: 15000,
   },
   resolve: {
     alias: {
