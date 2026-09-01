@@ -6,6 +6,7 @@ import { DayItemCard } from "./day-item-card";
 import { SectionToggle } from "./section-toggle";
 import { SectionHeader } from "./section-header";
 import { filterInFlight } from "@/lib/runway/plate-summary";
+import { chicagoToday } from "@/lib/runway/date-chicago";
 
 interface InFlightSectionProps {
   /** All current and upcoming week items (board's combined source). */
@@ -46,7 +47,11 @@ export function InFlightSection({
   // can stay visible when the section is toggled off (operator-locked
   // 2026-05-07: users want to know what's hidden by the toggle).
   const inFlight = useMemo<DayItemEntry[]>(() => {
-    const today = nowISO ?? new Date().toISOString().slice(0, 10);
+    // Chicago, not the viewer's own device clock, refs _R1#128. Same
+    // reasoning as StatusView: a client component's fallback read the
+    // viewer's own timezone, not necessarily Chicago, disagreeing with
+    // the server computed date buckets this item's own dates come from.
+    const today = nowISO ?? chicagoToday();
     const all = weekItems.flatMap((day) => day.items);
     return filterInFlight(all, today);
   }, [weekItems, nowISO]);

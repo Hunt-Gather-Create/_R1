@@ -34,6 +34,7 @@ import { getRunwayDb } from "@/lib/db/runway";
 import { weekItems } from "@/lib/db/runway-schema";
 import { insertAuditRecord } from "@/lib/runway/operations-utils";
 import { withBatchId } from "@/lib/runway/runway-als";
+import { chicagoToday } from "@/lib/runway/date-chicago";
 
 import { inngest } from "../client";
 
@@ -47,7 +48,12 @@ export const runwayAutoPromote = inngest.createFunction(
   },
   { cron: "5 0 * * *" }, // 00:05 UTC daily
   async ({ step }) => {
-    const today = new Date().toISOString().slice(0, 10);
+    // Chicago, not the server's UTC clock, refs _R1#128. This cron's
+    // fixed 00:05 UTC run time is always 19:05 or 18:05 Central, inside
+    // Chicago's previous calendar day, so the old UTC read was not an
+    // occasional flake, it was structurally one day ahead of Chicago on
+    // every single run, promoting L2s a full business day early.
+    const today = chicagoToday();
     const batchId = `auto-promote-${today}`;
 
     const promotedCount = await step.run("promote-scheduled-in-window", async () => {

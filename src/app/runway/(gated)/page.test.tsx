@@ -134,7 +134,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Use a fixed "today" that falls in the 4/6 week
   vi.useFakeTimers();
-  vi.setSystemTime(new Date("2026-04-06T12:00:00"));
+  vi.setSystemTime(new Date("2026-04-06T17:00:00Z")); // noon CDT, refs _R1#128
 });
 
 describe("RunwayPage", () => {
@@ -721,7 +721,7 @@ describe("RunwayPage", () => {
   // and passes it through alongside the bucketed thisWeek/upcoming.
   it("passes inFlightSource containing past-Monday day buckets while still bucketing thisWeek/upcoming", async () => {
     // "Today" is 2026-04-27 (Mon). currentWeekOf = 2026-04-27.
-    vi.setSystemTime(new Date("2026-04-27T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-27T17:00:00Z")); // noon CDT, refs _R1#128
 
     const pastMondayBucket = {
       date: "2026-04-20", // Mon two weeks ago
@@ -779,7 +779,7 @@ describe("RunwayPage", () => {
   // exclusive at the row level, but the dedup is retained as defense-in-depth
   // against future regressions of that exclusivity.
   it("excludes a row from inFlightSource when the same row id is in staleItems (same-row dedup)", async () => {
-    vi.setSystemTime(new Date("2026-04-27T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-27T17:00:00Z")); // noon CDT, refs _R1#128
 
     const collidingId = "wi-bonterra-ir";
     const staleDay = {
@@ -847,7 +847,7 @@ describe("RunwayPage", () => {
   // (Batch 1 Design, Batch 2 Design, Final Review); if Batch 1 goes overdue,
   // Batch 2 must remain visible in In Flight.
   it("keeps active sibling rows in inFlightSource when a different row in the same project is stale", async () => {
-    vi.setSystemTime(new Date("2026-04-27T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-27T17:00:00Z")); // noon CDT, refs _R1#128
 
     const sharedProjectId = "p-hdl-website-build";
     const staleDay = {
@@ -927,7 +927,7 @@ describe("RunwayPage", () => {
     };
 
     it("range task on day before kickoff appears in upcoming under its bucket column", async () => {
-      vi.setSystemTime(new Date("2026-06-01T12:00:00")); // Mon, week-of 6/1
+      vi.setSystemTime(new Date("2026-06-01T17:00:00Z")); // noon CDT, Mon, week-of 6/1, refs _R1#128
 
       mockGetClientsWithProjects.mockResolvedValue([]);
       mockGetWeekItems.mockResolvedValue([
@@ -949,7 +949,7 @@ describe("RunwayPage", () => {
     });
 
     it("range task in mid-flight appears in inFlightSource", async () => {
-      vi.setSystemTime(new Date("2026-06-15T12:00:00")); // mid-range
+      vi.setSystemTime(new Date("2026-06-15T17:00:00Z")); // noon CDT, mid-range, refs _R1#128
 
       mockGetClientsWithProjects.mockResolvedValue([]);
       mockGetWeekItems.mockResolvedValue([
@@ -969,7 +969,7 @@ describe("RunwayPage", () => {
     });
 
     it("past-end range task surfaces in staleItems with day-group label keyed on endDate (Tue 6/30, not the kickoff Wed 6/3)", async () => {
-      vi.setSystemTime(new Date("2026-07-01T12:00:00")); // past endDate
+      vi.setSystemTime(new Date("2026-07-01T17:00:00Z")); // noon CDT, past endDate, refs _R1#128
 
       mockGetClientsWithProjects.mockResolvedValue([]);
       mockGetWeekItems.mockResolvedValue([]);
@@ -1002,7 +1002,7 @@ describe("RunwayPage", () => {
     };
 
     it("single-day item on its day surfaces in thisWeek (todayColumn at the board layer)", async () => {
-      vi.setSystemTime(new Date("2026-05-15T12:00:00"));
+      vi.setSystemTime(new Date("2026-05-15T17:00:00Z")); // noon CDT, refs _R1#128
 
       mockGetClientsWithProjects.mockResolvedValue([]);
       mockGetWeekItems.mockResolvedValue([
@@ -1028,7 +1028,7 @@ describe("RunwayPage", () => {
     // page hands the stale list through to RunwayBoard regardless of what
     // updates the project may have received.
     it("past-end L2 stays in staleItems even when its project has a recent update (suppression removed)", async () => {
-      vi.setSystemTime(new Date("2026-04-28T12:00:00"));
+      vi.setSystemTime(new Date("2026-04-28T17:00:00Z")); // noon CDT, refs _R1#128
 
       const overdueWithUpdate = {
         title: "Overdue with recent project update",

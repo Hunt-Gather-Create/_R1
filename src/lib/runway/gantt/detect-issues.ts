@@ -33,6 +33,7 @@ import type {
   Severity,
   WeekItemRow,
 } from "./types";
+import { chicagoISODate } from "../date-chicago";
 
 // ── Operator-confirmed enum lists ─────────────────────────
 
@@ -547,7 +548,11 @@ export function detectAllIssues(
   rows: GanttRow[],
   today: Date = new Date(),
 ): { rows: AnnotatedRow[]; chartIssues: Issue[] } {
-  const todayISO = today.toISOString().slice(0, 10);
+  // Chicago, not the server's UTC clock, refs _R1#128. No production
+  // caller of this dispatcher exists today, confirmed by grep, so the
+  // old default was dead rather than live, but it is the identical
+  // defect the moment a future caller invokes this with no argument.
+  const todayISO = chicagoISODate(today);
 
   if (raw.kind === "wrapper") {
     const chartIssues = detectWrapperIssues(raw.entity, raw.children);

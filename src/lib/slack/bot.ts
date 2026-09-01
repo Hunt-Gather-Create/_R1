@@ -27,6 +27,8 @@ import { buildBotSystemPrompt } from "@/lib/runway/bot-context";
 import { formatProactiveFollowUp } from "./bot-proactive";
 import { recordTokenUsage } from "@/lib/token-usage";
 import { generateId } from "@/lib/runway/operations-utils";
+import { chicagoToday } from "@/lib/runway/date-chicago";
+import { parseISODate } from "@/app/runway/date-utils";
 import {
   composeButtonBearingReply,
   extractInterceptedProposals,
@@ -168,7 +170,12 @@ export async function handleDirectMessage(
   ]);
 
   const displayName = userName ?? "Unknown team member";
-  const now = new Date();
+  // Chicago, not the server's UTC clock, refs _R1#128. Feeds
+  // buildBotSystemPrompt, which literally tells the bot what day it is,
+  // and createBotTools's currentMonday default. Noon on the Chicago
+  // calendar day so both UTC slicing and local field readers downstream
+  // agree on the same day regardless of which one a given helper uses.
+  const now = parseISODate(chicagoToday());
 
   // Wave 7 / Builder 7: per-conversation state + intent_group_id thread
   // through the modal-routed create_* tools. The intercept fires when

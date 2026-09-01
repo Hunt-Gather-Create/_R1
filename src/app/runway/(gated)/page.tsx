@@ -16,6 +16,7 @@ import { RundownContentRSC } from "../components/rundown-content-rsc";
 import { TERMINAL_ITEM_STATUSES } from "@/lib/runway/operations-utils";
 import type { ClientRundownData, RundownSection } from "@/lib/runway/gantt/types";
 import type { AuditIssue } from "../components/audit-badge";
+import { chicagoToday } from "@/lib/runway/date-chicago";
 
 /**
  * Track 3 Wave 5: precompute the set of L1 ids that are "ready to close"
@@ -115,7 +116,10 @@ function collectAuditIssues(
  */
 async function getClientRundowns(): Promise<Map<string, ClientRundownData>> {
   const db = getRunwayDb();
-  const todayISO = new Date().toISOString().slice(0, 10);
+  // Chicago, not the server's UTC clock, refs _R1#128. This feeds
+  // detectWeekItemIssues and the gantt axis today marker downstream, both
+  // compared against business calendar dates entered by the operator.
+  const todayISO = chicagoToday();
   const generatedAt = todayISO;
 
   const allClients = await withRunwayRetry(
@@ -189,8 +193,11 @@ export default async function RunwayPage() {
   ]);
 
   // Compute once so all downstream callers share the same "today" value
-  // for date comparisons (isReadyToClose branch B, etc.).
-  const todayISO = new Date().toISOString().slice(0, 10);
+  // for date comparisons, isReadyToClose branch B and others. Chicago,
+  // not the server's UTC clock, refs _R1#128: the board's end dates are
+  // business calendar days, and the server runs UTC, which disagrees
+  // with Chicago every evening from 19:00 to midnight Central.
+  const todayISO = chicagoToday();
 
   // Split week items into thisWeek and upcoming in a single pass.
   //
@@ -200,7 +207,10 @@ export default async function RunwayPage() {
   // `weekItemsForSection` in section-builders.ts) so the two surfaces
   // stay consistent on terminal items. Days that drain to zero after
   // filtering are dropped entirely so we don't render empty day headers.
-  const currentWeekOf = getMondayISODate(new Date());
+  // Chicago, not the server's UTC clock, refs _R1#128. Reuses todayISO
+  // above rather than a second new Date() call so both stay the same
+  // instant's Chicago day.
+  const currentWeekOf = getMondayISODate(parseISODate(todayISO));
 
   const thisWeek: typeof allWeekItems = [];
   const upcoming: typeof allWeekItems = [];

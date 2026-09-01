@@ -219,7 +219,7 @@ describe("getStaleWeekItems", () => {
   it("returns items from yesterday with no updates", async () => {
     // Fix date to 2026-04-07 (Tuesday)
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     // First query: week items for current week (weekOf = 2026-04-06)
     mockResults.push([createWeekItem({ date: "2026-04-06" })]);
@@ -242,7 +242,7 @@ describe("getStaleWeekItems", () => {
   // is staff action on the L2 itself (mark completed OR push endDate).
   it("INCLUDES past-due items even when their project has a recent update (suppression removed)", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     mockResults.push([createWeekItem({ date: "2026-04-06", projectId: "p1" })]);
 
@@ -257,7 +257,7 @@ describe("getStaleWeekItems", () => {
 
   it("excludes items from today", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     // Only today's items, no past items
     mockResults.push([createWeekItem({ date: "2026-04-07" })]);
@@ -273,7 +273,7 @@ describe("getStaleWeekItems", () => {
 
   it("excludes future items", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     mockResults.push([createWeekItem({ date: "2026-04-09" })]);
 
@@ -287,7 +287,7 @@ describe("getStaleWeekItems", () => {
 
   it("returns empty array when no week items exist", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     mockResults.push([]);
 
@@ -302,7 +302,7 @@ describe("getStaleWeekItems", () => {
   it("includes overdue items from previous weeks", async () => {
     vi.useFakeTimers();
     // It's now Tuesday of a NEW week (2026-04-14 week)
-    vi.setSystemTime(new Date("2026-04-14T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-14T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     // lte(weekOf, "2026-04-13") returns items from previous weeks too
     mockResults.push([
@@ -326,7 +326,7 @@ describe("getStaleWeekItems", () => {
   // a fresh project update.
   it("INCLUDES past-due items from previous weeks even when their project has updates (suppression removed)", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-14T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-14T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     mockResults.push([
       createWeekItem({ date: "2026-04-09", weekOf: "2026-04-06", projectId: "p1" }),
@@ -343,7 +343,7 @@ describe("getStaleWeekItems", () => {
 
   it("excludes completed items even when past-due with no update", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     // Past-due item with status='completed' — should be excluded regardless of updates
     mockResults.push([createWeekItem({ date: "2026-04-06", status: "completed" })]);
@@ -363,7 +363,7 @@ describe("getStaleWeekItems", () => {
   // blocked, at-risk), so canceled drops out.
   it("excludes canceled items even when past-due (Issue #53)", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     mockResults.push([createWeekItem({ date: "2026-04-06", status: "canceled" })]);
     mockResults.push([]);
@@ -378,7 +378,7 @@ describe("getStaleWeekItems", () => {
 
   it("includes blocked items with past endDate (regression)", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     mockResults.push([createWeekItem({ date: "2026-04-06", status: "blocked" })]);
     mockResults.push([]);
@@ -394,7 +394,7 @@ describe("getStaleWeekItems", () => {
 
   it("includes at-risk items with past endDate (regression)", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     mockResults.push([createWeekItem({ date: "2026-04-06", status: "at-risk" })]);
     mockResults.push([]);
@@ -409,7 +409,7 @@ describe("getStaleWeekItems", () => {
 
   it("treats null status as active scheduled (v4 convention)", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     // Per v4 convention (operations-utils.ts:930) null status == scheduled.
     // Past-due rows with null status should still surface in Needs Update.
@@ -426,7 +426,7 @@ describe("getStaleWeekItems", () => {
 
   it("treats items without projectId as always stale", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     // Item with no projectId — should always be stale regardless of updates
     mockResults.push([createWeekItem({ date: "2026-04-06", projectId: null })]);
@@ -446,7 +446,7 @@ describe("getStaleWeekItems", () => {
   // versa) are correctly classified.
   it("treats range tasks with endDate < today < date as past-due (endDate wins)", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     // Range task: kickoff 2026-03-20, ended 2026-04-06 (yesterday), date
     // matches endDate per convention. Past endDate → past-due.
@@ -470,7 +470,7 @@ describe("getStaleWeekItems", () => {
 
   it("does NOT classify range tasks as past-due when endDate is in the future", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     // Range task starting in the past but ending tomorrow — endDate > today
     // → not past-due. (Note: getStaleWeekItems also pre-filters via SQL
@@ -496,7 +496,7 @@ describe("getStaleWeekItems", () => {
   // weekOf is older than the past-due window but whose endDate just passed.
   it("uses a 180-day lookback for the weekOf SQL filter (catches old range tasks with recently-passed endDate)", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     const { gte } = await import("drizzle-orm");
     (gte as unknown as ReturnType<typeof vi.fn>).mockClear();
@@ -524,7 +524,7 @@ describe("getStaleWeekItems", () => {
   // weekOf window just to discard most rows in the JS pass.
   it("pushes the past-due predicate into SQL (lt(endDate, today) OR lt(date, today) when endDate IS NULL)", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     const drizzle = await import("drizzle-orm");
     (drizzle.lt as unknown as ReturnType<typeof vi.fn>).mockClear();
@@ -559,7 +559,7 @@ describe("getStaleWeekItems", () => {
   // Needs Update day-groups label "when did this go red" instead of kickoff.
   it("buckets stale items by endDate, not startDate (Needs Update group label = due day)", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00"));
+    vi.setSystemTime(new Date("2026-04-07T17:00:00Z")); // noon CDT, Tuesday, refs _R1#128
 
     // Range task: kickoff 2026-03-20, ended 2026-04-02 (past). Under
     // startDate-keyed bucketing the day-group would be 2026-03-20; under

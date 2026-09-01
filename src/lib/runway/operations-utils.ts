@@ -20,6 +20,7 @@ import { eq, asc } from "drizzle-orm";
 import { createHash } from "crypto";
 import { withRunwayRetry } from "@/lib/runway/retry";
 import { getCurrentBatchId } from "@/lib/runway/runway-als";
+import { chicagoToday } from "@/lib/runway/date-chicago";
 import {
   getRequestClientsCache,
   setRequestClientsCache,
@@ -1344,8 +1345,10 @@ export function validatePastDateNonTerminal(
     return { ok: false, error: `Date '${date}' must be ISO YYYY-MM-DD.` };
   }
   // Compare via lexicographic ISO ordering — same property as < on Dates and
-  // doesn't require local TZ math.
-  const today = new Date().toISOString().slice(0, 10);
+  // doesn't require local TZ math. Chicago, not the server's UTC clock,
+  // refs _R1#128: date is a business calendar day submitted through a
+  // Slack modal, so today must be the same calendar the operator means.
+  const today = chicagoToday();
   if (date >= today) return { ok: true };
   const TERMINAL = new Set(["completed", "canceled"]);
   if (TERMINAL.has(status)) return { ok: true };

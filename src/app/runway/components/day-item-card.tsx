@@ -5,6 +5,7 @@ import { getOwnerResourcesDisplay } from "./display-utils";
 import { TYPE_INDICATORS, MetadataLabel } from "./status-badge";
 import { DatesLine } from "./dates-line";
 import { pastEndRedNote, pastEndNoteText } from "@/lib/runway/plate-summary";
+import { chicagoToday } from "@/lib/runway/date-chicago";
 import { CompleteCheckbox } from "./complete-checkbox";
 import { EditPencil } from "./dashboard-edit-pencil";
 
@@ -81,10 +82,14 @@ const SIZE_CLASSES = {
   },
 } as const;
 
-/** Today's ISO date + ms. Memoized at module-load to avoid Date() in every render. */
+/**
+ * Today's ISO date, Chicago not the viewer's own device clock, refs
+ * _R1#128, plus the current instant in ms. ms stays a plain instant
+ * since daysSinceTouched below is a duration, not a calendar comparison,
+ * and a duration in milliseconds does not depend on any timezone.
+ */
 function nowHelpers(): { iso: string; ms: number } {
-  const d = new Date();
-  return { iso: d.toISOString().slice(0, 10), ms: d.getTime() };
+  return { iso: chicagoToday(), ms: Date.now() };
 }
 
 export function DayItemCard({ item, size = "sm", bottomBanner }: DayItemCardProps) {

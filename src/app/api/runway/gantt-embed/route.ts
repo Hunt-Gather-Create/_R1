@@ -36,7 +36,7 @@ import { clients, projects as projectsTable } from "@/lib/db/runway-schema";
 import { extractClientRundown } from "@/lib/runway/gantt/server";
 import { GanttSectionDark } from "@/lib/runway/gantt/gantt-section-dark";
 import { and, asc, eq, isNull } from "drizzle-orm";
-import { toISODateString } from "@/app/runway/date-utils";
+import { chicagoToday } from "@/lib/runway/date-chicago";
 import type { RenderedRundownSection } from "@/app/runway/types";
 import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
 
@@ -68,8 +68,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 
   const db = getRunwayDb();
-  const now = new Date();
-  const todayISO = toISODateString(now);
+  // Chicago, not the server's UTC clock, refs _R1#128. Public embed
+  // endpoint, rendered for third parties, same generatedAt/todayISO
+  // shape as extractClientRundown's own server-side callers.
+  const todayISO = chicagoToday();
   const generatedAt = todayISO;
 
   // Fetch client

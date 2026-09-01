@@ -50,15 +50,35 @@ export async function postMutationUpdate(params: MutationNotifyParams): Promise<
 /**
  * Format a timestamp for the updates channel.
  * Example: "Apr. 5 2026 at 10:14 AM"
+ *
+ * Chicago, not the server's UTC clock or its local getters, refs
+ * _R1#128. The old implementation read date.getMonth, getDate,
+ * getFullYear, getHours, getMinutes, all local-getter reads of a
+ * freshly captured instant at the call site, the same mechanism
+ * already fixed in date-utils.ts, applied here to an instant rather
+ * than a passed parameter, which is why it matched neither the first
+ * nor the second search for this ticket. Near the boundary this
+ * printed the wrong calendar day and the wrong hour in a Slack
+ * message a person reads.
  */
 export function formatTimestamp(date: Date): string {
-  const month = MONTH_NAMES_SHORT[date.getMonth()];
-  const day = date.getDate();
-  const year = date.getFullYear();
-  const hours = date.getHours();
-  const minutes = date.getMinutes().toString().padStart(2, "0");
-  const ampm = hours >= 12 ? "PM" : "AM";
-  const hour12 = hours % 12 || 12;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+
+  const month = MONTH_NAMES_SHORT[Number(get("month")) - 1];
+  const day = get("day");
+  const year = get("year");
+  const hour12 = get("hour");
+  const minutes = get("minute");
+  const ampm = get("dayPeriod").toUpperCase();
 
   return `${month} ${day} ${year} at ${hour12}:${minutes} ${ampm}`;
 }

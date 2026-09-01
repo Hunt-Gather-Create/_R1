@@ -27,6 +27,7 @@ import {
 } from "@/lib/db/runway-schema";
 import { eq, gte } from "drizzle-orm";
 import { getBatchId, getClientBySlug } from "./operations-utils";
+import { chicagoToday } from "./date-chicago";
 
 // Raw-row types for drift detection output.
 type ProjectRow = typeof projects.$inferSelect;
@@ -42,9 +43,14 @@ const STALE_EXCLUDED_STATUSES: ReadonlySet<string> = new Set([
   "on-hold",
 ]);
 
-/** Return today's date as an ISO YYYY-MM-DD string in UTC. */
+/**
+ * Return today's date as an ISO YYYY-MM-DD string in Chicago, not UTC,
+ * refs _R1#128. Feeds pastEndL2sCount below, compared against endDate, a
+ * business calendar day, surfaced through the Slack bot and MCP health
+ * tools that a person or agent reads directly.
+ */
 function todayISODate(): string {
-  return new Date().toISOString().slice(0, 10);
+  return chicagoToday();
 }
 
 // ── getCurrentBatch ─────────────────────────────────────
