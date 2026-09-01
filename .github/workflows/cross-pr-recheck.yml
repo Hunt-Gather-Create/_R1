@@ -82,7 +82,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if ! open_prs_json=$(gh pr list --base runway --state open --json number,headRefName --limit 500); then
+          if ! open_prs_json=$(gh pr list --base runway --state open --json number,headRefOid --limit 500); then
             echo "COULD NOT LIST OPEN PRS TARGETING RUNWAY. This is an infrastructure failure, not a zero-PRs pass. Failing red rather than reporting a quiet skip."
             exit 1
           fi
@@ -108,22 +108,33 @@ jobs:
 
           while IFS= read -r pr; do
             number=$(echo "$pr" | jq -r '.number')
-            branch=$(echo "$pr" | jq -r '.headRefName')
-            echo "PR #$number ($branch): looking up the latest pr-tests.yml run"
+            head_sha=$(echo "$pr" | jq -r '.headRefOid')
+            echo "PR #$number ($head_sha): looking up the latest pr-tests.yml run"
 
-            run_id=$(gh api "repos/$GH_REPO/actions/workflows/pr-tests.yml/runs?event=pull_request&per_page=100" --jq ".workflow_runs[] | select(.head_branch==\"$branch\") | .id" | head -1)
+            # Filtered server side by head_sha, a fixed-format 40 character
+            # hex string, not by branch name. Branch names are attacker
+            # controlled and can legally contain a double quote or a
+            # backtick, which would otherwise break out of this jq filter,
+            # and two open PRs from different forks can share a branch
+            # name, which head_sha never collides on. head_sha filtering
+            # also avoids the runs list being paged out from under a PR
+            # that has not pushed recently, since it is a server side
+            # filter, not a client side scan of the most recent 100 runs
+            # across every PR combined.
+            run_id=$(gh api --jq '.workflow_runs[0].id' \
+              "repos/$GH_REPO/actions/workflows/pr-tests.yml/runs?event=pull_request&head_sha=$head_sha&per_page=1")
 
-            if [ -z "$run_id" ]; then
-              echo "COULD NOT FIND a pr-tests.yml run for PR #$number ($branch). A re-run cannot be dispatched for it. Marking this job red rather than skipping it quietly."
+            if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+              echo "COULD NOT FIND a pr-tests.yml run for PR #$number ($head_sha). A re-run cannot be dispatched for it. Marking this job red rather than skipping it quietly."
               failures=$((failures + 1))
               continue
             fi
 
-            echo "PR #$number ($branch): dispatching a re-run of pr-tests.yml run $run_id"
+            echo "PR #$number ($head_sha): dispatching a re-run of pr-tests.yml run $run_id"
             if gh api -X POST "repos/$GH_REPO/actions/runs/$run_id/rerun" >/dev/null; then
-              echo "PR #$number ($branch): re-run dispatched for workflow run $run_id, against runway's current tip."
+              echo "PR #$number ($head_sha): re-run dispatched for workflow run $run_id, against runway's current tip."
             else
-              echo "COULD NOT DISPATCH a re-run for PR #$number ($branch), run $run_id. Marking this job red rather than skipping it quietly."
+              echo "COULD NOT DISPATCH a re-run for PR #$number ($head_sha), run $run_id. Marking this job red rather than skipping it quietly."
               failures=$((failures + 1))
             fi
           done < <(echo "$bounded_json" | jq -c '.[]')
