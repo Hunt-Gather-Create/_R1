@@ -84,8 +84,8 @@ runs when a person remembers to run it. That is not a launch control.
 
 | # | Launch milestone | Ticket | Observable event | Observer | Observed |
 |---|---|---|---|---|---|
-| L1 | Install the watcher | #97 | The smoke workflow appears in GitHub Actions and fires ON ITS OWN after a merge to `runway`, with nobody having run it | Runway TP | |
-| L2 | Watch it come up | #97 | One real post-merge smoke run completes against the live host and its result is read in Actions | Runway TP | |
+| L1 | Install the watcher | #97 | The smoke workflow appears in GitHub Actions and fires ON ITS OWN after a merge to `runway`, with nobody having run it | Runway TP | **2026-08-30 15:45Z** |
+| L2 | Watch it come up | #97 | One real post-merge smoke run completes against the live host and its result is read in Actions | Runway TP | **2026-08-30 15:48Z** |
 | L3 | Confirm it stayed up | new | Across five consecutive merges the gate either passes cleanly or catches a real regression, and no merge lands unwatched | Runway TP | |
 
 **L1 is blocked on nothing and is currently unassigned.** It is the highest-leverage open
@@ -99,7 +99,19 @@ assumed, per the SOP.
 
 ## Percent-to-done, computed honestly
 
-`observed` is empty on every row above. **By the SOP's arithmetic this epic is at 0 percent
+**L1 and L2 are observed. The launch track is 2 of 3.**
+
+Run `33320528214`, event `deployment_status`, branch `runway`, head `61ca786`, conclusion success.
+Nobody triggered it. The evidence that separates this from an inert workflow is the step list,
+not the green tick: `pnpm runway:smoke` shows **success**, not **skipped**, so the gate resolved
+ancestry, found the deployment on `runway`, and ran the real suite against the live host.
+
+Two limits recorded rather than smoothed over. The merged file contains steps I never reviewed,
+a Playwright version resolve and a cache step, so my review covered an earlier version than the
+one that shipped. And QA never gated `#97`; it merged before the gate returned. Neither changes
+what was observed, and both are the kind of thing that gets forgotten if it is not written down.
+
+`observed` is empty on every remaining row. **By the SOP's arithmetic the delivery track is at 0 percent
 delivered**, with 14 tickets closed and 7 changes merged to `runway` yesterday.
 
 That is not a discouraging number, it is the correct one. It says the build half is moving and
