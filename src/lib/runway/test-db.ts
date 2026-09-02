@@ -58,6 +58,7 @@ CREATE TABLE week_items (
   client_id TEXT,
   section_id TEXT,
   task_no TEXT,
+  parent_task_id TEXT,
   day_of_week TEXT,
   week_of TEXT,
   date TEXT,

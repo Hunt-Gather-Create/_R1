@@ -58,6 +58,7 @@ export const EXPECTED_COLUMNS = {
     "client_id",
     "section_id",
     "task_no",
+    "parent_task_id",
     "day_of_week",
     "week_of",
     "date",

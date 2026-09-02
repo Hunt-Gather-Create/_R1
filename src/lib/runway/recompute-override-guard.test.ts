@@ -45,7 +45,7 @@ async function seedMinimal(client: Client) {
       id TEXT PRIMARY KEY NOT NULL, project_id TEXT, client_id TEXT, day_of_week TEXT,
       week_of TEXT, date TEXT, start_date TEXT, end_date TEXT, blocked_by TEXT,
       title TEXT NOT NULL, status TEXT, category TEXT, owner TEXT, resources TEXT,
-      notes TEXT, sort_order INTEGER NOT NULL DEFAULT 0,
+      notes TEXT, sort_order INTEGER NOT NULL DEFAULT 0, parent_task_id TEXT,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
     );
     CREATE TABLE pipeline_items (

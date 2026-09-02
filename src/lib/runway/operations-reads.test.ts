@@ -27,6 +27,8 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn((a, b) => ({ eq: [a, b] })),
   asc: vi.fn((col) => ({ asc: col })),
   desc: vi.fn((col) => ({ desc: col })),
+  and: vi.fn((...args) => ({ and: args })),
+  isNull: vi.fn((a) => ({ isNull: [a] })),
 }));
 const mockGetClientBySlug = vi.fn();
 

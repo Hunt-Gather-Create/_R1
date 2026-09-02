@@ -12,6 +12,7 @@ import { chicagoToday } from "@/lib/runway/date-chicago";
 import { getClientNameMap, groupBy } from "@/lib/runway/operations";
 import { withRunwayRetry } from "@/lib/runway/retry";
 import { withClientsCache } from "@/lib/runway/clients-cache-als";
+import { notASubtask } from "@/lib/runway/subtask-filters";
 
 // ── Shared helpers ──────────────────────────────────────
 
@@ -212,17 +213,19 @@ export async function getWeekItems(weekOf?: string): Promise<WeekDay[]> {
 
     const clientNameById = await getClientNameMap();
 
+    // Refs _R1#67: excludes subtasks. This is the main runway board query.
     const items = await withRunwayRetry(
       () =>
         weekOf
           ? db
               .select()
               .from(weekItems)
-              .where(eq(weekItems.weekOf, weekOf))
+              .where(and(eq(weekItems.weekOf, weekOf), notASubtask))
               .orderBy(asc(weekItems.date), asc(weekItems.sortOrder))
           : db
               .select()
               .from(weekItems)
+              .where(notASubtask)
               .orderBy(asc(weekItems.date), asc(weekItems.sortOrder)),
       "getWeekItems",
     );

@@ -11,6 +11,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { computeNextTaskNo, parseTaskNo } from "./task-no";
 import { getSheetSyncLedger } from "./sheet-sync-ledger-repo";
 import { getCurrentBatchId } from "./runway-als";
+import { notASubtask } from "./subtask-filters";
 import {
   WEEK_ITEM_FIELDS,
   WEEK_ITEM_FIELD_TO_COLUMN,
@@ -159,10 +160,14 @@ export async function recomputeProjectDatesWith(
     if (childProjects.length > 0) {
       return { startDate: project.startDate, endDate: project.endDate };
     }
+    // Refs _R1#67: a subtask cannot exist without its parent work item
+    // already existing under this project, so this "has children" check is
+    // unaffected either way, but excluded for consistency with every other
+    // read of this table.
     const childWeekItems = await executor
       .select({ id: weekItems.id })
       .from(weekItems)
-      .where(eq(weekItems.projectId, projectId));
+      .where(and(eq(weekItems.projectId, projectId), notASubtask));
     if (childWeekItems.length > 0) {
       return { startDate: project.startDate, endDate: project.endDate };
     }
@@ -172,6 +177,8 @@ export async function recomputeProjectDatesWith(
     // a migration bootstrap edge case, not a steady state.
   }
 
+  // Refs _R1#67, hazard 2: a subtask due date must not move the project's
+  // derived dates. Excluded here, at the MIN/MAX source, not downstream.
   const children = await executor
     .select({
       startDate: weekItems.startDate,
@@ -179,7 +186,7 @@ export async function recomputeProjectDatesWith(
       date: weekItems.date,
     })
     .from(weekItems)
-    .where(eq(weekItems.projectId, projectId));
+    .where(and(eq(weekItems.projectId, projectId), notASubtask));
 
   let minStart: string | null = null;
   let maxEnd: string | null = null;
@@ -980,6 +987,15 @@ export async function deleteWeekItem(
     if (!item) {
       return { ok: false, error: `Week item with id '${id}' not found.` };
     }
+    // Refs _R1#67: this helper deletes a top-level work item. Subtasks
+    // route through deleteSubtask instead, which carries its own audit
+    // type and its own not-a-subtask ownership checks.
+    if (item.parentTaskId) {
+      return {
+        ok: false,
+        error: `'${item.title}' is a subtask, not a work item. Use deleteSubtask instead.`,
+      };
+    }
   } else if (weekOf && weekItemTitle) {
     const itemLookup = await resolveWeekItemOrFail(weekOf, weekItemTitle);
     if (!itemLookup.ok) return itemLookup;
@@ -1073,6 +1089,15 @@ export async function linkWeekItemToProject(
   const item = itemRows[0];
   if (!item) {
     return { ok: false, error: `Week item '${weekItemId}' not found.` };
+  }
+  // Refs _R1#67: subtasks do not carry an independent projectId, they
+  // inherit it from their parent work item. Re-parenting one directly
+  // would desync it from the parent it was created under.
+  if (item.parentTaskId) {
+    return {
+      ok: false,
+      error: `'${item.title}' is a subtask, not a work item. It moves with its parent work item, not independently.`,
+    };
   }
 
   const projectRows = await db

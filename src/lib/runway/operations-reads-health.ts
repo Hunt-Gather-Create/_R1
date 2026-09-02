@@ -28,6 +28,7 @@ import {
 import { eq, gte } from "drizzle-orm";
 import { getBatchId, getClientBySlug } from "./operations-utils";
 import { chicagoToday } from "./date-chicago";
+import { notASubtask } from "./subtask-filters";
 
 // Raw-row types for drift detection output.
 type ProjectRow = typeof projects.$inferSelect;
@@ -418,7 +419,10 @@ export async function getDataHealth(): Promise<DataHealth> {
     allPipelineItems,
   ] = await Promise.all([
     db.select().from(projects),
-    db.select().from(weekItems),
+    // Refs _R1#67: excludes subtasks. totals.weekItems, the orphan count,
+    // and pastEndL2sCount below all read from this one query, so a
+    // subtask must not inflate any of the three.
+    db.select().from(weekItems).where(notASubtask),
     db.select().from(clients),
     db.select().from(updates),
     db.select().from(pipelineItems),

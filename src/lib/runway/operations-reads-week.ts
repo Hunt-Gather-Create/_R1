@@ -5,6 +5,7 @@
 import { getRunwayDb } from "@/lib/db/runway";
 import { clients, projects, weekItems } from "@/lib/db/runway-schema";
 import { and, asc, eq, isNull } from "drizzle-orm";
+import { excludeSubtasks, notASubtask } from "./subtask-filters";
 import { chicagoISODate } from "./date-chicago";
 import {
   getClientBySlug,
@@ -42,6 +43,10 @@ export async function getWeekItemsInRange(
     .select()
     .from(weekItems)
     .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
+
+  // Refs _R1#67: exclude subtasks explicitly rather than relying on their
+  // usually-null startDate/date to fall out of the range filter below.
+  rows = excludeSubtasks(rows);
 
   // start_date falls back to legacy `date` — both are ISO YYYY-MM-DD so
   // string comparison is lexicographic-correct.
@@ -83,7 +88,9 @@ export async function getOrphanWeekItems(
   const rows = await db
     .select()
     .from(weekItems)
-    .where(isNull(weekItems.projectId))
+    // Refs _R1#67: a subtask under a projectId-less parent would otherwise
+    // read as an orphan L2 here, which it is not.
+    .where(and(isNull(weekItems.projectId), notASubtask))
     .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
 
   if (!clientSlug) return rows;
@@ -107,7 +114,10 @@ export async function getLinkedWeekItems(
   executor?: LinkedItemReader,
 ): Promise<WeekItemRow[]> {
   const db = executor ?? getRunwayDb();
-  return db.select().from(weekItems).where(eq(weekItems.projectId, projectId));
+  // Refs _R1#67: this feeds updateProjectStatus's cascade, which pushes a
+  // project status change down to its linked week items. A subtask must
+  // not be silently swept into that cascade.
+  return db.select().from(weekItems).where(and(eq(weekItems.projectId, projectId), notASubtask));
 }
 
 export async function getLinkedDeadlineItems(
@@ -115,8 +125,11 @@ export async function getLinkedDeadlineItems(
   executor?: LinkedItemReader,
 ): Promise<WeekItemRow[]> {
   const db = executor ?? getRunwayDb();
+  // Refs _R1#67, hazard 3: this feeds updateProjectField's L1 dueDate
+  // cascade. The cascade must stop at the work item and never reach
+  // subtasks.
   return db.select().from(weekItems)
-    .where(and(eq(weekItems.projectId, projectId), eq(weekItems.category, "deadline")));
+    .where(and(eq(weekItems.projectId, projectId), eq(weekItems.category, "deadline"), notASubtask));
 }
 
 /**
@@ -132,7 +145,8 @@ export async function getWeekItemsByProject(
   const rows = await db
     .select()
     .from(weekItems)
-    .where(eq(weekItems.projectId, projectId))
+    // Refs _R1#67: excludes subtasks, this is a top-level drill-down listing.
+    .where(and(eq(weekItems.projectId, projectId), notASubtask))
     .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
   // v4: exclude completed L2s from drill-down listings.
   const active = rows.filter((r) => r.status !== "completed");
@@ -181,11 +195,12 @@ export async function getWeekItemsData(
     ? await db
         .select()
         .from(weekItems)
-        .where(eq(weekItems.weekOf, weekOf))
+        .where(and(eq(weekItems.weekOf, weekOf), notASubtask))
         .orderBy(asc(weekItems.date), asc(weekItems.sortOrder))
     : await db
         .select()
         .from(weekItems)
+        .where(notASubtask)
         .orderBy(asc(weekItems.date), asc(weekItems.sortOrder));
 
   if (clientSlug) {
@@ -414,10 +429,12 @@ export async function getPersonWorkload(
 
   const db = getRunwayDb();
 
-  // Load projects, week items, clients in parallel.
+  // Load projects, week items, clients in parallel. Refs _R1#67: week items
+  // exclude subtasks, this is a person's plate view, a top-level work item
+  // listing.
   const [allProjects, allWeekItems, allClients] = await Promise.all([
     db.select().from(projects).orderBy(asc(projects.sortOrder)),
-    db.select().from(weekItems).orderBy(asc(weekItems.date), asc(weekItems.sortOrder)),
+    db.select().from(weekItems).where(notASubtask).orderBy(asc(weekItems.date), asc(weekItems.sortOrder)),
     db.select().from(clients),
   ]);
 

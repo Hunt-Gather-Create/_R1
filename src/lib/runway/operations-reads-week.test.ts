@@ -136,6 +136,7 @@ function mockWorkloadDb(
                 ? clientRows
                 : [];
         const awaitable = {
+          where: vi.fn(() => awaitable),
           orderBy: vi.fn().mockResolvedValue(rows),
           then: (resolve: (v: unknown) => void) => resolve(rows),
         };

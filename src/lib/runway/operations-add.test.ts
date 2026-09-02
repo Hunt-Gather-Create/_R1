@@ -8,7 +8,11 @@ vi.mock("@/lib/db/runway", () => ({
       cb({ insert: vi.fn(() => ({ values: mockInsertValues })) }),
   }),
 }));
-vi.mock("@/lib/db/runway-schema", () => ({ projects: {}, updates: {} }));
+vi.mock("@/lib/db/runway-schema", () => ({
+  projects: {},
+  updates: {},
+  weekItems: { id: "id", parentTaskId: "parent_task_id" },
+}));
 
 const mockGetClientBySlug = vi.fn();
 const mockFindProjectByFuzzyName = vi.fn();

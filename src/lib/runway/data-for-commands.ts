@@ -15,6 +15,7 @@ import {
   teamMembers,
 } from "@/lib/db/runway-schema";
 import { and, eq } from "drizzle-orm";
+import { notASubtask } from "./subtask-filters";
 
 export interface ProjectForFuzzy {
   id: string;
@@ -63,9 +64,11 @@ export async function getWeekItemsForFuzzy(
   clientId?: string,
 ): Promise<WeekItemForFuzzy[]> {
   const db = getRunwayDb();
+  // Refs _R1#67: excludes subtasks, this is a fuzzy-match candidate listing
+  // for slash command lookups, not addressable by subtasks in Phase 1.
   const rows = clientId
-    ? await db.select().from(weekItems).where(eq(weekItems.clientId, clientId))
-    : await db.select().from(weekItems);
+    ? await db.select().from(weekItems).where(and(eq(weekItems.clientId, clientId), notASubtask))
+    : await db.select().from(weekItems).where(notASubtask);
   return rows.map((w) => ({
     id: w.id,
     title: w.title,
