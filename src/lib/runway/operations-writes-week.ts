@@ -725,6 +725,17 @@ export async function updateWeekItemField(
   if (!itemLookup.ok) return itemLookup;
   const item = itemLookup.item;
 
+  // Refs _R1#141: resolveWeekItemOrFail matches on weekOf, which a subtask
+  // never carries, so this branch cannot currently fire. Refuse anyway
+  // rather than rely solely on that absence — belt to the existing braces
+  // at operations-writes-section.ts:441 and operations-writes-week.ts:1073.
+  if (item.parentTaskId) {
+    return {
+      ok: false,
+      error: `'${item.title}' is a subtask, not a work item. Use updateSubtask instead.`,
+    };
+  }
+
   const clientName = await getClientNameById(item.clientId);
 
   const previousValue = getPreviousValue(item, columnKey);

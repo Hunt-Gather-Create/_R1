@@ -131,3 +131,54 @@ describe("subtasks phase 1 — anti-vacuity proofs (_R1#67)", () => {
     expect(projectAfter?.endDate).toBe(projectBefore?.endDate);
   });
 });
+
+describe("subtask isolation hardening (_R1#141)", () => {
+  it("guard 1: assertSubtaskShape refuses a row carrying a weekOf or sectionId", async () => {
+    const { assertSubtaskShape } = await import("./operations-writes-subtasks");
+
+    expect(() =>
+      assertSubtaskShape({ weekOf: "2026-04-13", sectionId: null })
+    ).toThrow("createSubtask invariant violated");
+    expect(() =>
+      assertSubtaskShape({ weekOf: null, sectionId: "sec-1" })
+    ).toThrow("createSubtask invariant violated");
+    expect(() =>
+      assertSubtaskShape({ weekOf: null, sectionId: null })
+    ).not.toThrow();
+  });
+
+  it("guard 2: updateWeekItemField refuses a resolved row carrying parentTaskId, even one reached only by force", async () => {
+    const { createSubtask } = await import("./operations-writes-subtasks");
+    const { updateWeekItemField } = await import("./operations-writes-week");
+
+    const created = await createSubtask({
+      parentTaskId: "wi-cds-review",
+      title: "Forced-reachable subtask",
+      updatedBy: "test-runner",
+    });
+    expect(created.ok).toBe(true);
+    const subtaskId = (created as { data: { id: string } }).data.id;
+
+    // No real caller can give a subtask row a weekOf today — guard 1 above
+    // and the write paths audited under _R1#67 both prevent it. Forcing one
+    // in directly via SQL proves updateWeekItemField's own refusal holds on
+    // its own, not merely as a byproduct of nothing being able to reach it.
+    await libsqlClient.execute({
+      sql: `UPDATE week_items SET week_of = ? WHERE id = ?`,
+      args: ["2026-04-13", subtaskId],
+    });
+
+    const result = await updateWeekItemField({
+      weekOf: "2026-04-13",
+      weekItemTitle: "Forced-reachable subtask",
+      field: "status",
+      newValue: "completed",
+      updatedBy: "test-runner",
+    });
+
+    expect(result.ok).toBe(false);
+    expect((result as { error: string }).error).toContain(
+      "is a subtask, not a work item"
+    );
+  });
+});
