@@ -1199,6 +1199,56 @@ describe("deleteWeekItem", () => {
     if (result.ok) expect(result.message).toContain("duplicate");
     expect(mockDeleteFn).not.toHaveBeenCalled();
   });
+
+  // Refs _R1#86. Before this ticket, the parent delete-week-item audit
+  // insert ran after db.transaction(...) resolved, while the
+  // cascade-date-change rows recomputeProjectDatesWith emits, referencing
+  // the same pre-generated id via triggered_by_update_id, ran inside the
+  // transaction. A parent insert failure after the transaction had already
+  // committed left those cascade rows pointing at a parent id that would
+  // never exist, silently, with nothing to retry or notice it. This test
+  // forces that exact failure and asserts no cascade row survives it.
+  it("does not leave an orphaned cascade row when the parent delete audit insert fails", async () => {
+    const linkedItem = { ...weekItem, projectId: "p1" };
+    mockFindWeekItemByFuzzyTitle.mockResolvedValue(linkedItem);
+    // One fake project/child row shape, returned for every select call in
+    // recomputeProjectDatesWith. `date` set but `startDate`/`endDate` null
+    // so the derived minStart/maxEnd differ from the "current" row's own
+    // startDate/endDate, which forces the write-and-cascade path rather
+    // than the no-op early return.
+    mockSelectGet.mockReturnValue([
+      {
+        id: "p1",
+        clientId: "c1",
+        engagementType: null,
+        startDate: null,
+        endDate: null,
+        date: "2026-05-01",
+      },
+    ]);
+    mockSelectGet();
+
+    mockInsertValues.mockImplementation((values: { updateType?: string }) => {
+      if (values.updateType === "delete-week-item") {
+        throw new Error("simulated parent audit insert failure");
+      }
+      return undefined;
+    });
+
+    const { deleteWeekItem } = await import("./operations-writes-week");
+    await expect(
+      deleteWeekItem({
+        weekOf: "2026-04-06",
+        weekItemTitle: "CDS Review",
+        updatedBy: "kathy",
+      })
+    ).rejects.toThrow("simulated parent audit insert failure");
+
+    const cascadeCalls = mockInsertValues.mock.calls
+      .map((args) => args[0] as { updateType?: string })
+      .filter((v) => v.updateType === "cascade-date-change");
+    expect(cascadeCalls.length).toBe(0);
+  });
 });
 
 describe("updateWeekItemField — weekOf whitelist", () => {
