@@ -64,6 +64,7 @@ type MockProposal = {
   postedMessageChannel: string | null;
   resolvedProjectId: string | null;
   status: "pending" | "submitted" | "cancelled" | "expired" | "failed";
+  statusReason: string | null;
   expiresAt: Date;
   channelId: string;
   threadTs: string | null;
@@ -85,6 +86,7 @@ function makeProposal(overrides: Partial<MockProposal> = {}): MockProposal {
     postedMessageChannel: null,
     resolvedProjectId: null,
     status: "pending",
+    statusReason: null,
     // 1 hour in the future by default; tests that need expired override.
     expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     channelId: "C_TEST_001",
@@ -349,7 +351,7 @@ function makeRequest(
     "content-type": "application/x-www-form-urlencoded",
   };
   if (sig !== null) headers["x-slack-signature"] = sig;
-  if (ts !== null) headers["x-slack-request-timestamp"] = ts;
+  if (ts !== null && ts !== undefined) headers["x-slack-request-timestamp"] = ts;
 
   return new Request("http://localhost/api/slack/interactivity", {
     method: "POST",
@@ -548,9 +550,7 @@ describe("POST /api/slack/interactivity — view_closed routing (Builder 11)", (
     expect(handles.proposalUpdates).toHaveLength(1);
     expect(handles.proposalUpdates[0].id).toBe("prop_01JKVQX5MNRZF8GH2TKXYZAB7C");
     expect(handles.proposalUpdates[0].patch.status).toBe("cancelled");
-    expect(handles.proposalUpdates[0].patch.statusReason as unknown as string).toBe(
-      "user-dismissed",
-    );
+    expect(handles.proposalUpdates[0].patch.statusReason).toBe("user-dismissed");
 
     expect(handles.postMessage).toHaveBeenCalledTimes(1);
     const postArgs = handles.postMessage.mock.calls[0][0] as {

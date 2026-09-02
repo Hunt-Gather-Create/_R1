@@ -262,7 +262,7 @@ describe("formatSeverityLine", () => {
 describe("formatCounterMarkup", () => {
   it("renders the headline and severity line for clean data", () => {
     const html = renderToStaticMarkup(
-      formatCounterMarkup(makeSummary({ totalRows: 3 })) as JSX.Element,
+      formatCounterMarkup(makeSummary({ totalRows: 3 })),
     );
     expect(html).toContain("0 of 3 rows have data gaps");
     expect(html).toContain("clean");
@@ -279,7 +279,7 @@ describe("formatCounterMarkup", () => {
         "row-only-end-null": [{ id: "3", title: "M" }],
       },
     });
-    const html = renderToStaticMarkup(formatCounterMarkup(summary) as JSX.Element);
+    const html = renderToStaticMarkup(formatCounterMarkup(summary));
     const childIdx = html.indexOf("child-orphan");
     const rowIdx = html.indexOf("row-only-end-null");
     const wiIdx = html.indexOf("wi-overdue");
@@ -299,7 +299,7 @@ describe("formatCounterMarkup", () => {
         ],
       },
     });
-    const html = renderToStaticMarkup(formatCounterMarkup(summary) as JSX.Element);
+    const html = renderToStaticMarkup(formatCounterMarkup(summary));
     expect(html).toContain("Alpha, Beta");
     expect(html).toContain("(2)");
   });

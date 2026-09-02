@@ -11,7 +11,6 @@ function createMember(
   overrides: Partial<WorkspaceMemberWithUser["user"]> = {}
 ): WorkspaceMemberWithUser {
   return {
-    id: "member-1",
     workspaceId: "workspace-1",
     userId: "user-1",
     role: "member",
@@ -25,6 +24,11 @@ function createMember(
       createdAt: new Date(),
       updatedAt: new Date(),
       ...overrides,
+      status: overrides.status ?? "active",
+      role: overrides.role ?? null,
+      bio: overrides.bio ?? null,
+      aiCommunicationStyle: overrides.aiCommunicationStyle ?? null,
+      aiCustomInstructions: overrides.aiCustomInstructions ?? null,
     },
   };
 }

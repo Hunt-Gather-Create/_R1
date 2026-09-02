@@ -196,7 +196,7 @@ function taskState(over: Partial<Record<string, Record<string, unknown>>> = {}):
 
 function projectState(
   retainerMode = false,
-  over: Partial<Record<string, Record<string, unknown>>> = {},
+  over: Record<string, Record<string, unknown>> = {},
 ): StateValues {
   const base: StateValues = {
     client_block: { client_select: externalSelectV("client_xyz") },

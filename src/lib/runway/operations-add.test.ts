@@ -71,8 +71,10 @@ describe("addProject", () => {
       clientSlug: "convergix", name: "New Website", owner: "Leslie", updatedBy: "jason",
     });
     expect(result.ok).toBe(true);
-    expect(result.message).toContain("New Website");
-    expect(result.message).toContain("Convergix");
+    if (result.ok) {
+      expect(result.message).toContain("New Website");
+      expect(result.message).toContain("Convergix");
+    }
     expect(mockInsertValues).toHaveBeenCalledTimes(2);
   });
 
@@ -91,7 +93,7 @@ describe("addProject", () => {
       clientSlug: "convergix", name: "Dup Project", updatedBy: "jason",
     });
     expect(result.ok).toBe(true);
-    expect(result.message).toContain("duplicate");
+    if (result.ok) expect(result.message).toContain("duplicate");
     expect(mockInsertValues).not.toHaveBeenCalled();
   });
 
@@ -382,7 +384,7 @@ describe("addUpdate", () => {
       clientSlug: "convergix", summary: "Client approved messaging doc", updatedBy: "kathy",
     });
     expect(result.ok).toBe(true);
-    expect(result.message).toContain("Convergix");
+    if (result.ok) expect(result.message).toContain("Convergix");
     expect(mockInsertValues).toHaveBeenCalled();
   });
 
@@ -412,7 +414,7 @@ describe("addUpdate", () => {
       clientSlug: "convergix", summary: "Dup note", updatedBy: "kathy",
     });
     expect(result.ok).toBe(true);
-    expect(result.message).toContain("duplicate");
+    if (result.ok) expect(result.message).toContain("duplicate");
     expect(mockInsertValues).not.toHaveBeenCalled();
   });
 });

@@ -27,6 +27,7 @@ describe("proxy middleware", () => {
   it("excludes Runway MCP and Slack endpoints from auth", async () => {
     await import("./proxy");
     const call = vi.mocked(authkitMiddleware).mock.calls[0][0];
+    if (!call?.middlewareAuth) throw new Error("expected authkitMiddleware to be called with middlewareAuth");
     const paths = call.middlewareAuth.unauthenticatedPaths;
     expect(paths).toContain("/api/mcp/runway");
     expect(paths).toContain("/api/slack/events");
@@ -38,6 +39,7 @@ describe("proxy middleware", () => {
   it("excludes callback and login from auth", async () => {
     await import("./proxy");
     const call = vi.mocked(authkitMiddleware).mock.calls[0][0];
+    if (!call?.middlewareAuth) throw new Error("expected authkitMiddleware to be called with middlewareAuth");
     const paths = call.middlewareAuth.unauthenticatedPaths;
     expect(paths).toContain("/callback");
     expect(paths).toContain("/login");
