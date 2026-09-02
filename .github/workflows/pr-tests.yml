@@ -68,3 +68,33 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm test:run
+
+  # _R1#125. proxy.reachability.test.ts drives the real proxy export with
+  # real NextRequest objects, no authkit-nextjs mock, and proves the four
+  # chat routes actually redirect an unauthenticated request. It runs
+  # under its own vitest config (vitest.reachability.config.mts) via
+  # `pnpm test:reachability`, a separate command from the `test` job's
+  # `pnpm test:run` above — one job, one command, same shape, per this
+  # file's own standing note. A second command folded into the `test`
+  # job would violate that note; a second job with one command does not.
+  # No secrets needed: the suite sets its own dummy WORKOS_* env vars at
+  # module load and never makes a live WorkOS call.
+  reachability:
+    name: reachability
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm test:reachability
