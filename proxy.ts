@@ -12,6 +12,7 @@ export const proxy = authkitMiddleware({
       "/api/slack/commands",             // Slack signature verification handled in route
       "/api/slack/options",              // Slack signature verification handled in route
       "/api/runway/gantt-share/:token",  // HMAC token auth handled in route
+      "/api/chat",                       // _R1#125 PLANT, DO NOT MERGE
     ],
   },
 });
