@@ -219,12 +219,13 @@
  *   binding sits between the wrap and the compare. The two checks remain
  *   complementary; each is load-bearing for a shape the other misses.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 import * as ts from "typescript";
 import {
   buildEnvTracedNames,
+  extractEnvVarNames,
   isProvablyNotSecretCompare,
   isSecretShapedEnvName,
   resolvedEnvVarNames,
@@ -1465,5 +1466,133 @@ describe("token-compare guard: the env var discriminator does not blind the guar
     expect(plantedOffenders.some((o) => o.includes("embedSecret"))).toBe(true);
 
     expect(findAllGuardViolations(realSource, file)).toHaveLength(0);
+  });
+});
+
+// ── #109: KNOWN_AUTH_ROUTES completeness ────────────────────────────────
+//
+// Every check above only ever inspects the files listed in KNOWN_AUTH_ROUTES.
+// Nothing asserted the list itself was complete, so a new authenticated
+// route could ship with no entry, the guard would have nothing to open, and
+// the suite would stay green - a pass indistinguishable from a real pass.
+//
+// The heuristic for "this route needs to be in the list": it imports
+// timingSafeTokenMatch, or it reads an env var whose name is secret-shaped
+// per isSecretShapedEnvName (the same heuristic env-secret-trace.ts already
+// uses elsewhere in this file). Text-based, not the AST walk the call-site
+// check above uses - this is a coverage heuristic finding candidate files,
+// not the security-critical check on an already-known file.
+
+/** Recursively collects every route.ts under `dir`. */
+function walkRouteFiles(dir: string): string[] {
+  const found: string[] = [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      found.push(...walkRouteFiles(full));
+    } else if (entry.isFile() && entry.name === "route.ts") {
+      found.push(full);
+    }
+  }
+  return found;
+}
+
+/** True if `filePath`'s content matches the auth heuristic this ticket
+ * defines: a live import of timingSafeTokenMatch, or a secret-shaped env
+ * var name read anywhere in the file. */
+function routeNeedsAuthCoverage(filePath: string): boolean {
+  const source = fs.readFileSync(filePath, "utf8");
+  if (/\btimingSafeTokenMatch\b/.test(source)) return true;
+  return extractEnvVarNames(source).some(isSecretShapedEnvName);
+}
+
+/** Every route file under `authRoot` that needs coverage per
+ * `routeNeedsAuthCoverage` but is absent from `knownRoutes`. */
+function findMissingAuthRouteCoverage(
+  authRoot: string,
+  knownRoutes: string[],
+): string[] {
+  const known = new Set(knownRoutes.map((r) => path.resolve(r)));
+  return walkRouteFiles(authRoot)
+    .filter((f) => routeNeedsAuthCoverage(f))
+    .filter((f) => !known.has(path.resolve(f)))
+    .sort();
+}
+
+// #109's own completeness sweep against the real tree found four routes
+// that read SLACK_SIGNING_SECRET (secret-shaped, so the heuristic above
+// correctly flags them) but were never in KNOWN_AUTH_ROUTES: each verifies
+// via `verifySlackSignature` (src/lib/slack/verify.ts), which itself calls
+// Node's native `crypto.timingSafeEqual` on an HMAC digest - a genuinely
+// constant-time comparison, just not this guard's `timingSafeTokenMatch`
+// wrapper, because these routes authenticate a request signature rather
+// than compare a bearer token. Confirmed by reading verify.ts directly,
+// not assumed from the import name.
+//
+// Per this ticket's own instruction, finding these is the deliverable and
+// fixing or re-classifying them is not: "I would rather see the list than
+// a quiet sweep." Recorded here, explicitly, rather than padding
+// KNOWN_AUTH_ROUTES (which would misrepresent them as covered by
+// timingSafeTokenMatch specifically) or leaving this check permanently
+// red on an unrelated PR. The assertion below is an EXACT match against
+// this list, not merely "no new ones" - so a route added to or removed
+// from it requires editing this list by hand, in either direction, and
+// can never happen silently.
+const ACKNOWLEDGED_MISSING_AUTH_COVERAGE = [
+  path.join(AUTH_ROOT, "slack/commands/route.ts"),
+  path.join(AUTH_ROOT, "slack/events/route.ts"),
+  path.join(AUTH_ROOT, "slack/interactivity/route.ts"),
+  path.join(AUTH_ROOT, "slack/options/route.ts"),
+].sort();
+
+describe("token-compare guard: KNOWN_AUTH_ROUTES completeness (#109)", () => {
+  it("every route file matching the auth heuristic is listed in KNOWN_AUTH_ROUTES, or is an acknowledged, explicitly-listed exception", () => {
+    const missing = findMissingAuthRouteCoverage(AUTH_ROOT, KNOWN_AUTH_ROUTES).sort();
+    expect(
+      missing,
+      "a route matches the auth heuristic but is neither in KNOWN_AUTH_ROUTES nor ACKNOWLEDGED_MISSING_AUTH_COVERAGE above - list it in one or the other, do not silently drop it",
+    ).toEqual(ACKNOWLEDGED_MISSING_AUTH_COVERAGE);
+  });
+
+  describe("plant and restore: a route absent from the list is caught, then clears once listed", () => {
+    const fixtureDir = path.join(AUTH_ROOT, "__completeness_fixture__");
+    const fixtureFile = path.join(fixtureDir, "route.ts");
+
+    afterEach(() => {
+      // Always clean up, even if an assertion above throws mid-test, so a
+      // failed run never leaves a planted route file behind for the next
+      // run (or the completeness check above) to trip on.
+      if (fs.existsSync(fixtureFile)) fs.unlinkSync(fixtureFile);
+      if (fs.existsSync(fixtureDir)) fs.rmdirSync(fixtureDir);
+    });
+
+    it("shows the miss, then the list entry clearing it, then a clean restore", () => {
+      fs.mkdirSync(fixtureDir, { recursive: true });
+      fs.writeFileSync(
+        fixtureFile,
+        `import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";\nexport async function GET() { return timingSafeTokenMatch("a", "b"); }\n`,
+      );
+
+      // RED: the completeness heuristic itself flags the new file...
+      expect(routeNeedsAuthCoverage(fixtureFile)).toBe(true);
+      // ...and it is genuinely absent from the real KNOWN_AUTH_ROUTES, the
+      // recorded miss this ticket exists to prove.
+      const missingBefore = findMissingAuthRouteCoverage(AUTH_ROOT, KNOWN_AUTH_ROUTES);
+      expect(missingBefore).toContain(fixtureFile);
+
+      // GREEN: adding it to a routes list clears the finding.
+      const withEntry = [...KNOWN_AUTH_ROUTES, fixtureFile];
+      const missingAfter = findMissingAuthRouteCoverage(AUTH_ROOT, withEntry);
+      expect(missingAfter).not.toContain(fixtureFile);
+
+      // RESTORE: remove the planted file (afterEach also does this; assert
+      // here so the restore is verified within the test itself, not only
+      // trusted to hook cleanup).
+      fs.unlinkSync(fixtureFile);
+      fs.rmdirSync(fixtureDir);
+      const missingRestored = findMissingAuthRouteCoverage(AUTH_ROOT, KNOWN_AUTH_ROUTES);
+      expect(missingRestored).not.toContain(fixtureFile);
+    });
   });
 });
