@@ -10,7 +10,7 @@
 **Issue #17 - Concurrency bleed on Fluid Compute (PARTIALLY FIXED):**
 - Problem: `_currentBatchId` lived as a module-level variable in `src/lib/runway/operations-utils.ts:518`. On Fluid Compute, one Node instance handles many requests at once, so a batch id set by request A leaks into request B's audit rows and Slack-suppression checks.
 - Current state: The main source file has been migrated to `AsyncLocalStorage` via `src/lib/runway/runway-als.ts`. `setBatchId()` is now a deprecated no-op shim. `getBatchId()` reads from ALS. The MCP `batch_apply` tool wraps its loop in `withBatchId()`. The standalone `set_batch_mode` MCP tool returns a deprecation error.
-- Remaining gap: 5 migration scripts still call the deprecated `setBatchId()` directly, which is now a silent no-op. Those scripts run against prod Turso without batch scoping. Files: `scripts/runway-migrations/2026-04-21-migrate-target-to-notes.ts`, `2026-04-21-backfill-scheduled-status.ts`, `retainer-v4-cleanup-2026-04-21.ts`, `retainer-v4-cleanup-2026-04-21-REVERT.ts`, `hdl-website-build-cleanup-2026-04-20.ts`.
+- Remaining gap: closed, refs _R1#99. `grep -rl "setBatchId(" scripts/` returns nothing as of this note. The five scripts this note originally listed were `2026-04-21-migrate-target-to-notes.ts`, `2026-04-21-backfill-scheduled-status.ts`, `retainer-v4-cleanup-2026-04-21.ts`, `retainer-v4-cleanup-2026-04-21-REVERT.ts`, and `hdl-website-build-cleanup-2026-04-20.ts`. The first four were dead code with an unsafe unset-DRY_RUN default and were deleted rather than fixed. Rechecking the fifth found it only mentions `setBatchId` in a comment, refs the harness that auto-sets it, and never calls the function directly, so the original list of 5 was itself imprecise about that file.
 - Impact: Migration scripts that relied on batch-id-driven Slack suppression will fire Slack notifications they were intended to suppress. Audit rows from those scripts carry no batch tag.
 - Fix: Wrap each migration script's `up()` call in `withBatchId(id, async () => { ... })` and remove the `setBatchId` import. Tracked as B2 follow-up in ROADMAP.md.
 
@@ -145,7 +145,7 @@
 ## Test Coverage Gaps
 
 **Migration scripts have minimal test coverage:**
-- What is not tested: The 52 files in `scripts/runway-migrations/` are mostly untested scripts that run against prod Turso. Only a handful have paired `.test.ts` files (e.g., `retainer-v4-cleanup-2026-04-21.test.ts`, `schema-backfill-v4-2026-04-21.test.ts`, `001-april-14-updates.test.ts`).
+- What is not tested: The files in `scripts/runway-migrations/` are mostly untested scripts that run against prod Turso. Only a handful have paired `.test.ts` files (e.g., `schema-backfill-v4-2026-04-21.test.ts`, `001-april-14-updates.test.ts`). `retainer-v4-cleanup-2026-04-21.test.ts`, formerly listed here, was deleted along with the migration script it tested, refs _R1#99.
 - Files: `scripts/runway-migrations/*.ts` (approximately 45 untested).
 - Risk: A migration script error writes bad data to prod with no automated catch. The DI-TP pipeline (D-10) adds a dry-run + holdout QA step, but test coverage gaps remain.
 - Priority: High (prod data writes).
