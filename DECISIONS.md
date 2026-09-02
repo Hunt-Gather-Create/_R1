@@ -185,6 +185,16 @@ Refs: `src/lib/runway/gantt/server.ts`, `src/app/api/runway/gantt-share/[token]/
 
 ---
 
+## D-21 — A completed subtask stays visible with a strike-through
+
+Date: 2026-09-02
+Decision: When a subtask is checked off it remains in the list, rendered with a strike-through. It is not hidden, collapsed, or moved behind a "show completed" toggle.
+Why: Operator call, 2026-09-02. The subtask list is short by design, scoped to a single work item, so the argument for hiding completed rows does not apply the way it does on a long standalone list. Keeping the row visible means the done-over-total count on the card and the list underneath it always agree, and a person scanning the item can see what was finished without a second click. Hiding was the alternative and was rejected.
+Locks: The subtask list renders completed rows. No hide-on-complete behaviour, and no "show completed" toggle on the subtask list. If a future list grows long enough to need one, that is a new decision superseding this entry, not a quiet addition.
+Refs: jasonburks23/_R1#67 Phase 2, PR #152 shipped Phase 1, jasonburks23/_R1#141 must land first.
+
+---
+
 ## Format reference
 
 Use this format for any new entry:
