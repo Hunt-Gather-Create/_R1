@@ -59,6 +59,15 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 }
 
 /**
+ * Refs _R1#124: mutateFixture's own body is a recursive deep merge, and
+ * this doc comment's own example passes a nested partial override. Partial<T>
+ * only loosens top-level keys, so that example never actually typechecked
+ * against the old signature. DeepPartial<T> makes every nested object's
+ * keys optional too, matching what the function actually does.
+ */
+type DeepPartial<T> = T extends object ? { [K in keyof T]?: DeepPartial<T[K]> } : T;
+
+/**
  * Deep-merge `overrides` into a copy of `base` and return the copy.
  *
  * Semantics:
@@ -71,7 +80,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  *   const fx = loadFixture<ViewSubmission>("view-submission-task");
  *   const stale = mutateFixture(fx, { view: { private_metadata: "..." } });
  */
-export function mutateFixture<T>(base: T, overrides: Partial<T>): T {
+export function mutateFixture<T>(base: T, overrides: DeepPartial<T>): T {
   return deepMerge(base, overrides) as T;
 }
 
