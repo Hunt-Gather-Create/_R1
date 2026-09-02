@@ -365,6 +365,18 @@ export default async function RunwayPage() {
       // By Account tier (`<AccountTier ...>`) can iterate it directly. The
       // Gantt Charts tab continues to read `ganttContent` (a ReactNode);
       // both views are driven by the same upstream filter result.
+      // Refs _R1#104: By Account hides an account only when it has neither
+      // an active project nor a pipeline item. Computed here, not at the
+      // Gantt-shared unifiedAccounts/accounts level, so this stays a By
+      // Account-only signal — the Gantt Charts tab keeps its own filtering
+      // (filterActiveRundown, above) untouched. Reuses TERMINAL_ITEM_STATUSES
+      // rather than inventing a second definition of "active".
+      const hasActiveProject = account.items.some(
+        (item) => !(TERMINAL_ITEM_STATUSES as readonly string[]).includes(item.status),
+      );
+      const hasPipelineItem = pipelineProps.some((p) => p.account === account.name);
+      const hasNoOpenWork = !hasActiveProject && !hasPipelineItem;
+
       return {
         ...account,
         rundown: filtered,
@@ -372,6 +384,7 @@ export default async function RunwayPage() {
         ganttSeverity,
         ganttAuditIssues,
         readyToCloseIds,
+        hasNoOpenWork,
       };
     });
 
