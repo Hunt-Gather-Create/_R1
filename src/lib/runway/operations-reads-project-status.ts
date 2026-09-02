@@ -19,6 +19,7 @@ import {
 import { and, asc, desc, eq } from "drizzle-orm";
 import { getClientOrFail, resolveProjectOrFail } from "./operations-utils";
 import { chicagoISODate } from "./operations-reads-week";
+import { notASubtask } from "./subtask-filters";
 
 export type ProjectStatusEnum =
   | "in-production"
@@ -212,7 +213,8 @@ export async function getProjectStatus(
     db
       .select()
       .from(weekItems)
-      .where(eq(weekItems.projectId, project.id))
+      // Refs _R1#67: excludes subtasks, this is the project's own L2 listing.
+      .where(and(eq(weekItems.projectId, project.id), notASubtask))
       .orderBy(asc(weekItems.date), asc(weekItems.sortOrder)),
     db
       .select()

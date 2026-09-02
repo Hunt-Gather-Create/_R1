@@ -435,6 +435,15 @@ export async function reparentWeekItemToSection(
     .limit(1);
   const item = itemRows[0];
   if (!item) return { ok: false, error: `Week item '${weekItemId}' not found.` };
+  // Refs _R1#67: a subtask never carries its own sectionId, several other
+  // read sites rely on that being true unconditionally. Refuse rather than
+  // silently let one acquire a sectionId here.
+  if (item.parentTaskId) {
+    return {
+      ok: false,
+      error: `'${item.title}' is a subtask, not a work item. Subtasks do not belong to sections.`,
+    };
+  }
 
   let targetSection: Awaited<ReturnType<typeof getSectionById>> = null;
   let targetClientId: string | null = null;

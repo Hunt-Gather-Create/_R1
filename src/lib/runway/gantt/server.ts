@@ -42,6 +42,7 @@ import {
 } from "@/lib/runway/gantt/GanttTemplate";
 import { makePayload, signPayload } from "@/lib/runway/gantt/share-token";
 import { chicagoToday } from "@/lib/runway/date-chicago";
+import { notASubtask } from "@/lib/runway/subtask-filters";
 import {
   foldChildDateRange,
   isSectionActionable,
@@ -130,12 +131,13 @@ export async function extractData(
   subject: ResolvedSubject,
   client: ClientRow,
 ): Promise<RawData> {
+  // Refs _R1#67: excludes subtasks, the Gantt Charts row-extraction path.
   const items = await withRunwayRetry(
     () =>
       db
         .select()
         .from(weekItems)
-        .where(eq(weekItems.projectId, subject.project.id)),
+        .where(and(eq(weekItems.projectId, subject.project.id), notASubtask)),
     "extractData",
   );
   return buildRawData(subject, client, items);
@@ -207,12 +209,14 @@ export async function extractClientRundown(
 
   const wiByProject = new Map<string, WeekItemRow[]>();
   if (idsNeedingWeekItems.size > 0) {
+    // Refs _R1#67: excludes subtasks, the bulk rundown extraction path
+    // shared by the By Account tab and the Gantt Charts tab.
     const all = await withRunwayRetry(
       () =>
         db
           .select()
           .from(weekItems)
-          .where(inArray(weekItems.projectId, Array.from(idsNeedingWeekItems))),
+          .where(and(inArray(weekItems.projectId, Array.from(idsNeedingWeekItems)), notASubtask)),
       "extractClientRundown:weekItems",
     );
     for (const w of all) {

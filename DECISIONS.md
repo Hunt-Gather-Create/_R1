@@ -170,6 +170,14 @@ Why: Share links need to be tamper-proof (HMAC) and ephemeral (TTL) so they expi
 Locks: Share URLs go through HMAC verification on every request. `RUNWAY_SHARE_SECRET` is rotated periodically. Origin defaults to `NEXT_PUBLIC_APP_URL` or `https://runway.startround1.com`.
 Refs: `src/lib/runway/gantt/server.ts`, `src/app/api/runway/gantt-share/[token]/route.ts`.
 
+## D-21 — Completed subtasks stay visible, struck through, never hidden
+
+Date: 2026-09-02
+Decision: A completed subtask does not disappear from its work item's subtask list. It stays visible with a strike through the title. There is no toggle to hide completed subtasks.
+Why: The work item card already carries a done over total count once Phase 2 ships. Hiding a completed subtask behind a toggle removes the record of what was done without adding any information the count does not already summarize. Operator and TP decision, refs docs/plans/subtasks-under-work-items.md.
+Locks: Phase 2's interface must not add a hide completed toggle for subtasks. A subtask row's visibility depends only on its parent work item's own visibility, never on the subtask's own status.
+Refs: _R1#67, docs/plans/subtasks-under-work-items.md.
+
 ---
 
 ## Format reference

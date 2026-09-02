@@ -21,6 +21,7 @@ vi.mock("drizzle-orm", () => ({
   and: vi.fn((...args) => ({ and: args })),
   asc: vi.fn((col) => ({ asc: col })),
   desc: vi.fn((col) => ({ desc: col })),
+  isNull: vi.fn((a) => ({ isNull: [a] })),
 }));
 
 // Mock the fuzzy lookup helpers used by getProjectStatus.

@@ -1,0 +1,1 @@
+ALTER TABLE `week_items` ADD `parent_task_id` text;

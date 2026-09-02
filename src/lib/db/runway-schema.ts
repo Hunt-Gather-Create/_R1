@@ -84,8 +84,13 @@ export const weekItems = sqliteTable("week_items", {
   // L5 door (unified-hierarchy principle, plan §3.4): every level is potentially
   // actionable AND container. week_items becomes container-capable when real
   // subtask demand appears (revisit trigger: hierarchy-comparison doc, 2026-07-25).
-  // Until then, deliberately not shipped:
-  // parentTaskId: text("parent_task_id"),  // FK-free self-ref per parentProjectId convention
+  // Opened refs _R1#67 phase 1, data and writes only, no UI yet. FK-free
+  // self-ref per parentProjectId convention. A row whose own parentTaskId is
+  // set is a subtask and must never itself be set as a parentTaskId, one
+  // level deep only, enforced in the write helper, not by this column alone.
+  // Every read that assumes a week_items row is a top-level work item must
+  // exclude parentTaskId IS NOT NULL. See docs/plans/subtasks-under-work-items.md.
+  parentTaskId: text("parent_task_id"),
   dayOfWeek: text("day_of_week"), // monday, tuesday, etc.
   weekOf: text("week_of"), // ISO date of the Monday (e.g. "2026-04-06")
   date: text("date"), // exact date (e.g. "2026-04-07") — legacy; replaced by startDate in v4

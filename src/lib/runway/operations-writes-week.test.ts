@@ -39,6 +39,8 @@ vi.mock("@/lib/db/runway-schema", () => ({
 
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((a, b) => ({ eq: [a, b] })),
+  and: vi.fn((...conditions) => ({ and: conditions })),
+  isNull: vi.fn((a) => ({ isNull: [a] })),
 }));
 
 const mockGetClientBySlug = vi.fn();

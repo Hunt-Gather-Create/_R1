@@ -26,6 +26,7 @@ import {
   weekItems,
 } from "@/lib/db/runway-schema";
 import { asc } from "drizzle-orm";
+import { notASubtask } from "./subtask-filters";
 import type {
   Account,
   DayItem,
@@ -84,10 +85,13 @@ export async function getFlags(
   const { clientSlug, personName, now = parseISODate(chicagoToday()) } = opts;
   const db = getRunwayDb();
 
+  // Refs _R1#67: week items exclude subtasks. This feeds analyzeFlags, the
+  // deadline / retainer-renewal / past-end flags rail and the bot plate
+  // summary, a top-level work item surface.
   const [allClients, allProjects, allWeekItems, allPipeline] = await Promise.all([
     db.select().from(clientsTable),
     db.select().from(projects).orderBy(asc(projects.sortOrder)),
-    db.select().from(weekItems).orderBy(asc(weekItems.date), asc(weekItems.sortOrder)),
+    db.select().from(weekItems).where(notASubtask).orderBy(asc(weekItems.date), asc(weekItems.sortOrder)),
     db.select().from(pipelineItems).orderBy(asc(pipelineItems.sortOrder)),
   ]);
 
