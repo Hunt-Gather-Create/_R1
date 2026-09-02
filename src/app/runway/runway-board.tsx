@@ -55,6 +55,13 @@ interface RunwayBoardProps {
       ganttContent?: ReactNode;
       ganttSeverity?: SeverityCounts;
       readyToCloseIds?: ReadonlySet<string>;
+      /**
+       * Refs _R1#104: true when the account has no active project and no
+       * pipeline item. By Account hides these by default, with a toggle to
+       * reveal them. Gantt Charts ignores this field and keeps its own
+       * filtering (filterActiveRundown at the page.tsx level).
+       */
+      hasNoOpenWork?: boolean;
     }
   >;
   pipeline: PipelineItem[];
@@ -142,6 +149,15 @@ export function RunwayBoard({
   const [needsUpdateEnabled, setNeedsUpdateEnabled] = useState(initialNeedsUpdateEnabled);
   const { pipelineTotal, todayColumn, restOfWeek, upcomingWeeks } = useBoardData(thisWeek, upcoming, pipeline);
   const { isStale } = useVersionPoll(router);
+
+  // Refs _R1#104: By Account only. hasNoOpenWork is computed upstream in
+  // page.tsx (no active project AND no pipeline item); Gantt Charts below
+  // keeps reading the full, unfiltered `accounts` array.
+  const [showHiddenAccounts, setShowHiddenAccounts] = useState(false);
+  const hiddenAccountCount = accounts.filter((a) => a.hasNoOpenWork).length;
+  const visibleAccounts = showHiddenAccounts
+    ? accounts
+    : accounts.filter((a) => !a.hasNoOpenWork);
 
   return (
     <div className="min-h-screen bg-background">
@@ -239,7 +255,21 @@ export function RunwayBoard({
 
             {view === "accounts" ? (
               <div className="space-y-6">
-                {accounts.map((account) => (
+                {hiddenAccountCount > 0 ? (
+                  <div className="flex items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                    <span>
+                      {hiddenAccountCount} account{hiddenAccountCount === 1 ? "" : "s"} hidden, no open work
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowHiddenAccounts((v) => !v)}
+                      className="font-medium text-foreground underline underline-offset-2"
+                    >
+                      {showHiddenAccounts ? "Hide them again" : "Show hidden accounts"}
+                    </button>
+                  </div>
+                ) : null}
+                {visibleAccounts.map((account) => (
                   <AccountSection key={account.slug} account={account} />
                 ))}
               </div>
