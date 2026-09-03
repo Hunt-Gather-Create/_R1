@@ -37,6 +37,25 @@ import type { MutationResponse } from "./mutation-response";
 
 export const SUBTASK_TITLE_MAX_LEN = 280;
 
+/**
+ * Refs _R1#141: every weekOf- or sectionId-filtered read site relies on a
+ * subtask row never carrying a real value in either column. createSubtask
+ * asserts that on the row it is about to insert rather than trusting the
+ * column default to produce it by omission, so a future edit to the insert
+ * that accidentally threads a weekOf or sectionId through fails loudly here
+ * instead of silently opening the three read sites that isolation protects.
+ */
+export function assertSubtaskShape(row: {
+  weekOf: string | null;
+  sectionId: string | null;
+}): void {
+  if (row.weekOf !== null || row.sectionId !== null) {
+    throw new Error(
+      "createSubtask invariant violated: a subtask row must never carry a weekOf or sectionId."
+    );
+  }
+}
+
 function validateSubtaskTitle(title: string): { ok: true } | { ok: false; error: string } {
   if (!title || title.trim() === "") {
     return { ok: false, error: "Subtask title is required." };
@@ -117,7 +136,7 @@ export async function createSubtask(
   const nextSortOrder =
     siblingRows.reduce((max, r) => Math.max(max, r.sortOrder ?? 0), -1) + 1;
 
-  await db.insert(weekItems).values({
+  const insertValues = {
     id: subtaskId,
     parentTaskId,
     projectId: parent.projectId,
@@ -127,7 +146,11 @@ export async function createSubtask(
     status: null,
     endDate: dueDate ?? null,
     sortOrder: nextSortOrder,
-  });
+    weekOf: null,
+    sectionId: null,
+  };
+  assertSubtaskShape(insertValues);
+  await db.insert(weekItems).values(insertValues);
 
   await insertAuditRecord({
     idempotencyKey: idemKey,
