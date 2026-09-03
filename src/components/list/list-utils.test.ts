@@ -28,6 +28,7 @@ function createIssue(overrides: Partial<IssueWithLabels> = {}): IssueWithLabels 
     updatedAt: new Date("2025-01-01"),
     labels: [],
     ...overrides,
+    epicId: overrides.epicId ?? null,
   };
 }
 

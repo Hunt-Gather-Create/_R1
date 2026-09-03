@@ -1292,6 +1292,7 @@ describe("buildProjectModal — Bug A: picker initial_option labels", () => {
       args: {},
       proposalId: "prop_bug_a_proj_client_001",
       mode: "edit",
+      retainerMode: false,
       currentValues: {
         name: "Edit project",
         clientId: "f0d5a9b931404d90bd6e84346",
@@ -1311,6 +1312,7 @@ describe("buildProjectModal — Bug A: picker initial_option labels", () => {
       args: {},
       proposalId: "prop_bug_a_proj_client_002",
       mode: "edit",
+      retainerMode: false,
       currentValues: {
         name: "Edit project",
         clientId: "client_legacy_id",
@@ -1329,6 +1331,7 @@ describe("buildProjectModal — Bug A: picker initial_option labels", () => {
       args: {},
       proposalId: "prop_bug_a_parent_001",
       mode: "edit",
+      retainerMode: false,
       currentValues: {
         name: "Edit project",
         clientId: "client_xyz",
@@ -1350,6 +1353,7 @@ describe("buildProjectModal — Bug A: picker initial_option labels", () => {
       args: {},
       proposalId: "prop_bug_a_parent_002",
       mode: "edit",
+      retainerMode: false,
       currentValues: {
         name: "Edit project",
         clientId: "client_xyz",

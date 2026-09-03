@@ -151,8 +151,10 @@ describe("updateProjectStatus", () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.message).toContain("in-production");
-    expect(result.message).toContain("awaiting-client");
+    if (result.ok) {
+      expect(result.message).toContain("in-production");
+      expect(result.message).toContain("awaiting-client");
+    }
     expect(mockUpdateSet).toHaveBeenCalledWith(
       expect.objectContaining({ status: "awaiting-client" })
     );
@@ -212,7 +214,7 @@ describe("updateProjectStatus", () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.message).toContain("duplicate");
+    if (result.ok) expect(result.message).toContain("duplicate");
     expect(mockUpdateSet).not.toHaveBeenCalled();
   });
 

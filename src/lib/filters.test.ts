@@ -51,6 +51,7 @@ function createIssue(
     updatedAt: new Date(),
     labels: [],
     ...overrides,
+    epicId: overrides.epicId ?? null,
   };
 }
 

@@ -53,7 +53,13 @@ describe("serializeMessageParts", () => {
   it("serializes parts to JSON string", () => {
     const parts = [
       { type: "text" as const, text: "Hello" },
-      { type: "tool-test", output: { success: true } },
+      {
+        type: "tool-test" as const,
+        toolCallId: "tool-call-1",
+        state: "output-available" as const,
+        input: {},
+        output: { success: true },
+      },
     ];
     const result = serializeMessageParts(parts);
 

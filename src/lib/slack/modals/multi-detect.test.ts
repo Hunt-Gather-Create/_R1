@@ -18,6 +18,7 @@
  *   - Parent has no postedMessageTs -> bail gracefully (no throw).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { WebClient } from "@slack/web-api";
 import { reEmitButtonsAfterParentSave } from "./multi-detect";
 
 // ----------------------------------------------------------------------------
@@ -124,7 +125,7 @@ function makeDbMock(rows: MockProposal[]) {
 // Slack client mock — captures chat.update + chat.postMessage calls.
 // ----------------------------------------------------------------------------
 function makeSlackMock(opts?: { chatUpdateError?: string }) {
-  const chatUpdate = vi.fn(async () => {
+  const chatUpdate = vi.fn(async (_args: Parameters<WebClient["chat"]["update"]>[0]) => {
     if (opts?.chatUpdateError) {
       const err = new Error(opts.chatUpdateError) as Error & {
         data?: { error?: string };
@@ -134,11 +135,15 @@ function makeSlackMock(opts?: { chatUpdateError?: string }) {
     }
     return { ok: true };
   });
-  const chatPostMessage = vi.fn().mockResolvedValue({ ok: true, ts: "1714493000.000100" });
+  const chatPostMessage = vi.fn(
+    async (_args: Parameters<WebClient["chat"]["postMessage"]>[0]) => {
+      return { ok: true, ts: "1714493000.000100" };
+    },
+  );
   return {
     client: {
       chat: { update: chatUpdate, postMessage: chatPostMessage },
-    } as unknown as Parameters<typeof reEmitButtonsAfterParentSave>[2],
+    } as unknown as Parameters<typeof reEmitButtonsAfterParentSave>[3],
     chatUpdate,
     chatPostMessage,
   };
@@ -205,13 +210,10 @@ describe("reEmitButtonsAfterParentSave", () => {
     // chat.update fired exactly once on the parent's posted message.
     expect(chatUpdate).toHaveBeenCalledTimes(1);
     expect(chatPostMessage).not.toHaveBeenCalled();
-    const call = chatUpdate.mock.calls[0][0] as {
-      channel: string;
-      ts: string;
-      blocks: Array<Record<string, unknown>>;
-    };
+    const call = chatUpdate.mock.calls[0][0];
     expect(call.channel).toBe("C_TEST_001");
     expect(call.ts).toBe("1714492800.001000");
+    if (!("blocks" in call)) throw new Error("expected chat.update call to carry blocks");
     expect(Array.isArray(call.blocks)).toBe(true);
   });
 
@@ -261,9 +263,8 @@ describe("reEmitButtonsAfterParentSave", () => {
     expect(updatedIds).not.toContain("prop_child_other_b");
 
     expect(chatUpdate).toHaveBeenCalledTimes(1);
-    const call = chatUpdate.mock.calls[0][0] as {
-      blocks: Array<Record<string, unknown>>;
-    };
+    const call = chatUpdate.mock.calls[0][0];
+    if (!("blocks" in call)) throw new Error("expected chat.update call to carry blocks");
     // Walk the actions block - the matching child gets open_create_modal and
     // siblings retain task_button_disabled. Both populate value=proposalId.
     const actionsBlock = call.blocks.find(
