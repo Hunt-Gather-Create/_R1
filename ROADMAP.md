@@ -7,7 +7,8 @@ and GitHub gets corrected.
 **GitHub Issues remains the source of truth for the content of an individual item:**
 https://github.com/jasonburks23/_R1/issues
 
-**Last refreshed:** 2026-09-02, full re-verification against `705b6ae`
+**Last refreshed:** 2026-09-03, four merges recorded against tip `146a10f`. Ticket detail
+below is verified against `705b6ae` or later; see the change log for exactly which.
 
 ---
 
@@ -43,17 +44,17 @@ written at plan time, plus the seat that must witness it. The rules that shaped 
 
 | # | Milestone | Open | Observable event, one only | Observer | Observed |
 |---|---|---|---|---|---|
-| 01 | Schedule Sync | 2 | A row on the prod board changes to match its Google Sheet, and the operator sees the changed row on runway.startround1.com without anyone having typed it | operator | |
-| 02 | Auth and secret guards | 4 | A deliberately unsafe secret compare, planted on a real route on a branch, turns the PR test gate RED on the GitHub PR page | Runway TP | |
+| 01 | Schedule Sync | 3 | A row on the prod board changes to match its Google Sheet, and the operator sees the changed row on runway.startround1.com without anyone having typed it | operator | |
+| 02 | Auth and secret guards | 5 | A deliberately unsafe secret compare, planted on a real route on a branch, turns the PR test gate RED on the GitHub PR page | Runway TP | |
 | 03 | DB safety tool | 0 | A migration runs against staging and its diff is read there BEFORE it touches prod | operator | |
 | 04 | Meeting routing | 0 | A work item nobody typed appears on the prod board, traceable to a named meeting transcript | operator | |
 | 05 | Board UX | 8 | The operator loads runway.startround1.com and the named defect is visibly gone on the rendered page | operator | |
 | 06 | Slack integration | 8 | A real slash command in the real Slack workspace produces the correct row, seen BOTH in Slack and on the prod board | operator | |
-| 07 | Work model | 7 | A real retainer with real subtasks renders its full hierarchy on the prod board | operator | |
-| 08 | Data cascade | 4 | A parent date override survives a child change in prod, and the audit row for it is read back from the prod DB | DI-TP | |
+| 07 | Work model | 6 | A real retainer with real subtasks renders its full hierarchy on the prod board | operator | |
+| 08 | Data cascade | 5 | A parent date override survives a child change in prod, and the audit row for it is read back from the prod DB | DI-TP | |
 | 09 | Infra and repo hygiene | 16 | A merge to `runway` is followed automatically by a smoke run whose result appears in GitHub Actions | Runway TP | **2026-08-30 15:45Z** |
 | 10 | Prod data corrections | 0 | Operator-walked. Not a dispatch target and not counted in percent-to-done. | operator | |
-| 11 | Gate integrity | 4 | `npx tsc --noEmit` is wired as a required CI check, and a PR that reintroduces a cleared type error is blocked on the GitHub PR page before merge, not merely reported | Runway TP | |
+| 11 | Gate integrity | 3 | `npx tsc --noEmit` is wired as a required CI check, and a PR that reintroduces a cleared type error is blocked on the GitHub PR page before merge, not merely reported | Runway TP | |
 | 12 | Data integrity as a tool | 7 | A write carrying an out-of-enum value is rejected by a database CHECK constraint, and the rejection is read back from the database itself, not from application code | DI-TP | |
 
 Milestone 09's own observable event is the same event the launch track below already witnessed.
@@ -147,11 +148,16 @@ already cleared it. Every other milestone, 01 through 08 and 10 through 12, has 
 empty. Nothing has been witnessed running in production against 05, 07, or any of the newer
 security and data-integrity work, no matter how many of their tickets have closed.
 
-**58 of the 60 currently open tickets carry a `## Verified against 705b6ae` section**, added
-during the 2026-09-02 backlog re-verification. The two without one, #67 and #141, were each
-independently re-verified against a slightly earlier SHA on this same branch, `d53b6dc` and
-`e6aa437`, days before 705b6ae landed, and neither ticket's premise touches anything that
-changed between those commits and 705b6ae.
+**60 of the 61 currently open tickets carry a `## Verified against` section**, added during
+the 2026-09-02 backlog re-verification and extended by the 2026-09-03 pass. 59 of those cite
+`705b6ae`, unchanged by the four merges landed since. Closing #109, #124, #125, and #141
+removed one of the file's two exceptions, #141, from the open pool, and #142 through #146
+each already carry the same `705b6ae` verification. #147, filed fresh on 2026-09-03, carries
+its own `146a10f` verification, the current tip. Read the 705b6ae group as verified against
+705b6ae or later, not against today's tip; #147 alone is checked against today's tip directly.
+The one remaining exception, #67, was independently re-verified against a slightly earlier SHA
+on this same branch, `d53b6dc`, days before 705b6ae landed, and its premise touches nothing
+that changed between that commit and 705b6ae.
 
 That is not a discouraging number, it is the correct one. It says the launch control is real
 and proven, the build half is moving, and the product-facing claims above it are still
@@ -169,6 +175,7 @@ and the dry-run plus snapshot plus verify safety triplet.
 |---|---|
 | #40 | Google Sheet integration: tie a sheet to a project or account (PM-tool capability) |
 | #92 | Runway to Google Sheets Sync, Phase 2/3 bidirectional plus intelligent cascade. Deferred, downstream of #91, do not start until #91 has 30 days in prod |
+| #143 | The sheet sync review queue has a writer and no reader, so a stopped write vanishes |
 
 Shipped: #101 service account, PR #121, #102 ledger to DB, PR #122, #103 apply-writes
 executor, PR #131, #43 timezone convergence, PR #130. #91 and #7 closed 2026-09-01 as
@@ -181,9 +188,10 @@ than an MCP tool. #7 closed because every Drive v3 call in the google-api skill 
 
 | # | Title | State |
 |---|---|---|
-| #109 | Auth-guard coverage stops at a hand-maintained route list | option 2 chosen, not yet built |
 | #110 | Token-compare guard cannot see a compare that is both rebound and moved into a helper | KNOWN-UNCOVERED tripwire pinned, fix not yet built |
 | #122 | Secret detector keys on five words in an env var name, so a nonce or salt shaped secret is invisible | measurement needed before a fix is chosen, no known live exposure |
+| #145 | The auth guard lives inside its own test file, so nothing can call it and every fix queues on one file | newly filed |
+| #146 | An acknowledged-safe route stays acknowledged even if it stops being safe | newly filed |
 | #90 | Rotate Runway env secrets | operator-only, not dispatchable |
 
 Shipped: #98 timing-safe MCP bearer check, PR #129, #106 AST call-site guard, PR #134, #108
@@ -191,11 +199,23 @@ reachability guard, PR #136, commit `fa6bd3f`, #107 the PR gate carries informat
 #111 source-coverage guard scans the git index not the filesystem, PR #138, #114 vitest
 excludes sibling worktrees, PR #139, #112 gantt-embed constant-time compare, PR #140, #120
 env-var-name discriminator on the token compare guard, PR #142, #117 the secret-compare census
-that informed #120's fix.
+that informed #120's fix, #109 KNOWN_AUTH_ROUTES completeness check, PR #157, commit `146a10f`.
 
 Closed without shipping code: #116, superseded by #108. #88 and #118 closed 2026-09-01 with
 verdict GONE after a premise recheck against current code, commit `d921de1`: the authkit JSON
 bypass and the four unguarded chat routes both no longer exist as described.
+
+**Not this milestone's observable event.** On PR #156, CC planted a real bypass at commit
+`0bc92cb`, a route in `proxy.ts` that skipped the auth check. `reachability` went RED while
+`vitest` stayed green, and the revert at `6e6e78d` returned both to green, verified against
+the actual GitHub Actions job conclusions. That is a real defect turning a real CI job red on
+a real PR page, but it is milestone 11's event, not milestone 02's. Milestone 02's bar names a
+secret COMPARE, specifically an unsafe equality check on a token or secret value. What was
+planted was an auth-path bypass, a route that never ran the check at all, not a compare that
+ran and used the wrong operator. The two milestones cover different defect classes on purpose:
+02 is about comparisons being constant-time and routes being discovered rather than
+hand-listed, 11 is about the gate itself telling the truth. #156's stunt is strong direct
+evidence for 11 and stays recorded there. Milestone 02 stays unobserved.
 
 ### 03 DB safety tool
 
@@ -246,7 +266,6 @@ Shipped: #31 modal test row root cause verified, #34 bot-tools maxUses complianc
 | # | Title |
 |---|---|
 | #67 | Subtasks under work items. The 4-level hierarchy and mouse-driven completion checkboxes already shipped, this is the remaining piece, the subtask entity itself. Prod data risk, needs an operator walk before dispatch |
-| #141 | Subtask isolation holds by absence of a caller, not by a guard. Gates #67 phase 2 |
 | #87 | Define notes content rules, consider a non-exposed system-context field for L1/L2 |
 | #96 | Milestones as first-class concept |
 | #95 | Hybrid PM model support, waterfall plus iterative/sprint |
@@ -254,7 +273,8 @@ Shipped: #31 modal test row root cause verified, #34 bot-tools maxUses complianc
 | #38 | Write up the status and category enum decisions that already shipped |
 
 Shipped: #39 L3 hierarchy and flexible top-level wrapper assignment, #72 Gantt CLI parity.
-#67 data-and-writes-only phase already landed, PR #152, commit `131f516`.
+#67 data-and-writes-only phase already landed, PR #152, commit `131f516`. #141 subtask
+isolation hardened with two explicit guards, PR #154, commit `72e6c4a`.
 
 ### 08 Data cascade
 
@@ -264,6 +284,7 @@ Shipped: #39 L3 hierarchy and flexible top-level wrapper assignment, #72 Gantt C
 | #27 | MCP update_project_field: category not in tool-level whitelist |
 | #68 | chore: rewrite legacy setBatchId test sites to withBatchId |
 | #138 | Undo shows a raw database error instead of the out-of-date message when a write lands mid-transaction |
+| #144 | updateProjectField swallows a set-undo-set write because its idempotency key omits the previous value |
 
 Data-only items in this milestone go through the `data-integrity-tp` skill. No ad-hoc prod
 mutations. See D-10.
@@ -310,13 +331,29 @@ category matrix, blocking the constraint migration under #130.
 
 | # | Title |
 |---|---|
-| #124 | Clear the remaining 40 type errors, the last blocker to a type gate |
-| #125 | Wire the reachability suite into CI so the chat-route guard cannot silently lapse |
 | #127 | Nothing stops the fourth timezone-dependent test from being written |
 | #129 | Four test files fail at extreme timezones, pre-existing and invisible under UTC |
+| #147 | The checks report but cannot block: tsc is not in CI and runway has no branch protection |
 
-Nothing in this milestone has shipped yet. It is the first item in execution order because
-every other milestone's build work gets graded through these same gates.
+Shipped: #124 the remaining 40 type errors cleared to zero, no suppressions, PR #155, commit
+`4556973`. #125 the reachability suite wired into `pr-tests.yml` as its own job, PR #156,
+commit `f4d3de3`.
+
+**Why 2 of 4 shipped and not observed are both true.** A check that cannot fail a merge is a
+report, not a gate. #147 exists because #124's own result decays without it: nothing in the
+repo keeps `tsc` at zero once it gets there, so the next stray type error sits unnoticed the
+same way the last 40 did, and the four cleared merges bought nothing durable on their own.
+`pr-tests.yml` at tip `146a10f` still carries the comment "THIS REPORTS. IT DOES NOT BLOCK,"
+`tsc --noEmit` is not run anywhere in CI, and `gh api .../branches/runway/protection` returns
+404, branch not protected. No PR page has yet shown a required type-check block a
+reintroduced error. Not observed.
+
+**#147 has a half nobody in the build chain can do.** Adding the `typecheck` job to
+`pr-tests.yml` is ordinary code. Turning on branch protection for `runway` and marking checks
+required is a repository settings change on `Hunt-Gather-Create/_R1`, and only the operator or
+an admin on that repo can make it. Flagging this the same way 03 and 04's placement is flagged
+below: without the flag, a ticket with an operator-owned half can sit looking dispatchable
+forever while the half that actually closes the milestone waits on nobody in particular.
 
 ### 12 Data integrity as a tool
 
@@ -356,6 +393,36 @@ milestone above.
 ---
 
 ## Change log for this file
+
+**2026-09-03.** Four merges landed since the last refresh, tip now `146a10f`: PR #154 closed
+#141, two explicit guards hardening subtask isolation. PR #155 closed #124, the last 40 type
+errors cleared to zero. PR #156 closed #125, the reachability suite wired into `pr-tests.yml`
+as its own job, demonstrated on that PR by a planted `proxy.ts` auth bypass at `0bc92cb`
+turning `reachability` red while `vitest` stayed green, reverted clean at `6e6e78d`. PR #157
+closed #109, the `KNOWN_AUTH_ROUTES` completeness check. None of the four closes fired the D-07
+keyword; all four were closed by hand after verifying the merge. Five tickets were filed since
+the prior pass, #142 through #146. #142 was already carried into the 2026-09-02 refresh, and
+#143, #144, #145, and #146 are added to their milestones' open tables here. Milestone Open
+counts and ticket tables were recomputed from `gh issue list` and `gh api .../milestones`
+directly, not carried forward. Ruled that PR #156's planted-bypass demonstration satisfies
+milestone 11's bar, not milestone 02's: what was planted was a route that skipped its auth
+check, not an unsafe secret compare, which is what 02's bar names specifically. Milestone 11
+remains unobserved regardless: `pr-tests.yml` at `146a10f` still reports without blocking,
+`tsc --noEmit` still does not run in CI, and the `runway` branch still has no protection rule.
+The verified-against count was 59 of 60 open tickets at that point, all citing exactly
+`705b6ae`; stated as verified against 705b6ae or later since that SHA is four merges behind
+current tip.
+
+**2026-09-03, second pass.** #147 filed against milestone 11 directly from the finding above:
+`tsc` reached zero errors but nothing in CI keeps it there, so #124's cleared count has no
+durability without a check enforcing it. Verified the ticket's own claims against `146a10f`
+before adding it: no `tsc` step in `pr-tests.yml`, that file's own header still says it reports
+and does not block, and branch protection is still off. Added #147 to milestone 11's open
+table, moving its Open count from 2 to 3, and added a note explaining why "2 of 4 shipped" and
+"not observed" both hold, plus a flag that #147 carries a repository-settings half only the
+operator or a repo admin can complete. The verified-against tally is now 60 of 61 open tickets:
+59 cite `705b6ae`, #147 itself cites `146a10f`, today's tip, and #67 remains the sole
+unconverted exception.
 
 **2026-09-02.** Full re-verification against `705b6ae`. The entire open backlog was checked
 ticket by ticket against current code rather than carried forward from the prior refresh; 58 of
