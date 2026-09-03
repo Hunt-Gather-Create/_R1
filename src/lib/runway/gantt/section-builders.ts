@@ -140,6 +140,18 @@ export function weekItemsForSection(section: RundownSection): AnnotatedRow[] {
 }
 
 /**
+ * Every weekItem row for a section, terminal or not. Refs _R1#105: this
+ * distinguishes an L1 with zero weekItems ever from an L1 whose weekItems
+ * are all completed or canceled, a distinction weekItemsForSection cannot
+ * make on its own since it filters terminal rows out either way. Do not
+ * change weekItemsForSection's own filter to make this distinction; that
+ * filter is correct for "scheduled tasks" and stays that way.
+ */
+export function allWeekItemRowsForSection(section: RundownSection): AnnotatedRow[] {
+  return section.data.rows.filter((r) => r.kind === "weekitem");
+}
+
+/**
  * L1 entity id for a section whose raw data is L1-shaped. Wrapper sections
  * return null (the wrapper itself is not an L1). Shared by both the By
  * Account tier and the Gantt Charts dark embed for ready-to-close chip
