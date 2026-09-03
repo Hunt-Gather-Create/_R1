@@ -826,6 +826,37 @@ describe("AccountTier — L3 section bands (§3.3)", () => {
       expect(screen.queryByText("all done")).toBeNull();
       expect(screen.getByText("no tasks")).toBeTruthy();
     });
+
+    // _R1#105 merge risk, named explicitly in the dispatch: the two source
+    // branches compute counts from different row sources.
+    // fix/105-finished-l1-state's allDone path builds `displayItems` from
+    // ALL rows (open and terminal) so the whole L1's completed children
+    // still render as cards. fix/105-section-count-label's SectionBand
+    // reads its per-L3 count from that same items grouping. If the merge
+    // naively wired the second into the first, an all-done L1's own L3
+    // band would count its terminal rows as if they were open - "2 open"
+    // for two completed rows, exactly backwards. Only a fixture where the
+    // WHOLE L1 is all-done AND has L3 sections (so it takes the SectionBand
+    // render path, not the flat renderCards(displayItems) path either of
+    // the two branches' own tests used alone) can observe this.
+    it("an all-done L1's own L3 band reads 'all done', not the displayed row count as if it were open", () => {
+      renderWithL3(
+        [makeL3({ id: "l3-done", sortOrder: 0 })],
+        [
+          makeWeekItemRow({ sectionId: "l3-done", status: "completed" } as Partial<AnnotatedRow>),
+          makeWeekItemRow({ sectionId: "l3-done", status: "completed" } as Partial<AnnotatedRow>),
+        ],
+      );
+      // Whole L1 has zero open rows anywhere, so it takes the allDone path.
+      expect(screen.getByTestId("all-done-chip")).toBeTruthy();
+      // The L3 band must read the true open/total split (0 open, 2 total),
+      // not the two displayed (terminal) rows as if they were open work.
+      expect(screen.getByText("all done")).toBeTruthy();
+      expect(screen.queryByText("2 open")).toBeNull();
+      expect(screen.queryByText("0 open")).toBeNull();
+      // Both completed cards still render underneath the band.
+      expect(screen.getAllByTestId("l2-mini-card")).toHaveLength(2);
+    });
   });
 });
 

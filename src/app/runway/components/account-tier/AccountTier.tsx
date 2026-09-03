@@ -487,6 +487,19 @@ function L1Section({
   // its tasks), then loose tasks (null sectionId) LAST — legacy flat-list
   // data never interleaves inside the L3 grouping. Projects with zero
   // sections fall back to the flat list unchanged.
+  //
+  // _R1#105 merge note: `itemsByL3` groups `displayItems` — open rows
+  // normally, ALL rows (including terminal) when this L1 is `allDone` — and
+  // exists purely to decide WHAT CARDS to render per L3 band. It must NOT
+  // also be used to compute each band's own open-vs-total count: when
+  // `allDone`, `displayItems` is the unfiltered list, so an L3Items.length
+  // taken from it would equal that L3's total row count, and
+  // formatTaskCountLabel would read every terminal row as "open" and
+  // mislabel a finished L3 as "N open" instead of "all done" — the exact
+  // band-vs-chip disagreement flagged as this merge's risk. `openCountByL3`
+  // below is built from `items` (always the filtered, open-only list,
+  // independent of `allDone`) specifically so each L3 band's own count
+  // stays correct regardless of what `displayItems` renders as cards.
   const l3s = section.l3Sections ?? [];
   const itemsByL3 = new Map<string, AnnotatedRow[]>();
   const looseItems: AnnotatedRow[] = [];
@@ -499,6 +512,13 @@ function L1Section({
     } else {
       looseItems.push(wi);
     }
+  }
+
+  const openCountByL3 = new Map<string, number>();
+  for (const wi of items) {
+    const sid = wi.kind === "weekitem" ? wi.sectionId : null;
+    if (!sid) continue;
+    openCountByL3.set(sid, (openCountByL3.get(sid) ?? 0) + 1);
   }
 
   // _R1#105 — the label needs a fact `weekItemsForSection` doesn't carry:
@@ -570,10 +590,11 @@ function L1Section({
         <div className="space-y-2 pt-2">
           {l3s.map((l3) => {
             const l3Items = itemsByL3.get(l3.id) ?? [];
+            const openCount = openCountByL3.get(l3.id) ?? 0;
             const totalCount = totalCountByL3.get(l3.id) ?? 0;
             return (
               <div key={l3.id} className="pl-2">
-                <SectionBand l3={l3} openCount={l3Items.length} totalCount={totalCount} />
+                <SectionBand l3={l3} openCount={openCount} totalCount={totalCount} />
                 {l3Items.length > 0 ? renderCards(l3Items) : null}
               </div>
             );
