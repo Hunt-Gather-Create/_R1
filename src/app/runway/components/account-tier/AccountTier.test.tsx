@@ -686,7 +686,8 @@ describe("AccountTier — L3 section bands (§3.3)", () => {
     // Derived dates render grayed, never solid.
     expect(screen.getByTestId("l3-dates-derived")).toBeTruthy();
     expect(screen.queryByTestId("l3-dates-own")).toBeNull();
-    expect(screen.getByText("1 task")).toBeTruthy();
+    // _R1#105 — open-work count reads "N open", not the old bare "N task(s)".
+    expect(screen.getByText("1 open")).toBeTruthy();
   });
 
   it("actionable section renders ONE band with its own solid chips — never a phantom child card", () => {
@@ -760,6 +761,71 @@ describe("AccountTier — L3 section bands (§3.3)", () => {
     expect(screen.queryByTestId("l3-band-grouping")).toBeNull();
     expect(screen.queryByTestId("l3-band-actionable")).toBeNull();
     expect(screen.getByText("Flat Task")).toBeTruthy();
+  });
+
+  // _R1#105 — the count and the label must agree about what they mean.
+  // `weekItemsForSection` correctly drops completed/canceled rows for the
+  // active view (that filter is NOT the bug). The bug is that a section
+  // whose rows are ALL terminal renders the raw filtered count ("0 tasks"),
+  // which reads as a failed import instead of finished work.
+  describe("_R1#105 — section task-count label", () => {
+    it("open tasks: shows an open-work count, e.g. '1 open'", () => {
+      renderWithL3(
+        [makeL3({ id: "l3-open" })],
+        [makeWeekItemRow({ sectionId: "l3-open", status: "in-progress" } as Partial<AnnotatedRow>)],
+      );
+      expect(screen.getByText("1 open")).toBeTruthy();
+      expect(screen.queryByText("0 tasks")).toBeNull();
+    });
+
+    it("a MIXED section counts only the OPEN rows, not every row", () => {
+      // Every other case here has openCount === totalCount (l3-open is a
+      // single in-progress row) or takes the all-terminal/empty branch
+      // (l3-done, l3-empty), so none of them can tell "count the open rows"
+      // apart from "count every row". A mixed section — one open row plus
+      // one terminal row — is the only fixture where the two numbers
+      // differ, which is the only way this test can fail if the label ever
+      // regresses to the total count.
+      renderWithL3(
+        [makeL3({ id: "l3-mixed" })],
+        [
+          makeWeekItemRow({ sectionId: "l3-mixed", status: "in-progress" } as Partial<AnnotatedRow>),
+          makeWeekItemRow({ sectionId: "l3-mixed", status: "completed" } as Partial<AnnotatedRow>),
+        ],
+      );
+      expect(screen.getByText("1 open")).toBeTruthy();
+      expect(screen.queryByText("2 open")).toBeNull();
+    });
+
+    it("all-terminal section reads as finished work ('all done'), not a failed import ('0 tasks')", () => {
+      // The L1 overall is NOT empty (a sibling L3 has an open task) — so
+      // this exercises the L3-band "all rows terminal" case, not the
+      // whole-L1 "No Scheduled Tasks" empty state.
+      renderWithL3(
+        [makeL3({ id: "l3-has-work", sortOrder: 0 }), makeL3({ id: "l3-done", sortOrder: 1 })],
+        [
+          makeWeekItemRow({ sectionId: "l3-has-work", status: "in-progress" } as Partial<AnnotatedRow>),
+          makeWeekItemRow({ sectionId: "l3-done", status: "completed" } as Partial<AnnotatedRow>),
+        ],
+      );
+      // The l3-done section HAS a row — it is finished, not empty. It must
+      // never render the same "0 tasks" text a genuinely empty section would.
+      expect(screen.queryByText("0 tasks")).toBeNull();
+      expect(screen.getByText("all done")).toBeTruthy();
+    });
+
+    it("genuinely empty section: distinct wording from both open and all-done", () => {
+      // The L1 overall is NOT empty (it has an open task in a sibling L3
+      // section) — so this exercises the L3-band "zero rows at all" case,
+      // not the whole-L1 "No Scheduled Tasks" empty state.
+      renderWithL3(
+        [makeL3({ id: "l3-has-work", sortOrder: 0 }), makeL3({ id: "l3-empty", sortOrder: 1 })],
+        [makeWeekItemRow({ sectionId: "l3-has-work", status: "in-progress" } as Partial<AnnotatedRow>)],
+      );
+      expect(screen.queryByText("0 tasks")).toBeNull();
+      expect(screen.queryByText("all done")).toBeNull();
+      expect(screen.getByText("no tasks")).toBeTruthy();
+    });
   });
 });
 
