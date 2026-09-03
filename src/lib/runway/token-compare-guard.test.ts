@@ -737,7 +737,21 @@ function findSecretEnvCompareViolations(source: string, fileName: string): strin
         // this offender list even after isProvablyNotSecretCompare was
         // taught to catch it. Accepting a sink-shape hit here too lets the
         // answer isProvablyNotSecretCompare already produces actually land.
-        if (allNames.some(isSecretShapedEnvName) || reachesAuthSink(node, sourceFile)) {
+        //
+        // Gate-1 round 2 (QA, real-tree sweep): reachesAuthSink alone,
+        // with no regard for whether an env var is involved, turned every
+        // untraced authorization compare in the tree (member.role !==
+        // "admin", three real routes) into an offender too - this
+        // function is specifically the ENV VAR TRACE check, and
+        // allNames.length === 0 means there is no env var here at all.
+        // isProvablyNotSecretCompare already flags an untraced compare as
+        // "not provably safe" for its own separate reason (an untraced
+        // identifier could be a secret from anywhere); that is not this
+        // function's signal to act on. Requiring at least one traced name
+        // before accepting either the vocabulary or the sink-shape hit
+        // keeps RUNWAY_EMBED_NONCE (traced, off-vocabulary, sink hit) and
+        // drops member.role (traced to nothing).
+        if (allNames.length > 0 && (allNames.some(isSecretShapedEnvName) || reachesAuthSink(node, sourceFile))) {
           const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
           offenders.push(
             `${fileName}:${line + 1}: equality compare involves a secret shaped env var outside timingSafeTokenMatch: ${node.getText(sourceFile).trim()}`,
@@ -1525,6 +1539,35 @@ describe("token-compare guard: sink-shape catches a nonce-shaped secret outside 
     expect(plantedOffenders.some((o) => o.includes("embedNonce"))).toBe(true);
 
     expect(findAllGuardViolations(safeSource, "fixture.ts")).toHaveLength(0);
+  });
+
+  // QA's gate-1 FAIL on this ticket's first attempt: reachesAuthSink is
+  // pure text-shape matching, does this branch produce a 401/403, with no
+  // regard for whether an env var is involved at all. Wiring it into
+  // findSecretEnvCompareViolations as a bare OR alternative to the
+  // vocabulary check meant an UNTRACED compare - allNames.length === 0,
+  // which isProvablyNotSecretCompare already treats as "not provably
+  // safe" for its own separate reason (an untraced identifier could be a
+  // secret from anywhere) - also satisfied the offender gate purely on
+  // sink shape, with no env var in the picture at all.
+  // member.role !== "admin" gating a real 403 is the real-tree shape QA's
+  // rebuilt whole-tree sweep found: three routes, same line, none
+  // involving process.env or any traced name whatsoever. This function is
+  // specifically the ENV VAR TRACE check (see its own name and the
+  // module docstring - "an env var name is a deployment contract"); a
+  // bare-identifier authorization compare with no env var anywhere in it
+  // is not its domain and must not become an offender here.
+  it("does not flag an untraced authorization compare (member.role !== \"admin\") that has no env var in it at all", () => {
+    const source = `
+      export async function POST(request: Request) {
+        const member = await getMember(request);
+        if (member.role !== "admin") {
+          return new Response("forbidden", { status: 403 });
+        }
+        return new Response("ok");
+      }
+    `;
+    expect(findAllGuardViolations(source, "fixture.ts")).toHaveLength(0);
   });
 });
 
