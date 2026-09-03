@@ -668,22 +668,54 @@ function subtreeCarriesTaintedName(node: ts.Node, names: Set<string>): boolean {
 // This closes it with one more fixed-point pass over the file's variable
 // declarations: if a declaration's initializer subtree carries an
 // already-tainted name, the declared name joins the tainted set too - unless
-// the initializer's own TOP-LEVEL expression is an equality comparison
-// (`const ok = token === apiKey`). That exclusion is load-bearing, not
-// incidental: `token === apiKey`'s subtree DOES carry `token`, so without it
-// this pass would taint `ok` itself, and `ok` is a boolean, the RESULT of
-// comparing the two values, not the token. Scoped to exactly the shape this
-// ticket names - a non-equality wrap or computation (`token.length`,
-// `someHelper(token)`) that gets bound to a new name and read back later is
-// still tainted by this pass, same as the ticket's own fixture, and remains
-// a real, narrower residual not attempted here since it is outside what
-// #110 asked for.
+// the initializer's value is EQUALITY-DERIVED (`const ok = token ===
+// apiKey`). That exclusion is load-bearing, not incidental: `token ===
+// apiKey`'s subtree DOES carry `token`, so without it this pass would taint
+// `ok` itself, and `ok` is a boolean, the RESULT of comparing the two
+// values, not the token. Scoped to exactly the shape this ticket names - a
+// non-equality wrap or computation (`token.length`, `someHelper(token)`)
+// that gets bound to a new name and read back later is still tainted by
+// this pass, same as the ticket's own fixture, and remains a real, narrower
+// residual not attempted here since it is outside what #110 asked for.
+//
+// TP bounce, round 2 (#110), QA-found: the first version of this exclusion
+// checked only the initializer's own TOP-LEVEL node shape
+// (`isEqualityBinary(init)`), which missed `const ok = cond ? (token ===
+// apiKey) : false;` and `const ok = (token === apiKey) || fallback;` - both
+// still produce a boolean derived from the compare, one level under a
+// conditional or a logical operator, and both still tainted `ok` under the
+// narrower check. `isEqualityDerivedShape` below recurses through
+// parens, conditionals, and `&&`/`||`, matching if EITHER side of a
+// conditional/logical node is itself equality-derived (including a bare
+// boolean literal). This is deliberately the more permissive OR direction,
+// not the more conservative AND: a genuinely mixed branch (`cond ? token :
+// (token === apiKey)`, one side the raw value, one side a compare) would
+// still be excluded from tainting under this check, which is a narrower,
+// separate residual - not the shape either the ticket or this bounce named,
+// and not attempted here.
 //
 // Caller's responsibility, not this function's: `findCoOccurrenceViolations`
 // applies this only to the call-argument branch, not the binary-operand
 // branch, so `const t = String(token); return t === apiKey;` (no helper
 // call) is unaffected and stays `findUnguardedEqualityReturns`'s exclusive
 // domain, per #110's own scoping.
+function isEqualityDerivedShape(expr: ts.Expression): boolean {
+  const unwrapped = unwrapParens(expr);
+  if (isEqualityBinary(unwrapped)) return true;
+  if (unwrapped.kind === ts.SyntaxKind.TrueKeyword || unwrapped.kind === ts.SyntaxKind.FalseKeyword) return true;
+  if (ts.isConditionalExpression(unwrapped)) {
+    return isEqualityDerivedShape(unwrapped.whenTrue) || isEqualityDerivedShape(unwrapped.whenFalse);
+  }
+  if (
+    ts.isBinaryExpression(unwrapped) &&
+    (unwrapped.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+      unwrapped.operatorToken.kind === ts.SyntaxKind.BarBarToken)
+  ) {
+    return isEqualityDerivedShape(unwrapped.left) || isEqualityDerivedShape(unwrapped.right);
+  }
+  return false;
+}
+
 function resolveWrappedBindingNames(sourceFile: ts.SourceFile, seed: Set<string>): Set<string> {
   const tainted = new Set(seed);
   let changed = true;
@@ -697,7 +729,7 @@ function resolveWrappedBindingNames(sourceFile: ts.SourceFile, seed: Set<string>
         !tainted.has(node.name.text)
       ) {
         const init = unwrapParens(node.initializer);
-        if (!isEqualityBinary(init) && subtreeCarriesTaintedName(init, tainted)) {
+        if (!isEqualityDerivedShape(init) && subtreeCarriesTaintedName(init, tainted)) {
           tainted.add(node.name.text);
           changed = true;
         }
@@ -745,8 +777,19 @@ function findCoOccurrenceViolations(source: string, fileName: string): string[] 
   const carriesTokenForCall = (node: ts.Node): boolean => subtreeCarriesTaintedName(node, tokenNamesForCalls);
   const carriesApiKeyForCall = (node: ts.Node): boolean => subtreeCarriesTaintedName(node, apiKeyNamesForCalls);
 
+  // TP bounce, round 2 (#110): `timing-safe-token.ts` itself is
+  // `const a = Buffer.from(token); const b = Buffer.from(apiKey); ...
+  // return timingSafeEqual(a, b);` - a wrap-then-bind into a call, the
+  // exact shape Round 13's dataflow extension exists to catch, except this
+  // one IS the codebase's one provably-correct constant-time compare.
+  // Recognizing the PRIMITIVE the wrapper calls internally, rather than
+  // exempting the file by path, means the guard still inspects
+  // timing-safe-token.ts's own source (a future edit that stopped calling
+  // timingSafeEqual would still be caught) instead of trusting the
+  // filename never to change what it does.
   const isApprovedCall = (node: ts.CallExpression): boolean =>
-    ts.isIdentifier(node.expression) && node.expression.text === "timingSafeTokenMatch";
+    ts.isIdentifier(node.expression) &&
+    (node.expression.text === "timingSafeTokenMatch" || node.expression.text === "timingSafeEqual");
 
   const offenders: string[] = [];
   const record = (node: ts.Node) => {
@@ -1450,6 +1493,47 @@ ${filler}
     const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
     expect(tokenNames.has("ok")).toBe(false);
     expect(apiKeyNames.has("ok")).toBe(false);
+  });
+
+  it("does not over-taint an equality result nested under a conditional or a logical OR (TP bounce, round 2)", () => {
+    // QA's finding: the first exclusion checked only the initializer's own
+    // TOP-LEVEL shape, so a compare one level under a ternary or a `||`
+    // escaped it. Two separate fixtures, one per shape named in the
+    // bounce's acceptance item 3.
+    const ternary = `
+      function validateAuth(token, apiKey) {
+        const ok = someFlag ? (token === apiKey) : false;
+        return reportOutcome(ok);
+      }
+    `;
+    const logicalOr = `
+      function validateAuth(token, apiKey) {
+        const ok = (token === apiKey) || fallbackDenied;
+        return reportOutcome(ok);
+      }
+    `;
+    for (const source of [ternary, logicalOr]) {
+      const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+      const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+      const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+      expect(tokenNames.has("ok")).toBe(false);
+      expect(apiKeyNames.has("ok")).toBe(false);
+    }
+  });
+
+  it("does not flag the real timing-safe-token.ts wrapper, whose own internal timingSafeEqual call is not the approved name (TP bounce, round 2)", () => {
+    // The real, committed, provably-correct implementation: `const a =
+    // Buffer.from(token); const b = Buffer.from(apiKey); ...
+    // timingSafeEqual(a, b);`. `a` and `b` are wrapped-then-bound, exactly
+    // the shape Round 13's dataflow extension exists to catch - the
+    // difference is the call they reach is `timingSafeEqual`, the real
+    // node:crypto primitive this file exists to wrap, not an unapproved
+    // helper. Read from disk, not a hand-written approximation, so a real
+    // edit to this file is what this test actually watches.
+    const file = path.join(ROOT, "src/lib/runway/timing-safe-token.ts");
+    const source = fs.readFileSync(file, "utf8");
+    expect(source).toContain("timingSafeEqual(a, b)");
+    expect(findAllGuardViolations(source, file)).toHaveLength(0);
   });
 
   it("flags a plain-equality compare via a method-call RECEIVER, not an argument (round 9, shape 9)", () => {
