@@ -68,6 +68,67 @@ export function isSecretShapedEnvName(name: string): boolean {
   return /SECRET|TOKEN|KEY|PASSWORD|CREDENTIAL/i.test(name);
 }
 
+/**
+ * Refs _R1#122. A nonce- or salt-shaped secret (RUNWAY_EMBED_NONCE) is
+ * invisible to isSecretShapedEnvName's five-word vocabulary. Rather than
+ * adding a sixth (and seventh, and eighth) word to a list that will keep
+ * rotting the same way KNOWN_AUTH_ROUTES (#109), the token/apiKey
+ * vocabulary (#117), and the polarity enumeration (#116) already did,
+ * this asks a structural question instead: does the compare's reachable
+ * branch produce a 401 or 403, the shape a real auth-gating compare has
+ * regardless of what its env var happens to be called. Measured against
+ * the real tree with scripts/secret-compare-census.ts before shipping
+ * this (see that script's sinkShapeMeasurement output): across 10 real
+ * env-traced equality compares in the tree today, sink-shape alone
+ * produced exactly one hit and it was a false positive, a NODE_ENV
+ * check that happens to sit near an auth branch. That is why this is
+ * gated on isKnownNonSecretModeName below rather than shipped alone -
+ * the measurement is the reason for the gate, not a formality.
+ *
+ * Text-scoped to each enclosing if-statement's own then/else branch,
+ * walking up to the nearest function boundary - the same shape as the
+ * census script's own reachesAuthSink, ported rather than reimplemented
+ * so the measurement and the shipped check agree by construction.
+ */
+export function reachesAuthSink(node: ts.Node, sourceFile: ts.SourceFile): boolean {
+  let cur: ts.Node | undefined = node;
+  while (cur) {
+    if (ts.isIfStatement(cur)) {
+      const thenText = cur.thenStatement.getText(sourceFile);
+      const elseText = cur.elseStatement?.getText(sourceFile) ?? "";
+      if (/status\s*:\s*40[13]\b/.test(thenText) || /status\s*:\s*40[13]\b/.test(elseText)) {
+        return true;
+      }
+    }
+    if (
+      ts.isFunctionDeclaration(cur) ||
+      ts.isFunctionExpression(cur) ||
+      ts.isArrowFunction(cur) ||
+      ts.isMethodDeclaration(cur)
+    ) {
+      break;
+    }
+    cur = cur.parent;
+  }
+  return false;
+}
+
+/**
+ * Refs _R1#122. The one real false positive the census measurement
+ * found for reachesAuthSink: a mode flag or feature flag that happens
+ * to sit near a 401/403 branch is not a secret, regardless of sink
+ * shape. Reuses the same name-shape vocabulary the census script's own
+ * classify() already uses for these categories, so this exclusion list
+ * and the measurement that justified it stay in agreement.
+ */
+export function isKnownNonSecretModeName(name: string): boolean {
+  const upper = name.toUpperCase();
+  if (upper === "NODE_ENV") return true;
+  if (upper.startsWith("VERCEL_")) return true;
+  if (/FLAG|ENABLE|FEATURE/.test(upper)) return true;
+  return false;
+}
+
 export type EnvTrace = { names: Set<string>; envVarByName: Map<string, string[]> };
 
 /** Builds, for one file, the set of identifier names whose declared
@@ -151,5 +212,13 @@ export function isProvablyNotSecretCompare(
   const rightNames = resolvedEnvVarNames(binary.right, sourceFile, trace);
   const allNames = [...leftNames, ...rightNames];
   if (allNames.length === 0) return false;
-  return !allNames.some(isSecretShapedEnvName);
+  if (allNames.some(isSecretShapedEnvName)) return false;
+  // Refs _R1#122: a name outside the five-word vocabulary (RUNWAY_EMBED_NONCE,
+  // a salt, a seed) is not provably safe just because it fails that
+  // regex. A known mode/feature flag is exempted regardless of sink
+  // shape (the measured false positive); anything else that reaches a
+  // 401/403 branch is treated as a possible secret compare too.
+  if (allNames.every(isKnownNonSecretModeName)) return true;
+  if (reachesAuthSink(binary, sourceFile)) return false;
+  return true;
 }
