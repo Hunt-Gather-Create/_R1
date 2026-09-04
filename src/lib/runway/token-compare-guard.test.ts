@@ -678,83 +678,103 @@ function subtreeCarriesTaintedName(node: ts.Node, names: Set<string>): boolean {
 // this pass, same as the ticket's own fixture, and remains a real, narrower
 // residual not attempted here since it is outside what #110 asked for.
 //
-// TP bounce, round 2 (#110), QA-found: the first version of this exclusion
-// checked only the initializer's own TOP-LEVEL node shape
-// (`isEqualityBinary(init)`), which missed `const ok = cond ? (token ===
-// apiKey) : false;` and `const ok = (token === apiKey) || fallback;` - both
-// still produce a boolean derived from the compare, one level under a
-// conditional or a logical operator, and both still tainted `ok` under the
-// narrower check.
+// CURRENT DESIGN (rewritten, not appended - #110 round 4; prior rounds'
+// history lives in git blame, not repeated here every round):
 //
-// TP bounce, round 3 (#110), QA-found again: round 2's fix still only
-// covered the shapes named so far - `const ok = !(token === apiKey);`
-// (a negated compare) still tainted `ok`, one operator short. Asked first
-// whether this could invert to a bounded check instead of growing a sixth
-// case: TYPE-based inversion doesn't work, this file never builds a
-// ts.Program/TypeChecker anywhere, only ts.createSourceFile per snippet,
-// and most of this file's own fixtures are synthetic strings with
-// implicit-any parameters, so a type query would answer `any` for exactly
-// the expressions in question. SYNTAX-based inversion does work, and is
-// what this function does now: rather than enumerate shapes reactively as
-// they get found (unbounded - that's the same failure mode the five-word
-// SECRET|TOKEN|KEY|PASSWORD|CREDENTIAL vocabulary and the token/apiKey
-// identifier vocabulary both had), enumerate the CLOSED set of JS/TS
-// syntax that structurally ALWAYS produces a boolean or exclusively
-// recombines sub-results already covered by another case in this same
-// function. That set is bounded because the operator grammar itself is
-// closed - parens, the equality operators (via the shared
-// EQUALITY_OPERATOR_KINDS constant this whole file uses, not this
-// function's to redefine), boolean literals, ternary, logical AND/OR/
-// nullish-coalescing, and unary NOT. This pass added unary NOT (the gap
-// found this round) AND nullish-coalescing (`??`), which round 2
-// deliberately left out as "non-typical" - an omission, not a decision;
-// it recombines two already-covered branches exactly like `&&`/`||` do
-// and belongs in the same closed set.
+// This function proves a bound: an initializer's VALUE is a boolean
+// derived from comparing token and apiKey, never the raw token or apiKey
+// itself, so the declared name should NOT join the tainted set. It has two
+// parts, deliberately different in kind.
 //
-// DESIGN LIMIT, stated here rather than left to live only in a bounce
-// thread: this is still enumeration, not proof. It is enumeration against
-// a closed, finite grammar (the language does not grow new operators)
-// rather than an open corpus of application patterns (arbitrary function
-// names, arbitrary object shapes - which is exactly why
-// `resolveWrappedBindingNames` and `subtreeCarriesTaintedName` deliberately
-// do NOT try to enumerate every way a value can be wrapped). If TypeScript
-// ever adds new boolean-producing syntax, or if a shape combining more than
-// one of AND/OR/ternary/unary-NOT/nullish in a way not yet exercised turns
-// out to defeat this recursion, that is a bounded, nameable gap against a
-// known list, not a fresh discovery against an unbounded surface. Still
-// deliberately the more permissive OR direction at each branch point, not
-// AND: a genuinely mixed branch (`cond ? token : (token === apiKey)`, one
-// side the raw value, one side a compare) remains excluded from tainting
-// under this check - a narrower, separate, already-disclosed residual, not
-// the shape either bounce this round named, and not attempted here.
+// Part 1, `unwrapTransparentValueWrappers` (below): strips every syntax
+// node whose VALUE is identical to (or, for a comma expression, selected
+// unchanged from) an inner expression - parens, `as` assertions,
+// `satisfies` expressions, non-null `!` postfix, and comma expressions
+// (down to the rightmost operand) - looped until stable so nested
+// combinations fully unwrap. Three of these are compile-time-only type
+// annotations with zero runtime effect; the fourth just discards its left
+// operands. None of them can ever hide or produce a value on their own.
 //
-// WHERE THE BOUND ACTUALLY ENDS, TP round 3 follow-up: the closed-grammar
-// claim above is about OPERATORS, not about every syntax node that happens
-// to produce a boolean. `const ok = Boolean(token === apiKey);` is a CALL
-// EXPRESSION, and call names are application-chosen, the exact open corpus
-// this function refuses to chase - `Boolean` the identifier is no different
-// in kind to this function than `someHelper` or `isAllowed`. The ONE
-// exception below is deliberately narrow: `Boolean(...)` recognized by
-// name, because it is a single well-known LANGUAGE BUILT-IN, not one
-// instance of an open set of possible wrapper names - there is no
-// "BooleanAlike" a codebase can define that this function would need to
-// also learn, the way there could be an arbitrary number of "isAllowed"-
-// shaped helpers. This is the precise line: the operator grammar is closed
-// (parens/equality/literal/ternary/logical/unary-NOT above) and this one
-// specific global identifier is closed too (there is exactly one `Boolean`
-// built-in), but recognizing ANY OTHER call, by name or by convention, is
-// the open-corpus problem this function exists to stay out of. Do not add
-// a second call-name special case here without re-deriving why it is
-// closed the same way `Boolean` is - if the answer is "it's a common
-// pattern," that is the open corpus, not this bound.
+// Part 2, the checks below: enumerate the CLOSED set of JS/TS operators
+// that structurally ALWAYS produce a boolean, or exclusively recombine
+// sub-results already covered by another case here - the equality
+// operators (via the shared `EQUALITY_OPERATOR_KINDS` constant this whole
+// file uses, not this function's to redefine), boolean literals, ternary,
+// logical AND/OR/nullish-coalescing, and unary NOT. Bounded because the
+// operator grammar itself is closed; the language does not grow new
+// operators. PLUS one named exception: `Boolean(...)`, the single
+// well-known language built-in, recognized by identifier name because
+// there is exactly one of it - not a general allowance for anything that
+// looks like a boolean-wrapper call. An arbitrary application helper
+// (`asBoolean(...)`, `isAllowed(...)`) is NOT covered and must not become
+// covered without its own, separately-justified reason; call names beyond
+// `Boolean` are the open corpus this function refuses to chase, which is
+// why `resolveWrappedBindingNames` and `subtreeCarriesTaintedName` also
+// deliberately do not try to enumerate every way a value can be wrapped.
+//
+// THE BOUND, stated precisely: Part 1 is a closed set of value-transparent
+// syntax (finite, grammar-fixed). Part 2 is a closed set of boolean-
+// producing operators (finite, grammar-fixed) plus one named built-in
+// (finite by construction - there is one `Boolean`). Together they are
+// still enumeration, not proof by type or by dataflow - but enumeration
+// against two closed, language-level grammars, not against an open corpus
+// of application patterns. If TypeScript ever adds new boolean-producing
+// or value-transparent syntax, that is a bounded, nameable gap against a
+// known list. Still deliberately the more permissive OR direction at each
+// ternary/logical branch, not AND: a genuinely mixed branch (`cond ? token
+// : (token === apiKey)`, one side the raw value, one side a compare)
+// remains excluded from tainting under this check - a narrower, separate,
+// already-disclosed residual, not attempted here.
 //
 // Caller's responsibility, not this function's: `findCoOccurrenceViolations`
 // applies this only to the call-argument branch, not the binary-operand
 // branch, so `const t = String(token); return t === apiKey;` (no helper
 // call) is unaffected and stays `findUnguardedEqualityReturns`'s exclusive
 // domain, per #110's own scoping.
+//
+// Deliberately a NEW function (`unwrapTransparentValueWrappers`), not a
+// widening of the shared `unwrapParens`: that helper has other call sites
+// in this file belonging to OTHER, pre-existing checks
+// (`collectEqualityDerivedBinaries`/`findUnguardedEqualityReturns`,
+// `resolveAliasNames`'s round-8 alias chain, `findCoOccurrenceViolations`'s
+// binary-operand branch) with their own established, separately-tested
+// behavior. Widening what they all strip, silently, to fix this one
+// function's exclusion check would be exactly the unaudited-blast-radius
+// risk this whole gate exists to catch. Called from exactly one place:
+// this function's own entry point. Paren-stripping falls out of the loop
+// below; there is no separate `unwrapParens` call left in this function.
+function unwrapTransparentValueWrappers(expr: ts.Expression): ts.Expression {
+  let current: ts.Expression = expr;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    if (ts.isParenthesizedExpression(current)) {
+      current = current.expression;
+      changed = true;
+    } else if (ts.isAsExpression(current) || ts.isSatisfiesExpression(current)) {
+      current = current.expression;
+      changed = true;
+    } else if (ts.isNonNullExpression(current)) {
+      current = current.expression;
+      changed = true;
+    } else if (
+      ts.isBinaryExpression(current) &&
+      current.operatorToken.kind === ts.SyntaxKind.CommaToken
+    ) {
+      // A comma expression's value is its rightmost operand; the left
+      // operands run for side effects and are discarded. Correct for the
+      // question this function asks ("what VALUE does this produce"),
+      // not necessarily correct for a caller asking a different question -
+      // see the CURRENT DESIGN comment above.
+      current = current.right;
+      changed = true;
+    }
+  }
+  return current;
+}
+
 function isEqualityDerivedShape(expr: ts.Expression): boolean {
-  const unwrapped = unwrapParens(expr);
+  const unwrapped = unwrapTransparentValueWrappers(expr);
   if (isEqualityBinary(unwrapped)) return true;
   if (unwrapped.kind === ts.SyntaxKind.TrueKeyword || unwrapped.kind === ts.SyntaxKind.FalseKeyword) return true;
   if (ts.isConditionalExpression(unwrapped)) {
@@ -1651,6 +1671,69 @@ ${filler}
     const source = `
       function validateAuth(token, apiKey) {
         const ok = Boolean(token === apiKey);
+        return reportOutcome(ok);
+      }
+    `;
+    const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+    const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+    const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+    expect(tokenNames.has("ok")).toBe(false);
+    expect(apiKeyNames.has("ok")).toBe(false);
+  });
+
+  it("does not over-taint a compare wrapped in value-transparent syntax - comma, as-assertion, non-null postfix, satisfies (TP bounce, round 4)", () => {
+    // QA's round 4 finding: unwrapParens only strips parens, so a comma
+    // expression, an `as` assertion, a non-null `!` postfix, and a
+    // `satisfies` expression all reached isEqualityDerivedShape's branch
+    // list with the compare still buried and fell through to `return
+    // false`. TP's direction: this is not a fifth enumerated CASE, it's a
+    // missing normalization step upstream of every case, since all four
+    // are VALUE-TRANSPARENT (their runtime value is exactly their inner
+    // expression's, three of them compile-time-only). Generalized
+    // `unwrapTransparentValueWrappers` absorbs unwrapParens's own job
+    // (paren-stripping falls OUT of it, not beside it) and strips all four,
+    // looped until stable. One fixture per shape, all four in one test
+    // since they're the same gap.
+    const commaExpression = `
+      function validateAuth(token, apiKey) {
+        const ok = (0, token === apiKey);
+        return reportOutcome(ok);
+      }
+    `;
+    const asAssertion = `
+      function validateAuth(token, apiKey) {
+        const ok = (token === apiKey) as boolean;
+        return reportOutcome(ok);
+      }
+    `;
+    const nonNullPostfix = `
+      function validateAuth(token, apiKey) {
+        const ok = (token === apiKey)!;
+        return reportOutcome(ok);
+      }
+    `;
+    const satisfiesExpression = `
+      function validateAuth(token, apiKey) {
+        const ok = (token === apiKey) satisfies boolean;
+        return reportOutcome(ok);
+      }
+    `;
+    for (const source of [commaExpression, asAssertion, nonNullPostfix, satisfiesExpression]) {
+      const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+      const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+      const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+      expect(tokenNames.has("ok")).toBe(false);
+      expect(apiKeyNames.has("ok")).toBe(false);
+    }
+  });
+
+  it("survives nested value-transparent wrappers - a comma expression inside an as-assertion (TP bounce, round 4, acceptance item 1)", () => {
+    // TP's acceptance bar: "wrapping a compare in two of them at once
+    // ... also does not taint, because a loop-until-stable unwrap must
+    // survive nesting." Exercises the loop, not just a single strip.
+    const source = `
+      function validateAuth(token, apiKey) {
+        const ok = (0, token === apiKey) as boolean;
         return reportOutcome(ok);
       }
     `;
