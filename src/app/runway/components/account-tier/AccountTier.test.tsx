@@ -318,7 +318,11 @@ describe("AccountTier", () => {
     expect(screen.queryByText("Canceled Task")).toBeNull();
   });
 
-  it("renders L1 as empty (No Scheduled Tasks chip) when all its L2s are completed", () => {
+  // Issue #105: this used to assert the bug itself, that an L1 whose L2s
+  // are all completed or canceled rendered as empty. It does not. Updated
+  // to assert the all-done state's real behaviour rather than deleted,
+  // same principle as the #41 update below.
+  it("renders an all-done L1 with its completed and canceled children visible, not as empty", () => {
     const account = mockAccount();
     const rows = [
       makeWeekItemRow({ id: "wi-1", title: "Done A", status: "completed" }),
@@ -334,9 +338,10 @@ describe("AccountTier", () => {
         readyToCloseIds={new Set()}
       />,
     );
-    expect(screen.queryByText("Done A")).toBeNull();
-    expect(screen.queryByText("Done B")).toBeNull();
-    expect(screen.getByTestId("no-scheduled-tasks-chip")).toBeTruthy();
+    expect(screen.getByText("Done A")).toBeTruthy();
+    expect(screen.getByText("Done B")).toBeTruthy();
+    expect(screen.getByTestId("all-done-chip")).toBeTruthy();
+    expect(screen.queryByTestId("no-scheduled-tasks-chip")).toBeNull();
   });
 
   it("sorts L2 cards by startDate ascending with nulls last", () => {
@@ -451,12 +456,16 @@ describe("AccountTier", () => {
     expect(screen.queryByTestId("ready-to-close-chip")).toBeNull();
   });
 
-  // Issue #41: an L1 with zero scheduled items has nothing to be ready-to-close
-  // on. The ReadyToClose chip is suppressed in the empty branch so the empty
-  // state shows only "No Scheduled Tasks", never both chips at once.
-  it("suppresses ReadyToClose chip on an empty L1 even when its id is in readyToCloseIds (Issue #41)", () => {
+  // Issue #41: an L1 with zero weekItems EVER has nothing to be ready-to-close
+  // on. The ReadyToClose chip is suppressed in the truly-empty branch so
+  // that state shows only "No Scheduled Tasks", never both chips at once.
+  // Issue #105 narrowed this test's scope: it covers zero weekItems ever,
+  // not an L1 whose weekItems are all completed or canceled. See the
+  // "all done" tests below for that case, which is deliberately not the
+  // same suppression.
+  it("suppresses ReadyToClose chip on a genuinely empty L1 even when its id is in readyToCloseIds (Issue #41)", () => {
     const account = mockAccount();
-    // Empty L1 section — no weekItems at all.
+    // Empty L1 section, no weekItems at all, never had any.
     const rundown = mockRundown([
       makeSection("standalone", "Empty L1", [], undefined, "l1-empty-closing"),
     ]);
@@ -471,6 +480,67 @@ describe("AccountTier", () => {
     expect(screen.getByTestId("l1-empty")).toBeTruthy();
     expect(screen.getByTestId("no-scheduled-tasks-chip")).toBeTruthy();
     // But NOT the ReadyToClose chip — that would contradict the empty state.
+    expect(screen.queryByTestId("ready-to-close-chip")).toBeNull();
+  });
+
+  // Issue #105: an L1 whose weekItems all exist but are every one completed
+  // or canceled is not the same case as Issue #41's genuinely empty L1.
+  // weekItemsForSection filters terminal rows out, so this state used to
+  // collapse into the same "l1-empty" branch as a real empty L1, showing
+  // No Scheduled Tasks, suppressing ReadyToClose, and rendering no expand
+  // control. All three were wrong for this state.
+  it("renders an all-done L1 with the All Done label, a live ReadyToClose chip, and an expand control listing its completed children (Issue #105)", () => {
+    const account = mockAccount();
+    const rows = [
+      makeWeekItemRow({ id: "wi-1", title: "First deliverable", status: "completed", endDate: "2026-06-13" }),
+      makeWeekItemRow({ id: "wi-2", title: "Second deliverable", status: "completed", endDate: "2026-06-13" }),
+    ];
+    const rundown = mockRundown([
+      makeSection("standalone", "Convergix Partners Page Redesign", rows, undefined, "l1-all-done"),
+    ]);
+    const { container } = render(
+      <AccountTier
+        account={account}
+        rundown={rundown}
+        readyToCloseIds={new Set(["l1-all-done"])}
+      />,
+    );
+    // Not the genuinely-empty branch.
+    expect(screen.queryByTestId("l1-empty")).toBeNull();
+    expect(screen.queryByTestId("no-scheduled-tasks-chip")).toBeNull();
+    // All Done label, present.
+    expect(screen.getByTestId("all-done-chip")).toBeTruthy();
+    expect(container.textContent).toContain("All Done");
+    // ReadyToClose chip, live, not suppressed, present alongside All Done.
+    expect(screen.getByTestId("ready-to-close-chip")).toBeTruthy();
+    // Expandable: a real <details> for this L1, open by default, listing
+    // both completed children by name.
+    const detailsEls = container.querySelectorAll("details");
+    expect(detailsEls.length).toBeGreaterThan(0);
+    const cards = screen.getAllByTestId("l2-mini-card");
+    expect(cards.length).toBe(2);
+    expect(container.textContent).toContain("First deliverable");
+    expect(container.textContent).toContain("Second deliverable");
+  });
+
+  it("does not render the ReadyToClose or All Done chips on an all-done L1 whose id is not in readyToCloseIds", () => {
+    const account = mockAccount();
+    const rows = [
+      makeWeekItemRow({ id: "wi-1", title: "Only deliverable", status: "completed" }),
+    ];
+    const rundown = mockRundown([
+      makeSection("standalone", "Not Flagged Yet", rows, undefined, "l1-all-done-unflagged"),
+    ]);
+    render(
+      <AccountTier
+        account={account}
+        rundown={rundown}
+        readyToCloseIds={new Set()}
+      />,
+    );
+    // All Done still renders, it does not depend on readyToCloseIds.
+    expect(screen.getByTestId("all-done-chip")).toBeTruthy();
+    // ReadyToClose depends on the set and this id is not in it.
     expect(screen.queryByTestId("ready-to-close-chip")).toBeNull();
   });
 
@@ -616,7 +686,8 @@ describe("AccountTier — L3 section bands (§3.3)", () => {
     // Derived dates render grayed, never solid.
     expect(screen.getByTestId("l3-dates-derived")).toBeTruthy();
     expect(screen.queryByTestId("l3-dates-own")).toBeNull();
-    expect(screen.getByText("1 task")).toBeTruthy();
+    // _R1#105 — open-work count reads "N open", not the old bare "N task(s)".
+    expect(screen.getByText("1 open")).toBeTruthy();
   });
 
   it("actionable section renders ONE band with its own solid chips — never a phantom child card", () => {
@@ -690,6 +761,102 @@ describe("AccountTier — L3 section bands (§3.3)", () => {
     expect(screen.queryByTestId("l3-band-grouping")).toBeNull();
     expect(screen.queryByTestId("l3-band-actionable")).toBeNull();
     expect(screen.getByText("Flat Task")).toBeTruthy();
+  });
+
+  // _R1#105 — the count and the label must agree about what they mean.
+  // `weekItemsForSection` correctly drops completed/canceled rows for the
+  // active view (that filter is NOT the bug). The bug is that a section
+  // whose rows are ALL terminal renders the raw filtered count ("0 tasks"),
+  // which reads as a failed import instead of finished work.
+  describe("_R1#105 — section task-count label", () => {
+    it("open tasks: shows an open-work count, e.g. '1 open'", () => {
+      renderWithL3(
+        [makeL3({ id: "l3-open" })],
+        [makeWeekItemRow({ sectionId: "l3-open", status: "in-progress" } as Partial<AnnotatedRow>)],
+      );
+      expect(screen.getByText("1 open")).toBeTruthy();
+      expect(screen.queryByText("0 tasks")).toBeNull();
+    });
+
+    it("a MIXED section counts only the OPEN rows, not every row", () => {
+      // Every other case here has openCount === totalCount (l3-open is a
+      // single in-progress row) or takes the all-terminal/empty branch
+      // (l3-done, l3-empty), so none of them can tell "count the open rows"
+      // apart from "count every row". A mixed section — one open row plus
+      // one terminal row — is the only fixture where the two numbers
+      // differ, which is the only way this test can fail if the label ever
+      // regresses to the total count.
+      renderWithL3(
+        [makeL3({ id: "l3-mixed" })],
+        [
+          makeWeekItemRow({ sectionId: "l3-mixed", status: "in-progress" } as Partial<AnnotatedRow>),
+          makeWeekItemRow({ sectionId: "l3-mixed", status: "completed" } as Partial<AnnotatedRow>),
+        ],
+      );
+      expect(screen.getByText("1 open")).toBeTruthy();
+      expect(screen.queryByText("2 open")).toBeNull();
+    });
+
+    it("all-terminal section reads as finished work ('all done'), not a failed import ('0 tasks')", () => {
+      // The L1 overall is NOT empty (a sibling L3 has an open task) — so
+      // this exercises the L3-band "all rows terminal" case, not the
+      // whole-L1 "No Scheduled Tasks" empty state.
+      renderWithL3(
+        [makeL3({ id: "l3-has-work", sortOrder: 0 }), makeL3({ id: "l3-done", sortOrder: 1 })],
+        [
+          makeWeekItemRow({ sectionId: "l3-has-work", status: "in-progress" } as Partial<AnnotatedRow>),
+          makeWeekItemRow({ sectionId: "l3-done", status: "completed" } as Partial<AnnotatedRow>),
+        ],
+      );
+      // The l3-done section HAS a row — it is finished, not empty. It must
+      // never render the same "0 tasks" text a genuinely empty section would.
+      expect(screen.queryByText("0 tasks")).toBeNull();
+      expect(screen.getByText("all done")).toBeTruthy();
+    });
+
+    it("genuinely empty section: distinct wording from both open and all-done", () => {
+      // The L1 overall is NOT empty (it has an open task in a sibling L3
+      // section) — so this exercises the L3-band "zero rows at all" case,
+      // not the whole-L1 "No Scheduled Tasks" empty state.
+      renderWithL3(
+        [makeL3({ id: "l3-has-work", sortOrder: 0 }), makeL3({ id: "l3-empty", sortOrder: 1 })],
+        [makeWeekItemRow({ sectionId: "l3-has-work", status: "in-progress" } as Partial<AnnotatedRow>)],
+      );
+      expect(screen.queryByText("0 tasks")).toBeNull();
+      expect(screen.queryByText("all done")).toBeNull();
+      expect(screen.getByText("no tasks")).toBeTruthy();
+    });
+
+    // _R1#105 merge risk, named explicitly in the dispatch: the two source
+    // branches compute counts from different row sources.
+    // fix/105-finished-l1-state's allDone path builds `displayItems` from
+    // ALL rows (open and terminal) so the whole L1's completed children
+    // still render as cards. fix/105-section-count-label's SectionBand
+    // reads its per-L3 count from that same items grouping. If the merge
+    // naively wired the second into the first, an all-done L1's own L3
+    // band would count its terminal rows as if they were open - "2 open"
+    // for two completed rows, exactly backwards. Only a fixture where the
+    // WHOLE L1 is all-done AND has L3 sections (so it takes the SectionBand
+    // render path, not the flat renderCards(displayItems) path either of
+    // the two branches' own tests used alone) can observe this.
+    it("an all-done L1's own L3 band reads 'all done', not the displayed row count as if it were open", () => {
+      renderWithL3(
+        [makeL3({ id: "l3-done", sortOrder: 0 })],
+        [
+          makeWeekItemRow({ sectionId: "l3-done", status: "completed" } as Partial<AnnotatedRow>),
+          makeWeekItemRow({ sectionId: "l3-done", status: "completed" } as Partial<AnnotatedRow>),
+        ],
+      );
+      // Whole L1 has zero open rows anywhere, so it takes the allDone path.
+      expect(screen.getByTestId("all-done-chip")).toBeTruthy();
+      // The L3 band must read the true open/total split (0 open, 2 total),
+      // not the two displayed (terminal) rows as if they were open work.
+      expect(screen.getByText("all done")).toBeTruthy();
+      expect(screen.queryByText("2 open")).toBeNull();
+      expect(screen.queryByText("0 open")).toBeNull();
+      // Both completed cards still render underneath the band.
+      expect(screen.getAllByTestId("l2-mini-card")).toHaveLength(2);
+    });
   });
 });
 

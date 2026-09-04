@@ -31,7 +31,7 @@
  */
 
 import type { ReactNode } from "react";
-import { ReadyToCloseChip, NoScheduledTasksChip } from "../section-chips";
+import { ReadyToCloseChip, NoScheduledTasksChip, AllDoneChip } from "../section-chips";
 import type {
   ClientRundownData,
   RundownSection,
@@ -40,7 +40,7 @@ import type {
   SeverityCounts,
 } from "@/lib/runway/gantt/types";
 import { groupSections } from "@/lib/runway/gantt/group-sections";
-import { weekItemsForSection, l1IdForSection } from "@/lib/runway/gantt/section-builders";
+import { weekItemsForSection, allWeekItemRowsForSection, l1IdForSection } from "@/lib/runway/gantt/section-builders";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { L2MiniCard } from "./L2MiniCard";
 import { AuditBadge, type AuditIssue } from "../audit-badge";
@@ -209,12 +209,34 @@ function SectionStatusChip({ status }: { status: string }) {
  * when own dates are null the derived child rollup renders grayed — even on
  * an otherwise-actionable section. Nothing is stored either way.
  */
+/**
+ * _R1#105 — the open-task count and the label must agree about what they
+ * mean. `weekItemsForSection` correctly drops completed/canceled rows for
+ * this active view (that filter is right and stays untouched). But handing
+ * that filtered count straight to "N task(s)" makes a FINISHED section
+ * ("0 tasks") read identically to a section that never had any rows at all
+ * — which reads as a failed import, not completed work.
+ *
+ * Three distinct facts, three distinct labels:
+ *   - openCount > 0        -> "N open"   (there is open work)
+ *   - openCount === 0,
+ *     totalCount > 0       -> "all done" (rows exist, all terminal)
+ *   - totalCount === 0     -> "no tasks" (genuinely empty section)
+ */
+function formatTaskCountLabel(openCount: number, totalCount: number): string {
+  if (totalCount === 0) return "no tasks";
+  if (openCount === 0) return "all done";
+  return `${openCount} open`;
+}
+
 function SectionBand({
   l3,
-  taskCount,
+  openCount,
+  totalCount,
 }: {
   l3: L3SectionDisplay;
-  taskCount: number;
+  openCount: number;
+  totalCount: number;
 }) {
   const hasOwnDates = l3.startDate !== null || l3.endDate !== null;
   const ownDates = formatDateLine(l3.startDate, l3.endDate);
@@ -245,7 +267,7 @@ function SectionBand({
         </span>
       ) : null}
       <span className="text-xs text-muted-foreground">
-        {taskCount} {taskCount === 1 ? "task" : "tasks"}
+        {formatTaskCountLabel(openCount, totalCount)}
       </span>
     </div>
   );
@@ -300,10 +322,12 @@ function L1Header({
   section,
   readyToClose,
   showNoScheduledChip,
+  showAllDoneChip,
 }: {
   section: RundownSection;
   readyToClose: boolean;
   showNoScheduledChip: boolean;
+  showAllDoneChip: boolean;
 }) {
   // Pull owner / resources off the L1's project row, if available. The
   // section's `raw.entity` is the project row when raw.kind === "l1";
@@ -326,6 +350,7 @@ function L1Header({
       <span className="font-medium text-foreground">{section.title}</span>
       {readyToClose ? <ReadyToCloseChip /> : null}
       {showNoScheduledChip ? <NoScheduledTasksChip /> : null}
+      {showAllDoneChip ? <AllDoneChip /> : null}
       {owner ? (
         <span className="text-xs text-muted-foreground">O: {owner}</span>
       ) : null}
@@ -412,41 +437,73 @@ function L1Section({
       ? (section.data.raw.entity.engagementType ?? null)
       : null;
 
-  // Empty L1 (no scheduled L2s after status filter).
+  // Empty after the status filter. Two different things can be true here,
+  // refs _R1#105: the L1 never had any weekItems, or it had weekItems and
+  // every one of them is now completed or canceled. weekItemsForSection
+  // alone cannot tell those apart, since it filters terminal rows out
+  // either way, so allWeekItemRowsForSection below checks the unfiltered
+  // count.
   //
   // 4-level hierarchy (§3.3): a one-off L1 is a first-class childless card,
   // not "empty project" UI — its actionable fields render inline.
-  //
-  // Issue #41: an L1 with no scheduled items has nothing to be ready-to-close
-  // on — the ready-to-close signal is meaningful only when there's at least
-  // one scheduled task remaining to close out. Suppress the chip here so the
-  // empty state shows only "No Scheduled Tasks", never both chips at once.
+  let allDone = false;
   if (items.length === 0) {
     if (l1EngagementType === "one-off") {
       return <OneOffCard section={section} />;
     }
-    return (
-      <div
-        data-testid="l1-empty"
-        className="flex flex-wrap items-center gap-2 py-1 pl-4 border-l border-border"
-      >
-        <L1Header
-          section={section}
-          readyToClose={false}
-          showNoScheduledChip
-        />
-      </div>
-    );
+    allDone = allWeekItemRowsForSection(section).length > 0;
+
+    // Issue #41: an L1 with no scheduled items EVER has nothing to be
+    // ready-to-close on, so the chip stays suppressed and the L1 stays
+    // collapsed. That suppression was only ever correct for the genuinely
+    // empty case. Issue #105: an L1 whose items are all completed or
+    // canceled is not the same case. It has a real ready-to-close signal
+    // and real children to show, so it falls through to the shared render
+    // path below instead of returning here. "All Done" plus "Ready to
+    // close?" on the same L1 is coherent, not a contradiction, and both
+    // chips are allowed to render together in that state.
+    if (!allDone) {
+      return (
+        <div
+          data-testid="l1-empty"
+          className="flex flex-wrap items-center gap-2 py-1 pl-4 border-l border-border"
+        >
+          <L1Header
+            section={section}
+            readyToClose={false}
+            showNoScheduledChip
+            showAllDoneChip={false}
+          />
+        </div>
+      );
+    }
   }
+
+  const displayItems = allDone
+    ? allWeekItemRowsForSection(section).slice().sort(byStartDateNullsLast)
+    : items;
 
   // §3.3 render order inside a project: L3 sections in sortOrder (each with
   // its tasks), then loose tasks (null sectionId) LAST — legacy flat-list
   // data never interleaves inside the L3 grouping. Projects with zero
   // sections fall back to the flat list unchanged.
+  //
+  // _R1#105 merge note: `itemsByL3` groups `displayItems` — open rows
+  // normally, ALL rows (including terminal) when this L1 is `allDone` — and
+  // exists purely to decide WHAT CARDS to render per L3 band. It must NOT
+  // also be used to compute each band's own open-vs-total count: when
+  // `allDone`, `displayItems` is the unfiltered list, so an L3Items.length
+  // taken from it would equal that L3's total row count, and
+  // formatTaskCountLabel would read every terminal row as "open" and
+  // mislabel a finished L3 as "N open" instead of "all done" — the exact
+  // band-vs-chip disagreement flagged as this merge's risk. `openCountByL3`
+  // below is built from `items` (always the filtered, open-only list,
+  // independent of `allDone`) specifically so each L3 band's own count
+  // stays correct regardless of what `displayItems` renders as cards.
   const l3s = section.l3Sections ?? [];
   const itemsByL3 = new Map<string, AnnotatedRow[]>();
   const looseItems: AnnotatedRow[] = [];
-  for (const wi of items) {
+  for (const wi of displayItems) {
     const sid = wi.kind === "weekitem" ? wi.sectionId : null;
     if (sid && l3s.some((s) => s.id === sid)) {
       const arr = itemsByL3.get(sid);
@@ -455,6 +512,27 @@ function L1Section({
     } else {
       looseItems.push(wi);
     }
+  }
+
+  const openCountByL3 = new Map<string, number>();
+  for (const wi of items) {
+    const sid = wi.kind === "weekitem" ? wi.sectionId : null;
+    if (!sid) continue;
+    openCountByL3.set(sid, (openCountByL3.get(sid) ?? 0) + 1);
+  }
+
+  // _R1#105 — the label needs a fact `weekItemsForSection` doesn't carry:
+  // whether the section has ANY rows at all, terminal or not. That's the
+  // difference between "all done" (rows exist, all completed/canceled) and
+  // "no tasks" (genuinely nothing was ever scheduled here). We deliberately
+  // do NOT change the filter — we count the unfiltered rows from
+  // `section.data.rows` separately, purely for the label.
+  const totalCountByL3 = new Map<string, number>();
+  for (const row of section.data.rows) {
+    if (row.kind !== "weekitem") continue;
+    const sid = row.sectionId;
+    if (!sid) continue;
+    totalCountByL3.set(sid, (totalCountByL3.get(sid) ?? 0) + 1);
   }
 
   const renderCards = (rows: AnnotatedRow[]) => (
@@ -502,18 +580,21 @@ function L1Section({
           section={section}
           readyToClose={ready}
           showNoScheduledChip={false}
+          showAllDoneChip={allDone}
         />
       }
     >
       {l3s.length === 0 ? (
-        renderCards(items)
+        renderCards(displayItems)
       ) : (
         <div className="space-y-2 pt-2">
           {l3s.map((l3) => {
             const l3Items = itemsByL3.get(l3.id) ?? [];
+            const openCount = openCountByL3.get(l3.id) ?? 0;
+            const totalCount = totalCountByL3.get(l3.id) ?? 0;
             return (
               <div key={l3.id} className="pl-2">
-                <SectionBand l3={l3} taskCount={l3Items.length} />
+                <SectionBand l3={l3} openCount={openCount} totalCount={totalCount} />
                 {l3Items.length > 0 ? renderCards(l3Items) : null}
               </div>
             );
