@@ -688,12 +688,43 @@ function subtreeCarriesTaintedName(node: ts.Node, names: Set<string>): boolean {
 //
 // Part 1, `unwrapTransparentValueWrappers` (below): strips every syntax
 // node whose VALUE is identical to (or, for a comma expression, selected
-// unchanged from) an inner expression - parens, `as` assertions,
-// `satisfies` expressions, non-null `!` postfix, and comma expressions
-// (down to the rightmost operand) - looped until stable so nested
-// combinations fully unwrap. Three of these are compile-time-only type
-// annotations with zero runtime effect; the fourth just discards its left
-// operands. None of them can ever hide or produce a value on their own.
+// unchanged from) an inner expression - parens, type assertions (both
+// `as boolean` and the older `<boolean>expr` bracket form - matched via
+// `ts.isAssertionExpression`, the TypeScript API's own shared predicate
+// for both, not two separate branches for one construct), `satisfies`
+// expressions, non-null `!` postfix, and comma expressions (down to the
+// rightmost operand) - looped until stable so nested combinations fully
+// unwrap. Four of these are compile-time-only type annotations with zero
+// runtime effect; the comma case just discards its left operands. None of
+// them can ever hide or produce a value on their own.
+//
+// MECHANISM NOTE, round 5 (QA-found, right answer for a reason worth
+// naming): the comma case does NOT verify that the discarded left operand
+// is safe. `const ok = (token === apiKey, someOtherThing);` still ends up
+// correctly NOT excluded (tainted) today, but not because this function
+// examined `someOtherThing` and found it innocent - it gets there because
+// `subtreeCarriesTaintedName`, called separately by `resolveWrappedBindingNames`
+// on the ORIGINAL, un-stripped initializer, is position-blind: it scans the
+// whole initializer text for a tainted identifier regardless of where in
+// it that identifier sits, so it finds `token` in the discarded left
+// operand independent of anything this function decided. The right answer
+// and the right reason are not the same mechanism here. Both happen to
+// point the same way today; do not assume this function's own exclusion
+// logic is what is protecting the comma-left case, because it is not.
+//
+// DELIBERATE EXCLUSION, round 5 (QA raised, TP ruled): `await` on an
+// expression that IS a boolean also resolves to that same boolean value at
+// runtime, which satisfies this function's own transparency criterion on
+// its face. Not covered anyway, on purpose: recognizing it would mean this
+// checker starts having an opinion about async dataflow, which it takes no
+// position on anywhere else in this file, and the transparency only holds
+// because a boolean is never a thenable - a property this checker has no
+// way to verify, since it has no type information anywhere (see the
+// TYPE-based-inversion answer from round 3). A rule whose correctness
+// depends on an operand type this checker cannot check is a worse property
+// than the gap it would close. `await (token === apiKey)` stays tainted,
+// pinned by its own test below rather than left to be rediscovered as a
+// surprise.
 //
 // Part 2, the checks below: enumerate the CLOSED set of JS/TS operators
 // that structurally ALWAYS produce a boolean, or exclusively recombine
@@ -751,7 +782,7 @@ function unwrapTransparentValueWrappers(expr: ts.Expression): ts.Expression {
     if (ts.isParenthesizedExpression(current)) {
       current = current.expression;
       changed = true;
-    } else if (ts.isAsExpression(current) || ts.isSatisfiesExpression(current)) {
+    } else if (ts.isAssertionExpression(current) || ts.isSatisfiesExpression(current)) {
       current = current.expression;
       changed = true;
     } else if (ts.isNonNullExpression(current)) {
@@ -1742,6 +1773,75 @@ ${filler}
     const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
     expect(tokenNames.has("ok")).toBe(false);
     expect(apiKeyNames.has("ok")).toBe(false);
+  });
+
+  it("does not over-taint the older angle-bracket type assertion, the same construct as `as` by a different production (TP bounce, round 5)", () => {
+    // QA's finding, TP's ruling: this is not a sixth escaped case, it's an
+    // incomplete predicate on a case the design already claims to cover.
+    // `<boolean>(token === apiKey)` is the same compile-time-only
+    // reinterpretation as `(token === apiKey) as boolean`, just parsed via
+    // TypeAssertion instead of AsExpression. Fixed by matching
+    // `ts.isAssertionExpression`, the TypeScript API's own shared predicate
+    // for both node kinds, rather than adding a second branch.
+    const source = `
+      function validateAuth(token, apiKey) {
+        const ok = <boolean>(token === apiKey);
+        return reportOutcome(ok);
+      }
+    `;
+    const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+    const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+    const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+    expect(tokenNames.has("ok")).toBe(false);
+    expect(apiKeyNames.has("ok")).toBe(false);
+  });
+
+  it("DELIBERATE EXCLUSION: an awaited equality compare STAYS tainted, on purpose, not a missing case (TP round 5 ruling)", () => {
+    // `await` on a boolean resolves to that same boolean at runtime, which
+    // satisfies this function's transparency criterion on its face - but
+    // that transparency only holds because a boolean is never a thenable,
+    // a fact this checker has no type information to verify anywhere. TP's
+    // ruling: covering it would give this checker an opinion about async
+    // dataflow it takes no position on elsewhere in the file, so it is
+    // deliberately NOT in unwrapTransparentValueWrappers. This test pins
+    // today's behavior - tainted - so a future reader sees a documented
+    // decision, not a gap nobody noticed.
+    const source = `
+      async function validateAuth(token, apiKey) {
+        const ok = await (token === apiKey);
+        return reportOutcome(ok);
+      }
+    `;
+    const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+    const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+    const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+    expect(tokenNames.has("ok")).toBe(true);
+    expect(apiKeyNames.has("ok")).toBe(true);
+  });
+
+  it("MECHANISM NOTE: a comma expression with the compare on the LEFT stays tainted, but not because the exclusion logic checked the right side (TP round 5, QA-volunteered)", () => {
+    // QA proved this is the right answer for a reason worth naming
+    // separately from the outcome. `someOtherThing` is the comma
+    // expression's VALUE (unwrapTransparentValueWrappers strips to the
+    // rightmost operand), and isEqualityDerivedShape correctly says that
+    // bare, unrecognized identifier is not equality-derived - so the
+    // exclusion does not fire. But `ok` still ends up tainted regardless,
+    // because subtreeCarriesTaintedName scans the WHOLE original
+    // initializer text for a tainted name, position-blind, and finds
+    // `token` in the discarded left operand independent of anything the
+    // unwrap or the exclusion decided. Right answer, different mechanism
+    // than a reader might assume.
+    const source = `
+      function validateAuth(token, apiKey) {
+        const ok = (token === apiKey, someOtherThing);
+        return reportOutcome(ok);
+      }
+    `;
+    const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+    const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+    const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+    expect(tokenNames.has("ok")).toBe(true);
+    expect(apiKeyNames.has("ok")).toBe(true);
   });
 
   it("DESIGN PIN: isEqualityDerivedShape enumerates a closed operator grammar plus one named built-in, not an open corpus of wrapper calls - an arbitrary helper wrapping the same compare is NOT exempted", () => {
