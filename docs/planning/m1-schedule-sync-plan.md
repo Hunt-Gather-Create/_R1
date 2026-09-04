@@ -1,5 +1,13 @@
 # M1 Schedule Sync — Planning Doc
 
+> **SUPERSEDED FOR STRUCTURE, 2026-08-29.** The milestone scheme in sections B and C of this
+> document is no longer the plan of record. Operator ruled that we use the roadmap milestone
+> exclusively, so `ROADMAP.md` is now the single plan of record. The epic named here,
+> "Runway integration + safe automation", was drawn one level too low: it became milestones
+> 01 Schedule Sync, 03 DB safety tool and 04 Meeting routing under a single epic named
+> "Runway". Sections A, D, E and F remain useful and are not superseded, in particular the
+> standards digest and the E-ticket drafts.
+
 **Author:** Runway-TP (Sonnet subagent, 2026-08-13)
 **Scope:** EPIC "Runway integration + safe automation" — Milestone M1 only
 **Status:** DRAFT, for TP review + operator confirm before any ticket creation or board hookup

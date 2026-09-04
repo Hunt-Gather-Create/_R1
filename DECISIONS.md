@@ -66,6 +66,19 @@ Why: GitHub's auto-close mechanism normally fires on same-repo references. The c
 Locks: Not every PR has a linked issue (that's fine). When one exists, the `Fixes` line is required. PRs that close multiple issues use `Fixes #A, #B, #C` syntax.
 Refs: `CLAUDE.md` Pull Request Rules section, recent PR bodies (#103, #104).
 
+**AMENDED 2026-08-29.** The claim above that the keyword closes the issue "without manual
+follow-up" is not true in practice. Five issues shipped in merged upstream PRs whose bodies
+carried the keyword correctly and stayed open anyway: #43 via PR #130, #98 via PR #129, #102
+via PR #122, #103 via PR #131, #106 via PR #134. #101 did close the same way via PR #121, so
+the behaviour is intermittent and the mechanism is not established. Filed as
+jasonburks23/_R1#113.
+
+The keyword stays required. What changes is what counts as closing the ticket: **the keyword
+is the intent, the verified issue state is the closing step.** Whoever routes a merge checks
+that the referenced issue actually closed. The failure is silent and one-directional, since a
+ticket never falsely closes and only ever falsely stays open, so it accumulates and reads as
+work debt.
+
 ## D-08 — Runway uses a separate Turso DB, not the R1 main database
 
 Date: pre-2026-05-23 (formalized 2026-05-23)
@@ -177,6 +190,16 @@ Decision: A completed subtask does not disappear from its work item's subtask li
 Why: The work item card already carries a done over total count once Phase 2 ships. Hiding a completed subtask behind a toggle removes the record of what was done without adding any information the count does not already summarize. Operator and TP decision, refs docs/plans/subtasks-under-work-items.md.
 Locks: Phase 2's interface must not add a hide completed toggle for subtasks. A subtask row's visibility depends only on its parent work item's own visibility, never on the subtask's own status.
 Refs: _R1#67, docs/plans/subtasks-under-work-items.md.
+
+---
+
+## D-21 — A completed subtask stays visible with a strike-through
+
+Date: 2026-09-02
+Decision: When a subtask is checked off it remains in the list, rendered with a strike-through. It is not hidden, collapsed, or moved behind a "show completed" toggle.
+Why: Operator call, 2026-09-02. The subtask list is short by design, scoped to a single work item, so the argument for hiding completed rows does not apply the way it does on a long standalone list. Keeping the row visible means the done-over-total count on the card and the list underneath it always agree, and a person scanning the item can see what was finished without a second click. Hiding was the alternative and was rejected.
+Locks: The subtask list renders completed rows. No hide-on-complete behaviour, and no "show completed" toggle on the subtask list. If a future list grows long enough to need one, that is a new decision superseding this entry, not a quiet addition.
+Refs: jasonburks23/_R1#67 Phase 2, PR #152 shipped Phase 1, jasonburks23/_R1#141 must land first.
 
 ---
 

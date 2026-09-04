@@ -47,6 +47,7 @@ pnpm runway:sheet-sync # Sheet→Runway diff report (read-only, Phase 1a; fixtur
 
 - All upstream PRs target `Hunt-Gather-Create:runway`, NEVER `main`. (D-06)
 - Cross-repo issue auto-close: include `Fixes jasonburks23/_R1#<n>` in PR body when applicable. (D-07)
+  **The keyword is the intent, not the closing step.** It fires on some merges and not others, so verify the issue actually closed after the merge and close it by hand if it did not. Five shipped tickets sat open this way. (jasonburks23/_R1#113)
 - Branch naming: `fix/<issue>-...`, `feat/<issue>-...`, `chore/...`.
 
 ### Post-build pipeline (run in order before pushing)
@@ -70,7 +71,8 @@ pnpm runway:sheet-sync # Sheet→Runway diff report (read-only, Phase 1a; fixtur
 ### AI
 
 **Product runtime (shipped Runway features).** Runway's own AI features (Slack bot, chat, background tasks) default to Claude Haiku; Sonnet only on explicit operator request. (D-05) This is a prod-inference cost control. It does NOT govern which model a dev seat runs on.
-- Always implement prompt caching. Cap tool usage with `maxUses`. Track tokens via `recordTokenUsage()`.
+- Always implement prompt caching. Track tokens via `recordTokenUsage()`.
+- **Cap the agent loop, not the tool.** `maxUses` is a parameter on Anthropic's own built-in tools and is only valid there, see `anthropic.tools.webSearch_*` in `src/app/api/brand/research/route.ts`. The AI SDK's `tool()` helper does not expose it, so the 37 custom tools in `bot-tools.ts` cannot take it. Cap with `stopWhen: [stepCountIs(N)]` instead, as `src/lib/slack/bot.ts:247` does. The old wording said to cap tool usage with `maxUses`, which is unfollowable for custom tools and produced a ticket, jasonburks23/_R1#34, asking for work that cannot be done.
 
 **Dev seat model routing (Runway-TP + CC).** Base session runs Opus and orchestrates only: it does zero building or heavy analysis. Building and analysis run on Sonnet (Sonnet 4.6 is the ceiling), each task kept under ~200k context. Never Haiku for judgment work. Programmatic-first and token-efficient are the north stars (locked 2026-08-13). Detail: `docs/planning/whats-changed-2026-08-13.md`. **Where that work runs is set by Dispatch routing below, not here.**
 
@@ -116,7 +118,9 @@ Chain: CC builds → QA-Scout-1 in-lane → TP weighs and routes → Overwatch g
 
 Full how-to, git-tracked and permanent: `agencyos-operational-efficiency/docs/standards/build-bay-playbook.md`. Do not copy it into the state file; state gets trimmed and the lesson dies. The five things that cost other seats real time:
 
-1. **Runway (CC) is not one serial worker.** It runs about ten threads at once. N independent tickets means N dispatches sent together, not N queued. A whole night was lost elsewhere to queueing them.
+1. **Runway (CC) is SERIAL. Its true concurrency is one.** Measured 2026-09-02 by asking it directly rather than repeating this file. Its answer: every ticket that session went through its full lifecycle, worktree through push through report, before it opened the next one. It has a subagent tool and has never used it, and it declined to claim a number it had not observed itself. So dispatch the highest-value ticket FIRST and expect the rest to queue behind it. Firing five at once is not wrong, they do not get lost, but they do not run in parallel either.
+   The old wording here said CC "runs about ten threads at once" and that N tickets means N simultaneous dispatches. That was never measured. It is the same unverified-property-of-a-live-instrument error Overwatch root-caused in its own always-loaded file, and it survived here because everyone repeated it. Ask the instrument.
+   Serial is a CHOICE CC is making, not a hard limit. It keeps one ticket's whole lifecycle in one unbroken thread because that is how it has been keeping the RED-then-GREEN proofs rigorous, and it has not tested whether that rigor survives being split. If that ever gets tested, re-measure and rewrite this line with the evidence.
 2. **One thread per ticket.** The first message about a ticket is its root; keep the `event_id` the send returns and reply into it with `--reply-to <root>`. The thread history is what makes a standing bot worth more than a throwaway. Read one ticket in order with `~/.claude/skills/buzz-agent-stats/scripts/read-thread.sh <room> <root>`.
 3. **Send from a script file, never inline.** The secret-echo guard blocks any command line that expands a `*_NSEC` or `*_KEY` variable.
 4. **Fire QA in-thread the moment a build lands**, so building and checking overlap. Verify the branch on origin yourself first; never take a done-report on its face.
