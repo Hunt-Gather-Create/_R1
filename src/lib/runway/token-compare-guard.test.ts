@@ -684,15 +684,69 @@ function subtreeCarriesTaintedName(node: ts.Node, names: Set<string>): boolean {
 // apiKey) : false;` and `const ok = (token === apiKey) || fallback;` - both
 // still produce a boolean derived from the compare, one level under a
 // conditional or a logical operator, and both still tainted `ok` under the
-// narrower check. `isEqualityDerivedShape` below recurses through
-// parens, conditionals, and `&&`/`||`, matching if EITHER side of a
-// conditional/logical node is itself equality-derived (including a bare
-// boolean literal). This is deliberately the more permissive OR direction,
-// not the more conservative AND: a genuinely mixed branch (`cond ? token :
-// (token === apiKey)`, one side the raw value, one side a compare) would
-// still be excluded from tainting under this check, which is a narrower,
-// separate residual - not the shape either the ticket or this bounce named,
-// and not attempted here.
+// narrower check.
+//
+// TP bounce, round 3 (#110), QA-found again: round 2's fix still only
+// covered the shapes named so far - `const ok = !(token === apiKey);`
+// (a negated compare) still tainted `ok`, one operator short. Asked first
+// whether this could invert to a bounded check instead of growing a sixth
+// case: TYPE-based inversion doesn't work, this file never builds a
+// ts.Program/TypeChecker anywhere, only ts.createSourceFile per snippet,
+// and most of this file's own fixtures are synthetic strings with
+// implicit-any parameters, so a type query would answer `any` for exactly
+// the expressions in question. SYNTAX-based inversion does work, and is
+// what this function does now: rather than enumerate shapes reactively as
+// they get found (unbounded - that's the same failure mode the five-word
+// SECRET|TOKEN|KEY|PASSWORD|CREDENTIAL vocabulary and the token/apiKey
+// identifier vocabulary both had), enumerate the CLOSED set of JS/TS
+// syntax that structurally ALWAYS produces a boolean or exclusively
+// recombines sub-results already covered by another case in this same
+// function. That set is bounded because the operator grammar itself is
+// closed - parens, the equality operators (via the shared
+// EQUALITY_OPERATOR_KINDS constant this whole file uses, not this
+// function's to redefine), boolean literals, ternary, logical AND/OR/
+// nullish-coalescing, and unary NOT. This pass added unary NOT (the gap
+// found this round) AND nullish-coalescing (`??`), which round 2
+// deliberately left out as "non-typical" - an omission, not a decision;
+// it recombines two already-covered branches exactly like `&&`/`||` do
+// and belongs in the same closed set.
+//
+// DESIGN LIMIT, stated here rather than left to live only in a bounce
+// thread: this is still enumeration, not proof. It is enumeration against
+// a closed, finite grammar (the language does not grow new operators)
+// rather than an open corpus of application patterns (arbitrary function
+// names, arbitrary object shapes - which is exactly why
+// `resolveWrappedBindingNames` and `subtreeCarriesTaintedName` deliberately
+// do NOT try to enumerate every way a value can be wrapped). If TypeScript
+// ever adds new boolean-producing syntax, or if a shape combining more than
+// one of AND/OR/ternary/unary-NOT/nullish in a way not yet exercised turns
+// out to defeat this recursion, that is a bounded, nameable gap against a
+// known list, not a fresh discovery against an unbounded surface. Still
+// deliberately the more permissive OR direction at each branch point, not
+// AND: a genuinely mixed branch (`cond ? token : (token === apiKey)`, one
+// side the raw value, one side a compare) remains excluded from tainting
+// under this check - a narrower, separate, already-disclosed residual, not
+// the shape either bounce this round named, and not attempted here.
+//
+// WHERE THE BOUND ACTUALLY ENDS, TP round 3 follow-up: the closed-grammar
+// claim above is about OPERATORS, not about every syntax node that happens
+// to produce a boolean. `const ok = Boolean(token === apiKey);` is a CALL
+// EXPRESSION, and call names are application-chosen, the exact open corpus
+// this function refuses to chase - `Boolean` the identifier is no different
+// in kind to this function than `someHelper` or `isAllowed`. The ONE
+// exception below is deliberately narrow: `Boolean(...)` recognized by
+// name, because it is a single well-known LANGUAGE BUILT-IN, not one
+// instance of an open set of possible wrapper names - there is no
+// "BooleanAlike" a codebase can define that this function would need to
+// also learn, the way there could be an arbitrary number of "isAllowed"-
+// shaped helpers. This is the precise line: the operator grammar is closed
+// (parens/equality/literal/ternary/logical/unary-NOT above) and this one
+// specific global identifier is closed too (there is exactly one `Boolean`
+// built-in), but recognizing ANY OTHER call, by name or by convention, is
+// the open-corpus problem this function exists to stay out of. Do not add
+// a second call-name special case here without re-deriving why it is
+// closed the same way `Boolean` is - if the answer is "it's a common
+// pattern," that is the open corpus, not this bound.
 //
 // Caller's responsibility, not this function's: `findCoOccurrenceViolations`
 // applies this only to the call-argument branch, not the binary-operand
@@ -709,9 +763,24 @@ function isEqualityDerivedShape(expr: ts.Expression): boolean {
   if (
     ts.isBinaryExpression(unwrapped) &&
     (unwrapped.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
-      unwrapped.operatorToken.kind === ts.SyntaxKind.BarBarToken)
+      unwrapped.operatorToken.kind === ts.SyntaxKind.BarBarToken ||
+      unwrapped.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)
   ) {
     return isEqualityDerivedShape(unwrapped.left) || isEqualityDerivedShape(unwrapped.right);
+  }
+  if (
+    ts.isPrefixUnaryExpression(unwrapped) &&
+    unwrapped.operator === ts.SyntaxKind.ExclamationToken
+  ) {
+    return isEqualityDerivedShape(unwrapped.operand);
+  }
+  if (
+    ts.isCallExpression(unwrapped) &&
+    ts.isIdentifier(unwrapped.expression) &&
+    unwrapped.expression.text === "Boolean" &&
+    unwrapped.arguments.length === 1
+  ) {
+    return isEqualityDerivedShape(unwrapped.arguments[0]);
   }
   return false;
 }
@@ -1534,6 +1603,93 @@ ${filler}
     const source = fs.readFileSync(file, "utf8");
     expect(source).toContain("timingSafeEqual(a, b)");
     expect(findAllGuardViolations(source, file)).toHaveLength(0);
+  });
+
+  it("does not over-taint a negated equality compare, plain or via a method-call receiver (TP bounce, round 3)", () => {
+    // QA's round 3 finding: isEqualityDerivedShape enumerated parens,
+    // equality, boolean literals, ternary, and &&/|| - no case for a prefix
+    // unary NOT, so `const ok = !(token === apiKey);` fell through every
+    // check and still tainted `ok`. QA also proved the mechanism, not just
+    // the symptom, with a second fixture routing the compare through
+    // localeCompare first: same defect, different surface. Both fixtures
+    // pinned in one test since they're the same gap. Acceptance items 1
+    // and 2 from the round 3 bounce.
+    const negatedEquality = `
+      function validateAuth(token, apiKey) {
+        const ok = !(token === apiKey);
+        return reportOutcome(ok);
+      }
+    `;
+    const negatedHelperCompare = `
+      function validateAuth(token, apiKey) {
+        const mismatch = !(token.localeCompare(apiKey) === 0);
+        return reportOutcome(mismatch);
+      }
+    `;
+    for (const [source, name] of [
+      [negatedEquality, "ok"],
+      [negatedHelperCompare, "mismatch"],
+    ] as const) {
+      const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+      const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+      const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+      expect(tokenNames.has(name)).toBe(false);
+      expect(apiKeyNames.has(name)).toBe(false);
+    }
+  });
+
+  it("does not over-taint Boolean(...) wrapping an equality compare, the one named call-expression exception (TP bounce, round 3 follow-up)", () => {
+    // TP's follow-up after round 3: the closed-grammar bound covers
+    // OPERATORS, not every syntax node that happens to produce a boolean.
+    // `Boolean(token === apiKey)` is a CALL, and call names are
+    // application-chosen - the open corpus this function otherwise
+    // refuses to chase. `Boolean` is recognized by name as the one
+    // deliberate, narrow exception: a single well-known language built-in,
+    // not one instance of an open set of possible wrapper names. See the
+    // DESIGN LIMIT comment on isEqualityDerivedShape for why this is
+    // closed in a way an arbitrary helper name is not.
+    const source = `
+      function validateAuth(token, apiKey) {
+        const ok = Boolean(token === apiKey);
+        return reportOutcome(ok);
+      }
+    `;
+    const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+    const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+    const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+    expect(tokenNames.has("ok")).toBe(false);
+    expect(apiKeyNames.has("ok")).toBe(false);
+  });
+
+  it("DESIGN PIN: isEqualityDerivedShape enumerates a closed operator grammar plus one named built-in, not an open corpus of wrapper calls - an arbitrary helper wrapping the same compare is NOT exempted", () => {
+    // This is the test the round 3 bounce asked for: one that pins the
+    // DESIGN DECISION, not just another case. isEqualityDerivedShape's
+    // exceptions are: parens, the equality operators, boolean literals,
+    // ternary, &&/||/??,  unary NOT, and the single named built-in
+    // `Boolean(...)`. It does NOT and must NOT treat an arbitrary
+    // application-defined helper the same way, even one that is
+    // semantically identical to Boolean(...) - `asBoolean(token ===
+    // apiKey)` is indistinguishable from `isAllowed(token, apiKey)` to
+    // this function by design, because recognizing helper names by
+    // convention is exactly the open-corpus problem the closed-grammar
+    // bound exists to stay out of. If a future round wants to exempt a
+    // specific other helper, that is a new, separately-justified decision,
+    // not a natural extension of this one - the whole point of naming
+    // Boolean as a language built-in rather than "a common wrapper
+    // pattern" is that no other identifier gets to ride in on that
+    // reasoning without its own case for why it is closed.
+    const source = `
+      function validateAuth(token, apiKey) {
+        const ok = asBoolean(token === apiKey);
+        return reportOutcome(ok);
+      }
+    `;
+    const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+    const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+    const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+    // Deliberately still tainted - this is the bound holding, not a bug.
+    expect(tokenNames.has("ok")).toBe(true);
+    expect(apiKeyNames.has("ok")).toBe(true);
   });
 
   it("flags a plain-equality compare via a method-call RECEIVER, not an argument (round 9, shape 9)", () => {
