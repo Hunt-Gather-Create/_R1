@@ -1,19 +1,20 @@
 /**
- * Independent prod read for the parity harness (_R1#151).
+ * Independent prod read for the parity harness, _R1#151.
  *
  * Deliberately does NOT import or call runway-read.ts's `readClientBundle`.
  * That function selects `id, projectId, title, weekOf, startDate, endDate,
- * status, category, notes` — no `owner`, no `resources` — because diff.ts
+ * status, category, notes`. No `owner`, no `resources`, because diff.ts
  * never needs them. Reusing it here would silently reproduce the exact
- * blind spot this ticket exists to catch (plan §2.3, "the one idea worth
- * more than the rest: a second instrument" — comparing a port against
- * itself proves nothing).
+ * blind spot this ticket exists to catch. Plan §2.3 names this "the one
+ * idea worth more than the rest: a second instrument." Comparing a port
+ * against itself proves nothing.
  *
  * This module owns its own query, selecting every field the parity
- * comparator needs, and its own frozen-file format. Freezing (write once,
- * read many) is what makes a run reproducible — a live query re-run five
+ * comparator needs, and its own frozen-file format. Freezing, write once,
+ * read many, is what makes a run reproducible. A live query re-run five
  * minutes later could read a cell Kathy just edited and manufacture a fake
- * disagreement (lessons doc, "the one trap to design out, every time").
+ * disagreement. The lessons doc calls this "the one trap to design out,
+ * every time."
  */
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname } from "path";

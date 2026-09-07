@@ -1,20 +1,21 @@
 /**
- * Parity harness types (_R1#151).
+ * Parity harness types, _R1#151.
  *
- * Four verdict values, no free text (ticket §"Verdict per row"). AGREE means
- * every field the tool would write matches what the hand walk wrote — a row
- * `diff.ts` calls "matched" while `owner`/`resources`/`category` differ is
- * DISAGREE here, never AGREE, because this harness compares its own field
- * set, not the tool's.
+ * Four verdict values, no free text, per the ticket's "Verdict per row"
+ * section. AGREE means every field the tool would write matches what the
+ * hand walk wrote. A row `diff.ts` calls "matched" while
+ * `owner`/`resources`/`category` differ is DISAGREE here, never AGREE,
+ * because this harness compares its own field set, not the tool's.
  */
 
 export type ParityVerdict = "AGREE" | "DISAGREE" | "TOOL_ONLY" | "HAND_ONLY";
 
-/** The fields this harness compares — a strict superset of diff.ts's three
- * (`status`, `startDate`, `endDate`): owner/resources/category are added
- * because diff.ts never emits a FieldDelta for them (measured _R1#151 body).
- * title/weekOf are excluded on purpose — they are match keys, never
- * correction targets (ticket, "title and weekOf are MATCH KEYS only"). */
+/** The fields this harness compares. A strict superset of diff.ts's three,
+ * `status`, `startDate`, `endDate`. owner/resources/category are added
+ * because diff.ts never emits a FieldDelta for them, measured in the
+ * _R1#151 ticket body. title/weekOf are excluded on purpose. They are
+ * match keys, never correction targets, per the ticket's "title and weekOf
+ * are MATCH KEYS only" rule. */
 export const PARITY_FIELDS = [
   "status",
   "startDate",
@@ -54,7 +55,8 @@ export interface ProdProjectRow {
 
 /** One frozen input: everything the diff engine's L1/WI matching needs, plus
  * the fields the tool's own diff never compares. Written once, read many
- * times — the whole point of freezing (ticket, "Two frozen snapshots in"). */
+ * times. That is the whole point of freezing, per the ticket's "Two frozen
+ * snapshots in" rule. */
 export interface ProdSnapshot {
   clientSlug: string;
   capturedAt: string;
@@ -75,14 +77,14 @@ export interface ParityMatchInfo {
 }
 
 export interface ParityRowVerdict {
-  /** null for HAND_ONLY — there is no sheet row. */
+  /** null for HAND_ONLY. There is no sheet row. */
   rowNumber: number | null;
   taskNo: string | null;
   title: string;
   verdict: ParityVerdict;
-  /** HOW the tool reached its answer (ticket, "Accidental agreement is a
-   * finding, not a pass") — null when there is no sheet-side match at all
-   * (TOOL_ONLY / HAND_ONLY). */
+  /** HOW the tool reached its answer, per the ticket's "Accidental
+   * agreement is a finding, not a pass" rule. null when there is no
+   * sheet-side match at all, i.e. TOOL_ONLY or HAND_ONLY. */
   match: ParityMatchInfo | null;
   weekItemId: string | null;
   mismatchedFields: ParityFieldDelta[];

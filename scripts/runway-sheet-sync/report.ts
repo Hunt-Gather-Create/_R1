@@ -93,18 +93,18 @@ export function renderReport(diff: DiffResult, payloads: SyncPayload[]): string 
 }
 
 /**
- * Human-readable rendering of a parity verdict file (_R1#151). The verdict
- * JSON is the artifact of record; this is a reader's aid over it and is
+ * Human-readable rendering of a parity verdict file, _R1#151. The verdict
+ * JSON is the artifact of record. This is a reader's aid over it and is
  * never re-parsed as an input, so it carries no byte-identical requirement.
  */
 export function renderParityReport(result: ParityResult): string {
   const lines: string[] = [];
-  lines.push(`# Runway Sheet Sync — Parity Report`);
+  lines.push(`# Runway Sheet Sync, Parity Report`);
   lines.push("");
   lines.push(`- Sheet: \`${result.sheetId}\``);
   lines.push(`- Client: ${result.clientSlug}`);
   lines.push(`- Run: \`${result.runId}\``);
-  lines.push(`- Sheet frozen at: ${result.sheetFrozenAt || "—"}`);
+  lines.push(`- Sheet frozen at: ${result.sheetFrozenAt || "n/a"}`);
   lines.push(`- Prod frozen at: ${result.prodFrozenAt}`);
   lines.push("");
 
@@ -123,9 +123,9 @@ export function renderParityReport(result: ParityResult): string {
   lines.push(`| Row | Task | Title | Verdict | Match | Mismatched fields |`);
   lines.push(`|---|---|---|---|---|---|`);
   for (const r of result.rows) {
-    const match = r.match ? `${r.match.method} (${r.match.score ?? "—"})` : "—";
+    const match = r.match ? `${r.match.method}, score ${r.match.score ?? "n/a"}` : "n/a";
     const mismatched = r.mismatchedFields.map((f) => `${f.field}: tool=${f.tool ?? "null"} hand=${f.hand ?? "null"}`).join("; ");
-    lines.push(`| ${r.rowNumber ?? "—"} | ${r.taskNo ?? "—"} | ${r.title} | ${r.verdict} | ${match} | ${mismatched} |`);
+    lines.push(`| ${r.rowNumber ?? "n/a"} | ${r.taskNo ?? "n/a"} | ${r.title} | ${r.verdict} | ${match} | ${mismatched} |`);
   }
   lines.push("");
 

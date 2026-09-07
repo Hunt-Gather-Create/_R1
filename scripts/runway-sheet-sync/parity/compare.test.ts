@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { computeParity, reconcileVerdicts } from "./compare";
+import { assertToolNeverPlansField, computeParity, reconcileVerdicts } from "./compare";
 import type { ProdWeekItemRow } from "./types";
-import type { LeafTask, ParsedSheet, RowDiff, SheetConfig } from "../types";
+import type { LeafTask, ParsedSheet, RowDiff, SheetConfig, SyncPayload } from "../types";
+
+function payload(over: Partial<SyncPayload>): SyncPayload {
+  return {
+    op: "updateWeekItemField",
+    params: { weekOf: "2026-06-01", weekItemTitle: "Kickoff call", field: "status", newValue: "scheduled", updatedBy: "sheet-sync:test" },
+    source: { sheetId: "s-1", rowNumber: 12, taskNo: "1.1" },
+    applyOrder: 0,
+    requiresReview: false,
+    preflight: { statusValid: true, categoryValid: true },
+    reason: "test payload",
+    ...over,
+  };
+}
 
 const CONFIG: SheetConfig = {
   sheetId: "synthetic-sheet-id",
@@ -68,7 +81,7 @@ function parsedWith(tasks: LeafTask[]): ParsedSheet {
   };
 }
 
-describe("reconcileVerdicts — the harness's own instrument, tested in isolation from diff.ts", () => {
+describe("reconcileVerdicts, the harness's own instrument, tested in isolation from diff.ts", () => {
   it("row the tool calls matched, with owner/resources/category all disagreeing, is DISAGREE", () => {
     const rowDiffs: RowDiff[] = [
       {
@@ -114,7 +127,7 @@ describe("reconcileVerdicts — the harness's own instrument, tested in isolatio
     expect(rows[0].mismatchedFields).toEqual([]);
   });
 
-  it("records HOW the match was made — ledger-banked vs fuzzy score do not render the same", () => {
+  it("records HOW the match was made, ledger-banked vs fuzzy score do not render the same", () => {
     const rowDiffs: RowDiff[] = [
       {
         disposition: "matched",
@@ -141,7 +154,7 @@ describe("reconcileVerdicts — the harness's own instrument, tested in isolatio
     const rows = reconcileVerdicts(rowDiffs, [], prodById);
     expect(rows[0].match).toEqual({ method: "ledger", score: 1 });
     expect(rows[1].match).toEqual({ method: "fuzzy", score: 0.16 });
-    // Same verdict (AGREE), different match provenance — must not collapse.
+    // Same verdict, AGREE, different match provenance. Must not collapse.
     expect(rows[0].verdict).toBe("AGREE");
     expect(rows[1].verdict).toBe("AGREE");
     expect(rows[0].match).not.toEqual(rows[1].match);
@@ -174,7 +187,7 @@ describe("reconcileVerdicts — the harness's own instrument, tested in isolatio
     expect(reconcileVerdicts(rowDiffs, [], new Map())).toEqual([]);
   });
 
-  describe("broken-matcher guard — the harness's own instrument must fail loud, not report a plausible wrong answer", () => {
+  describe("broken-matcher guard, the harness's own instrument must fail loud, not report a plausible wrong answer", () => {
     it("FAILS when a disposition claims a weekItemId absent from the frozen prod snapshot", () => {
       const rowDiffs: RowDiff[] = [
         {
@@ -230,10 +243,10 @@ describe("reconcileVerdicts — the harness's own instrument, tested in isolatio
 
 // Unit test of the field comparator, not the milestone proof. Both sides of
 // the comparison below are authored in this same file, so a broken
-// comparator could be made to pass it — the real bar is a run against a
-// frozen Ammonia sheet fixture + prod snapshot (docs/data-walks/fixtures/),
-// captured separately per _R1#151 thread follow-up (TP note 2026-09-07).
-describe("computeParity — comparator unit test: owner/resources/category on an 18-row synthetic scenario", () => {
+// comparator could be made to pass it. The real bar is a run against a
+// frozen Ammonia sheet fixture and prod snapshot, docs/data-walks/fixtures/,
+// captured separately per _R1#151 thread follow-up, TP note 2026-09-07.
+describe("computeParity, comparator unit test: owner/resources/category on an 18-row synthetic scenario", () => {
   it("names exactly {owner, resources, category} when a synthetic scenario differs on exactly those fields", () => {
     const tasks: LeafTask[] = Array.from({ length: 18 }, (_, i) =>
       leaf({
@@ -258,10 +271,10 @@ describe("computeParity — comparator unit test: owner/resources/category on an
           weekOf: t.weekOf,
           startDate: t.startDate,
           endDate: t.endDate,
-          status: t.derivedStatus, // dates/status agree — the measured baseline (lesson 13)
-          category: null, // prod convention: null (lesson 15)
-          owner: "Lane", // prod holds a real owner (lesson 14/16)
-          resources: "CD: Lane", // prod holds real resources (lesson 14/16)
+          status: t.derivedStatus, // dates/status agree, the measured baseline, lesson 13
+          category: null, // prod convention: null, lesson 15
+          owner: "Lane", // prod holds a real owner, lesson 14/16
+          resources: "CD: Lane", // prod holds real resources, lesson 14/16
         })
       ),
     };
@@ -288,5 +301,39 @@ describe("computeParity — comparator unit test: owner/resources/category on an
     const first = computeParity(parsed, prodSnapshot, "fixed-run-id");
     const second = computeParity(parsed, prodSnapshot, "fixed-run-id");
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
+  });
+});
+
+describe("assertToolNeverPlansField, guards toolPlannedFields' hardcoded null against a silent _R1#159 landing", () => {
+  it("control: today's real updateWeekItemField payload, which only ever writes status/startDate/endDate, does not throw", () => {
+    expect(() => assertToolNeverPlansField([payload({})], "owner")).not.toThrow();
+    expect(() => assertToolNeverPlansField([payload({})], "resources")).not.toThrow();
+  });
+
+  it("FAILS when an updateWeekItemField payload proposes writing the guarded field", () => {
+    const payloads = [payload({ params: { weekOf: "2026-06-01", weekItemTitle: "Kickoff call", field: "owner", newValue: "Lane", updatedBy: "sheet-sync:test" } })];
+    expect(() => assertToolNeverPlansField(payloads, "owner")).toThrow(/payloads\.ts now proposes writing "owner"/);
+    expect(() => assertToolNeverPlansField(payloads, "resources")).not.toThrow();
+  });
+
+  it("FAILS when any payload carries the guarded field directly on params, independent of op", () => {
+    const payloads = [payload({ op: "createWeekItem", params: { clientSlug: "acme", resources: "CD: Lane" } })];
+    expect(() => assertToolNeverPlansField(payloads, "resources")).toThrow(/payloads\.ts now plans "resources"/);
+    expect(() => assertToolNeverPlansField(payloads, "owner")).not.toThrow();
+  });
+
+  it("computeParity on real Ammonia-shaped input calls the guard and does not throw, today", () => {
+    const tasks: LeafTask[] = Array.from({ length: 3 }, (_, i) =>
+      leaf({ rowNumber: 12 + i, taskNo: `${i + 1}.1`, title: `Task ${i}`, resolvedTitle: `Task ${i}` })
+    );
+    const parsed = parsedWith(tasks);
+    const prodSnapshot = {
+      clientSlug: "beyond-petro",
+      capturedAt: "2026-09-07T22:00:00Z",
+      client: { id: "c-1", slug: "beyond-petro", name: "Beyond Petro" },
+      projects: [],
+      weekItems: tasks.map((t, i) => prodRow({ id: `wi-${i}`, title: t.title, weekOf: t.weekOf, owner: "Lane" })),
+    };
+    expect(() => computeParity(parsed, prodSnapshot, "test-run-id")).not.toThrow();
   });
 });

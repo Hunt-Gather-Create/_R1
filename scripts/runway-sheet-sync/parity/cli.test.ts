@@ -52,7 +52,7 @@ function prodSnapshot(): ProdSnapshot {
   };
 }
 
-describe("runParity — the real CLI call site, not a re-implementation of it", () => {
+describe("runParity, the real CLI call site, not a re-implementation of it", () => {
   it("produces a verdict file and a markdown reader's aid from two frozen files", () => {
     const dir = mkdtempSync(join(tmpdir(), "parity-cli-"));
     const sheetPath = join(dir, "sheet.json");

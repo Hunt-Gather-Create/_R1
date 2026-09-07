@@ -5,7 +5,7 @@ import { join } from "path";
 import { createTestDb, seedTestDb, cleanupTestDb, type TestDb } from "../../../src/lib/runway/test-db";
 import { captureProdSnapshot, loadProdSnapshot, writeProdSnapshot } from "./prod-snapshot";
 
-describe("captureProdSnapshot — the independent instrument", () => {
+describe("captureProdSnapshot, the independent instrument", () => {
   let dbPath: string;
   let db: TestDb;
 
@@ -13,7 +13,7 @@ describe("captureProdSnapshot — the independent instrument", () => {
     if (dbPath) cleanupTestDb(dbPath);
   });
 
-  it("reads owner and resources — the exact fields runway-read.ts's readClientBundle never selects", async () => {
+  it("reads owner and resources, the exact fields runway-read.ts's readClientBundle never selects", async () => {
     const created = await createTestDb();
     db = created.db;
     dbPath = created.dbPath;
@@ -24,7 +24,7 @@ describe("captureProdSnapshot — the independent instrument", () => {
     expect(snapshot.client).toEqual({ id: "cl-convergix", slug: "convergix", name: "Convergix" });
     const review = snapshot.weekItems.find((w) => w.id === "wi-cds-review");
     expect(review).toBeDefined();
-    // Seeded exactly as owner: 'Kathy', resources: 'Roz' — proves this query
+    // Seeded exactly as owner: 'Kathy', resources: 'Roz'. Proves this query
     // actually selects both columns, not merely that the type declares them.
     expect(review?.owner).toBe("Kathy");
     expect(review?.resources).toBe("Roz");
@@ -45,7 +45,7 @@ describe("captureProdSnapshot — the independent instrument", () => {
   });
 });
 
-describe("writeProdSnapshot / loadProdSnapshot — freeze round-trip", () => {
+describe("writeProdSnapshot / loadProdSnapshot, freeze round-trip", () => {
   it("round-trips byte-for-byte on reload", () => {
     const dir = mkdtempSync(join(tmpdir(), "parity-snapshot-"));
     const path = join(dir, "snapshot.json");

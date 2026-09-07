@@ -1,15 +1,15 @@
 /**
- * Runway Sheet Sync — Parity Harness CLI (_R1#151).
+ * Runway Sheet Sync, Parity Harness CLI, _R1#151.
  *
  * Two frozen snapshots in, one verdict file out.
  *
  * Usage:
- *   # 1. Freeze prod (read-only, writes nothing back):
+ *   # 1. Freeze prod, read-only, writes nothing back:
  *   npx tsx scripts/runway-sheet-sync/parity/cli.ts --capture-prod \
  *     --client <clientSlug> --out <prodSnapshotPath>
  *
- *   # 2. Freeze the sheet via the google-api skill export step (existing
- *   #    SheetFixture format, same as scripts/runway-sheet-sync.ts).
+ *   # 2. Freeze the sheet via the google-api skill export step, the existing
+ *   #    SheetFixture format, same as scripts/runway-sheet-sync.ts.
  *
  *   # 3. Compare the two frozen files:
  *   npx tsx scripts/runway-sheet-sync/parity/cli.ts \
@@ -17,7 +17,7 @@
  *     --engagement-code <code> --label <label> --out <verdictPath>
  *
  * Re-running step 3 on the same two files produces a byte-identical verdict
- * file — nothing here reads a live sheet or a live DB.
+ * file. Nothing here reads a live sheet or a live DB.
  */
 import { createHash } from "crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -35,8 +35,9 @@ function arg(name: string): string | undefined {
   return idx >= 0 ? process.argv[idx + 1] : undefined;
 }
 
-/** Hash of the two frozen files' raw bytes — no wall clock, so re-running on
- * the same two files always yields the same runId (ticket, "byte-identical"). */
+/** Hash of the two frozen files' raw bytes, no wall clock, so re-running on
+ * the same two files always yields the same runId, per the ticket's
+ * "byte-identical" requirement. */
 export function computeParityRunId(sheetFixtureRaw: string, prodSnapshotRaw: string): string {
   return createHash("sha256").update(sheetFixtureRaw).update("|").update(prodSnapshotRaw).digest("hex").slice(0, 16);
 }
@@ -55,8 +56,8 @@ export interface RunParityOptions {
 }
 
 /**
- * The one command: two frozen files in, one verdict file (+ a markdown
- * reader's aid next to it) out. Exported directly so tests exercise the
+ * The one command: two frozen files in, one verdict file plus a markdown
+ * reader's aid next to it, out. Exported directly so tests exercise the
  * real call site, not a re-implementation of it.
  */
 export function runParity(opts: RunParityOptions): ParityResult {
@@ -65,7 +66,7 @@ export function runParity(opts: RunParityOptions): ParityResult {
     // Without this guard, an --out path with no .json suffix makes that
     // derivation a no-op and the markdown write silently clobbers the
     // verdict file it was supposed to sit next to.
-    throw new Error(`--out must end in .json (got "${opts.outPath}")`);
+    throw new Error(`--out must end in .json, got "${opts.outPath}"`);
   }
   const sheetFixtureRaw = readFileSync(opts.sheetFixturePath, "utf8");
   const prodSnapshotRaw = readFileSync(opts.prodSnapshotPath, "utf8");
@@ -97,9 +98,9 @@ async function main(): Promise<void> {
     }
     const { db, url } = createRunwayDb();
     if (!url.startsWith("libsql")) {
-      throw new Error(`RUNWAY_DATABASE_URL not loaded (resolved "${url}") — check .env.local`);
+      throw new Error(`RUNWAY_DATABASE_URL not loaded, resolved "${url}". Check .env.local`);
     }
-    console.error(`── capturing prod snapshot for ${clientSlug} (read-only)`);
+    console.error(`capturing prod snapshot for ${clientSlug}, read-only`);
     const snapshot = await captureProdSnapshot(db, clientSlug);
     writeProdSnapshot(snapshot, outPath);
     console.log(JSON.stringify({ clientSlug, capturedAt: snapshot.capturedAt, weekItems: snapshot.weekItems.length, outPath }, null, 2));
