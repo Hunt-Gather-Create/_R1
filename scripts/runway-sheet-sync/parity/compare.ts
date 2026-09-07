@@ -16,7 +16,7 @@
  */
 import { diffSheet } from "../diff";
 import { buildPayloads } from "../payloads";
-import type { Ledger, ParsedSheet, RowDiff, SyncPayload } from "../types";
+import type { DiffResult, LeafTask, Ledger, ParsedSheet, RowDiff, SheetConfig, SyncPayload } from "../types";
 import type { RunwayClientBundle } from "../runway-read";
 import {
   PARITY_FIELDS,
@@ -207,6 +207,88 @@ function toMatchingBundle(snapshot: ProdSnapshot): RunwayClientBundle {
   };
 }
 
+const STRUCTURAL_PROBE_LEAF: LeafTask = {
+  rowNumber: 1,
+  taskNo: "probe",
+  rawLabel: "probe",
+  title: "probe",
+  resolvedTitle: "probe",
+  startDate: "2026-01-01",
+  endDate: "2026-01-01",
+  weekOf: "2026-01-01",
+  completed: false,
+  derivedStatus: "scheduled",
+  category: "kickoff",
+  section: null,
+  priority: null,
+  predecessorRow: null,
+  lag: null,
+  resource: null,
+  notes: "",
+  notesTruncated: false,
+  sortOrder: 0,
+};
+
+const STRUCTURAL_PROBE_CONFIG: SheetConfig = {
+  sheetId: "structural-probe",
+  clientSlug: "structural-probe",
+  engagementCode: "PROBE-0000-00",
+  label: "Structural Probe",
+};
+
+/**
+ * A synthetic DiffResult engineered to force every payloads.ts branch that
+ * can carry a field name, independent of what any one sheet or prod
+ * snapshot happens to contain.
+ *
+ * A live run's own payloads are a valid thing to check too, but they are
+ * not sufficient on their own: payloads.ts only emits a per-field payload
+ * inside `disposition === "mismatched-field" && rd.deltas`, and that list
+ * is empty whenever status, startDate and endDate all already agree,
+ * exactly the shape every DISAGREE row on owner/resources/category takes
+ * today, and the exact shape _R1#159's own NFM bar will take once it
+ * lands. A guard keyed only to a live run's output is unreachable on
+ * precisely the data it exists to protect. This probe forces both the
+ * write branch and the flag-for-review branch, so a change to either one
+ * is caught regardless of what any one sheet contains.
+ */
+export function structuralProbeDiff(): DiffResult {
+  return {
+    config: STRUCTURAL_PROBE_CONFIG,
+    runId: "structural-probe",
+    generatedAt: "",
+    l1: { resolved: true, projectId: "p-probe", projectName: "Structural Probe" },
+    rowDiffs: [
+      {
+        disposition: "mismatched-field",
+        leaf: STRUCTURAL_PROBE_LEAF,
+        weekItemId: "wi-probe",
+        weekItemTitle: "probe",
+        weekItemWeekOf: "2026-01-01",
+        deltas: [
+          { field: "status", sheet: "scheduled", runway: "completed", action: "write" },
+          { field: "startDate", sheet: "2026-01-01", runway: "2026-01-02", action: "flag-for-review" },
+        ],
+      },
+      { disposition: "missing-in-runway", leaf: STRUCTURAL_PROBE_LEAF },
+    ],
+    orphans: [],
+    counts: {
+      matched: 0,
+      "missing-in-runway": 1,
+      "mismatched-field": 1,
+      "runway-only-orphan": 0,
+      "skipped-empty": 0,
+      "skipped-header": 0,
+      "skipped-milestone": 0,
+      "skipped-spacer": 0,
+      "leaf-tasks": 2,
+      collisions: 0,
+    },
+    flags: [],
+  };
+}
+
 /**
  * Compute a full ParityResult from one frozen parsed sheet and one frozen
  * prod snapshot. A fresh, never-persisted ledger is used each call. The
@@ -225,8 +307,13 @@ export function computeParity(
   const ledger: Ledger = { sheetId: parsed.config.sheetId, updatedAt: "", lastRunId: "", entries: {} };
   const diff = diffSheet(parsed, bundle, ledger, runId);
   const payloads = buildPayloads(diff, runId);
-  assertToolNeverPlansField(payloads, "owner");
-  assertToolNeverPlansField(payloads, "resources");
+  const probePayloads = buildPayloads(structuralProbeDiff(), "structural-probe");
+  for (const field of ["owner", "resources"] as const) {
+    // Checked against this run's real output, which can legitimately be
+    // empty, and against the unconditional structural probe, which cannot.
+    assertToolNeverPlansField(payloads, field);
+    assertToolNeverPlansField(probePayloads, field);
+  }
   const prodById = new Map(prodSnapshot.weekItems.map((w) => [w.id, w]));
   const rows = reconcileVerdicts(diff.rowDiffs, diff.orphans, prodById);
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { assertToolNeverPlansField, computeParity, reconcileVerdicts } from "./compare";
+import { assertToolNeverPlansField, computeParity, reconcileVerdicts, structuralProbeDiff } from "./compare";
+import { buildPayloads } from "../payloads";
 import type { ProdWeekItemRow } from "./types";
 import type { LeafTask, ParsedSheet, RowDiff, SheetConfig, SyncPayload } from "../types";
 
@@ -335,5 +336,28 @@ describe("assertToolNeverPlansField, guards toolPlannedFields' hardcoded null ag
       weekItems: tasks.map((t, i) => prodRow({ id: `wi-${i}`, title: t.title, weekOf: t.weekOf, owner: "Lane" })),
     };
     expect(() => computeParity(parsed, prodSnapshot, "test-run-id")).not.toThrow();
+  });
+
+  it("the structural probe itself is non-vacuous: it reaches both the write and flag-for-review branches", () => {
+    // A live run's payload list is empty whenever status/startDate/endDate
+    // all agree, exactly the shape the test above exercises and exactly
+    // the shape every real DISAGREE row on owner/resources/category takes.
+    // TP mutation finding, 2026-09-07: payloads.ts:93 changed to a
+    // hardcoded field, real Ammonia CLI run produced zero payloads and did
+    // not throw. This test guards the probe against the same failure
+    // mode: if a future edit to structuralProbeDiff ever stops forcing
+    // both branches, this goes red before the guard silently goes blind
+    // again.
+    const probePayloads = buildPayloads(structuralProbeDiff(), "structural-probe-test");
+    expect(probePayloads.length).toBeGreaterThan(0);
+    expect(probePayloads.some((p) => p.op === "updateWeekItemField")).toBe(true);
+    expect(probePayloads.some((p) => p.op === "flag-for-review")).toBe(true);
+  });
+
+  it("FAILS when the structural probe's own write branch plans the guarded field, independent of any live sheet", () => {
+    const mutatedProbePayloads = buildPayloads(structuralProbeDiff(), "structural-probe-test").map((p) =>
+      p.op === "updateWeekItemField" ? { ...p, params: { ...p.params, field: "owner" } } : p
+    );
+    expect(() => assertToolNeverPlansField(mutatedProbePayloads, "owner")).toThrow(/payloads\.ts now proposes writing "owner"/);
   });
 });
