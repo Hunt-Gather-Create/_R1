@@ -228,8 +228,13 @@ describe("reconcileVerdicts — the harness's own instrument, tested in isolatio
   });
 });
 
-describe("computeParity — the Ammonia bar, §_R1#151: all 18 rows DISAGREE on owner/resources/category", () => {
-  it("reproduces the measured defect on a synthetic 18-row Ammonia-shaped scenario", () => {
+// Unit test of the field comparator, not the milestone proof. Both sides of
+// the comparison below are authored in this same file, so a broken
+// comparator could be made to pass it — the real bar is a run against a
+// frozen Ammonia sheet fixture + prod snapshot (docs/data-walks/fixtures/),
+// captured separately per _R1#151 thread follow-up (TP note 2026-09-07).
+describe("computeParity — comparator unit test: owner/resources/category on an 18-row synthetic scenario", () => {
+  it("names exactly {owner, resources, category} when a synthetic scenario differs on exactly those fields", () => {
     const tasks: LeafTask[] = Array.from({ length: 18 }, (_, i) =>
       leaf({
         rowNumber: 12 + i,
