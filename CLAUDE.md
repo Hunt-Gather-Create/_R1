@@ -125,6 +125,18 @@ Full how-to, git-tracked and permanent: `agencyos-operational-efficiency/docs/st
 3. **Send from a script file, never inline.** The secret-echo guard blocks any command line that expands a `*_NSEC` or `*_KEY` variable.
 4. **Fire QA in-thread the moment a build lands**, so building and checking overlap. Verify the branch on origin yourself first; never take a done-report on its face.
 5. **Never give QA-Scout-1 a build.** A seat that writes the code cannot be the independent check on it afterwards. It is right to refuse.
+6. **Envelope headers use the nine legal states, exactly, or no state at all.** PROTOCOL Rule 23 binds this room and this room had drifted from it. Overwatch ruling 2026-09-05, opeff#920.
+
+   The nine: `CLAIMED`, `BUILDING`, `G1_QUEUED`, `G1_BOUNCE`, `G2_QUEUED`, `G2_BOUNCE`, `MERGE_OWED`, `MERGED`, `CLOSED`.
+
+   Asserting a state: `@Name [_R1#N | G1_BOUNCE] ...`, the word spelled exactly.
+   Asserting no state: `@Name [_R1#N] ...`, **no pipe and no word**. A bracket with a pipe reads as a state claim even when the text after it is free form, which is how 87 of one seat's headers and 19 of mine parsed as malformed while looking fine.
+
+   **Do NOT map free text onto the nearest legal word.** `PASS` is not `MERGED`. `READY FOR GATE` is not `G2_QUEUED`. `DONE` is not `CLOSED`. Forcing a state onto a message that asserts a different thing corrupts the data instead of fixing it, and corrupted data is worse than absent data because it renders as a real answer.
+
+   `MERGED` and `CLOSED` genuinely never occur in this room, because merge is the operator's and close is Holdout's. That is correct, not a gap. Do not manufacture a closing envelope per ticket to feed a parser; the ledger reads those from the GitHub close event. Overwatch declined that offer explicitly. Fixing state words is complying with a rule that already binds; adding a per-ticket closing message would be inventing work to feed a tool.
+
+   Going forward only. Do not retrofit old headers.
 
 **Telling whether a bot is working:** use the `buzz-agent-stats` skill. `scripts/check-agent.sh <bot_hex> <room>` for presence, config and last words per ticket with age; `scripts/read-thread.sh <room> <root>` for one ticket in order; `scripts/fetch-stats.sh <bot_hex> <room>` for token and turn telemetry.
 

@@ -61,6 +61,41 @@ Milestone 09's own observable event is the same event the launch track below alr
 It is filled in here rather than left contradicting the launch track. See that section for the
 evidence.
 
+### Actions stays for Runway, and here is the measurement that decided it
+
+On 2026-09-07 the operator directed this seat to stop using GitHub Actions. The stated cause was
+cost: GitHub Pro allows 3,000 Actions minutes a month for private repositories and the fleet
+exhausts that in days.
+
+**Measured before planning any work: Runway contributes zero of those minutes.** Both
+`Hunt-Gather-Create/_R1` and `jasonburks23/_R1` are PUBLIC, where Actions is free and unmetered on
+standard runners. Sampled the last 60 upstream runs and read each one's own billing timing: 90
+jobs, zero billable milliseconds, every run. The fork has never run a workflow.
+
+QA-Scout-1 reproduced all of it independently rather than reading and agreeing, including pulling
+GitHub's own billing documentation as a primary source rather than trusting the summary. Same
+result.
+
+On that evidence the operator lifted the constraint for this repo the same day. Actions stays.
+Milestone 09's observed mark stands on the evidence it always stood on, and done-done is 1 of 11.
+
+**The fleet problem is real and is not ours.** The spend lives in private repos, led by
+`civ-substrate` at roughly 1,677 runs and `agencyos-operational-efficiency` at roughly 1,511.
+That finding is with Overwatch, which owns the routing. This seat does not touch another repo's
+workflows.
+
+**Two things to hold anyway, because they cost nothing to remember and a lot to rediscover.**
+
+First, Runway is one repository-visibility change away from being metered. Nothing in the current
+design would survive going private, and nobody would notice until the allowance was gone.
+
+Second, `.github/workflows/cross-pr-recheck.yml` is an amplifier by design: one push to `runway`
+dispatches a full re-run of a two-job suite for up to 15 open pull requests, so a single merge can
+produce 30 job runs. Free here. Copied into a private repo it is the most expensive shape in the
+fleet, and it would look responsible while doing it, because the file is careful and well argued
+about everything except its own cost. If another seat asks to borrow a workflow from this repo,
+that is the one to warn them about.
+
 ### Why several of these moved
 
 Milestone 02's bar was "no route compares a secret with plain equality." **That bar is inert.**
