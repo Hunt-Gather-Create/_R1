@@ -44,6 +44,7 @@ written at plan time, plus the seat that must witness it. The rules that shaped 
 
 | # | Milestone | Open | Observable event, one only | Observer | Observed |
 |---|---|---|---|---|---|
+| 00 | **Runner and gate strategy** | 1 | A check result appears on a pull request page from a producer that is NOT GitHub Actions, and a merge is blocked by it | Runway TP | |
 | 01 | Schedule Sync | 3 | A row on the prod board changes to match its Google Sheet, and the operator sees the changed row on runway.startround1.com without anyone having typed it | operator | |
 | 02 | Auth and secret guards | 5 | A deliberately unsafe secret compare, planted on a real route on a branch, turns the PR test gate RED on the GitHub PR page | Runway TP | |
 | 03 | DB safety tool | 0 | A migration runs against staging and its diff is read there BEFORE it touches prod | operator | |
@@ -52,7 +53,7 @@ written at plan time, plus the seat that must witness it. The rules that shaped 
 | 06 | Slack integration | 8 | A real slash command in the real Slack workspace produces the correct row, seen BOTH in Slack and on the prod board | operator | |
 | 07 | Work model | 6 | A real retainer with real subtasks renders its full hierarchy on the prod board | operator | |
 | 08 | Data cascade | 5 | A parent date override survives a child change in prod, and the audit row for it is read back from the prod DB | DI-TP | |
-| 09 | Infra and repo hygiene | 16 | A merge to `runway` is followed automatically by a smoke run whose result appears in GitHub Actions | Runway TP | **2026-08-30 15:45Z** |
+| 09 | Infra and repo hygiene | 16 | A merge to `runway` is followed automatically by a smoke run whose result appears in GitHub Actions | Runway TP | ~~2026-08-30 15:45Z~~ RETIRED, see below |
 | 10 | Prod data corrections | 0 | Operator-walked. Not a dispatch target and not counted in percent-to-done. | operator | |
 | 11 | Gate integrity | 3 | `npx tsc --noEmit` is wired as a required CI check, and a PR that reintroduces a cleared type error is blocked on the GitHub PR page before merge, not merely reported | Runway TP | |
 | 12 | Data integrity as a tool | 7 | A write carrying an out-of-enum value is rejected by a database CHECK constraint, and the rejection is read back from the database itself, not from application code | DI-TP | |
@@ -60,6 +61,46 @@ written at plan time, plus the seat that must witness it. The rules that shaped 
 Milestone 09's own observable event is the same event the launch track below already witnessed.
 It is filled in here rather than left contradicting the launch track. See that section for the
 evidence.
+
+### Milestone 09's observed mark is RETIRED, and done-done is now 0 of 12
+
+Operator directive 2026-09-07 forbids this seat from using GitHub Actions. Milestone 09's
+observable event was a smoke run whose result appears in GitHub Actions. That proof rests on the
+thing we are no longer allowed to use, so the mark does not survive its own premise and is
+retired rather than kept.
+
+**Done-done is 0 of 12.** Milestone 00 joins the count; milestone 10 stays excluded as
+operator-walked. This is a worse number than yesterday's 1 of 11 and it is the honest one. The
+smoke run did happen and was witnessed. It just no longer proves a milestone whose mechanism is
+being replaced.
+
+Milestone 09 gets its observable event rewritten once #149 names the replacement runner. Do not
+re-mark it observed against the old event.
+
+### Milestone 00, and the measurement that changed its scope
+
+The directive's stated cause is cost: GitHub Pro allows 3,000 Actions minutes a month for
+private repositories and the fleet exhausts that in days.
+
+**Measured 2026-09-07, before any planning: Runway contributes zero of those minutes.** Both
+`Hunt-Gather-Create/_R1` and `jasonburks23/_R1` are PUBLIC, where Actions is free and unmetered.
+Sampled the last 60 upstream runs and read each one's billing timing: 90 jobs, zero billable
+milliseconds, every run. The fork has never run a workflow.
+
+The overspend is in private repos, led by `civ-substrate` at 1677 runs and
+`agencyos-operational-efficiency` at 1511. Details and the full table are in #149.
+
+So milestone 00 is NOT "get Runway off Actions." That would cost real work for a measured
+saving of zero. It is: choose a producer of check results that satisfies the directive, and find
+out where the minutes actually go. Leaving Runway's three workflows in place, since they cost
+nothing, is one of the options #149 must evaluate rather than dismiss.
+
+One pattern in this repo is worth naming even so. `cross-pr-recheck.yml` dispatches a full
+re-run of a two-job suite for up to 15 open pull requests on every push to `runway`, so one merge
+can produce 30 job runs. Free here. Copied into a private repo it is the most expensive shape in
+the fleet, and it would look responsible while doing it, because the file is careful and well
+argued about everything except its own cost.
+
 
 ### Why several of these moved
 
@@ -92,6 +133,7 @@ bottom, one at a time.
 
 | Order | Milestone | Why |
 |---|---|---|
+| 0 | **00 Runner and gate strategy** | Operator directive 2026-09-07: this seat is forbidden from using GitHub Actions. Milestone 11 cannot be planned, let alone finished, until a replacement producer of check results is chosen. #149. |
 | 1 | 11 Gate integrity | Makes every later result trustworthy. The cheapest item, #124, unblocks the CI type gate entirely. Working anything else first means grading it with instruments already known to be broken. |
 | 2 | 02 Auth and secret guards | Security, and already in flight. This milestone has produced the same defect shape three separate times: a guard whose broken state and working state are indistinguishable from outside. That repetition is the argument for finishing it rather than leaving it half done. |
 | 3 | 05 Board UX | The board is the surface people actually use every day. It now also carries #142, which found that the dashboard cannot edit a project at all, only Slack and MCP can, and Slack has never written to production once. |
