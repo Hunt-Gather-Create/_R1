@@ -1,0 +1,584 @@
+{
+  "sheetId": "1lt-Guu94c-mBvHdNVjHLwDHP0CstxDLBOMpop1he-Cw",
+  "clientSlug": "beyond-petro",
+  "runId": "d61e467d6c1b4c96",
+  "sheetFrozenAt": "2026-09-07T23:03:31Z",
+  "prodFrozenAt": "2026-09-07T23:03:48.977Z",
+  "l1": {
+    "resolved": true,
+    "projectId": "ac7929b409c04e818c92fe17d",
+    "projectName": "Ammonia Landing Page",
+    "score": 1,
+    "method": "fuzzy"
+  },
+  "rows": [
+    {
+      "rowNumber": 12,
+      "taskNo": "1.1",
+      "title": "Walk Creative Brief with Creatives",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "e86728d6f2284def8f884408a",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "kickoff",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Lane"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "CD: Lane"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 17,
+      "taskNo": "2.1",
+      "title": "Ideation (moodboards + direction exploration)",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "4d3ec8e110cb4dbf8b158be3b",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "delivery",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Lane"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "CD: Lane"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 22,
+      "taskNo": "3.1",
+      "title": "Design Round 1 comps",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "a98e706b2bfc45cc908fb47f6",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "delivery",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Lane"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "CD: Lane"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 23,
+      "taskNo": "3.2",
+      "title": "R1 Internal Creative QA + Proofing",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "eb631301552e4713b10905db3",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "review",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Lane"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "CD: Lane, QA: Leslie"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 24,
+      "taskNo": "3.3",
+      "title": "Send Design Round 1 to Client",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "00917d0b53d7478e86c50c87e",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "delivery",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Kathy"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "AM: Kathy"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 25,
+      "taskNo": "3.4",
+      "title": "Client Review Round 1",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "4355644ffd5048fab1da52d39",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "review",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Kathy"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "Client: Beyond Petro"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 30,
+      "taskNo": "4.1",
+      "title": "Round 1 feedback revisions",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "da1ab406adf34037aeae9ebe1",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "delivery",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Lane"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "CD: Lane"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 31,
+      "taskNo": "4.2",
+      "title": "R2 Internal Creative QA + Proofing",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "b423ef809feb40368b7c30fb5",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "review",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Lane"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "CD: Lane, QA: Leslie"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 32,
+      "taskNo": "4.3",
+      "title": "Client Review Round 2",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "ff3fd31b119f45c19c4484ed0",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "review",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Kathy"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "Client: Beyond Petro"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 37,
+      "taskNo": "5.1",
+      "title": "Webflow build Round 1",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "84d0a3d53fb24fabb9d9c4f97",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "delivery",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Leslie"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "Dev: Leslie"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 38,
+      "taskNo": "5.2",
+      "title": "R1 Internal Dev QA",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "6dda1213dc724bd88ec0d7850",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "review",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Leslie"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "Dev: Leslie"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 39,
+      "taskNo": "5.3",
+      "title": "Client Review of staging Round 1",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "da0cea8b22e84240b42e6286e",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "review",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Kathy"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "Client: Beyond Petro"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 44,
+      "taskNo": "6.1",
+      "title": "Round 1 staging feedback revisions",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "af78ecb3251d46bd9ea56ca7f",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "delivery",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Leslie"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "Dev: Leslie"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 45,
+      "taskNo": "6.2",
+      "title": "R2 Internal Dev QA",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "67a54c643ac0460b8bdbd037e",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "review",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Leslie"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "Dev: Leslie"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 46,
+      "taskNo": "6.3",
+      "title": "Client Review of staging Round 2",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "bd7135f1e0b24c2881a95d041",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "review",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Kathy"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "Client: Beyond Petro"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 51,
+      "taskNo": "7.1",
+      "title": "Polish pass",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "de8cb16ca55a44c7be7146f84",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "launch",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Leslie"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "Dev: Leslie, CD: Lane"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 52,
+      "taskNo": "7.2",
+      "title": "Pre-launch review",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "d51ed2312238447ba4a6385b5",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "launch",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Kathy"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "AM: Kathy, Client: Beyond Petro"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": 53,
+      "taskNo": "7.3",
+      "title": "Publish LIVE on beyondpetrochemicals.org/ammonia",
+      "verdict": "DISAGREE",
+      "match": {
+        "method": "fuzzy",
+        "score": 1
+      },
+      "weekItemId": "969aa98e59fe4bd7bbe7057b4",
+      "mismatchedFields": [
+        {
+          "field": "category",
+          "tool": "launch",
+          "hand": null
+        },
+        {
+          "field": "owner",
+          "tool": null,
+          "hand": "Leslie"
+        },
+        {
+          "field": "resources",
+          "tool": null,
+          "hand": "Dev: Leslie"
+        }
+      ],
+      "note": null
+    },
+    {
+      "rowNumber": null,
+      "taskNo": null,
+      "title": "Discovery Brief Discussion w/ Matt",
+      "verdict": "HAND_ONLY",
+      "match": null,
+      "weekItemId": "1cf4576efa5347d2be84bd7b7",
+      "mismatchedFields": [],
+      "note": null
+    },
+    {
+      "rowNumber": null,
+      "taskNo": null,
+      "title": "Revise Discovery Brief",
+      "verdict": "HAND_ONLY",
+      "match": null,
+      "weekItemId": "feb85675fdad494b9ba6b6b5d",
+      "mismatchedFields": [],
+      "note": null
+    },
+    {
+      "rowNumber": null,
+      "taskNo": null,
+      "title": "Lock Discovery Brief",
+      "verdict": "HAND_ONLY",
+      "match": null,
+      "weekItemId": "a441d01ad9d64bd5b8d1cb46b",
+      "mismatchedFields": [],
+      "note": null
+    },
+    {
+      "rowNumber": null,
+      "taskNo": null,
+      "title": "Build Project Schedule",
+      "verdict": "HAND_ONLY",
+      "match": null,
+      "weekItemId": "f84bbbabfb53405eb187f9a5e",
+      "mismatchedFields": [],
+      "note": null
+    }
+  ],
+  "counts": {
+    "AGREE": 0,
+    "DISAGREE": 18,
+    "TOOL_ONLY": 0,
+    "HAND_ONLY": 4
+  }
+}
