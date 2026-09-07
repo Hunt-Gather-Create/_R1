@@ -137,6 +137,33 @@
  * absent - the same failure mode #109 named for KNOWN_AUTH_ROUTES, avoided
  * here rather than relocated.
  *
+ * Round 13 (#110): closes the wrap-then-bind-into-a-HELPER-CALL gap Round 10
+ * named and left open - `const wrapped = String(token); ...;
+ * isAllowed(wrapped, apiKey);`. `resolveWrappedBindingNames` extends the
+ * tainted-name set one more step: for a `const`/`let` declaration whose
+ * initializer's subtree carries an already-tainted name (via
+ * `subtreeCarriesTaintedName`), the declared name joins the tainted set too,
+ * run to a fixed point alongside `resolveAliasNames`'s own chain. The one
+ * deliberate exclusion is the reason this was not done sooner: an
+ * initializer whose own TOP-LEVEL expression is an equality comparison
+ * (`const ok = token === apiKey`) is never propagated, because the bound
+ * value there is the BOOLEAN RESULT of comparing the two, not the token
+ * itself - `ok` is not tainted, only the receiving/wrapping shapes are.
+ * Pinned as its own fixture, not left as prose only, alongside the flipped
+ * tripwire below.
+ *
+ * This wider set is used ONLY for the call-argument branch of
+ * `findCoOccurrenceViolations`, deliberately not the binary-operand branch.
+ * `const t = String(token); return t === apiKey;` (no helper call, a direct
+ * RETURN of the compare) stays outside this extension on purpose - that
+ * exact shape is `findUnguardedEqualityReturns`'s own pinned LOAD-BEARING
+ * non-redundancy proof (see the test by that name below), and #110's own
+ * ticket explicitly named "the binding-WITHOUT-a-helper case" as that
+ * check's load-bearing domain, not something to fold into co-occurrence.
+ * The ticket's own headline shape, and the only one this round closes, is
+ * the binding-WITH-a-helper case: the wrap reaches an unapproved CALL, not
+ * a bare compare.
+ *
  * Scope limits:
  * - `findCoOccurrenceViolations` COVERS: any node in a KNOWN_AUTH_ROUTES
  *   file where an identifier resolving (by name, see below) to the `token`
@@ -172,19 +199,23 @@
  *   wrapped value used INLINE at the co-occurrence site itself -
  *   `isAllowed(String(token), apiKey)`, `foo(token.trim(), apiKey)` - because
  *   the wrapping expression's subtree is inspected at the moment it becomes
- *   an operand/argument. It does NOT extend alias resolution
- *   (`resolveAliasNames`): a variable assigned from a WRAPPED value,
- *   `const wrapped = String(token); ...; isAllowed(wrapped, apiKey);`, is not
- *   added to the tainted-name set, because `resolveAliasNames` only chains
- *   through a bare-identifier (or ternary-of-bare-identifier) initializer,
- *   by design - extending it to any subtree containing a tainted name would
- *   also taint values that merely DERIVE from token/apiKey without carrying
- *   them (e.g. `const ok = token === apiKey;` would make `ok` itself
- *   "token-tainted", which is a boolean, not the token). Deliberately not
- *   extended past the inline case this round to avoid that broader,
- *   harder-to-reason-about false-positive surface; a wrap-then-alias-then-
- *   pass shape remains open, tracked as #110, and pinned as a known-
- *   uncovered test below rather than left as prose only.
+ *   an operand/argument. Round 13 (#110) extends this past the inline case,
+ *   for the CALL-ARGUMENT branch only: a variable assigned from a WRAPPED
+ *   value, `const wrapped = String(token); ...; isAllowed(wrapped, apiKey);`,
+ *   IS now added to the tainted-name set used at a call site, via
+ *   `resolveWrappedBindingNames` - see Round 13 above for the mechanism and
+ *   the one deliberate exclusion (an initializer whose own top-level
+ *   expression is an equality comparison is never propagated, so a boolean
+ *   RESULT of comparing token and apiKey, e.g. `const ok = token === apiKey`,
+ *   is not itself treated as tainted). This closes the wrap-then-alias-then-
+ *   pass-into-a-HELPER-CALL shape that was open through #110; the tripwire
+ *   below is flipped, not deleted, and a new fixture pins the boolean-result
+ *   exclusion. Deliberately NOT extended to the binary-operand branch: `const
+ *   t = String(token); return t === apiKey;` (no helper call) stays outside
+ *   this wider set on purpose, since that exact shape is
+ *   `findUnguardedEqualityReturns`'s own pinned load-bearing non-redundancy
+ *   proof and #110's own ticket named the binding-WITHOUT-a-helper case as
+ *   that check's domain, not something to fold in here.
  * - It does not resolve callee-name SHADOWING: a locally declared
  *   `function timingSafeTokenMatch(a, b) { return a === b; }` in the same
  *   file produces a CallExpression whose callee text matches the real
@@ -625,6 +656,211 @@ function subtreeCarriesTaintedName(node: ts.Node, names: Set<string>): boolean {
   return found;
 }
 
+// Round 13 (#110): closes the wrap-then-bind gap - `const wrapped =
+// String(token); ...; isAllowed(wrapped, apiKey);`. `subtreeCarriesTaintedName`
+// alone only sees a wrapped value at the co-occurrence site ITSELF; once the
+// wrap is bound to a new name first, the co-occurrence walk never visits the
+// wrapping expression again, only the bare `wrapped` identifier - which
+// `resolveAliasNames` does not add to the tainted set, by design, since it
+// only chains through a bare-identifier (or ternary-of-bare-identifier)
+// initializer.
+//
+// This closes it with one more fixed-point pass over the file's variable
+// declarations: if a declaration's initializer subtree carries an
+// already-tainted name, the declared name joins the tainted set too - unless
+// the initializer's value is EQUALITY-DERIVED (`const ok = token ===
+// apiKey`). That exclusion is load-bearing, not incidental: `token ===
+// apiKey`'s subtree DOES carry `token`, so without it this pass would taint
+// `ok` itself, and `ok` is a boolean, the RESULT of comparing the two
+// values, not the token. Scoped to exactly the shape this ticket names - a
+// non-equality wrap or computation (`token.length`, `someHelper(token)`)
+// that gets bound to a new name and read back later is still tainted by
+// this pass, same as the ticket's own fixture, and remains a real, narrower
+// residual not attempted here since it is outside what #110 asked for.
+//
+// CURRENT DESIGN (rewritten, not appended - #110 round 4; prior rounds'
+// history lives in git blame, not repeated here every round):
+//
+// This function proves a bound: an initializer's VALUE is a boolean
+// derived from comparing token and apiKey, never the raw token or apiKey
+// itself, so the declared name should NOT join the tainted set. It has two
+// parts, deliberately different in kind.
+//
+// Part 1, `unwrapTransparentValueWrappers` (below): strips every syntax
+// node whose VALUE is identical to (or, for a comma expression, selected
+// unchanged from) an inner expression - parens, type assertions (both
+// `as boolean` and the older `<boolean>expr` bracket form - matched via
+// `ts.isAssertionExpression`, the TypeScript API's own shared predicate
+// for both, not two separate branches for one construct), `satisfies`
+// expressions, non-null `!` postfix, and comma expressions (down to the
+// rightmost operand) - looped until stable so nested combinations fully
+// unwrap. Four of these are compile-time-only type annotations with zero
+// runtime effect; the comma case just discards its left operands. None of
+// them can ever hide or produce a value on their own.
+//
+// MECHANISM NOTE, round 5 (QA-found, right answer for a reason worth
+// naming): the comma case does NOT verify that the discarded left operand
+// is safe. `const ok = (token === apiKey, someOtherThing);` still ends up
+// correctly NOT excluded (tainted) today, but not because this function
+// examined `someOtherThing` and found it innocent - it gets there because
+// `subtreeCarriesTaintedName`, called separately by `resolveWrappedBindingNames`
+// on the ORIGINAL, un-stripped initializer, is position-blind: it scans the
+// whole initializer text for a tainted identifier regardless of where in
+// it that identifier sits, so it finds `token` in the discarded left
+// operand independent of anything this function decided. The right answer
+// and the right reason are not the same mechanism here. Both happen to
+// point the same way today; do not assume this function's own exclusion
+// logic is what is protecting the comma-left case, because it is not.
+//
+// DELIBERATE EXCLUSION, round 5 (QA raised, TP ruled): `await` on an
+// expression that IS a boolean also resolves to that same boolean value at
+// runtime, which satisfies this function's own transparency criterion on
+// its face. Not covered anyway, on purpose: recognizing it would mean this
+// checker starts having an opinion about async dataflow, which it takes no
+// position on anywhere else in this file, and the transparency only holds
+// because a boolean is never a thenable - a property this checker has no
+// way to verify, since it has no type information anywhere (see the
+// TYPE-based-inversion answer from round 3). A rule whose correctness
+// depends on an operand type this checker cannot check is a worse property
+// than the gap it would close. `await (token === apiKey)` stays tainted,
+// pinned by its own test below rather than left to be rediscovered as a
+// surprise.
+//
+// Part 2, the checks below: enumerate the CLOSED set of JS/TS operators
+// that structurally ALWAYS produce a boolean, or exclusively recombine
+// sub-results already covered by another case here - the equality
+// operators (via the shared `EQUALITY_OPERATOR_KINDS` constant this whole
+// file uses, not this function's to redefine), boolean literals, ternary,
+// logical AND/OR/nullish-coalescing, and unary NOT. Bounded because the
+// operator grammar itself is closed; the language does not grow new
+// operators. PLUS one named exception: `Boolean(...)`, the single
+// well-known language built-in, recognized by identifier name because
+// there is exactly one of it - not a general allowance for anything that
+// looks like a boolean-wrapper call. An arbitrary application helper
+// (`asBoolean(...)`, `isAllowed(...)`) is NOT covered and must not become
+// covered without its own, separately-justified reason; call names beyond
+// `Boolean` are the open corpus this function refuses to chase, which is
+// why `resolveWrappedBindingNames` and `subtreeCarriesTaintedName` also
+// deliberately do not try to enumerate every way a value can be wrapped.
+//
+// THE BOUND, stated precisely: Part 1 is a closed set of value-transparent
+// syntax (finite, grammar-fixed). Part 2 is a closed set of boolean-
+// producing operators (finite, grammar-fixed) plus one named built-in
+// (finite by construction - there is one `Boolean`). Together they are
+// still enumeration, not proof by type or by dataflow - but enumeration
+// against two closed, language-level grammars, not against an open corpus
+// of application patterns. If TypeScript ever adds new boolean-producing
+// or value-transparent syntax, that is a bounded, nameable gap against a
+// known list. Still deliberately the more permissive OR direction at each
+// ternary/logical branch, not AND: a genuinely mixed branch (`cond ? token
+// : (token === apiKey)`, one side the raw value, one side a compare)
+// remains excluded from tainting under this check - a narrower, separate,
+// already-disclosed residual, not attempted here.
+//
+// Caller's responsibility, not this function's: `findCoOccurrenceViolations`
+// applies this only to the call-argument branch, not the binary-operand
+// branch, so `const t = String(token); return t === apiKey;` (no helper
+// call) is unaffected and stays `findUnguardedEqualityReturns`'s exclusive
+// domain, per #110's own scoping.
+//
+// Deliberately a NEW function (`unwrapTransparentValueWrappers`), not a
+// widening of the shared `unwrapParens`: that helper has other call sites
+// in this file belonging to OTHER, pre-existing checks
+// (`collectEqualityDerivedBinaries`/`findUnguardedEqualityReturns`,
+// `resolveAliasNames`'s round-8 alias chain, `findCoOccurrenceViolations`'s
+// binary-operand branch) with their own established, separately-tested
+// behavior. Widening what they all strip, silently, to fix this one
+// function's exclusion check would be exactly the unaudited-blast-radius
+// risk this whole gate exists to catch. Called from exactly one place:
+// this function's own entry point. Paren-stripping falls out of the loop
+// below; there is no separate `unwrapParens` call left in this function.
+function unwrapTransparentValueWrappers(expr: ts.Expression): ts.Expression {
+  let current: ts.Expression = expr;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    if (ts.isParenthesizedExpression(current)) {
+      current = current.expression;
+      changed = true;
+    } else if (ts.isAssertionExpression(current) || ts.isSatisfiesExpression(current)) {
+      current = current.expression;
+      changed = true;
+    } else if (ts.isNonNullExpression(current)) {
+      current = current.expression;
+      changed = true;
+    } else if (
+      ts.isBinaryExpression(current) &&
+      current.operatorToken.kind === ts.SyntaxKind.CommaToken
+    ) {
+      // A comma expression's value is its rightmost operand; the left
+      // operands run for side effects and are discarded. Correct for the
+      // question this function asks ("what VALUE does this produce"),
+      // not necessarily correct for a caller asking a different question -
+      // see the CURRENT DESIGN comment above.
+      current = current.right;
+      changed = true;
+    }
+  }
+  return current;
+}
+
+function isEqualityDerivedShape(expr: ts.Expression): boolean {
+  const unwrapped = unwrapTransparentValueWrappers(expr);
+  if (isEqualityBinary(unwrapped)) return true;
+  if (unwrapped.kind === ts.SyntaxKind.TrueKeyword || unwrapped.kind === ts.SyntaxKind.FalseKeyword) return true;
+  if (ts.isConditionalExpression(unwrapped)) {
+    return isEqualityDerivedShape(unwrapped.whenTrue) || isEqualityDerivedShape(unwrapped.whenFalse);
+  }
+  if (
+    ts.isBinaryExpression(unwrapped) &&
+    (unwrapped.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+      unwrapped.operatorToken.kind === ts.SyntaxKind.BarBarToken ||
+      unwrapped.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)
+  ) {
+    return isEqualityDerivedShape(unwrapped.left) || isEqualityDerivedShape(unwrapped.right);
+  }
+  if (
+    ts.isPrefixUnaryExpression(unwrapped) &&
+    unwrapped.operator === ts.SyntaxKind.ExclamationToken
+  ) {
+    return isEqualityDerivedShape(unwrapped.operand);
+  }
+  if (
+    ts.isCallExpression(unwrapped) &&
+    ts.isIdentifier(unwrapped.expression) &&
+    unwrapped.expression.text === "Boolean" &&
+    unwrapped.arguments.length === 1
+  ) {
+    return isEqualityDerivedShape(unwrapped.arguments[0]);
+  }
+  return false;
+}
+
+function resolveWrappedBindingNames(sourceFile: ts.SourceFile, seed: Set<string>): Set<string> {
+  const tainted = new Set(seed);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const visit = (node: ts.Node) => {
+      if (
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.initializer &&
+        !tainted.has(node.name.text)
+      ) {
+        const init = unwrapParens(node.initializer);
+        if (!isEqualityDerivedShape(init) && subtreeCarriesTaintedName(init, tainted)) {
+          tainted.add(node.name.text);
+          changed = true;
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
+  return tainted;
+}
+
 // Round 9 (#108): the dispatcher invented three more shapes after round 8
 // shipped. Two (`token.localeCompare(apiKey) === 0`, a template-literal
 // compare) were direct-equality RETURNS, still caught by
@@ -645,12 +881,35 @@ function findCoOccurrenceViolations(source: string, fileName: string): string[] 
   const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
   const tokenNames = resolveAliasNames(sourceFile, "token");
   const apiKeyNames = resolveAliasNames(sourceFile, "apiKey");
+  // Round 13 (#110): a SEPARATE, wider set used only for the call-argument
+  // branch below, not the binary-operand branch. `const t = String(token);
+  // return t === apiKey;` (no helper call) must stay findUnguardedEqualityReturns's
+  // exclusive domain - see the LOAD-BEARING test pinning that non-redundancy
+  // - so the binary-operand branch keeps using the narrower, pre-#110 sets.
+  // `const wrapped = String(token); ...; isAllowed(wrapped, apiKey);` (a
+  // helper call) is this ticket's actual shape, and only the call-argument
+  // branch needs the wider set to see it.
+  const tokenNamesForCalls = resolveWrappedBindingNames(sourceFile, tokenNames);
+  const apiKeyNamesForCalls = resolveWrappedBindingNames(sourceFile, apiKeyNames);
 
   const carriesToken = (node: ts.Node): boolean => subtreeCarriesTaintedName(unwrapParens(node as ts.Expression), tokenNames);
   const carriesApiKey = (node: ts.Node): boolean => subtreeCarriesTaintedName(unwrapParens(node as ts.Expression), apiKeyNames);
+  const carriesTokenForCall = (node: ts.Node): boolean => subtreeCarriesTaintedName(node, tokenNamesForCalls);
+  const carriesApiKeyForCall = (node: ts.Node): boolean => subtreeCarriesTaintedName(node, apiKeyNamesForCalls);
 
+  // TP bounce, round 2 (#110): `timing-safe-token.ts` itself is
+  // `const a = Buffer.from(token); const b = Buffer.from(apiKey); ...
+  // return timingSafeEqual(a, b);` - a wrap-then-bind into a call, the
+  // exact shape Round 13's dataflow extension exists to catch, except this
+  // one IS the codebase's one provably-correct constant-time compare.
+  // Recognizing the PRIMITIVE the wrapper calls internally, rather than
+  // exempting the file by path, means the guard still inspects
+  // timing-safe-token.ts's own source (a future edit that stopped calling
+  // timingSafeEqual would still be caught) instead of trusting the
+  // filename never to change what it does.
   const isApprovedCall = (node: ts.CallExpression): boolean =>
-    ts.isIdentifier(node.expression) && node.expression.text === "timingSafeTokenMatch";
+    ts.isIdentifier(node.expression) &&
+    (node.expression.text === "timingSafeTokenMatch" || node.expression.text === "timingSafeEqual");
 
   const offenders: string[] = [];
   const record = (node: ts.Node) => {
@@ -676,8 +935,8 @@ function findCoOccurrenceViolations(source: string, fileName: string): string[] 
       // own fix before reporting it: `.arguments`-only would have missed
       // this receiver+argument shape the same way the old identifier-only
       // `classify` missed `String(token)`.
-      const hasToken = carriesToken(node);
-      const hasApiKey = carriesApiKey(node);
+      const hasToken = carriesTokenForCall(node);
+      const hasApiKey = carriesApiKeyForCall(node);
       if (hasToken && hasApiKey) record(node);
     }
     ts.forEachChild(node, visit);
@@ -1298,24 +1557,21 @@ ${filler}
     expect(findCoOccurrenceViolations(bypassPadded, "fixture.ts")).toHaveLength(1);
   });
 
-  it("KNOWN UNCOVERED: a value rebound through a wrap and compared inside a helper needs local dataflow, not subtree taint (refs #110)", () => {
-    // A decision, not an oversight - mechanism, severity, and domain now
-    // live in #110, not here. One sentence: the binding breaks the subtree
-    // `findCoOccurrenceViolations` inspects, and the helper call breaks the
-    // direct-return shape `findUnguardedEqualityReturns` inspects, so this
-    // is a hole in what the CHECK can verify, not a hole in auth - a
-    // correctly written route and an unguarded one are indistinguishable to
-    // this check. Round 11: the primary claim is on findAllGuardViolations,
-    // the guard's whole output - "the guard reports nothing" is the
-    // statable fact, and it holds independent of how many checks exist or
-    // which one eventually closes this. The two per-check assertions below
-    // are today's inventory, not the claim: they document WHICH door is
-    // open right now, but neither is load-bearing for the tripwire - delete
-    // either without deleting the aggregator assertion and this test still
-    // does its job. If a future round closes this by ANY mechanism,
-    // including a check nobody has written yet, the aggregator assertion
-    // starts failing; flip it to `toHaveLength(1)` rather than deleting the
-    // test, and update whichever per-check assertion also flipped.
+  it("CLOSED (#110): a value rebound through a wrap and compared inside a helper is now caught by co-occurrence's dataflow extension", () => {
+    // Was pinned here as KNOWN UNCOVERED. Round 13 (#110) closed it:
+    // `resolveWrappedBindingNames` extends the tainted-name set through a
+    // binding, not just an inline wrap, so `wrapped` in `const wrapped =
+    // String(token)` is now recognized as carrying the same taint as
+    // `token`, and `isAllowed(wrapped, apiKey)` co-occurs just as
+    // `isAllowed(String(token), apiKey)` already did before this round.
+    // Flipped per the instruction this test itself carried: to
+    // `toHaveLength(1)` or greater, not deleted, with the per-check
+    // assertion that closed it updated alongside the aggregator.
+    // `findUnguardedEqualityReturns` stays at 0 - `isAllowed` is a sibling
+    // function, never nested inside `validateAuth` and never calling
+    // `timingSafeTokenMatch` itself, so it was never in that check's
+    // guarded-function set either before or after this round; the closure
+    // is entirely `findCoOccurrenceViolations`'s.
     const bypass = `
       import { timingSafeTokenMatch } from "@/lib/runway/timing-safe-token";
       function validateAuth(token, apiKey) {
@@ -1329,9 +1585,294 @@ ${filler}
         return supplied === expected;
       }
     `;
-    expect(findAllGuardViolations(bypass, "fixture.ts")).toHaveLength(0);
-    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(0);
+    expect(findAllGuardViolations(bypass, "fixture.ts")).toHaveLength(1);
+    expect(findCoOccurrenceViolations(bypass, "fixture.ts")).toHaveLength(1);
     expect(findUnguardedEqualityReturns(bypass, "fixture.ts")).toHaveLength(0);
+  });
+
+  it("does not over-taint a boolean RESULT of comparing token and apiKey (#110 acceptance item 3)", () => {
+    // Deliberately does NOT route this through findCoOccurrenceViolations or
+    // findAllGuardViolations: the line `const ok = token === apiKey;` is, on
+    // its own, already an existing violation via the pre-#110 direct-operand
+    // branch of findCoOccurrenceViolations (token and apiKey are literally
+    // the two operands of that binary expression) - true before this round,
+    // true after, unrelated to the dataflow extension. Wrapping this fixture
+    // in the aggregator would always show 1+ offenders regardless of whether
+    // resolveWrappedBindingNames over-taints `ok`, which would make the
+    // proof this item asks for unobservable at that level. Testing
+    // `resolveWrappedBindingNames` directly is the precise level: does `ok`
+    // itself join the tainted set, yes or no.
+    const source = `
+      function validateAuth(token, apiKey) {
+        const ok = token === apiKey;
+        return reportOutcome(ok);
+      }
+    `;
+    const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+    const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+    const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+    expect(tokenNames.has("ok")).toBe(false);
+    expect(apiKeyNames.has("ok")).toBe(false);
+  });
+
+  it("does not over-taint an equality result nested under a conditional or a logical OR (TP bounce, round 2)", () => {
+    // QA's finding: the first exclusion checked only the initializer's own
+    // TOP-LEVEL shape, so a compare one level under a ternary or a `||`
+    // escaped it. Two separate fixtures, one per shape named in the
+    // bounce's acceptance item 3.
+    const ternary = `
+      function validateAuth(token, apiKey) {
+        const ok = someFlag ? (token === apiKey) : false;
+        return reportOutcome(ok);
+      }
+    `;
+    const logicalOr = `
+      function validateAuth(token, apiKey) {
+        const ok = (token === apiKey) || fallbackDenied;
+        return reportOutcome(ok);
+      }
+    `;
+    for (const source of [ternary, logicalOr]) {
+      const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+      const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+      const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+      expect(tokenNames.has("ok")).toBe(false);
+      expect(apiKeyNames.has("ok")).toBe(false);
+    }
+  });
+
+  it("does not flag the real timing-safe-token.ts wrapper, whose own internal timingSafeEqual call is not the approved name (TP bounce, round 2)", () => {
+    // The real, committed, provably-correct implementation: `const a =
+    // Buffer.from(token); const b = Buffer.from(apiKey); ...
+    // timingSafeEqual(a, b);`. `a` and `b` are wrapped-then-bound, exactly
+    // the shape Round 13's dataflow extension exists to catch - the
+    // difference is the call they reach is `timingSafeEqual`, the real
+    // node:crypto primitive this file exists to wrap, not an unapproved
+    // helper. Read from disk, not a hand-written approximation, so a real
+    // edit to this file is what this test actually watches.
+    const file = path.join(ROOT, "src/lib/runway/timing-safe-token.ts");
+    const source = fs.readFileSync(file, "utf8");
+    expect(source).toContain("timingSafeEqual(a, b)");
+    expect(findAllGuardViolations(source, file)).toHaveLength(0);
+  });
+
+  it("does not over-taint a negated equality compare, plain or via a method-call receiver (TP bounce, round 3)", () => {
+    // QA's round 3 finding: isEqualityDerivedShape enumerated parens,
+    // equality, boolean literals, ternary, and &&/|| - no case for a prefix
+    // unary NOT, so `const ok = !(token === apiKey);` fell through every
+    // check and still tainted `ok`. QA also proved the mechanism, not just
+    // the symptom, with a second fixture routing the compare through
+    // localeCompare first: same defect, different surface. Both fixtures
+    // pinned in one test since they're the same gap. Acceptance items 1
+    // and 2 from the round 3 bounce.
+    const negatedEquality = `
+      function validateAuth(token, apiKey) {
+        const ok = !(token === apiKey);
+        return reportOutcome(ok);
+      }
+    `;
+    const negatedHelperCompare = `
+      function validateAuth(token, apiKey) {
+        const mismatch = !(token.localeCompare(apiKey) === 0);
+        return reportOutcome(mismatch);
+      }
+    `;
+    for (const [source, name] of [
+      [negatedEquality, "ok"],
+      [negatedHelperCompare, "mismatch"],
+    ] as const) {
+      const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+      const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+      const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+      expect(tokenNames.has(name)).toBe(false);
+      expect(apiKeyNames.has(name)).toBe(false);
+    }
+  });
+
+  it("does not over-taint Boolean(...) wrapping an equality compare, the one named call-expression exception (TP bounce, round 3 follow-up)", () => {
+    // TP's follow-up after round 3: the closed-grammar bound covers
+    // OPERATORS, not every syntax node that happens to produce a boolean.
+    // `Boolean(token === apiKey)` is a CALL, and call names are
+    // application-chosen - the open corpus this function otherwise
+    // refuses to chase. `Boolean` is recognized by name as the one
+    // deliberate, narrow exception: a single well-known language built-in,
+    // not one instance of an open set of possible wrapper names. See the
+    // DESIGN LIMIT comment on isEqualityDerivedShape for why this is
+    // closed in a way an arbitrary helper name is not.
+    const source = `
+      function validateAuth(token, apiKey) {
+        const ok = Boolean(token === apiKey);
+        return reportOutcome(ok);
+      }
+    `;
+    const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+    const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+    const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+    expect(tokenNames.has("ok")).toBe(false);
+    expect(apiKeyNames.has("ok")).toBe(false);
+  });
+
+  it("does not over-taint a compare wrapped in value-transparent syntax - comma, as-assertion, non-null postfix, satisfies (TP bounce, round 4)", () => {
+    // QA's round 4 finding: unwrapParens only strips parens, so a comma
+    // expression, an `as` assertion, a non-null `!` postfix, and a
+    // `satisfies` expression all reached isEqualityDerivedShape's branch
+    // list with the compare still buried and fell through to `return
+    // false`. TP's direction: this is not a fifth enumerated CASE, it's a
+    // missing normalization step upstream of every case, since all four
+    // are VALUE-TRANSPARENT (their runtime value is exactly their inner
+    // expression's, three of them compile-time-only). Generalized
+    // `unwrapTransparentValueWrappers` absorbs unwrapParens's own job
+    // (paren-stripping falls OUT of it, not beside it) and strips all four,
+    // looped until stable. One fixture per shape, all four in one test
+    // since they're the same gap.
+    const commaExpression = `
+      function validateAuth(token, apiKey) {
+        const ok = (0, token === apiKey);
+        return reportOutcome(ok);
+      }
+    `;
+    const asAssertion = `
+      function validateAuth(token, apiKey) {
+        const ok = (token === apiKey) as boolean;
+        return reportOutcome(ok);
+      }
+    `;
+    const nonNullPostfix = `
+      function validateAuth(token, apiKey) {
+        const ok = (token === apiKey)!;
+        return reportOutcome(ok);
+      }
+    `;
+    const satisfiesExpression = `
+      function validateAuth(token, apiKey) {
+        const ok = (token === apiKey) satisfies boolean;
+        return reportOutcome(ok);
+      }
+    `;
+    for (const source of [commaExpression, asAssertion, nonNullPostfix, satisfiesExpression]) {
+      const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+      const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+      const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+      expect(tokenNames.has("ok")).toBe(false);
+      expect(apiKeyNames.has("ok")).toBe(false);
+    }
+  });
+
+  it("survives nested value-transparent wrappers - a comma expression inside an as-assertion (TP bounce, round 4, acceptance item 1)", () => {
+    // TP's acceptance bar: "wrapping a compare in two of them at once
+    // ... also does not taint, because a loop-until-stable unwrap must
+    // survive nesting." Exercises the loop, not just a single strip.
+    const source = `
+      function validateAuth(token, apiKey) {
+        const ok = (0, token === apiKey) as boolean;
+        return reportOutcome(ok);
+      }
+    `;
+    const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+    const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+    const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+    expect(tokenNames.has("ok")).toBe(false);
+    expect(apiKeyNames.has("ok")).toBe(false);
+  });
+
+  it("does not over-taint the older angle-bracket type assertion, the same construct as `as` by a different production (TP bounce, round 5)", () => {
+    // QA's finding, TP's ruling: this is not a sixth escaped case, it's an
+    // incomplete predicate on a case the design already claims to cover.
+    // `<boolean>(token === apiKey)` is the same compile-time-only
+    // reinterpretation as `(token === apiKey) as boolean`, just parsed via
+    // TypeAssertion instead of AsExpression. Fixed by matching
+    // `ts.isAssertionExpression`, the TypeScript API's own shared predicate
+    // for both node kinds, rather than adding a second branch.
+    const source = `
+      function validateAuth(token, apiKey) {
+        const ok = <boolean>(token === apiKey);
+        return reportOutcome(ok);
+      }
+    `;
+    const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+    const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+    const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+    expect(tokenNames.has("ok")).toBe(false);
+    expect(apiKeyNames.has("ok")).toBe(false);
+  });
+
+  it("DELIBERATE EXCLUSION: an awaited equality compare STAYS tainted, on purpose, not a missing case (TP round 5 ruling)", () => {
+    // `await` on a boolean resolves to that same boolean at runtime, which
+    // satisfies this function's transparency criterion on its face - but
+    // that transparency only holds because a boolean is never a thenable,
+    // a fact this checker has no type information to verify anywhere. TP's
+    // ruling: covering it would give this checker an opinion about async
+    // dataflow it takes no position on elsewhere in the file, so it is
+    // deliberately NOT in unwrapTransparentValueWrappers. This test pins
+    // today's behavior - tainted - so a future reader sees a documented
+    // decision, not a gap nobody noticed.
+    const source = `
+      async function validateAuth(token, apiKey) {
+        const ok = await (token === apiKey);
+        return reportOutcome(ok);
+      }
+    `;
+    const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+    const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+    const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+    expect(tokenNames.has("ok")).toBe(true);
+    expect(apiKeyNames.has("ok")).toBe(true);
+  });
+
+  it("MECHANISM NOTE: a comma expression with the compare on the LEFT stays tainted, but not because the exclusion logic checked the right side (TP round 5, QA-volunteered)", () => {
+    // QA proved this is the right answer for a reason worth naming
+    // separately from the outcome. `someOtherThing` is the comma
+    // expression's VALUE (unwrapTransparentValueWrappers strips to the
+    // rightmost operand), and isEqualityDerivedShape correctly says that
+    // bare, unrecognized identifier is not equality-derived - so the
+    // exclusion does not fire. But `ok` still ends up tainted regardless,
+    // because subtreeCarriesTaintedName scans the WHOLE original
+    // initializer text for a tainted name, position-blind, and finds
+    // `token` in the discarded left operand independent of anything the
+    // unwrap or the exclusion decided. Right answer, different mechanism
+    // than a reader might assume.
+    const source = `
+      function validateAuth(token, apiKey) {
+        const ok = (token === apiKey, someOtherThing);
+        return reportOutcome(ok);
+      }
+    `;
+    const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+    const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+    const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+    expect(tokenNames.has("ok")).toBe(true);
+    expect(apiKeyNames.has("ok")).toBe(true);
+  });
+
+  it("DESIGN PIN: isEqualityDerivedShape enumerates a closed operator grammar plus one named built-in, not an open corpus of wrapper calls - an arbitrary helper wrapping the same compare is NOT exempted", () => {
+    // This is the test the round 3 bounce asked for: one that pins the
+    // DESIGN DECISION, not just another case. isEqualityDerivedShape's
+    // exceptions are: parens, the equality operators, boolean literals,
+    // ternary, &&/||/??,  unary NOT, and the single named built-in
+    // `Boolean(...)`. It does NOT and must NOT treat an arbitrary
+    // application-defined helper the same way, even one that is
+    // semantically identical to Boolean(...) - `asBoolean(token ===
+    // apiKey)` is indistinguishable from `isAllowed(token, apiKey)` to
+    // this function by design, because recognizing helper names by
+    // convention is exactly the open-corpus problem the closed-grammar
+    // bound exists to stay out of. If a future round wants to exempt a
+    // specific other helper, that is a new, separately-justified decision,
+    // not a natural extension of this one - the whole point of naming
+    // Boolean as a language built-in rather than "a common wrapper
+    // pattern" is that no other identifier gets to ride in on that
+    // reasoning without its own case for why it is closed.
+    const source = `
+      function validateAuth(token, apiKey) {
+        const ok = asBoolean(token === apiKey);
+        return reportOutcome(ok);
+      }
+    `;
+    const sourceFile = ts.createSourceFile("fixture.ts", source, ts.ScriptTarget.Latest, true);
+    const tokenNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "token"));
+    const apiKeyNames = resolveWrappedBindingNames(sourceFile, resolveAliasNames(sourceFile, "apiKey"));
+    // Deliberately still tainted - this is the bound holding, not a bug.
+    expect(tokenNames.has("ok")).toBe(true);
+    expect(apiKeyNames.has("ok")).toBe(true);
   });
 
   it("flags a plain-equality compare via a method-call RECEIVER, not an argument (round 9, shape 9)", () => {
