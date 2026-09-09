@@ -1,5 +1,5 @@
 #!/bin/sh
-# Local pre-push test run (_R1#107, part 1).
+# Local pre-push test run (_R1#107, part 1) plus the hygiene guard (_R1#167).
 #
 # THIS IS NOT A GATE. It lives in .git, it is not cloned, `--no-verify` walks
 # straight past it, and it protects only machines that ran the installer. It
@@ -14,13 +14,28 @@
 # unprotected and the check is not required, so it REPORTS and does not BLOCK.
 # See docs/runway/test-gates.md.
 #
-# Escape hatches, both deliberate:
+# Escape hatches for the TEST SUITE step, both deliberate:
 #   git push --no-verify     one-off
 #   RUNWAY_SKIP_PREPUSH=1    session-wide
+#
+# The hygiene guard below has neither. It runs before the RUNWAY_SKIP_PREPUSH
+# check and refuses on its own exit code, not on output text. A documented
+# skip is exactly how the fleet's one tree-state check, before this one,
+# ended up enforcing nothing but a warning. See scripts/check-hygiene.ts.
 set -e
 
+root=$(git rev-parse --show-toplevel)
+echo "pre-push: checking for fossil state (merged branches/worktrees)."
+if ! node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \
+  "$root/scripts/check-hygiene.ts" "$root" origin; then
+  echo ""
+  echo "pre-push: HYGIENE GUARD REFUSED. Push blocked."
+  echo "pre-push: this guard has no skip flag of its own. git push --no-verify walks past it if you truly mean to."
+  exit 1
+fi
+
 if [ "${RUNWAY_SKIP_PREPUSH:-}" = "1" ]; then
-  echo "pre-push: skipped (RUNWAY_SKIP_PREPUSH=1). The PR check still runs."
+  echo "pre-push: test suite skipped (RUNWAY_SKIP_PREPUSH=1). The PR check still runs."
   exit 0
 fi
 
