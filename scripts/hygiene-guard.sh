@@ -1,7 +1,11 @@
 #!/bin/sh
-# hygiene-guard.sh -- fleet pre-push hygiene guard (originally _R1#167, retargeted
-# for agencyos-operational-efficiency per operator ruling: fleet infrastructure,
-# not Runway product code).
+# hygiene-guard.sh -- pre-push hygiene guard for _R1#167. This is the one
+# implementation, wired directly by scripts/hooks/pre-push. An earlier pass
+# on this ticket shipped a second, TypeScript, implementation alongside this
+# one with nothing comparing their verdicts, which is the exact class of
+# defect opeff#870 names: two independent implementations, no detector for
+# drift between them. Deleted rather than reconciled: one implementation
+# means one gate covers what ships.
 #
 # Refuses the next push when the repo it runs in currently holds a local branch
 # or a registered worktree whose content is already fully present in trunk. The
@@ -11,9 +15,10 @@
 # property that reliably catches the leftover.
 #
 # POSIX sh. No Node, no pnpm, no TypeScript, no repo-specific paths or
-# assumptions. Drop this file into ANY repo's hooks directory (or call it from
-# an existing pre-push chain, see hygiene-guard-wrapper-example.sh) and it
-# works, provided the repo has a "trunk" concept and a remote.
+# assumptions beyond a "trunk" concept and a remote. That portability is
+# incidental to why it was picked, not the reason: it is wired here because
+# it is the shipped artifact, with no Node dependency for a pre-push hook to
+# fail on if `node` is absent from a contributor's PATH.
 #
 # Usage: sh hygiene-guard.sh [repo-path] [remote-name]
 #   repo-path    defaults to the current directory. Passed so this can be

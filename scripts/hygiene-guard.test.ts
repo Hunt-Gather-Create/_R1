@@ -9,10 +9,23 @@
  *
  * A sixth control comes from the same-day addendum: a worktree whose
  * content is already in trunk but which ALSO holds uncommitted changes
- * must never be recommended for removal. The addendum's own incident,
- * Overwatch finding a 41-modified-file worktree the original spec would
- * have called cleanly disposable, is reproduced directly below rather than
- * only described.
+ * must never be recommended for removal. A seventh addendum covers
+ * prunable worktree records. Control 8, added on the G1_BOUNCE that also
+ * produced this rewrite, proves a brand-new zero-commit branch is not
+ * mistaken for a fossil.
+ *
+ * This suite drives scripts/hygiene-guard.sh, the ONE implementation, by
+ * subprocess: execFileSync, asserting on exit code as the primary verdict
+ * (control 5's own rule: read the exit code, not printed text). An earlier
+ * pass on this ticket also shipped a TypeScript port with its own unit-level
+ * tests calling its functions directly. That let two independent
+ * implementations exist with nothing comparing their verdicts, which
+ * `opeff#870` already names as its own defect class. The TypeScript port is
+ * deleted rather than kept in sync; this suite now exercises the shipped
+ * shell script exactly the way the real pre-push hook does, and every
+ * scenario that used to assert on an internal function's return value now
+ * asserts on the guard's exit code and, where useful for the test itself
+ * (never for the guard's own logic) its printed BLOCK/clean text.
  *
  * Fixtures are local, offline git repos built with execFileSync, same
  * shape as scripts/check-base-ancestry.test.ts, so the suite is
@@ -27,19 +40,12 @@
  * isolated tmp fixture.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  checkHygiene,
-  formatResult,
-  isContentPresentInTrunk,
-  resolveGitCommonDir,
-  resolveTrunk,
-} from "./check-hygiene";
 
-const SCRIPT_PATH = join(__dirname, "check-hygiene.ts");
+const SCRIPT_PATH = join(__dirname, "hygiene-guard.sh");
 
 const ISOLATED_GIT_ENV = { ...process.env };
 delete ISOLATED_GIT_ENV.GIT_DIR;
@@ -62,6 +68,31 @@ function git(args: string[], cwd: string, env: NodeJS.ProcessEnv = ISOLATED_GIT_
 
 function writeFile(dir: string, name: string, content: string) {
   writeFileSync(join(dir, name), content);
+}
+
+function escapeRegExp(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+interface GuardResult {
+  status: number;
+  stdout: string;
+  stderr: string;
+}
+
+/** Runs the real, shipped shell guard as a subprocess, the way pre-push does. */
+function runGuard(cwd: string, remote = "origin", scriptPath = SCRIPT_PATH): GuardResult {
+  try {
+    const stdout = execFileSync("sh", [scriptPath, cwd, remote], {
+      cwd,
+      encoding: "utf8",
+      env: ISOLATED_GIT_ENV,
+    });
+    return { status: 0, stdout, stderr: "" };
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; status?: number };
+    return { status: e.status ?? -1, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
+  }
 }
 
 /**
@@ -97,50 +128,66 @@ function squashMergeToTrunk(workDir: string, trunkName: string, featureBranch: s
   git(["push", "--quiet", "origin", trunkName], workDir);
 }
 
-describe("resolveTrunk", () => {
+describe("hygiene-guard.sh, trunk resolution, exercised through the guard's exit code", () => {
   let root: string;
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "hygiene-trunk-"));
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-trunk-")));
   });
   afterEach(() => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("resolves trunk from refs/remotes/origin/HEAD, for a trunk NOT named main", () => {
+  it("resolves trunk from refs/remotes/origin/HEAD for a trunk NOT named main, then correctly finds no fossil", () => {
     const { workDir } = buildRepo(root, "runway");
-    const result = resolveTrunk(workDir);
-    expect(result).toEqual({ status: "resolved", trunkRef: "origin/runway", branchName: "runway" });
+    const { status, stdout } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
   });
 
-  it("falls back to the live remote when the cached symref is missing", () => {
+  it("falls back to the live remote when the cached symref is missing, and still catches a real fossil through it", () => {
     const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "fix/fallback-leftover"], workDir);
+    writeFile(workDir, "fallback-leftover.txt", "leftover\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "fallback leftover"], workDir);
+    squashMergeToTrunk(workDir, "runway", "fix/fallback-leftover");
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
     // Simulate a clone/worktree that never ran `git remote set-head origin -a`.
     git(["symbolic-ref", "--delete", "refs/remotes/origin/HEAD"], workDir);
-    const result = resolveTrunk(workDir);
-    expect(result).toEqual({ status: "resolved", trunkRef: "origin/runway", branchName: "runway" });
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/fix\/fallback-leftover/);
   });
 
-  it("exits with an unresolved status, not a guess, when origin cannot be reached at all", () => {
+  it("refuses without guessing, not a fossil verdict, when origin cannot be reached at all", () => {
     const workDir = join(root, "no-origin");
     mkdirSync(workDir, { recursive: true });
     git(["init", "--quiet", "-b", "runway"], workDir);
     git(["commit", "--quiet", "--allow-empty", "-m", "root"], workDir);
     // No "origin" remote configured at all.
-    const result = resolveTrunk(workDir);
-    expect(result.status).toBe("unresolved");
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    // Diagnostic only, to prove this is the "could not resolve trunk" path
+    // and not a coincidental fossil match: the guard's own pass/fail
+    // decision the test cares about is still the exit code above.
+    expect(stderr).toMatch(/could not resolve trunk/);
   });
 });
 
-describe("isContentPresentInTrunk, the reverse-apply primitive", () => {
+describe("hygiene-guard.sh, the reverse-apply primitive, exercised through the guard's exit code", () => {
   let root: string;
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "hygiene-content-"));
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-content-")));
   });
   afterEach(() => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("is true for a branch whose content is squash-merged into trunk, where --is-ancestor would wrongly say false", () => {
+  it("refuses on a branch whose content is squash-merged into trunk, where --is-ancestor would wrongly say false", () => {
     const { workDir } = buildRepo(root, "runway");
     git(["checkout", "--quiet", "-b", "feature/squashed"], workDir);
     writeFile(workDir, "feature.txt", "feature content\n");
@@ -149,6 +196,7 @@ describe("isContentPresentInTrunk, the reverse-apply primitive", () => {
 
     squashMergeToTrunk(workDir, "runway", "feature/squashed");
     git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
 
     // The real failure mode this ticket names: --is-ancestor exits 1 here
     // because squash merge never creates a real ancestor edge.
@@ -159,20 +207,22 @@ describe("isContentPresentInTrunk, the reverse-apply primitive", () => {
       }),
     ).toThrow();
 
-    expect(isContentPresentInTrunk("feature/squashed", "origin/runway", workDir)).toBe(true);
+    const { status } = runGuard(workDir);
+    expect(status).toBe(1);
   });
 
-  it("is false for a branch with a real, unmerged change", () => {
+  it("passes on a branch with a real, unmerged change", () => {
     const { workDir } = buildRepo(root, "runway");
     git(["checkout", "--quiet", "-b", "feature/unmerged"], workDir);
     writeFile(workDir, "unmerged.txt", "never merged\n");
     git(["add", "."], workDir);
     git(["commit", "--quiet", "-m", "unmerged work"], workDir);
 
-    expect(isContentPresentInTrunk("feature/unmerged", "origin/runway", workDir)).toBe(false);
+    const { status } = runGuard(workDir);
+    expect(status).toBe(0);
   });
 
-  it("is false for a branch that MUTATES a squash-merged patch after the merge, not just for an unmerged one", () => {
+  it("passes on a branch that MUTATES a squash-merged patch after the merge, not just an unmerged one", () => {
     const { workDir } = buildRepo(root, "runway");
     git(["checkout", "--quiet", "-b", "feature/mutated"], workDir);
     writeFile(workDir, "mutated.txt", "original\n");
@@ -187,34 +237,46 @@ describe("isContentPresentInTrunk, the reverse-apply primitive", () => {
     git(["add", "."], workDir);
     git(["commit", "--quiet", "-m", "post-merge drift"], workDir);
     git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
 
-    expect(isContentPresentInTrunk("feature/mutated", "origin/runway", workDir)).toBe(false);
+    const { status } = runGuard(workDir);
+    expect(status).toBe(0);
   });
 
-  it("is false for a freshly created branch with zero commits ahead, even though its diff against trunk is empty (_R1#167 G1_BOUNCE)", () => {
+  it("passes on a freshly created branch with zero commits ahead, even though its diff against trunk is empty (_R1#167 G1_BOUNCE)", () => {
     const { workDir } = buildRepo(root, "runway");
     git(["checkout", "--quiet", "-b", "feature/just-started"], workDir);
-    expect(isContentPresentInTrunk("feature/just-started", "origin/runway", workDir)).toBe(false);
+
+    const { status } = runGuard(workDir);
+    expect(status).toBe(0);
   });
 
-  it("writes nothing to the caller's real working tree or index", () => {
+  it("writes nothing to the caller's real working tree or index while it flags an unrelated fossil branch", () => {
     const { workDir } = buildRepo(root, "runway");
-    git(["checkout", "--quiet", "-b", "feature/untouched"], workDir);
-    writeFile(workDir, "untouched.txt", "should stay staged only on disk, never committed by the check\n");
+    git(["checkout", "--quiet", "-b", "fix/leftover-for-status-check"], workDir);
+    writeFile(workDir, "leftover.txt", "leftover\n");
     git(["add", "."], workDir);
-    git(["commit", "--quiet", "-m", "untouched work"], workDir);
+    git(["commit", "--quiet", "-m", "leftover fix"], workDir);
+    squashMergeToTrunk(workDir, "runway", "fix/leftover-for-status-check");
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    // Real, unrelated uncommitted state on the checked-out branch itself.
+    writeFile(workDir, "untouched.txt", "should stay staged only on disk, never committed or reset by the guard\n");
+    git(["add", "untouched.txt"], workDir);
 
     const statusBefore = git(["status", "--porcelain"], workDir);
-    isContentPresentInTrunk("feature/untouched", "origin/runway", workDir);
+    const { status } = runGuard(workDir);
+    expect(status).toBe(1); // still flags fix/leftover-for-status-check
     const statusAfter = git(["status", "--porcelain"], workDir);
     expect(statusAfter).toBe(statusBefore);
   });
 });
 
-describe("checkHygiene, control 1: refuses on a fossil state you construct", () => {
+describe("hygiene-guard.sh, control 1: refuses on a fossil state you construct", () => {
   let root: string;
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "hygiene-fossil-"));
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-fossil-")));
   });
   afterEach(() => {
     rmSync(root, { recursive: true, force: true });
@@ -230,13 +292,10 @@ describe("checkHygiene, control 1: refuses on a fossil state you construct", () 
     git(["fetch", "--quiet", "origin"], workDir);
     git(["checkout", "--quiet", "runway"], workDir);
 
-    const result = checkHygiene(workDir);
-    expect(result.status).toBe("disposable");
-    if (result.status === "disposable") {
-      expect(result.items.some((i) => i.branch === "fix/leftover")).toBe(true);
-    }
-    const { exitCode } = formatResult(result);
-    expect(exitCode).toBe(1);
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/branch already in origin\/runway: fix\/leftover/);
+    expect(stderr).toMatch(/Disposal: git branch -D fix\/leftover/);
   });
 
   it("flags a registered worktree whose branch already landed in trunk", () => {
@@ -253,21 +312,17 @@ describe("checkHygiene, control 1: refuses on a fossil state you construct", () 
     squashMergeToTrunk(workDir, "runway", "fix/wt-leftover");
     git(["fetch", "--quiet", "origin"], workDir);
 
-    const result = checkHygiene(workDir);
-    expect(result.status).toBe("disposable");
-    if (result.status === "disposable") {
-      const item = result.items.find((i) => i.branch === "fix/wt-leftover");
-      expect(item?.kind).toBe("worktree");
-      expect(item?.disposalCommand).toContain("git worktree remove --force");
-      expect(item?.disposalCommand).toContain(wtPath);
-    }
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/worktree already in origin\/runway: fix\/wt-leftover/);
+    expect(stderr).toMatch(new RegExp(`git worktree remove --force ${escapeRegExp(wtPath)}`));
   });
 });
 
-describe("checkHygiene, control 2: exits clean on real clean state, same session", () => {
+describe("hygiene-guard.sh, control 2: exits clean on real clean state, same session", () => {
   let root: string;
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "hygiene-clean-"));
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-clean-")));
   });
   afterEach(() => {
     rmSync(root, { recursive: true, force: true });
@@ -275,10 +330,9 @@ describe("checkHygiene, control 2: exits clean on real clean state, same session
 
   it("passes when the only branch is trunk itself", () => {
     const { workDir } = buildRepo(root, "runway");
-    const result = checkHygiene(workDir);
-    expect(result.status).toBe("clean");
-    const { exitCode } = formatResult(result);
-    expect(exitCode).toBe(0);
+    const { status, stdout } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
   });
 
   it("passes when a local branch has real, unmerged work", () => {
@@ -288,25 +342,24 @@ describe("checkHygiene, control 2: exits clean on real clean state, same session
     git(["add", "."], workDir);
     git(["commit", "--quiet", "-m", "in flight"], workDir);
 
-    const result = checkHygiene(workDir);
-    expect(result.status).toBe("clean");
+    const { status } = runGuard(workDir);
+    expect(status).toBe(0);
   });
 
   it("passes when a zero-commit branch is present alongside trunk (_R1#167 G1_BOUNCE: control 2's prior fixtures could not tell this apart from a tidy repo)", () => {
     const { workDir } = buildRepo(root, "runway");
     git(["branch", "feature/just-started"], workDir);
 
-    const result = checkHygiene(workDir);
-    expect(result.status).toBe("clean");
-    const { exitCode } = formatResult(result);
-    expect(exitCode).toBe(0);
+    const { status, stdout } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
   });
 });
 
-describe("checkHygiene, control 3: runs correctly in a repo other than the one it was written in, trunk not named main", () => {
+describe("hygiene-guard.sh, control 3: runs correctly in a repo other than the one it was written in, trunk not named main", () => {
   let root: string;
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "hygiene-scratch-clone-"));
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-scratch-clone-")));
   });
   afterEach(() => {
     rmSync(root, { recursive: true, force: true });
@@ -322,44 +375,22 @@ describe("checkHygiene, control 3: runs correctly in a repo other than the one i
     git(["fetch", "--quiet", "origin"], workDir);
     git(["checkout", "--quiet", "trunk"], workDir);
 
-    const result = checkHygiene(workDir);
-    expect(result.status).toBe("disposable");
-    if (result.status === "disposable") {
-      expect(result.trunkRef).toBe("origin/trunk");
-    }
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/origin\/trunk/);
   });
 });
 
-describe("check-hygiene.ts and pre-push, control 4: actually executes, and control 5: refuses by exit code not text", () => {
+describe("hygiene-guard.sh and pre-push, control 4: actually executes, and control 5: refuses by exit code not text", () => {
   let root: string;
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "hygiene-cli-"));
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-cli-")));
   });
   afterEach(() => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  function runCli(cwd: string): { stdout: string; stderr: string; status: number } {
-    try {
-      const stdout = execFileSync(
-        process.execPath,
-        [
-          "--experimental-strip-types",
-          "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
-          SCRIPT_PATH,
-          cwd,
-          "origin",
-        ],
-        { cwd, encoding: "utf8", env: ISOLATED_GIT_ENV },
-      );
-      return { stdout, stderr: "", status: 0 };
-    } catch (err) {
-      const e = err as { stdout?: string; stderr?: string; status?: number };
-      return { stdout: e.stdout ?? "", stderr: e.stderr ?? "", status: e.status ?? -1 };
-    }
-  }
-
-  it("the CLI subprocess call site exits 1, by exit code, on fossil state", () => {
+  it("the guard subprocess call site exits 1, by exit code, on fossil state", () => {
     const { workDir } = buildRepo(root, "runway");
     git(["checkout", "--quiet", "-b", "fix/cli-leftover"], workDir);
     writeFile(workDir, "cli-leftover.txt", "leftover\n");
@@ -369,14 +400,14 @@ describe("check-hygiene.ts and pre-push, control 4: actually executes, and contr
     git(["fetch", "--quiet", "origin"], workDir);
     git(["checkout", "--quiet", "runway"], workDir);
 
-    const { status, stderr } = runCli(workDir);
+    const { status, stderr } = runGuard(workDir);
     expect(status).toBe(1);
-    expect(stderr).toMatch(/REFUSE, FOSSIL STATE/);
+    expect(stderr).toMatch(/REFUSE. Fossil state found/);
   });
 
-  it("the CLI subprocess call site exits 0 on clean state", () => {
+  it("the guard subprocess call site exits 0 on clean state", () => {
     const { workDir } = buildRepo(root, "runway");
-    const { status, stdout } = runCli(workDir);
+    const { status, stdout } = runGuard(workDir);
     expect(status).toBe(0);
     expect(stdout).toMatch(/hygiene-guard: clean/);
   });
@@ -399,13 +430,13 @@ describe("check-hygiene.ts and pre-push, control 4: actually executes, and contr
     // step, and proves the guard runs even when that skip flag is set.
     const hooksSrc = join(__dirname, "hooks");
     git(["config", "core.hooksPath", hooksSrc], workDir);
-    // The real pre-push script resolves check-hygiene.ts relative to
-    // `git rev-parse --show-toplevel` of the repo doing the pushing, this
-    // fixture, not the real _R1 checkout this suite runs inside of. Copy
-    // the actual script under test into the fixture so that path resolves,
-    // the same layout install.sh assumes for any real clone.
+    // The real pre-push script resolves scripts/hygiene-guard.sh relative
+    // to `git rev-parse --show-toplevel` of the repo doing the pushing,
+    // this fixture, not the real _R1 checkout this suite runs inside of.
+    // Copy the actual script under test into the fixture so that path
+    // resolves, the same layout install.sh assumes for any real clone.
     mkdirSync(join(workDir, "scripts"), { recursive: true });
-    execFileSync("cp", [SCRIPT_PATH, join(workDir, "scripts", "check-hygiene.ts")]);
+    execFileSync("cp", [SCRIPT_PATH, join(workDir, "scripts", "hygiene-guard.sh")]);
 
     let threw = false;
     let combinedOutput = "";
@@ -419,8 +450,8 @@ describe("check-hygiene.ts and pre-push, control 4: actually executes, and contr
       threw = true;
       const e = err as { stdout?: string; stderr?: string };
       // The hook's own echo lines land on the git subprocess's stdout, and
-      // the guard's own console.error output lands on stderr; the test
-      // only needs to know the hook actually ran, so check both.
+      // the guard's own stderr output lands on stderr; the test only needs
+      // to know the hook actually ran, so check both.
       combinedOutput = `${e.stdout ?? ""}\n${e.stderr ?? ""}`;
     }
 
@@ -437,10 +468,10 @@ describe("check-hygiene.ts and pre-push, control 4: actually executes, and contr
   });
 });
 
-describe("checkHygiene, addendum control 6: a content-present worktree that is ALSO dirty is never recommended for removal", () => {
+describe("hygiene-guard.sh, addendum control 6: a content-present worktree that is ALSO dirty is never recommended for removal", () => {
   let root: string;
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "hygiene-dirty-"));
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-dirty-")));
   });
   afterEach(() => {
     rmSync(root, { recursive: true, force: true });
@@ -468,22 +499,13 @@ describe("checkHygiene, addendum control 6: a content-present worktree that is A
     writeFile(wtPath, "dirty-leftover.txt", "modified after the squash merge, never committed\n");
     writeFile(wtPath, "scratch-note.txt", "untracked scratch file\n");
 
-    const result = checkHygiene(workDir);
-    expect(result.status).toBe("disposable");
-    if (result.status !== "disposable") throw new Error("unreachable");
-
-    const item = result.items.find((i) => i.kind === "worktree-dirty" && i.branch === "fix/dirty-leftover");
-    expect(item).toBeDefined();
-    if (item?.kind !== "worktree-dirty") throw new Error("unreachable");
-    expect(item.dirtyCount).toBe(2);
-
-    const { message, exitCode } = formatResult(result);
+    const { status, stderr } = runGuard(workDir);
     // Still refuses: the repo still needs a decision.
-    expect(exitCode).toBe(1);
-    // But NO removal command anywhere in the rendered message for this item.
-    expect(message).toMatch(/DISPOSABLE-BUT-DIRTY/);
-    expect(message).toMatch(/holds 2 uncommitted/);
-    expect(message).not.toMatch(/git worktree remove --force .*wt-dirty-leftover/);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/DISPOSABLE-BUT-DIRTY/);
+    expect(stderr).toMatch(/holds 2 uncommitted/);
+    // But NO removal command anywhere in the printed message for this item.
+    expect(stderr).not.toMatch(/git worktree remove --force .*wt-dirty-leftover/);
   });
 
   it("a clean worktree with the identical content-present branch DOES still get a removal command, proving the dirty check is what changed the outcome", () => {
@@ -500,20 +522,16 @@ describe("checkHygiene, addendum control 6: a content-present worktree that is A
     git(["fetch", "--quiet", "origin"], workDir);
     // No modifications made in wtPath after this: it stays clean.
 
-    const result = checkHygiene(workDir);
-    expect(result.status).toBe("disposable");
-    if (result.status !== "disposable") throw new Error("unreachable");
-    const item = result.items.find((i) => i.branch === "fix/clean-leftover");
-    expect(item?.kind).toBe("worktree");
-    if (item?.kind !== "worktree") throw new Error("unreachable");
-    expect(item.disposalCommand).toContain("git worktree remove --force");
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(new RegExp(`git worktree remove --force ${escapeRegExp(wtPath)}`));
   });
 });
 
-describe("checkHygiene, addendum control: prunable worktree records are always reported, dirty check does not apply", () => {
+describe("hygiene-guard.sh, addendum control: prunable worktree records are always reported, dirty check does not apply", () => {
   let root: string;
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "hygiene-prunable-"));
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-prunable-")));
   });
   afterEach(() => {
     rmSync(root, { recursive: true, force: true });
@@ -533,35 +551,45 @@ describe("checkHygiene, addendum control: prunable worktree records are always r
     // (rm, not `git worktree remove`), leaving a dangling record.
     rmSync(wtPath, { recursive: true, force: true });
 
-    const result = checkHygiene(workDir);
-    expect(result.status).toBe("disposable");
-    if (result.status !== "disposable") throw new Error("unreachable");
-    const item = result.items.find((i) => i.kind === "worktree-prunable");
-    expect(item).toBeDefined();
-    if (item?.kind !== "worktree-prunable") throw new Error("unreachable");
-    expect(item.disposalCommand).toBe("git worktree prune");
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/prunable/);
+    expect(stderr).toMatch(/git worktree prune/);
   });
 
-  it("resolveGitCommonDir resolves the true parent repo, not the cwd's own directory position", () => {
+  it("common-dir resolution enumerates a THIRD worktree's dangling record even when the guard is run from a different linked worktree, not scoped to cwd's own position", () => {
     const { workDir } = buildRepo(root, "runway");
-    const wtPath = join(root, "wt-common-dir-check");
-    git(["checkout", "--quiet", "-b", "chore/common-dir"], workDir);
-    git(["worktree", "add", "--quiet", "-b", "chore/common-dir-2", wtPath], workDir);
+    git(["checkout", "--quiet", "-b", "chore/gone-elsewhere"], workDir);
+    writeFile(workDir, "gone-elsewhere.txt", "will vanish\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "will vanish"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
 
-    // Asked from the LINKED worktree's own directory, the common dir must
-    // still resolve back to the main repo's .git, not to something under
-    // the linked worktree's own path.
-    const commonDir = resolveGitCommonDir(wtPath);
-    const mainCommonDir = resolveGitCommonDir(workDir);
-    expect(commonDir).toBe(mainCommonDir);
-    expect(commonDir).not.toContain("wt-common-dir-check");
+    const goneWtPath = join(root, "wt-gone-elsewhere");
+    git(["worktree", "add", "--quiet", goneWtPath, "chore/gone-elsewhere"], workDir);
+    // Simulate the fleet finding: directory removed by hand, dangling record.
+    rmSync(goneWtPath, { recursive: true, force: true });
+
+    // A second, unrelated, still-healthy worktree.
+    const checkFromWtPath = join(root, "wt-common-dir-check");
+    git(["worktree", "add", "--quiet", "-b", "chore/common-dir", checkFromWtPath], workDir);
+
+    // Run the guard with repo-path pointed at the SECOND worktree, neither
+    // main nor the one with the dangling record. `git worktree list` must
+    // still surface wt-gone-elsewhere: that only happens if the guard
+    // resolved the shared --git-common-dir rather than scoping worktree
+    // enumeration to checkFromWtPath's own position.
+    const { status, stderr } = runGuard(checkFromWtPath);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/prunable/);
+    expect(stderr).toMatch(new RegExp(escapeRegExp(goneWtPath)));
   });
 });
 
-describe("checkHygiene, control 8: a brand-new branch is a starting point, not a fossil (_R1#167 G1_BOUNCE)", () => {
+describe("hygiene-guard.sh, control 8: a brand-new branch is a starting point, not a fossil (_R1#167 G1_BOUNCE)", () => {
   let root: string;
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "hygiene-fresh-branch-"));
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-fresh-branch-")));
   });
   afterEach(() => {
     rmSync(root, { recursive: true, force: true });
@@ -574,10 +602,9 @@ describe("checkHygiene, control 8: a brand-new branch is a starting point, not a
     const ahead = git(["rev-list", "--count", "origin/runway..feat/just-started"], workDir);
     expect(ahead).toBe("0");
 
-    const result = checkHygiene(workDir);
-    expect(result.status).toBe("clean");
-    const { exitCode } = formatResult(result);
-    expect(exitCode).toBe(0);
+    const { status, stdout } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
   });
 
   it("half B: the real squash-merged fossil still DOES cause a refusal after the fix, same run as half A", () => {
@@ -593,26 +620,22 @@ describe("checkHygiene, control 8: a brand-new branch is a starting point, not a
     const ahead = git(["rev-list", "--count", "origin/runway..fix/real-fossil"], workDir);
     expect(Number(ahead)).toBeGreaterThan(0);
 
-    const result = checkHygiene(workDir);
-    expect(result.status).toBe("disposable");
-    if (result.status === "disposable") {
-      expect(result.items.some((i) => i.branch === "fix/real-fossil")).toBe(true);
-    }
-    const { exitCode } = formatResult(result);
-    expect(exitCode).toBe(1);
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/fix\/real-fossil/);
   });
 });
 
 describe("mutation floor: the checks above can fail, and their failure is caused by the specific mechanism named", () => {
   let root: string;
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "hygiene-mutation-"));
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-mutation-")));
   });
   afterEach(() => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("breaking trunk resolution (comparing against the wrong ref) turns a real fossil into a false clean", () => {
+  it("breaking trunk resolution (hardcoding the trunk ref instead of re-resolving it) turns a real fossil into a false clean", () => {
     const { workDir } = buildRepo(root, "runway");
     git(["checkout", "--quiet", "-b", "fix/mut-trunk"], workDir);
     writeFile(workDir, "mut-trunk.txt", "leftover\n");
@@ -622,21 +645,28 @@ describe("mutation floor: the checks above can fail, and their failure is caused
     git(["fetch", "--quiet", "origin"], workDir);
     git(["checkout", "--quiet", "runway"], workDir);
 
-    // Control: the real check refuses.
-    expect(checkHygiene(workDir).status).toBe("disposable");
+    // Control: the real, unmutated script refuses.
+    expect(runGuard(workDir).status).toBe(1);
 
-    // Mutation: compare against a stale local branch instead of the real
-    // trunk ref. This is the literal shape of "hardcode main and never
-    // re-resolve" the ticket warns about: a branch that is genuinely
-    // disposable against origin/runway reads as not-present against a
-    // ref that never received the squash-merge commit.
-    git(["branch", "stale-runway", "runway~0"], workDir);
-    // stale-runway currently equals runway, so force it stale by resetting
-    // to the pre-merge commit.
-    const preMergeSha = git(["rev-parse", "runway~1"], workDir);
-    git(["branch", "-f", "stale-runway", preMergeSha], workDir);
+    // Mutation: hardcode TRUNK_REF to "$_REMOTE/main" instead of the
+    // resolved branch name, the literal shape of "hardcode main and never
+    // re-resolve" the ticket warns about. This fixture's trunk is "runway",
+    // so origin/main does not exist: rev-list/merge-base against it fail,
+    // and the real fossil, which genuinely IS present in origin/runway,
+    // now reads as not-present against a ref that was never resolved from
+    // the repo at all.
+    const anchor = 'TRUNK_REF="$_REMOTE/$TRUNK_BRANCH"';
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
+    const mutated = source.replace(anchor, 'TRUNK_REF="$_REMOTE/main"');
+    expect(mutated).not.toBe(source); // the mutation actually landed
 
-    expect(isContentPresentInTrunk("fix/mut-trunk", "stale-runway", workDir)).toBe(false);
+    const mutantPath = join(root, "mutant-trunk.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutantResult = runGuard(workDir, "origin", mutantPath);
+    expect(mutantResult.status).toBe(0); // false clean: the mutation's failure
   });
 
   it("breaking the content check to the forward form (apply-then-compare-tree-hash) goes RED for the exact reason the ticket names: a failed apply is indistinguishable from a no-op one", () => {
@@ -663,14 +693,18 @@ describe("mutation floor: the checks above can fail, and their failure is caused
     git(["push", "--quiet", "origin", "runway"], workDir);
     git(["fetch", "--quiet", "origin"], workDir);
 
-    // Control: the real, reverse-apply check correctly says NOT present.
-    expect(isContentPresentInTrunk("feature/should-not-be-flagged", "origin/runway", workDir)).toBe(false);
+    // Control: the real, reverse-apply script correctly passes (not present).
+    expect(runGuard(workDir).status).toBe(0);
 
-    // Mutation: the forward form. Apply the diff to a scratch index seeded
-    // from trunk, then compare the resulting tree hash to trunk's tree
-    // hash. A failed `git apply` leaves the scratch index untouched, so its
-    // tree hash still equals trunk's, and this buggy primitive reports
-    // "present" for a branch that plainly is not.
+    // Mutation: the forward form, as a hand-written reimplementation of the
+    // exact bug the ticket names, not a live edit of the shipped script
+    // (there is no single-line anchor for this one; the bug is a different
+    // shape of the whole check, apply-then-compare-tree-hash instead of
+    // reverse-apply-and-read-its-own-exit-code). Apply the diff to a
+    // scratch index seeded from trunk, then compare the resulting tree
+    // hash to trunk's tree hash. A failed `git apply` leaves the scratch
+    // index untouched, so its tree hash still equals trunk's, and this
+    // buggy primitive reports "present" for a branch that plainly is not.
     const forwardFormBuggyCheck = (ref: string, trunkRef: string, cwd: string): boolean => {
       const base = execFileSync("git", GIT_IDENTITY.concat(["merge-base", ref, trunkRef]), {
         cwd,
@@ -704,8 +738,8 @@ describe("mutation floor: the checks above can fail, and their failure is caused
     };
 
     // The mutant misapplies (fails to apply cleanly, since trunk's tree
-    // doesn't have real-work.txt's base content in a form the forward
-    // patch expects to land on top of) and, per the bug, reports present.
+    // doesn't have README.md's base content in a form the forward patch
+    // expects to land on top of) and, per the bug, reports present.
     expect(forwardFormBuggyCheck("feature/should-not-be-flagged", "origin/runway", workDir)).toBe(true);
   });
 
@@ -719,19 +753,8 @@ describe("mutation floor: the checks above can fail, and their failure is caused
     git(["fetch", "--quiet", "origin"], workDir);
     git(["checkout", "--quiet", "runway"], workDir);
 
-    // Control: real CLI, run directly (no pipe), exits 1.
-    const direct = (() => {
-      try {
-        execFileSync(
-          process.execPath,
-          ["--experimental-strip-types", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", SCRIPT_PATH, workDir, "origin"],
-          { cwd: workDir, encoding: "utf8", env: ISOLATED_GIT_ENV },
-        );
-        return 0;
-      } catch (err) {
-        return (err as { status?: number }).status ?? -1;
-      }
-    })();
+    // Control: real guard, run directly (no pipe), exits 1.
+    const direct = runGuard(workDir).status;
     expect(direct).toBe(1);
 
     // Mutation: the exact bug named in the ticket, `cmd | head` then `$?`,
@@ -743,10 +766,7 @@ describe("mutation floor: the checks above can fail, and their failure is caused
     // on execFileSync's own throw/no-throw behavior.
     const pipedOutput = execFileSync(
       "sh",
-      [
-        "-c",
-        `node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON "${SCRIPT_PATH}" "${workDir}" origin 2>&1 | head -1; echo "MASKED_EXIT:$?"`,
-      ],
+      ["-c", `sh "${SCRIPT_PATH}" "${workDir}" origin 2>&1 | head -1; echo "MASKED_EXIT:$?"`],
       { cwd: workDir, encoding: "utf8", env: ISOLATED_GIT_ENV },
     );
     const maskedStatus = pipedOutput.match(/MASKED_EXIT:(\d+)/)?.[1];
