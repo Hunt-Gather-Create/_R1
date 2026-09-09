@@ -20,21 +20,49 @@
 # it is the shipped artifact, with no Node dependency for a pre-push hook to
 # fail on if `node` is absent from a contributor's PATH.
 #
-# Usage: sh hygiene-guard.sh [repo-path] [remote-name]
+# Usage: sh hygiene-guard.sh [repo-path] [remote-name] [guard-path]
 #   repo-path    defaults to the current directory. Passed so this can be
 #                tested against a repo other than the one it's invoked in;
 #                a real pre-push invocation never needs to pass it, git already
 #                runs the hook with cwd inside the repo being pushed.
 #   remote-name  defaults to "origin".
+#   guard-path   defaults to "scripts/hygiene-guard.sh". This repo's path,
+#                relative to repo root, to THIS script's own tracked file.
+#                It is how the guard finds its own install point in trunk
+#                history (see "SCOPE: ONLY BRANCHES CREATED AFTER INSTALL"
+#                below). A deployment that drops this file at a different
+#                path (for example opeff's .githooks/) must pass that path
+#                here, or every branch reads as pre-dating install.
 #
 # Exit 0: clean, nothing disposable found.
-# Exit 1: REFUSE. Either trunk could not be resolved, or a fossil branch or
-#         worktree was found. This is the guard's ONLY verdict channel --
-#         read the exit code, not the printed text (control D5). Unlike
+# Exit 1: REFUSE. Trunk could not be resolved, the install point could not
+#         be resolved, or a fossil branch or worktree was found (governed
+#         ones only -- see below). This is the guard's ONLY verdict channel
+#         -- read the exit code, not the printed text (control D5). Unlike
 #         opeff's own check-shared-checkout.mjs (SC01), whose declared return
 #         type is {severity: 'ok'|'warning'} and structurally cannot report a
 #         blocking condition, this guard has a genuine failing path, and its
 #         failing path is exercised and proven below, not merely declared.
+#
+# SCOPE: ONLY BRANCHES CREATED AFTER INSTALL ARE GOVERNED (Overwatch ruling,
+# _R1#167). A guard that demands a backlog cleanup as its entry fee is not
+# enforceable -- fifteen old merged branches means fifteen cleanups before a
+# seat can push once, and that is how a guard gets bypassed on day one. So a
+# branch is only checked for disposability if it forked from trunk AT OR
+# AFTER the commit that first added this guard's own script to trunk.
+#
+# The install point is NOT a side marker file. A marker file a seat can `rm`
+# is a skip flag with extra steps, and this guard ships no skip flag of its
+# own on purpose (see below). Instead the install point is derived: the
+# first commit in TRUNK's own history that adds guard-path. That commit is
+# part of trunk's committed history -- forging it requires rewriting shared
+# trunk history, which is already a different, much louder problem than
+# deleting a file. If that commit cannot be found (guard-path was never
+# added to trunk, or trunk history for it is unavailable, e.g. a shallow
+# clone that doesn't reach it), the guard REFUSES and says so. It never
+# silently treats "can't find the install point" as "every branch predates
+# it" -- that would produce a guard that always exits 0, which reads
+# identically to a guard with nothing to catch (control D9, see the transcript).
 #
 # Two design choices are load-bearing, not incidental:
 #
@@ -82,6 +110,7 @@ set -u
 
 _REPO="${1:-$(pwd)}"
 _REMOTE="${2:-origin}"
+_GUARD_PATH="${3:-scripts/hygiene-guard.sh}"
 
 _g() {
   # Run git in the target repo. -C, not cd, so this script's own cwd is
@@ -129,20 +158,90 @@ if [ "$_trunk_status" -ne 0 ] || [ -z "$TRUNK_BRANCH" ]; then
 fi
 TRUNK_REF="$_REMOTE/$TRUNK_BRANCH"
 
-# --- content-presence primitive: reverse-apply, never --is-ancestor ---------
-_is_content_present() {
+# --- resolve install point: first commit on trunk to add guard-path --------
+_resolve_install_sha() {
+  # Prints the SHA of the earliest commit in TRUNK_REF's history that adds
+  # _GUARD_PATH, on stdout. Returns 1 if no such commit exists (guard-path
+  # was never added to trunk, or that history is unreachable, e.g. a
+  # shallow clone). --diff-filter=A catches the ADD; a file that was later
+  # renamed away and back is not a case this guard needs to handle, since
+  # guard-path names THIS script's own current location.
+  _sha=$(_g log "$TRUNK_REF" --diff-filter=A --format=%H -- "$_GUARD_PATH" 2>/dev/null | tail -1)
+  [ -n "$_sha" ] || return 1
+  printf '%s\n' "$_sha"
+}
+
+INSTALL_SHA=$(_resolve_install_sha)
+_install_status=$?
+if [ "$_install_status" -ne 0 ] || [ -z "$INSTALL_SHA" ]; then
+  _block "could not resolve an install point: no commit on $TRUNK_REF adds '$_GUARD_PATH'. Not treating every branch as pre-dating install. No disposability check ran."
+  exit 1
+fi
+
+# --- governance: is a branch's fork point at or after INSTALL_SHA? ---------
+_branch_governed() {
+  # $1 = candidate ref, $2 = trunk ref. Returns 0 if the branch forked from
+  # trunk at or after INSTALL_SHA (governed: check it for disposability),
+  # 1 if it forked before (ungoverned: skip entirely, dirty or not, fossil
+  # or not -- a guard that binds retroactively is the enforceability defect
+  # this scoping exists to fix). A branch with no merge-base at all is
+  # treated as ungoverned, same conservative direction as "predates install":
+  # this guard's job is prevention going forward, not adjudicating unrelated
+  # histories.
+  _ref=$1
+  _trunk=$2
+  _fork=$(_g merge-base "$_ref" "$_trunk" 2>/dev/null)
+  [ -n "$_fork" ] || return 1
+  _g merge-base --is-ancestor "$INSTALL_SHA" "$_fork" 2>/dev/null
+}
+
+# --- detector A: git cherry, patch-id equivalence -----------------------
+# opeff#870-class miss found by QA-Scout-1 on _R1#167 gate 1: several
+# branches that each append to the SAME file, squash-merged into trunk in
+# sequence, all fully present in trunk, but reverse-apply (detector B below)
+# only catches the LAST one. Once trunk grows past an earlier fossil's
+# append point, that fossil's diff carries a hunk whose trailing-context
+# boundary no longer exists in trunk, so `git apply --reverse --check` fails
+# on a change that genuinely is already there. `git cherry` doesn't diff
+# against a tree at all: it compares each commit's PATCH-ID (a hash of the
+# diff's content, insensitive to where in the file it now lands) against
+# every commit already in trunk's history. That makes it blind to trunk
+# having grown past the original hunk boundary, which is exactly the case
+# reverse-apply misses.
+_is_cherry_fossil() {
+  # $1 = candidate ref, $2 = trunk ref. Returns 0 if every commit unique to
+  # $1 has a patch-id equivalent already in $2 (git cherry prints "- <sha>"
+  # for those). Returns 1 if $1 has at least one commit with no equivalent
+  # (a "+ <sha>" line), or if git cherry itself fails. Caller must already
+  # have confirmed $1 is ahead of $2 -- a zero-commit branch produces no
+  # cherry output at all, which is indistinguishable from "all equivalent"
+  # by output alone.
+  _ref=$1
+  _trunk=$2
+  _out=$(_g cherry "$_trunk" "$_ref" 2>/dev/null) || return 1
+  printf '%s\n' "$_out" | grep -q '^+' && return 1
+  return 0
+}
+
+# --- detector B: reverse-apply against trunk's tree, never --is-ancestor --
+# `git merge-base --is-ancestor` exits 1 on a squash-merged branch, since
+# squash never creates a real ancestor edge; that check is never used for
+# content-presence here. This reverse-applies the branch's diff onto
+# trunk's tree in a scratch index instead: if trunk already contains every
+# change, the reverse-apply is clean. It catches a squash of MULTIPLE
+# commits into one diff (a single patch-id, which detector A cannot match
+# against trunk's separately-committed history) -- the case detector A was
+# chosen for, and the reason neither detector replaces the other. The
+# FORWARD form (apply the diff, compare resulting tree hash to trunk's) is
+# deliberately NOT used: a patch that fails to apply at all leaves the
+# scratch index untouched, so its tree hash still equals trunk's BY
+# CONSTRUCTION, making a failed apply indistinguishable from a no-op one.
+# Only the reverse form's own exit code tells the two apart.
+_is_reverse_apply_fossil() {
   # $1 = candidate ref, $2 = trunk ref. Returns 0 if every change $1 makes
   # relative to its merge-base with $2 is already present in $2's tree.
   _ref=$1
   _trunk=$2
-
-  # Cheap discriminator, checked first, short-circuits before the expensive
-  # reverse-apply below. A fossil had work that is now in trunk; a fresh
-  # branch never had work. An empty diff cannot tell the two apart on its
-  # own: a brand-new branch just created off trunk has an empty diff against
-  # its own merge-base for the same reason a fossil does. Commits-ahead can.
-  _ahead=$(_g rev-list --count "$_trunk..$_ref" 2>/dev/null)
-  [ -n "$_ahead" ] && [ "$_ahead" -gt 0 ] || return 1
 
   _base=$(_g merge-base "$_ref" "$_trunk" 2>/dev/null)
   _base_status=$?
@@ -173,6 +272,43 @@ _is_content_present() {
   _apply_status=$?
   rm -rf "$_scratch"
   [ "$_apply_status" -eq 0 ] && return 0
+  return 1
+}
+
+# --- combined content-presence check: ahead-count, then cherry, then ------
+# --- reverse-apply, OR-combined. Each detector catches what the other ------
+# --- misses; neither one false-positives on genuine unmerged work. ---------
+_DETECTOR=""
+_is_content_present() {
+  # $1 = candidate ref, $2 = trunk ref. Sets _DETECTOR to the name of
+  # whichever check fired, for the BLOCK line -- a combined boolean that
+  # doesn't say which detector caught it hides a detector silently going
+  # dark, which is the exact class of gap this fix exists to close.
+  _ref=$1
+  _trunk=$2
+  _DETECTOR=""
+
+  # Cheap discriminator, checked first, short-circuits before both detectors
+  # below. A fossil had work that is now in trunk; a fresh branch never had
+  # work. An empty diff (or no cherry output) cannot tell the two apart on
+  # its own: a brand-new branch just created off trunk looks the same as a
+  # fossil to either detector. Commits-ahead can (_R1#167 G1_BOUNCE).
+  _ahead=$(_g rev-list --count "$_trunk..$_ref" 2>/dev/null)
+  [ -n "$_ahead" ] && [ "$_ahead" -gt 0 ] || return 1
+
+  # git cherry before reverse-apply: cheaper (no scratch index, no patch
+  # file, no read-tree/apply forks) and it is the detector ruling-2's
+  # timing number benefits most from short-circuiting on.
+  if _is_cherry_fossil "$_ref" "$_trunk"; then
+    _DETECTOR="git cherry (patch-id)"
+    return 0
+  fi
+
+  if _is_reverse_apply_fossil "$_ref" "$_trunk"; then
+    _DETECTOR="reverse-apply"
+    return 0
+  fi
+
   return 1
 }
 
@@ -255,6 +391,7 @@ _g for-each-ref --format='%(refname:short)' refs/heads/ >"$_branches" 2>/dev/nul
 while IFS= read -r _branch; do
   [ -n "$_branch" ] || continue
   [ "$_branch" = "$TRUNK_BRANCH" ] && continue
+  _branch_governed "$_branch" "$TRUNK_REF" || continue
 
   _wt_path=$(awk -F"$_TAB" -v b="$_branch" '$1==b{print $2; exit}' "$_wt_map")
 
@@ -262,7 +399,7 @@ while IFS= read -r _branch; do
     _dirty=$(_count_dirty "$_wt_path")
     if [ "$_dirty" -gt 0 ]; then
       if _is_content_present "$_branch" "$TRUNK_REF"; then
-        _block "worktree DISPOSABLE-BUT-DIRTY: $_branch ($_wt_path) already in $TRUNK_REF, holds $_dirty uncommitted change(s). No removal command. Its owner decides."
+        _block "worktree DISPOSABLE-BUT-DIRTY: $_branch ($_wt_path) already in $TRUNK_REF (detected via $_DETECTOR), holds $_dirty uncommitted change(s). No removal command. Its owner decides."
       fi
       continue
     fi
@@ -270,11 +407,11 @@ while IFS= read -r _branch; do
 
   if _is_content_present "$_branch" "$TRUNK_REF"; then
     if [ -n "$_wt_path" ]; then
-      _block "worktree already in $TRUNK_REF: $_branch ($_wt_path). Disposal: git worktree remove --force $_wt_path"
+      _block "worktree already in $TRUNK_REF (detected via $_DETECTOR): $_branch ($_wt_path). Disposal: git worktree remove --force $_wt_path"
     elif [ "$_branch" = "$_main_branch" ]; then
-      _block "branch already in $TRUNK_REF (checked out in the main worktree): $_branch. Disposal: git checkout $TRUNK_BRANCH && git branch -D $_branch"
+      _block "branch already in $TRUNK_REF (detected via $_DETECTOR, checked out in the main worktree): $_branch. Disposal: git checkout $TRUNK_BRANCH && git branch -D $_branch"
     else
-      _block "branch already in $TRUNK_REF: $_branch. Disposal: git branch -D $_branch"
+      _block "branch already in $TRUNK_REF (detected via $_DETECTOR): $_branch. Disposal: git branch -D $_branch"
     fi
   fi
 done <"$_branches"

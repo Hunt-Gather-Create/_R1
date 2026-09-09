@@ -101,8 +101,18 @@ function runGuard(cwd: string, remote = "origin", scriptPath = SCRIPT_PATH): Gua
  * the ticket's own measured fact that _R1's real trunk is "runway", not
  * "main". A guard whose test fixtures all happen to use "main" would not
  * exercise its own reason for existing.
+ *
+ * The root commit also adds a placeholder scripts/hygiene-guard.sh, unless
+ * withGuardMarker is false. That file's first-add commit on trunk IS the
+ * guard's install point (_R1#167 ruling 1: only branches forked at or after
+ * install are governed). Installing it at the root commit means every
+ * existing test in this suite, which creates its fossil/clean branches
+ * AFTER buildRepo returns, is exercising a governed branch by default,
+ * without needing to know the install-point mechanism exists. Tests that
+ * specifically exercise install-point scoping use withGuardMarker=false and
+ * installGuardMarker() below to control exactly when the marker commit lands.
  */
-function buildRepo(root: string, trunkName: string) {
+function buildRepo(root: string, trunkName: string, withGuardMarker = true) {
   const originDir = join(root, "origin.git");
   mkdirSync(originDir, { recursive: true });
   git(["init", "--quiet", "--bare", "-b", trunkName], originDir);
@@ -111,12 +121,32 @@ function buildRepo(root: string, trunkName: string) {
   git(["clone", "--quiet", originDir, workDir], root);
   git(["checkout", "--quiet", "-b", trunkName], workDir);
   writeFile(workDir, "README.md", "root\n");
+  if (withGuardMarker) {
+    mkdirSync(join(workDir, "scripts"), { recursive: true });
+    writeFile(workDir, "scripts/hygiene-guard.sh", "#!/bin/sh\n# placeholder for install-point tests\n");
+  }
   git(["add", "."], workDir);
   git(["commit", "--quiet", "-m", "root"], workDir);
   git(["push", "--quiet", "origin", `HEAD:${trunkName}`], workDir);
   git(["symbolic-ref", `refs/remotes/origin/HEAD`, `refs/remotes/origin/${trunkName}`], workDir);
 
   return { originDir, workDir };
+}
+
+/**
+ * Adds scripts/hygiene-guard.sh to trunk as a new commit, pushed to origin.
+ * Used with buildRepo(..., false) to control exactly when the guard's
+ * install point lands relative to other branch/commit activity, which
+ * buildRepo's own root-commit default can't express.
+ */
+function installGuardMarker(workDir: string, trunkName: string): string {
+  git(["checkout", "--quiet", trunkName], workDir);
+  mkdirSync(join(workDir, "scripts"), { recursive: true });
+  writeFile(workDir, "scripts/hygiene-guard.sh", "#!/bin/sh\n# placeholder for install-point tests\n");
+  git(["add", "."], workDir);
+  git(["commit", "--quiet", "-m", "install hygiene guard"], workDir);
+  git(["push", "--quiet", "origin", trunkName], workDir);
+  return git(["rev-parse", "HEAD"], workDir);
 }
 
 /** Squash-merges a feature branch's single-file change into trunk on origin, simulating a real PR squash merge with no ancestor relationship preserved. */
@@ -294,7 +324,7 @@ describe("hygiene-guard.sh, control 1: refuses on a fossil state you construct",
 
     const { status, stderr } = runGuard(workDir);
     expect(status).toBe(1);
-    expect(stderr).toMatch(/branch already in origin\/runway: fix\/leftover/);
+    expect(stderr).toMatch(/branch already in origin\/runway \(detected via .+?\): fix\/leftover/);
     expect(stderr).toMatch(/Disposal: git branch -D fix\/leftover/);
   });
 
@@ -314,7 +344,7 @@ describe("hygiene-guard.sh, control 1: refuses on a fossil state you construct",
 
     const { status, stderr } = runGuard(workDir);
     expect(status).toBe(1);
-    expect(stderr).toMatch(/worktree already in origin\/runway: fix\/wt-leftover/);
+    expect(stderr).toMatch(/worktree already in origin\/runway \(detected via .+?\): fix\/wt-leftover/);
     expect(stderr).toMatch(new RegExp(`git worktree remove --force ${escapeRegExp(wtPath)}`));
   });
 });
@@ -626,6 +656,166 @@ describe("hygiene-guard.sh, control 8: a brand-new branch is a starting point, n
   });
 });
 
+describe("hygiene-guard.sh, control 9: only branches forked at or after the guard's own install point are governed (_R1#167 Overwatch ruling 1)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-install-point-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("does NOT refuse on a genuine fossil branch that forked from trunk BEFORE the guard's install commit landed", () => {
+    // withGuardMarker=false: this repo does not start with the guard
+    // already "installed" on trunk. A branch forks and gets squash-merged
+    // first, THEN the guard's own script lands on trunk. A backlog fossil
+    // like this is exactly what ruling 1 says must not be an entry fee.
+    const { workDir } = buildRepo(root, "runway", false);
+    git(["checkout", "--quiet", "-b", "fix/pre-install-fossil"], workDir);
+    writeFile(workDir, "pre-install.txt", "leftover from before install\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "pre-install fossil work"], workDir);
+    squashMergeToTrunk(workDir, "runway", "fix/pre-install-fossil");
+
+    installGuardMarker(workDir, "runway");
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    // Sanity: this branch genuinely IS a fossil by content -- if governed,
+    // the guard would refuse on it. The assertion below is that it isn't
+    // governed, not that it isn't a fossil.
+    const { status, stdout } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+  });
+
+  it("DOES refuse on an otherwise-identical fossil branch that forked AFTER the guard's install commit", () => {
+    const { workDir } = buildRepo(root, "runway", false);
+    installGuardMarker(workDir, "runway");
+
+    git(["checkout", "--quiet", "-b", "fix/post-install-fossil"], workDir);
+    writeFile(workDir, "post-install.txt", "leftover from after install\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "post-install fossil work"], workDir);
+    squashMergeToTrunk(workDir, "runway", "fix/post-install-fossil");
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/fix\/post-install-fossil/);
+  });
+
+  it("with no install point resolvable on trunk at all, REFUSES and says so, rather than silently treating every branch as ungoverned", () => {
+    // No installGuardMarker() call: guard-path was never added to trunk.
+    // A guard that reads "can't find my own install point" as "skip
+    // everything" would exit 0 quietly here even with zero fossils present
+    // -- the same failure shape the ticket names six times: a check that
+    // executes, detects nothing, and looks identical to a check with
+    // nothing to catch.
+    const { workDir } = buildRepo(root, "runway", false);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/could not resolve an install point/);
+  });
+});
+
+describe("hygiene-guard.sh, control 10: two content-presence detectors, OR-combined (_R1#167 G1_BOUNCE, TP's own primitive)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-two-detector-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  /**
+   * Several branches that each append one line to the SAME file, squash-
+   * merged into trunk immediately, one after another. QA-Scout-1's gate-1
+   * finding: reverse-apply alone only catches the LAST one in the chain,
+   * because once trunk grows past an earlier fossil's append point, that
+   * fossil's diff hunk no longer finds its trailing-context boundary in
+   * trunk's current tree, and `git apply --reverse --check` fails on a
+   * change that genuinely is already there. git cherry (patch-id) doesn't
+   * diff against a tree, so it isn't sensitive to trunk having grown past
+   * the hunk -- this is the detector-A-only case.
+   */
+  function buildSequentialAppendFossils(workDir: string, count: number): string[] {
+    const names: string[] = [];
+    let content = "";
+    for (let i = 1; i <= count; i++) {
+      const branch = `fossil-${i}`;
+      git(["checkout", "--quiet", "-b", branch], workDir);
+      content += `line ${i}\n`;
+      writeFile(workDir, "shared.txt", content);
+      git(["add", "."], workDir);
+      git(["commit", "--quiet", "-m", `append ${i}`], workDir);
+      squashMergeToTrunk(workDir, "runway", branch);
+      names.push(branch);
+    }
+    return names;
+  }
+
+  it("detector A (git cherry) catches all three sequential same-file fossils that detector B (reverse-apply) alone would miss but the last", () => {
+    const { workDir } = buildRepo(root, "runway");
+    writeFile(workDir, "shared.txt", "");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "seed shared.txt"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+
+    const fossils = buildSequentialAppendFossils(workDir, 3);
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    for (const branch of fossils) {
+      expect(stderr).toMatch(new RegExp(escapeRegExp(branch)));
+    }
+    expect(stderr).toMatch(/detected via git cherry/);
+  });
+
+  it("detector B (reverse-apply) catches a multi-commit squash that detector A (git cherry) alone cannot, since squashing N commits produces one new patch-id with no equivalent in trunk's separately-committed history", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "multi"], workDir);
+    writeFile(workDir, "multi.txt", "a\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "multi 1"], workDir);
+    writeFile(workDir, "multi.txt", "a\nb\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "multi 2"], workDir);
+    writeFile(workDir, "multi.txt", "a\nb\nc\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "multi 3"], workDir);
+    squashMergeToTrunk(workDir, "runway", "multi");
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    // Sanity: git cherry alone genuinely cannot see this one, confirming
+    // the test exercises detector B and not an accidental double-catch.
+    const cherryOut = git(["cherry", "origin/runway", "multi"], workDir);
+    expect(cherryOut.split("\n").some((l) => l.startsWith("+"))).toBe(true);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/multi/);
+    expect(stderr).toMatch(/detected via reverse-apply/);
+  });
+
+  it("neither detector false-positives on a real, unmerged branch (negative control, same session as both positives above)", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "live-work"], workDir);
+    writeFile(workDir, "live.txt", "never merged\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "live work"], workDir);
+
+    const { status, stdout } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+  });
+});
+
 describe("mutation floor: the checks above can fail, and their failure is caused by the specific mechanism named", () => {
   let root: string;
   beforeEach(() => {
@@ -637,6 +827,16 @@ describe("mutation floor: the checks above can fail, and their failure is caused
 
   it("breaking trunk resolution (hardcoding the trunk ref instead of re-resolving it) turns a real fossil into a false clean", () => {
     const { workDir } = buildRepo(root, "runway");
+    // The mutation below hardcodes TRUNK_REF to "$_REMOTE/main". Since
+    // _R1#167 ruling 1, install-point resolution runs against TRUNK_REF too
+    // and would otherwise be the first thing to fail here (no commit on a
+    // nonexistent origin/main adds the guard script), refusing for THAT
+    // reason and never reaching the content check this test means to
+    // isolate. Push an origin/main pointing at the same root commit
+    // (which already has the guard marker per buildRepo's default) so
+    // install-point resolution succeeds under the mutant too, and the only
+    // thing that fails is the content-presence check the mutation targets.
+    git(["push", "--quiet", "origin", "runway:main"], workDir);
     git(["checkout", "--quiet", "-b", "fix/mut-trunk"], workDir);
     writeFile(workDir, "mut-trunk.txt", "leftover\n");
     git(["add", "."], workDir);
@@ -774,5 +974,93 @@ describe("mutation floor: the checks above can fail, and their failure is caused
     // guard's real exit 1 even though the guard genuinely refused.
     expect(maskedStatus).toBe("0");
     expect(direct).not.toBe(0);
+  });
+
+  it("disabling detector A (git cherry) turns the sequential-same-file fossils it alone catches into a false clean, proving the OR is actually wired to it", () => {
+    const { workDir } = buildRepo(root, "runway");
+    writeFile(workDir, "shared.txt", "");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "seed shared.txt"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+
+    let content = "";
+    for (let i = 1; i <= 3; i++) {
+      const branch = `fossil-${i}`;
+      git(["checkout", "--quiet", "-b", branch], workDir);
+      content += `line ${i}\n`;
+      writeFile(workDir, "shared.txt", content);
+      git(["add", "."], workDir);
+      git(["commit", "--quiet", "-m", `append ${i}`], workDir);
+      git(["checkout", "--quiet", "runway"], workDir);
+      git(["pull", "--quiet", "origin", "runway"], workDir);
+      git(["merge", "--quiet", "--squash", branch], workDir);
+      git(["commit", "--quiet", "-m", `squash ${branch}`], workDir);
+      git(["push", "--quiet", "origin", "runway"], workDir);
+    }
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    // Control: the real, unmutated script refuses (control 10's own test
+    // proves all three are caught; this just re-confirms before mutating).
+    expect(runGuard(workDir).status).toBe(1);
+
+    // Mutation: disable detector A only, leaving detector B (reverse-apply)
+    // running exactly as shipped. If the OR isn't really wired to detector
+    // A, disabling it changes nothing; if it is, fossil-1 and fossil-2
+    // (which detector B alone cannot see -- see control 10) go undetected.
+    const anchor = 'if _is_cherry_fossil "$_ref" "$_trunk"; then';
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1);
+    const mutated = source.replace(anchor, "if false; then");
+    expect(mutated).not.toBe(source);
+
+    const mutantPath = join(root, "mutant-no-cherry.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutantResult = runGuard(workDir, "origin", mutantPath);
+    expect(mutantResult.status).toBe(1); // fossil-3 is still caught by detector B
+    expect(mutantResult.stderr).toMatch(/fossil-3/);
+    expect(mutantResult.stderr).not.toMatch(/fossil-1/); // false clean for these two:
+    expect(mutantResult.stderr).not.toMatch(/fossil-2/); // detector A was their only catch
+  });
+
+  it("disabling detector B (reverse-apply) turns the multi-commit-squash fossil it alone catches into a false clean, proving the OR is actually wired to it", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "multi"], workDir);
+    writeFile(workDir, "multi.txt", "a\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "multi 1"], workDir);
+    writeFile(workDir, "multi.txt", "a\nb\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "multi 2"], workDir);
+    writeFile(workDir, "multi.txt", "a\nb\nc\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "multi 3"], workDir);
+    squashMergeToTrunk(workDir, "runway", "multi");
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    // Control: the real, unmutated script refuses.
+    expect(runGuard(workDir).status).toBe(1);
+
+    // Mutation: disable detector B only, leaving detector A (git cherry)
+    // running exactly as shipped. git cherry cannot see this fossil (its
+    // three commits squash into one new patch-id with no equivalent in
+    // trunk's separately-committed history -- control 10's own sanity
+    // check on `git cherry` proves this), so with detector B disabled the
+    // OR has nothing left to catch it with.
+    const anchor = 'if _is_reverse_apply_fossil "$_ref" "$_trunk"; then';
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1);
+    const mutated = source.replace(anchor, "if false; then");
+    expect(mutated).not.toBe(source);
+
+    const mutantPath = join(root, "mutant-no-reverse-apply.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutantResult = runGuard(workDir, "origin", mutantPath);
+    expect(mutantResult.status).toBe(0); // false clean: detector B was multi's only catch
   });
 });
