@@ -3,6 +3,7 @@
  * counts, shape-variance flags, orphans, and the first-run expectation note.
  */
 import type { DiffResult, SyncPayload } from "./types";
+import type { ParityResult } from "./parity/types";
 
 export function renderReport(diff: DiffResult, payloads: SyncPayload[]): string {
   const c = diff.counts;
@@ -87,6 +88,46 @@ export function renderReport(diff: DiffResult, payloads: SyncPayload[]): string 
     lines.push(`> Policy: orphans are FLAGGED only. The sync never deletes Runway items (§2.9).`);
     lines.push("");
   }
+
+  return lines.join("\n");
+}
+
+/**
+ * Human-readable rendering of a parity verdict file, _R1#151. The verdict
+ * JSON is the artifact of record. This is a reader's aid over it and is
+ * never re-parsed as an input, so it carries no byte-identical requirement.
+ */
+export function renderParityReport(result: ParityResult): string {
+  const lines: string[] = [];
+  lines.push(`# Runway Sheet Sync, Parity Report`);
+  lines.push("");
+  lines.push(`- Sheet: \`${result.sheetId}\``);
+  lines.push(`- Client: ${result.clientSlug}`);
+  lines.push(`- Run: \`${result.runId}\``);
+  lines.push(`- Sheet frozen at: ${result.sheetFrozenAt || "n/a"}`);
+  lines.push(`- Prod frozen at: ${result.prodFrozenAt}`);
+  lines.push("");
+
+  lines.push(`## Summary`);
+  lines.push("");
+  lines.push(`| Verdict | Count |`);
+  lines.push(`|---|---|`);
+  lines.push(`| AGREE | ${result.counts.AGREE} |`);
+  lines.push(`| DISAGREE | ${result.counts.DISAGREE} |`);
+  lines.push(`| TOOL_ONLY | ${result.counts.TOOL_ONLY} |`);
+  lines.push(`| HAND_ONLY | ${result.counts.HAND_ONLY} |`);
+  lines.push("");
+
+  lines.push(`## Rows`);
+  lines.push("");
+  lines.push(`| Row | Task | Title | Verdict | Match | Mismatched fields |`);
+  lines.push(`|---|---|---|---|---|---|`);
+  for (const r of result.rows) {
+    const match = r.match ? `${r.match.method}, score ${r.match.score ?? "n/a"}` : "n/a";
+    const mismatched = r.mismatchedFields.map((f) => `${f.field}: tool=${f.tool ?? "null"} hand=${f.hand ?? "null"}`).join("; ");
+    lines.push(`| ${r.rowNumber ?? "n/a"} | ${r.taskNo ?? "n/a"} | ${r.title} | ${r.verdict} | ${match} | ${mismatched} |`);
+  }
+  lines.push("");
 
   return lines.join("\n");
 }
