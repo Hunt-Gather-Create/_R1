@@ -96,8 +96,20 @@ export function resolveTrunk(cwd: string, remote: string = "origin"): TrunkResol
  * in trunk's current tree. Writes nothing to the working tree; the scratch
  * index passed via GIT_INDEX_FILE is the whole point, so a caller's actual
  * staged changes are never touched.
+ *
+ * A ref with zero commits ahead of trunk is checked first and short-
+ * circuited to false. A brand-new branch created off trunk has an empty
+ * diff against its own merge-base for the same reason a fossil branch
+ * does, an empty diff alone cannot tell a starting point from a fossil.
+ * Commits-ahead can: a fossil had work that is now in trunk, a fresh
+ * branch never had work at all.
  */
 export function isContentPresentInTrunk(ref: string, trunkRef: string, cwd: string): boolean {
+  const ahead = run(["rev-list", "--count", `${trunkRef}..${ref}`], cwd);
+  if (Number(ahead) === 0) {
+    return false;
+  }
+
   const base = run(["merge-base", ref, trunkRef], cwd);
   const diff = execFileSync("git", ["diff", base, ref], {
     cwd,

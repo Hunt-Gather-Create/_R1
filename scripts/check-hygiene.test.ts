@@ -191,10 +191,10 @@ describe("isContentPresentInTrunk, the reverse-apply primitive", () => {
     expect(isContentPresentInTrunk("feature/mutated", "origin/runway", workDir)).toBe(false);
   });
 
-  it("is true for an empty diff, a branch identical to trunk", () => {
+  it("is false for a freshly created branch with zero commits ahead, even though its diff against trunk is empty (_R1#167 G1_BOUNCE)", () => {
     const { workDir } = buildRepo(root, "runway");
-    git(["checkout", "--quiet", "-b", "feature/noop"], workDir);
-    expect(isContentPresentInTrunk("feature/noop", "origin/runway", workDir)).toBe(true);
+    git(["checkout", "--quiet", "-b", "feature/just-started"], workDir);
+    expect(isContentPresentInTrunk("feature/just-started", "origin/runway", workDir)).toBe(false);
   });
 
   it("writes nothing to the caller's real working tree or index", () => {
@@ -290,6 +290,16 @@ describe("checkHygiene, control 2: exits clean on real clean state, same session
 
     const result = checkHygiene(workDir);
     expect(result.status).toBe("clean");
+  });
+
+  it("passes when a zero-commit branch is present alongside trunk (_R1#167 G1_BOUNCE: control 2's prior fixtures could not tell this apart from a tidy repo)", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["branch", "feature/just-started"], workDir);
+
+    const result = checkHygiene(workDir);
+    expect(result.status).toBe("clean");
+    const { exitCode } = formatResult(result);
+    expect(exitCode).toBe(0);
   });
 });
 
@@ -545,6 +555,51 @@ describe("checkHygiene, addendum control: prunable worktree records are always r
     const mainCommonDir = resolveGitCommonDir(workDir);
     expect(commonDir).toBe(mainCommonDir);
     expect(commonDir).not.toContain("wt-common-dir-check");
+  });
+});
+
+describe("checkHygiene, control 8: a brand-new branch is a starting point, not a fossil (_R1#167 G1_BOUNCE)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "hygiene-fresh-branch-"));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("half A: a freshly created branch with zero commits does NOT cause a refusal, the ordinary first act of any ticket", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["branch", "feat/just-started"], workDir);
+
+    const ahead = git(["rev-list", "--count", "origin/runway..feat/just-started"], workDir);
+    expect(ahead).toBe("0");
+
+    const result = checkHygiene(workDir);
+    expect(result.status).toBe("clean");
+    const { exitCode } = formatResult(result);
+    expect(exitCode).toBe(0);
+  });
+
+  it("half B: the real squash-merged fossil still DOES cause a refusal after the fix, same run as half A", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "fix/real-fossil"], workDir);
+    writeFile(workDir, "real-fossil.txt", "leftover\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "real fossil work"], workDir);
+    squashMergeToTrunk(workDir, "runway", "fix/real-fossil");
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const ahead = git(["rev-list", "--count", "origin/runway..fix/real-fossil"], workDir);
+    expect(Number(ahead)).toBeGreaterThan(0);
+
+    const result = checkHygiene(workDir);
+    expect(result.status).toBe("disposable");
+    if (result.status === "disposable") {
+      expect(result.items.some((i) => i.branch === "fix/real-fossil")).toBe(true);
+    }
+    const { exitCode } = formatResult(result);
+    expect(exitCode).toBe(1);
   });
 });
 
