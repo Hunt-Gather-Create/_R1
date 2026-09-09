@@ -1064,3 +1064,688 @@ describe("mutation floor: the checks above can fail, and their failure is caused
     expect(mutantResult.status).toBe(0); // false clean: detector B was multi's only catch
   });
 });
+
+describe("hygiene-guard.sh, control 11: content presence fails toward NOT-present on a mode-only change (_R1#167 G1_BOUNCE 4, DEFECT 1)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-mode-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("a branch whose ONLY change is a file mode flip is genuine unmerged work, never flagged as a fossil", () => {
+    const { workDir } = buildRepo(root, "runway");
+    // CHANGELOG.md does not exist yet; add it at 644 on trunk first so the
+    // branch's only unique commit is a pure mode flip, not a mode flip
+    // bundled with a content add (which would be flagged for the content
+    // reason and wouldn't isolate DEFECT 1 at all).
+    writeFile(workDir, "CHANGELOG.md", "unreleased\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add changelog"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+
+    git(["checkout", "--quiet", "-b", "mode-only", "runway"], workDir);
+    execFileSync("chmod", ["+x", join(workDir, "CHANGELOG.md")]);
+    git(["add", "CHANGELOG.md"], workDir);
+    git(["commit", "--quiet", "-m", "mark changelog executable"], workDir);
+
+    // Confirm the fixture is what it claims to be: trunk has 100644,
+    // branch has 100755, before trusting the guard's verdict on it.
+    const trunkMode = git(["ls-tree", "runway", "CHANGELOG.md"], workDir).split(/\s+/)[0];
+    const branchMode = git(["ls-tree", "mode-only", "CHANGELOG.md"], workDir).split(/\s+/)[0];
+    expect(trunkMode).toBe("100644");
+    expect(branchMode).toBe("100755");
+
+    git(["checkout", "--quiet", "runway"], workDir);
+    const { status, stdout } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+  });
+
+  it("mutation: trusting apply --check's exit code alone (ignoring its stderr) calls the mode-only branch a fossil and hands out git branch -D", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "runway"], workDir);
+    writeFile(workDir, "CHANGELOG.md", "unreleased\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add changelog"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+
+    git(["checkout", "--quiet", "-b", "mode-only", "runway"], workDir);
+    execFileSync("chmod", ["+x", join(workDir, "CHANGELOG.md")]);
+    git(["add", "CHANGELOG.md"], workDir);
+    git(["commit", "--quiet", "-m", "mark changelog executable"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    // Control: the real, fixed guard passes (asserted above; re-confirmed
+    // here in the same session as the mutant for a direct before/after).
+    expect(runGuard(workDir).status).toBe(0);
+
+    // Mutation: the exact bug DEFECT 1 named. Trust apply --check's exit
+    // code alone by discarding its stderr instead of capturing and acting
+    // on it -- which is what the script did before the fix, and is
+    // reproduced here as the shipped fix's own anchor line, patched back
+    // to the pre-fix behavior.
+    const anchor =
+      'GIT_INDEX_FILE="$_index" _g apply --cached --reverse --check "$_patch" 2>"$_apply_stderr"\n' +
+      "  _apply_status=$?\n" +
+      '  _apply_warnings=$(cat "$_apply_stderr" 2>/dev/null)\n' +
+      '  rm -rf "$_scratch"\n' +
+      '  if [ "$_apply_status" -eq 0 ] && [ -z "$_apply_warnings" ]; then\n' +
+      "    return 0\n" +
+      "  fi\n" +
+      '  if [ "$_apply_status" -gt 1 ]; then\n' +
+      '    rm -f "$_wt_records" "$_wt_map" "$_branches"\n' +
+      '    _block "could not check whether $_ref reverse-applies onto $_trunk (git apply exited $_apply_status). Not treating an instrument failure as not-present."\n' +
+      "    exit 1\n" +
+      "  fi\n" +
+      "  return 1";
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
+    const mutated = source.replace(
+      anchor,
+      'GIT_INDEX_FILE="$_index" _g apply --cached --reverse --check "$_patch" 2>/dev/null\n  _apply_status=$?\n  rm -rf "$_scratch"\n  [ "$_apply_status" -eq 0 ] && return 0\n  return 1',
+    );
+    expect(mutated).not.toBe(source);
+
+    const mutantPath = join(root, "mutant-trust-exit-code.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutantResult = runGuard(workDir, "origin", mutantPath);
+    expect(mutantResult.status).toBe(1); // false refusal: mode-only now reads as a fossil
+    expect(mutantResult.stderr).toMatch(/mode-only/);
+    expect(mutantResult.stderr).toMatch(/git branch -D mode-only/); // the destructive remedy DEFECT 1 warned about
+  });
+});
+
+describe("hygiene-guard.sh, control 12: the dirty check reports UNKNOWN, never a false clean, when it cannot read git status (_R1#167 G1_BOUNCE 4, DEFECT 2)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-unknown-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("a worktree holding real uncommitted content, with a broken .git pointer, is reported UNKNOWN with no removal command, and still refuses", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "fix/corrupt-leftover"], workDir);
+    writeFile(workDir, "corrupt-leftover.txt", "leftover\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "leftover fix"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const wtPath = join(root, "wt-corrupt");
+    git(["worktree", "add", "--quiet", wtPath, "fix/corrupt-leftover"], workDir);
+    squashMergeToTrunk(workDir, "runway", "fix/corrupt-leftover");
+    git(["fetch", "--quiet", "origin"], workDir);
+
+    // Real, uncommitted content in the worktree, written before the .git
+    // pointer is corrupted (the write itself needs a working filesystem,
+    // not a working git).
+    writeFile(wtPath, "scratch-note.txt", "real uncommitted content\n");
+
+    // Corrupt the linked worktree's .git pointer file, the exact shape
+    // Overwatch's own fleet finding hit: a worktree whose gitdir the
+    // repository can no longer resolve.
+    writeFileSync(join(wtPath, ".git"), "gitdir: /nonexistent/broken-gitdir\n");
+
+    // Confirm the fixture is what it claims to be: git status genuinely
+    // cannot read this worktree, before trusting the guard's verdict on it.
+    expect(() => git(["status", "--porcelain"], wtPath)).toThrow();
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/UNKNOWN dirty-state/);
+    expect(stderr).toMatch(/wt-corrupt/);
+    // No removal command anywhere in the printed message for this item.
+    expect(stderr).not.toMatch(/git worktree remove --force .*wt-corrupt/);
+  });
+
+  it("mutation: piping git status into awk, the pre-fix shape, reads the corrupted worktree's unreadable state as zero uncommitted changes", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "fix/corrupt-leftover-2"], workDir);
+    writeFile(workDir, "corrupt-leftover-2.txt", "leftover\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "leftover fix"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const wtPath = join(root, "wt-corrupt-2");
+    git(["worktree", "add", "--quiet", wtPath, "fix/corrupt-leftover-2"], workDir);
+    squashMergeToTrunk(workDir, "runway", "fix/corrupt-leftover-2");
+    git(["fetch", "--quiet", "origin"], workDir);
+    writeFile(wtPath, "scratch-note.txt", "real uncommitted content\n");
+    writeFileSync(join(wtPath, ".git"), "gitdir: /nonexistent/broken-gitdir\n");
+
+    // Control: the real, fixed guard reports UNKNOWN (asserted in full
+    // above; re-confirmed here in the same session as the mutant).
+    expect(runGuard(workDir).stderr).toMatch(/UNKNOWN dirty-state/);
+
+    // Mutation: the exact pre-fix shape. `status --porcelain` piped
+    // directly into awk means the guard's only readable signal is awk's
+    // own exit status (always 0) counting an empty stream (because
+    // status's stderr, which says the repository is unreadable, went to
+    // /dev/null and its own nonzero exit was never read by anything).
+    // Reproduced here as a standalone primitive, the same pattern this
+    // file already uses for the forward-form and piped-exit-code
+    // mutations, rather than a live multi-line edit of the shipped
+    // function.
+    const buggyCountDirty = (wt: string): number => {
+      try {
+        const out = execFileSync("sh", ["-c", `git -C "${wt}" status --porcelain 2>/dev/null | awk 'NF{c++} END{print c+0}'`], {
+          encoding: "utf8",
+        });
+        return Number(out.trim());
+      } catch {
+        return -1;
+      }
+    };
+    expect(buggyCountDirty(wtPath)).toBe(0); // false clean: git status's own fatal exit never surfaces
+  });
+});
+
+describe("hygiene-guard.sh, control 13: a shallow clone refuses explicitly rather than resolving a fabricated install point (_R1#167 G1_BOUNCE 4, DEFECT 3)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-shallow-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("refuses and says 'shallow', and the raw git walk a resolver would otherwise trust lands on a commit after the real install commit, not on it", () => {
+    const { originDir, workDir } = buildRepo(root, "runway", false);
+    const installSha = installGuardMarker(workDir, "runway");
+
+    for (let i = 0; i < 3; i++) {
+      writeFile(workDir, `filler-${i}.txt`, `filler ${i}\n`);
+      git(["add", "."], workDir);
+      git(["commit", "--quiet", "-m", `filler ${i}`], workDir);
+    }
+    git(["push", "--quiet", "origin", "runway"], workDir);
+
+    const shallowDir = join(root, "shallow-clone");
+    execFileSync("git", GIT_IDENTITY.concat(["clone", "--quiet", "--depth", "1", `file://${originDir}`, shallowDir]), {
+      cwd: root,
+      encoding: "utf8",
+      env: ISOLATED_GIT_ENV,
+    });
+
+    // Confirm the fixture is what it claims to be: genuinely shallow,
+    // before trusting the guard's verdict on it.
+    expect(git(["rev-parse", "--is-shallow-repository"], shallowDir)).toBe("true");
+
+    // The raw walk _resolve_install_sha performs, run directly against the
+    // shallow clone: the parentless graft commit has no parent to diff
+    // against, so every path git can see in its tree, including
+    // guard-path, reads as "added" AT THE GRAFT, not at the real,
+    // unreachable commit that actually added it. own-hands reproduction of
+    // the mechanism QA named, not a repeat of QA's own claim.
+    const fabricatedSha = git(
+      ["log", "origin/runway", "--diff-filter=A", "--format=%H", "--", "scripts/hygiene-guard.sh"],
+      shallowDir,
+    );
+    expect(fabricatedSha).not.toBe("");
+    expect(fabricatedSha).not.toBe(installSha); // wrong-but-plausible: NOT the real install commit
+
+    // Control: the real, fixed guard refuses on shallow before ever
+    // running that walk for a verdict.
+    const { status, stderr } = runGuard(shallowDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/shallow/i);
+  });
+
+  it("mutation: disabling the shallow check removes the only thing standing between this fixture and a fabricated install point", () => {
+    const { originDir, workDir } = buildRepo(root, "runway", false);
+    installGuardMarker(workDir, "runway");
+    for (let i = 0; i < 3; i++) {
+      writeFile(workDir, `filler-${i}.txt`, `filler ${i}\n`);
+      git(["add", "."], workDir);
+      git(["commit", "--quiet", "-m", `filler ${i}`], workDir);
+    }
+    git(["push", "--quiet", "origin", "runway"], workDir);
+
+    const shallowDir = join(root, "shallow-clone-2");
+    execFileSync("git", GIT_IDENTITY.concat(["clone", "--quiet", "--depth", "1", `file://${originDir}`, shallowDir]), {
+      cwd: root,
+      encoding: "utf8",
+      env: ISOLATED_GIT_ENV,
+    });
+    expect(git(["rev-parse", "--is-shallow-repository"], shallowDir)).toBe("true");
+
+    // Control: the real, fixed guard refuses for the shallow reason.
+    expect(runGuard(shallowDir).stderr).toMatch(/shallow/i);
+
+    const anchor = 'if [ "$_is_shallow" = "true" ]; then';
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1);
+    const mutated = source.replace(anchor, "if false; then");
+    expect(mutated).not.toBe(source);
+
+    const mutantPath = join(root, "mutant-no-shallow-check.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutantResult = runGuard(shallowDir, "origin", mutantPath);
+    // The specific thing this control checks: disabling the guard removes
+    // the shallow refusal. It no longer stops here for that reason -- the
+    // walk proven fabricated above is left free to run.
+    expect(mutantResult.stderr).not.toMatch(/shallow/i);
+  });
+});
+
+describe("hygiene-guard.sh, control 14: an empty-commit branch is never described as already-in-trunk (_R1#167 G1_BOUNCE 4, DEFECT 4)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-empty-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("a branch whose only commit is `git commit --allow-empty` is left alone, not called already-in-trunk", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "empty-commit"], workDir);
+    git(["commit", "--quiet", "--allow-empty", "-m", "empty"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stdout } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+  });
+
+  it("mutation: the pre-fix empty-diff shortcut calls an empty-commit branch already-in-trunk and recommends deleting it", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "empty-commit-2"], workDir);
+    git(["commit", "--quiet", "--allow-empty", "-m", "empty"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    // Control: the real, fixed guard stays silent.
+    expect(runGuard(workDir).status).toBe(0);
+
+    // Mutation: DEFECT 4's exact pre-fix shape -- an empty diff read as
+    // "content is present" instead of "nothing to compare".
+    const anchor =
+      '  if [ ! -s "$_patch" ]; then\n' +
+      '    rm -rf "$_scratch"\n' +
+      "    # DEFECT 4 (_R1#167 G1_BOUNCE 4): an empty diff between the branch and\n" +
+      "    # its own merge-base with trunk means the branch's unique commits made\n" +
+      "    # NO content change at all (e.g. `git commit --allow-empty`). That is\n" +
+      "    # not evidence trunk already contains the branch's work -- there is no\n" +
+      "    # work to compare. The old shortcut returned 0 here and the BLOCK line\n" +
+      '    # said "already in $TRUNK_REF", which is false: nothing was ever\n' +
+      "    # contributed. Treat it as not-content-present; ahead-count already\n" +
+      "    # excludes the zero-commit fresh-branch case upstream of this call, and\n" +
+      "    # a real zero-diff duplicate is detector A's job, not this shortcut's.\n" +
+      "    # This shortcut is reached only when `git diff` above exited 0, so an\n" +
+      "    # empty patch here is a genuine, trusted negative, never a failure.\n" +
+      "    return 1\n" +
+      "  fi";
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
+    const mutated = source.replace(
+      anchor,
+      '  if [ ! -s "$_patch" ]; then\n    rm -rf "$_scratch"\n    return 0 # pre-fix: empty diff read as content-present\n  fi',
+    );
+    expect(mutated).not.toBe(source);
+
+    const mutantPath = join(root, "mutant-empty-diff-present.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutantResult = runGuard(workDir, "origin", mutantPath);
+    expect(mutantResult.status).toBe(1); // false refusal
+    expect(mutantResult.stderr).toMatch(/empty-commit-2/);
+    expect(mutantResult.stderr).toMatch(/already in .*\(detected via git cherry|reverse-apply\)/);
+  });
+});
+
+describe("hygiene-guard.sh, control 15: negative-control suite, every false-refusal shape asserted in one place (_R1#167 G1_BOUNCE 4)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-negctrl-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("mode-only change: silent", () => {
+    const { workDir } = buildRepo(root, "runway");
+    writeFile(workDir, "CHANGELOG.md", "unreleased\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add changelog"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+
+    git(["checkout", "--quiet", "-b", "neg/mode-only", "runway"], workDir);
+    execFileSync("chmod", ["+x", join(workDir, "CHANGELOG.md")]);
+    git(["add", "CHANGELOG.md"], workDir);
+    git(["commit", "--quiet", "-m", "mark executable"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    expect(runGuard(workDir).status).toBe(0);
+  });
+
+  it("empty commit: silent", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "neg/empty"], workDir);
+    git(["commit", "--quiet", "--allow-empty", "-m", "empty"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    expect(runGuard(workDir).status).toBe(0);
+  });
+
+  it("rename-only, no content change: silent", () => {
+    const { workDir } = buildRepo(root, "runway");
+    writeFile(workDir, "old-name.txt", "same content, never changes\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add old-name.txt"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+
+    git(["checkout", "--quiet", "-b", "neg/rename-only", "runway"], workDir);
+    git(["mv", "old-name.txt", "new-name.txt"], workDir);
+    git(["commit", "--quiet", "-m", "rename only"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    expect(runGuard(workDir).status).toBe(0);
+  });
+
+  it("pure whitespace change: silent", () => {
+    const { workDir } = buildRepo(root, "runway");
+    writeFile(workDir, "ws.txt", "line one\nline two\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add ws.txt"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+
+    git(["checkout", "--quiet", "-b", "neg/whitespace", "runway"], workDir);
+    writeFile(workDir, "ws.txt", "line one \nline two\n"); // trailing space added
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "trailing whitespace"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    expect(runGuard(workDir).status).toBe(0);
+  });
+
+  it("CRLF-only line-ending change: silent", () => {
+    const { workDir } = buildRepo(root, "runway");
+    writeFile(workDir, "crlf.txt", "line one\nline two\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add crlf.txt"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+
+    git(["checkout", "--quiet", "-b", "neg/crlf", "runway"], workDir);
+    writeFile(workDir, "crlf.txt", "line one\r\nline two\r\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "CRLF line endings"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    expect(runGuard(workDir).status).toBe(0);
+  });
+
+  it("unmerged binary file: silent", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "neg/binary"], workDir);
+    writeFileSync(join(workDir, "blob.bin"), Buffer.from([0, 1, 2, 3, 255, 254, 253, 0, 0, 0]));
+    git(["add", "blob.bin"], workDir);
+    git(["commit", "--quiet", "-m", "add binary blob"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    expect(runGuard(workDir).status).toBe(0);
+  });
+
+  it("convergent edit (branch and trunk independently reach the same line value): NOT asserted silent -- documented, not a defect", () => {
+    // Unlike the shapes above, this one is not a false refusal: if the
+    // branch's only change is a line that trunk also, separately, changed
+    // to the identical value, trunk genuinely already holds everything the
+    // branch contributes. Disposing of the branch loses nothing real. This
+    // test exists so the next person who touches a detector sees this
+    // case was considered and is expected to be flagged, not silently
+    // broken into silence.
+    const { workDir } = buildRepo(root, "runway");
+    writeFile(workDir, "shared-value.txt", "original\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add shared-value.txt"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+
+    git(["checkout", "--quiet", "-b", "neg/convergent"], workDir);
+    writeFile(workDir, "shared-value.txt", "converged\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "branch converges independently"], workDir);
+
+    git(["checkout", "--quiet", "runway"], workDir);
+    writeFile(workDir, "shared-value.txt", "converged\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "trunk converges independently"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+    git(["fetch", "--quiet", "origin"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/neg\/convergent/);
+  });
+});
+
+/**
+ * A `git` PATH shim that fails exactly ONE named subcommand and passes
+ * everything else through to the real git binary untouched. Overwatch's
+ * actuator (_R1#167): "For every check, write a second control that BREAKS
+ * THE INSTRUMENT rather than changing the input."
+ *
+ * TP's own first shim had a bug worth not repeating: scanning for the
+ * subcommand by shifting the real argument list consumes the `-C <path>`
+ * pair, then execs git without it, so the shim silently runs in the WRONG
+ * repository and returns a real, plausible-looking answer from somewhere
+ * else -- a broken instrument that still looks trustworthy, in the tool
+ * built to catch exactly that. This scans a loop variable over a COPY of
+ * "$@" to find the subcommand, and execs the ORIGINAL "$@", untouched, to
+ * the real binary either way.
+ */
+function makeGitFailShim(root: string, failSubcommand: string, realGit: string): string {
+  const shimDir = join(root, "git-shim");
+  mkdirSync(shimDir, { recursive: true });
+  const shimPath = join(shimDir, "git");
+  const script = `#!/bin/sh
+_target='${failSubcommand}'
+_real='${realGit}'
+_sub=""
+_skip=0
+for _a in "$@"; do
+  if [ "$_skip" = "1" ]; then
+    _skip=0
+    continue
+  fi
+  case "$_a" in
+    -C|-c)
+      _skip=1
+      continue
+      ;;
+    -*)
+      continue
+      ;;
+    *)
+      _sub="$_a"
+      break
+      ;;
+  esac
+done
+if [ "$_sub" = "$_target" ]; then
+  echo "git-fail-shim: simulated failure for '$_sub'" >&2
+  exit 111
+fi
+exec "$_real" "$@"
+`;
+  writeFileSync(shimPath, script);
+  execFileSync("chmod", ["+x", shimPath]);
+  return shimDir;
+}
+
+/** Runs the real, shipped guard with exactly one named git subcommand broken via PATH shim. */
+function runGuardFaultInjected(cwd: string, failSubcommand: string, root: string, realGit: string): GuardResult {
+  const shimDir = makeGitFailShim(root, failSubcommand, realGit);
+  const env = { ...ISOLATED_GIT_ENV, PATH: `${shimDir}:${process.env.PATH ?? ""}` };
+  try {
+    const stdout = execFileSync("sh", [SCRIPT_PATH, cwd, "origin"], { cwd, encoding: "utf8", env });
+    return { status: 0, stdout, stderr: "" };
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; status?: number };
+    return { status: e.status ?? -1, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
+  }
+}
+
+describe("hygiene-guard.sh, control 16: fault injection, every check refuses rather than reporting a value when its own git command fails (Overwatch actuator, _R1#167 G1_BOUNCE)", () => {
+  let root: string;
+  let realGit: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-fault-")));
+    realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  /**
+   * One fixture, built once per test with the REAL git (never the shim),
+   * carrying: two cherry-only fossils (sequential appends to the same
+   * file), one reverse-apply-only fossil (a multi-commit squash), one
+   * content-present branch checked out into its OWN registered worktree so
+   * a broken `status` has something to fail on, one real unmerged branch
+   * (negative control), and all four shapes TP confirmed are already
+   * correct today (mode-only, rename-only, whitespace-only, CRLF-only),
+   * which must stay non-destructive even when an instrument breaks.
+   */
+  function buildFaultFixture() {
+    const { workDir } = buildRepo(root, "runway");
+
+    writeFile(workDir, "shared.txt", "");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "seed shared.txt"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+    let content = "";
+    for (let i = 1; i <= 2; i++) {
+      const branch = `fossil-${i}`;
+      git(["checkout", "--quiet", "-b", branch], workDir);
+      content += `line ${i}\n`;
+      writeFile(workDir, "shared.txt", content);
+      git(["add", "."], workDir);
+      git(["commit", "--quiet", "-m", `append ${i}`], workDir);
+      git(["checkout", "--quiet", "runway"], workDir);
+      git(["pull", "--quiet", "origin", "runway"], workDir);
+      git(["merge", "--quiet", "--squash", branch], workDir);
+      git(["commit", "--quiet", "-m", `squash ${branch}`], workDir);
+      git(["push", "--quiet", "origin", "runway"], workDir);
+    }
+
+    git(["checkout", "--quiet", "-b", "multi"], workDir);
+    writeFile(workDir, "multi.txt", "a\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "multi 1"], workDir);
+    writeFile(workDir, "multi.txt", "a\nb\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "multi 2"], workDir);
+    squashMergeToTrunk(workDir, "runway", "multi");
+
+    git(["checkout", "--quiet", "-b", "fix/wt-content-present"], workDir);
+    writeFile(workDir, "wt-content.txt", "leftover\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "wt leftover"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    const wtPath = join(root, "wt-content-present");
+    git(["worktree", "add", "--quiet", wtPath, "fix/wt-content-present"], workDir);
+    squashMergeToTrunk(workDir, "runway", "fix/wt-content-present");
+
+    git(["checkout", "--quiet", "-b", "live-work"], workDir);
+    writeFile(workDir, "live-work.txt", "never merged\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "real unmerged work"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    writeFile(workDir, "CHANGELOG.md", "unreleased\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add changelog"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+    git(["checkout", "--quiet", "-b", "neg/mode-only", "runway"], workDir);
+    execFileSync("chmod", ["+x", join(workDir, "CHANGELOG.md")]);
+    git(["add", "CHANGELOG.md"], workDir);
+    git(["commit", "--quiet", "-m", "mark executable"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    writeFile(workDir, "old-name.txt", "same content, never changes\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add old-name.txt"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+    git(["checkout", "--quiet", "-b", "neg/rename-only", "runway"], workDir);
+    git(["mv", "old-name.txt", "new-name.txt"], workDir);
+    git(["commit", "--quiet", "-m", "rename only"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    writeFile(workDir, "ws.txt", "line one\nline two\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add ws.txt"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+    git(["checkout", "--quiet", "-b", "neg/whitespace", "runway"], workDir);
+    writeFile(workDir, "ws.txt", "line one \nline two\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "trailing whitespace"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    writeFile(workDir, "crlf.txt", "line one\nline two\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add crlf.txt"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+    git(["checkout", "--quiet", "-b", "neg/crlf", "runway"], workDir);
+    writeFile(workDir, "crlf.txt", "line one\r\nline two\r\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "CRLF line endings"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    return { workDir };
+  }
+
+  it("baseline: the unshimmed, real guard refuses on this fixture (control before fault injection)", () => {
+    const { workDir } = buildFaultFixture();
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/fossil-1|fossil-2|multi|wt-content-present/);
+    // The four already-correct shapes stay silent on the healthy guard too.
+    expect(stderr).not.toMatch(/branch -D neg\/mode-only/);
+    expect(stderr).not.toMatch(/branch -D neg\/rename-only/);
+    expect(stderr).not.toMatch(/branch -D neg\/whitespace/);
+    expect(stderr).not.toMatch(/branch -D neg\/crlf/);
+  });
+
+  it.each([
+    "for-each-ref",
+    "rev-list",
+    "merge-base",
+    "worktree",
+    "status",
+    "read-tree",
+    "cherry",
+    "apply",
+    "diff",
+    "log",
+    "rev-parse",
+  ])("breaking '%s' refuses rather than reporting a false clean or a false destructive verdict", (failCmd) => {
+    const { workDir } = buildFaultFixture();
+    const result = runGuardFaultInjected(workDir, failCmd, root, realGit);
+
+    // The one universal assertion: a broken instrument never produces exit
+    // 0. Every one of these eleven commands sits on a path the guard needs
+    // in order to answer honestly; TP's own fault injection against
+    // 57b291b proved for-each-ref, rev-list, and merge-base collapse to a
+    // false "clean" (exit 0) here, so this is not a redundant check.
+    expect(result.status).not.toBe(0);
+
+    // The amplifier TP found: breaking diff turned the four already-correct
+    // shapes destructive, because an empty (failed) patch used to read as
+    // "content present". None of the four may ever get a real disposal
+    // command under ANY of these eleven fault injections, not just diff.
+    expect(result.stderr).not.toMatch(/branch -D neg\/mode-only/);
+    expect(result.stderr).not.toMatch(/branch -D neg\/rename-only/);
+    expect(result.stderr).not.toMatch(/branch -D neg\/whitespace/);
+    expect(result.stderr).not.toMatch(/branch -D neg\/crlf/);
+  });
+});

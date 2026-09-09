@@ -158,14 +158,39 @@ if [ "$_trunk_status" -ne 0 ] || [ -z "$TRUNK_BRANCH" ]; then
 fi
 TRUNK_REF="$_REMOTE/$TRUNK_BRANCH"
 
+# --- refuse on a shallow clone rather than resolve a fabricated install ----
+# DEFECT 3 (_R1#167 G1_BOUNCE 4): in a --depth 1 clone, the grafted boundary
+# commit is parentless, so the install-point walk below matches guard-path
+# on the GRAFT, not on the real add commit further back that the shallow
+# history can't reach. That is worse than the documented "can't find it,
+# refuse" fallback: it does not fail to find an install point, it finds a
+# WRONG one and continues to govern every branch against it. Detected and
+# refused explicitly, before the walk ever runs, rather than trusted to
+# surface as a side effect of the walk failing (it doesn't fail; it lies).
+_is_shallow=$(_g rev-parse --is-shallow-repository 2>/dev/null)
+_shallow_status=$?
+if [ "$_shallow_status" -ne 0 ]; then
+  _block "could not determine shallow-clone status for $_REPO (git rev-parse --is-shallow-repository failed, exit $_shallow_status). Not assuming a full clone. No disposability check ran."
+  exit 1
+fi
+if [ "$_is_shallow" = "true" ]; then
+  _block "refusing: $_REPO is a shallow clone. Install-point resolution walks trunk history for '$_GUARD_PATH' and a shallow clone can silently resolve a grafted boundary commit as if it were the real add commit. No disposability check ran."
+  exit 1
+fi
+
 # --- resolve install point: first commit on trunk to add guard-path --------
 _resolve_install_sha() {
   # Prints the SHA of the earliest commit in TRUNK_REF's history that adds
   # _GUARD_PATH, on stdout. Returns 1 if no such commit exists (guard-path
-  # was never added to trunk, or that history is unreachable, e.g. a
-  # shallow clone). --diff-filter=A catches the ADD; a file that was later
-  # renamed away and back is not a case this guard needs to handle, since
-  # guard-path names THIS script's own current location.
+  # was never added to trunk). Piped through tail, so this function's own
+  # exit status is tail's, not git log's -- safe here only because the
+  # shallow-clone case that would otherwise make this walk resolve a wrong
+  # SHA is refused above before this ever runs, and on a full clone a
+  # failed `git log` here produces no output, which the empty-string check
+  # below already treats as unresolved and refuses on (fail closed either
+  # way). --diff-filter=A catches the ADD; a file later renamed away and
+  # back is not a case this guard needs to handle, since guard-path names
+  # THIS script's own current location.
   _sha=$(_g log "$TRUNK_REF" --diff-filter=A --format=%H -- "$_GUARD_PATH" 2>/dev/null | tail -1)
   [ -n "$_sha" ] || return 1
   printf '%s\n' "$_sha"
@@ -184,15 +209,49 @@ _branch_governed() {
   # trunk at or after INSTALL_SHA (governed: check it for disposability),
   # 1 if it forked before (ungoverned: skip entirely, dirty or not, fossil
   # or not -- a guard that binds retroactively is the enforceability defect
-  # this scoping exists to fix). A branch with no merge-base at all is
-  # treated as ungoverned, same conservative direction as "predates install":
-  # this guard's job is prevention going forward, not adjudicating unrelated
-  # histories.
+  # this scoping exists to fix). A branch with genuinely no merge-base at
+  # all (git merge-base's documented exit 1, unrelated histories) is
+  # treated as ungoverned, same conservative direction as "predates
+  # install": this guard's job is prevention going forward, not
+  # adjudicating unrelated histories.
+  #
+  # ONE CONTRACT (Overwatch actuator, _R1#167, applied fleet-wide across
+  # this script, not just here): every git invocation whose failure could
+  # change the verdict has its exit status checked, and an unresolvable
+  # state REFUSES rather than silently reads as a value. A gate degrades
+  # toward refuse, never toward permit. Before this fix, ANY merge-base
+  # failure -- corrupted ref, missing object, or any other instrument
+  # failure, not just "no common ancestor" -- read as "ungoverned" and
+  # skipped the branch with no report to anyone, which TP's own fault
+  # injection proved collapses the entire guard to a false "clean" the
+  # moment merge-base breaks for any reason. git merge-base's own
+  # documented exit codes distinguish the two cases: exit 1 with no output
+  # means genuinely no common ancestor (a real, expected negative);
+  # anything else (128 for a bad revision, or any other nonzero) is the
+  # tool failing to answer the question at all. Only exit 1 with empty
+  # output is treated as ungoverned; every other nonzero refuses the whole
+  # run, naming the branch and the command that failed.
   _ref=$1
   _trunk=$2
   _fork=$(_g merge-base "$_ref" "$_trunk" 2>/dev/null)
-  [ -n "$_fork" ] || return 1
+  _fork_status=$?
+  if [ "$_fork_status" -eq 1 ] && [ -z "$_fork" ]; then
+    return 1
+  fi
+  if [ "$_fork_status" -ne 0 ] || [ -z "$_fork" ]; then
+    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    _block "could not determine $_ref's fork point against $_trunk (git merge-base exited $_fork_status, not the documented 'no common ancestor' exit of 1). Not treating an instrument failure as ungoverned. No disposability check ran."
+    exit 1
+  fi
+
   _g merge-base --is-ancestor "$INSTALL_SHA" "$_fork" 2>/dev/null
+  _anc_status=$?
+  if [ "$_anc_status" -gt 1 ]; then
+    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    _block "could not determine whether $_ref's fork point ($_fork) is governed (git merge-base --is-ancestor exited $_anc_status, not 0 or 1). Not treating an instrument failure as ungoverned. No disposability check ran."
+    exit 1
+  fi
+  [ "$_anc_status" -eq 0 ]
 }
 
 # --- detector A: git cherry, patch-id equivalence -----------------------
@@ -212,13 +271,26 @@ _is_cherry_fossil() {
   # $1 = candidate ref, $2 = trunk ref. Returns 0 if every commit unique to
   # $1 has a patch-id equivalent already in $2 (git cherry prints "- <sha>"
   # for those). Returns 1 if $1 has at least one commit with no equivalent
-  # (a "+ <sha>" line), or if git cherry itself fails. Caller must already
-  # have confirmed $1 is ahead of $2 -- a zero-commit branch produces no
-  # cherry output at all, which is indistinguishable from "all equivalent"
-  # by output alone.
+  # (a "+ <sha>" line). Caller must already have confirmed $1 is ahead of
+  # $2 -- a zero-commit branch produces no cherry output at all, which is
+  # indistinguishable from "all equivalent" by output alone.
+  #
+  # git cherry's own exit status is 0 for any completed comparison,
+  # regardless of whether it finds "+" or "-" lines or no lines at all; it
+  # is nonzero only when it genuinely fails to run (bad revision, and the
+  # like). So unlike a detector with a documented negative exit code,
+  # ANY nonzero exit here is an instrument failure, never a valid "no"
+  # answer. Refuse rather than silently fall through to detector B as if
+  # this detector had legitimately found nothing.
   _ref=$1
   _trunk=$2
-  _out=$(_g cherry "$_trunk" "$_ref" 2>/dev/null) || return 1
+  _out=$(_g cherry "$_trunk" "$_ref" 2>/dev/null)
+  _cherry_status=$?
+  if [ "$_cherry_status" -ne 0 ]; then
+    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    _block "could not run git cherry for $_ref against $_trunk (exit $_cherry_status). Not treating an instrument failure as detector A finding nothing."
+    exit 1
+  fi
   printf '%s\n' "$_out" | grep -q '^+' && return 1
   return 0
 }
@@ -240,38 +312,109 @@ _is_cherry_fossil() {
 _is_reverse_apply_fossil() {
   # $1 = candidate ref, $2 = trunk ref. Returns 0 if every change $1 makes
   # relative to its merge-base with $2 is already present in $2's tree.
+  #
+  # ONE CONTRACT (Overwatch actuator, _R1#167): every git call below has
+  # its exit status checked. merge-base's exit 1 with empty output is its
+  # documented "no common ancestor" negative and is trusted; every other
+  # failure, from merge-base, diff, read-tree, or apply, refuses the whole
+  # run rather than silently reporting "not present" and letting the
+  # branch through unflagged, or (for apply's DEFECT 1 case) reporting
+  # "present" and handing out a destructive disposal command. TP's own
+  # fault injection proved diff failing turns an empty patch file into a
+  # false "content present" for FOUR shapes that must stay silent
+  # (mode-only, rename-only, whitespace-only, CRLF-only, binary-only), so
+  # instrument failure here must never be read as the DEFECT 4 empty-diff
+  # case below, which requires a genuinely successful, genuinely empty diff.
   _ref=$1
   _trunk=$2
 
   _base=$(_g merge-base "$_ref" "$_trunk" 2>/dev/null)
   _base_status=$?
-  [ "$_base_status" -eq 0 ] && [ -n "$_base" ] || return 1
+  if [ "$_base_status" -eq 1 ] && [ -z "$_base" ]; then
+    return 1 # documented "no common ancestor": a real negative, not a failure
+  fi
+  if [ "$_base_status" -ne 0 ] || [ -z "$_base" ]; then
+    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    _block "could not determine $_ref's merge-base with $_trunk (git merge-base exited $_base_status). Not treating an instrument failure as not-present."
+    exit 1
+  fi
 
-  _scratch=$(mktemp -d 2>/dev/null) || return 1
+  _scratch=$(mktemp -d 2>/dev/null) || {
+    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    _block "could not create a scratch directory to check $_ref's content presence."
+    exit 1
+  }
   _patch="$_scratch/patch.diff"
   _index="$_scratch/index"
+  _apply_stderr="$_scratch/apply.stderr"
 
   _g diff "$_base" "$_ref" >"$_patch" 2>/dev/null
+  _diff_status=$?
+  if [ "$_diff_status" -ne 0 ]; then
+    # Exit status checked directly (not piped): a failed diff must not be
+    # read as an empty, all-present patch (DEFECT 4's own shortcut, right
+    # below, requires a genuinely successful empty diff, not a failed one).
+    rm -rf "$_scratch"
+    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    _block "could not diff $_ref against its merge-base $_base with $_trunk (git diff exited $_diff_status). Not treating an instrument failure as not-present."
+    exit 1
+  fi
 
   if [ ! -s "$_patch" ]; then
     rm -rf "$_scratch"
-    return 0 # empty diff: nothing to reverse-apply, content is present
+    # DEFECT 4 (_R1#167 G1_BOUNCE 4): an empty diff between the branch and
+    # its own merge-base with trunk means the branch's unique commits made
+    # NO content change at all (e.g. `git commit --allow-empty`). That is
+    # not evidence trunk already contains the branch's work -- there is no
+    # work to compare. The old shortcut returned 0 here and the BLOCK line
+    # said "already in $TRUNK_REF", which is false: nothing was ever
+    # contributed. Treat it as not-content-present; ahead-count already
+    # excludes the zero-commit fresh-branch case upstream of this call, and
+    # a real zero-diff duplicate is detector A's job, not this shortcut's.
+    # This shortcut is reached only when `git diff` above exited 0, so an
+    # empty patch here is a genuine, trusted negative, never a failure.
+    return 1
   fi
 
   GIT_INDEX_FILE="$_index" _g read-tree "$_trunk" 2>/dev/null
   _read_status=$?
   if [ "$_read_status" -ne 0 ]; then
     rm -rf "$_scratch"
-    return 1
+    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    _block "could not read $_trunk into a scratch index to check $_ref (git read-tree exited $_read_status). Not treating an instrument failure as not-present."
+    exit 1
   fi
 
   # Writes nothing to the working tree. GIT_INDEX_FILE pointed at the
   # scratch index is the whole point: a caller's real staged changes are
   # never touched by this check.
-  GIT_INDEX_FILE="$_index" _g apply --cached --reverse --check "$_patch" 2>/dev/null
+  #
+  # DEFECT 1 (_R1#167 G1_BOUNCE 4), worst one: a branch whose only change
+  # is a file mode flip (e.g. chmod +x, 100644 -> 100755) is genuine,
+  # unmerged work. `git apply --check` WARNS about the mode divergence on
+  # stderr and still exits 0, because the check is content-only by
+  # default. Trusting the exit code alone called that a fossil and handed
+  # the caller `git branch -D`. Content presence must fail toward
+  # NOT-present: any stderr from this check, mode warning or otherwise,
+  # means the exit code is not trusted for this input, so the branch is
+  # reported as NOT content-present. A missed fossil leaves clutter; a
+  # false refusal here deletes real work.
+  #
+  # Exit 1 (apply's documented "does not apply") is a genuine negative.
+  # Anything higher is apply itself failing to evaluate the question,
+  # which refuses rather than silently reporting not-present.
+  GIT_INDEX_FILE="$_index" _g apply --cached --reverse --check "$_patch" 2>"$_apply_stderr"
   _apply_status=$?
+  _apply_warnings=$(cat "$_apply_stderr" 2>/dev/null)
   rm -rf "$_scratch"
-  [ "$_apply_status" -eq 0 ] && return 0
+  if [ "$_apply_status" -eq 0 ] && [ -z "$_apply_warnings" ]; then
+    return 0
+  fi
+  if [ "$_apply_status" -gt 1 ]; then
+    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    _block "could not check whether $_ref reverse-applies onto $_trunk (git apply exited $_apply_status). Not treating an instrument failure as not-present."
+    exit 1
+  fi
   return 1
 }
 
@@ -293,8 +436,27 @@ _is_content_present() {
   # work. An empty diff (or no cherry output) cannot tell the two apart on
   # its own: a brand-new branch just created off trunk looks the same as a
   # fossil to either detector. Commits-ahead can (_R1#167 G1_BOUNCE).
+  #
+  # ONE CONTRACT (Overwatch actuator, _R1#167): TP's own fault injection
+  # found this exact line is a global off-switch. The original code read
+  # `git rev-list --count` failing (empty output, any exit status) the
+  # SAME as "genuinely zero commits ahead" -- both make `[ -n "$_ahead" ]`
+  # false, so both `return 1` (skip this branch, nothing to check). A
+  # broken rev-list therefore silently skipped EVERY branch on EVERY call,
+  # collapsing the whole guard to a false "clean" with real fossils sitting
+  # in front of it -- worse than any single detector breaking, because this
+  # check runs before either detector ever gets a chance. Empty output (or
+  # a nonzero exit) is now treated as UNKNOWN, not zero: refuse, don't
+  # silently skip. A genuinely-resolved, genuinely-zero count is still the
+  # normal, silent "nothing to check yet" case.
   _ahead=$(_g rev-list --count "$_trunk..$_ref" 2>/dev/null)
-  [ -n "$_ahead" ] && [ "$_ahead" -gt 0 ] || return 1
+  _ahead_status=$?
+  if [ "$_ahead_status" -ne 0 ] || [ -z "$_ahead" ]; then
+    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    _block "could not determine how many commits $_ref is ahead of $_trunk (git rev-list --count exited $_ahead_status). Not treating an instrument failure as a fresh, nothing-to-check branch."
+    exit 1
+  fi
+  [ "$_ahead" -gt 0 ] || return 1
 
   # git cherry before reverse-apply: cheaper (no scratch index, no patch
   # file, no read-tree/apply forks) and it is the detector ruling-2's
@@ -313,9 +475,37 @@ _is_content_present() {
 }
 
 # --- cheap dirty check, always run before the expensive content check -------
+# DEFECT 2 (_R1#167 G1_BOUNCE 4): the prior version piped `git status
+# --porcelain` straight into awk. Piping means this function's exit status
+# was always awk's, never git status's, so a worktree with a broken .git
+# pointer (`fatal: not a git repository`, exit 128) was never distinguished
+# from a clean one -- its stderr went to /dev/null and awk happily counted
+# zero lines of an empty stream. The guard then read "0 uncommitted
+# changes" as clean and, if content-present, printed `git worktree remove
+# --force` for a worktree that in fact held real, unreadable content.
+# _count_dirty now sets _DIRTY_STATE to one of clean, dirty, or unknown,
+# and never pipes git status into anything: its own $? is read directly.
+_DIRTY_STATE=""
+_DIRTY_COUNT=0
 _count_dirty() {
-  # $1 = worktree path. Prints the count of git status --porcelain entries.
-  git -C "$1" status --porcelain 2>/dev/null | awk 'NF{c++} END{print c+0}'
+  # $1 = worktree path. Sets _DIRTY_STATE and _DIRTY_COUNT (globals, POSIX
+  # sh has no multi-value return). unknown must be treated by the caller
+  # exactly like DISPOSABLE-BUT-DIRTY: refuse, no removal command.
+  _wt=$1
+  _out=$(git -C "$_wt" status --porcelain 2>/dev/null)
+  _status=$?
+  if [ "$_status" -ne 0 ]; then
+    _DIRTY_STATE="unknown"
+    _DIRTY_COUNT=0
+    return
+  fi
+  if [ -z "$_out" ]; then
+    _DIRTY_STATE="clean"
+    _DIRTY_COUNT=0
+  else
+    _DIRTY_STATE="dirty"
+    _DIRTY_COUNT=$(printf '%s\n' "$_out" | grep -c .)
+  fi
 }
 
 # --- enumerate worktrees. git-common-dir, never directory position ---------
@@ -325,10 +515,27 @@ if [ -z "$_common_dir" ]; then
   exit 1
 fi
 
-_wt_porcelain=$(mktemp 2>/dev/null)
+_wt_porcelain=$(mktemp 2>/dev/null) || { _block "could not create a temp file for worktree enumeration."; exit 1; }
 git -C "$_common_dir" worktree list --porcelain >"$_wt_porcelain" 2>/dev/null
+_wt_list_status=$?
+if [ "$_wt_list_status" -ne 0 ]; then
+  # Checked directly, not left to fall through: a failed listing must not
+  # be read as "zero worktrees found."
+  rm -f "$_wt_porcelain"
+  _block "could not enumerate worktrees: 'git worktree list --porcelain' failed against $_common_dir (exit $_wt_list_status). Not treating a failed listing as zero worktrees. No disposability check ran."
+  exit 1
+fi
+if [ ! -s "$_wt_porcelain" ]; then
+  # ONE CONTRACT (Overwatch actuator): exit 0 with empty output is not the
+  # same claim as "zero worktrees" -- `git worktree list` always reports at
+  # least the main worktree the command is run from, so an entirely empty
+  # listing at exit 0 is the tool failing to answer, not a real repo state.
+  rm -f "$_wt_porcelain"
+  _block "'git worktree list --porcelain' against $_common_dir returned nothing, even the main worktree. Not treating an empty listing as zero worktrees. No disposability check ran."
+  exit 1
+fi
 
-_wt_records=$(mktemp 2>/dev/null)
+_wt_records=$(mktemp 2>/dev/null) || { rm -f "$_wt_porcelain"; _block "could not create a temp file for worktree records."; exit 1; }
 : >"$_wt_records"
 _TAB=$(printf '\t')
 
@@ -375,7 +582,7 @@ while IFS="$_TAB" read -r _path _branch _prune; do
 done <"$_wt_records"
 
 # Map of non-prunable, non-main worktree paths keyed by branch.
-_wt_map=$(mktemp 2>/dev/null)
+_wt_map=$(mktemp 2>/dev/null) || { rm -f "$_wt_records"; _block "could not create a temp file for the worktree/branch map."; exit 1; }
 : >"$_wt_map"
 while IFS="$_TAB" read -r _path _branch _prune; do
   [ -z "$_prune" ] || continue
@@ -385,8 +592,33 @@ while IFS="$_TAB" read -r _path _branch _prune; do
 done <"$_wt_records"
 
 # --- walk every local branch, decide disposability ---------------------------
-_branches=$(mktemp 2>/dev/null)
+_branches=$(mktemp 2>/dev/null) || { rm -f "$_wt_records" "$_wt_map"; _block "could not create a temp file for branch enumeration."; exit 1; }
 _g for-each-ref --format='%(refname:short)' refs/heads/ >"$_branches" 2>/dev/null
+_branches_status=$?
+if [ "$_branches_status" -ne 0 ]; then
+  # Same class as the worktree-list check above: a failed listing must
+  # refuse, not silently process zero branches as a clean repo.
+  rm -f "$_wt_records" "$_wt_map" "$_branches"
+  _block "could not enumerate local branches: 'git for-each-ref refs/heads/' failed in $_REPO (exit $_branches_status). Not treating a failed listing as zero branches. No disposability check ran."
+  exit 1
+fi
+if [ ! -s "$_branches" ]; then
+  # ONE CONTRACT (Overwatch actuator): TP's own fault injection proved this
+  # exact shape, `for-each-ref` exiting 0 with empty output, collapses the
+  # guard to a false "clean". Unlike worktree list, an empty branch list at
+  # exit 0 CAN be genuine (a repo where the only local branch is trunk
+  # itself, filtered out below before ever reaching this loop's body -- see
+  # "passes when the only branch is trunk itself"). Distinguish the two
+  # with an independent query: trunk is a local branch too whenever it is
+  # checked out, so if refs/heads/$TRUNK_BRANCH genuinely exists but
+  # for-each-ref reported NOTHING, not even trunk's own name, for-each-ref
+  # did not enumerate reliably.
+  if _g rev-parse --verify --quiet "refs/heads/$TRUNK_BRANCH" >/dev/null 2>&1; then
+    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    _block "'git for-each-ref refs/heads/' in $_REPO returned nothing, even though refs/heads/$TRUNK_BRANCH exists. Not treating an empty listing as zero branches. No disposability check ran."
+    exit 1
+  fi
+fi
 
 while IFS= read -r _branch; do
   [ -n "$_branch" ] || continue
@@ -396,13 +628,23 @@ while IFS= read -r _branch; do
   _wt_path=$(awk -F"$_TAB" -v b="$_branch" '$1==b{print $2; exit}' "$_wt_map")
 
   if [ -n "$_wt_path" ]; then
-    _dirty=$(_count_dirty "$_wt_path")
-    if [ "$_dirty" -gt 0 ]; then
-      if _is_content_present "$_branch" "$TRUNK_REF"; then
-        _block "worktree DISPOSABLE-BUT-DIRTY: $_branch ($_wt_path) already in $TRUNK_REF (detected via $_DETECTOR), holds $_dirty uncommitted change(s). No removal command. Its owner decides."
-      fi
-      continue
-    fi
+    _count_dirty "$_wt_path"
+    case "$_DIRTY_STATE" in
+      unknown)
+        # DEFECT 2: git status itself failed (e.g. a corrupt or unreadable
+        # .git pointer). Zero-dirty and cannot-measure-dirty must never
+        # render identically. Refused exactly like DISPOSABLE-BUT-DIRTY: no
+        # removal command, owner decides.
+        _block "worktree UNKNOWN dirty-state: $_branch ($_wt_path) -- git status could not be read (corrupt or unreadable .git). No removal command. Its owner decides."
+        continue
+        ;;
+      dirty)
+        if _is_content_present "$_branch" "$TRUNK_REF"; then
+          _block "worktree DISPOSABLE-BUT-DIRTY: $_branch ($_wt_path) already in $TRUNK_REF (detected via $_DETECTOR), holds $_DIRTY_COUNT uncommitted change(s). No removal command. Its owner decides."
+        fi
+        continue
+        ;;
+    esac
   fi
 
   if _is_content_present "$_branch" "$TRUNK_REF"; then
