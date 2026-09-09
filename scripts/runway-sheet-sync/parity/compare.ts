@@ -58,9 +58,17 @@ function toolPlannedFields(leaf: { derivedStatus: string; startDate: string | nu
  * Fails loudly the moment payloads.ts starts planning a field this
  * comparator still hardcodes to null. Checked two ways: a generic key on
  * the payload's own params, for an op that might carry the field directly,
- * and the updateWeekItemField convention, where `params.field` names which
- * WeekItem column is being written and `params.newValue` carries the
- * value.
+ * and `params.field` naming the guarded field, for any op at all.
+ *
+ * The second check is deliberately not tied to a specific op name.
+ * `params.field` names a WeekItem column under both the updateWeekItemField
+ * convention and the flag-for-review convention, and payloads.ts has no op
+ * where `field` means anything else. So the guard's premise, the tool
+ * never plans owner or resources, is broken by any payload carrying
+ * `params.field === "owner"` or `"resources"`, regardless of which op
+ * carries it, today or after a future op is added that reuses the same
+ * convention. Allowlisting a single op name is what let this guard miss
+ * the flag-for-review branch the first time.
  */
 export function assertToolNeverPlansField(payloads: SyncPayload[], field: "owner" | "resources"): void {
   for (const payload of payloads) {
@@ -70,9 +78,9 @@ export function assertToolNeverPlansField(payloads: SyncPayload[], field: "owner
         `PARITY INTEGRITY: payloads.ts now plans "${field}" via op "${payload.op}". toolPlannedFields' hardcoded null for "${field}" is stale, replace it with a real read of the tool's planning output before trusting this comparator.`
       );
     }
-    if (payload.op === "updateWeekItemField" && payload.params.field === field) {
+    if (payload.params.field === field) {
       throw new Error(
-        `PARITY INTEGRITY: payloads.ts now proposes writing "${field}" via updateWeekItemField. toolPlannedFields' hardcoded null for "${field}" is stale, replace it with a real read of the tool's planning output before trusting this comparator.`
+        `PARITY INTEGRITY: payloads.ts now proposes writing "${field}" via op "${payload.op}". toolPlannedFields' hardcoded null for "${field}" is stale, replace it with a real read of the tool's planning output before trusting this comparator.`
       );
     }
   }

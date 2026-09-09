@@ -311,16 +311,46 @@ describe("assertToolNeverPlansField, guards toolPlannedFields' hardcoded null ag
     expect(() => assertToolNeverPlansField([payload({})], "resources")).not.toThrow();
   });
 
-  it("FAILS when an updateWeekItemField payload proposes writing the guarded field", () => {
+  it("mutation A: FAILS when an updateWeekItemField payload proposes writing the guarded field", () => {
     const payloads = [payload({ params: { weekOf: "2026-06-01", weekItemTitle: "Kickoff call", field: "owner", newValue: "Lane", updatedBy: "sheet-sync:test" } })];
-    expect(() => assertToolNeverPlansField(payloads, "owner")).toThrow(/payloads\.ts now proposes writing "owner"/);
+    expect(() => assertToolNeverPlansField(payloads, "owner")).toThrow(/payloads\.ts now proposes writing "owner" via op "updateWeekItemField"/);
     expect(() => assertToolNeverPlansField(payloads, "resources")).not.toThrow();
   });
 
-  it("FAILS when any payload carries the guarded field directly on params, independent of op", () => {
+  it("mutation B: FAILS when any payload carries the guarded field directly on params, independent of op", () => {
     const payloads = [payload({ op: "createWeekItem", params: { clientSlug: "acme", resources: "CD: Lane" } })];
     expect(() => assertToolNeverPlansField(payloads, "resources")).toThrow(/payloads\.ts now plans "resources"/);
     expect(() => assertToolNeverPlansField(payloads, "owner")).not.toThrow();
+  });
+
+  it("mutation C: FAILS when a flag-for-review payload proposes writing the guarded field, the branch the op allowlist missed", () => {
+    // TP mutation finding, 2026-09-08: payloads.ts:110's flag-for-review
+    // branch also names its column via params.field, but the guard only
+    // ever checked op === "updateWeekItemField". A payload routing an
+    // owner/resources mismatch to flag-for-review instead of an
+    // auto-write reached exit 0 on the real Ammonia pair. The fix drops
+    // the op allowlist entirely: any op naming the guarded field via
+    // params.field is a hit.
+    const payloads = [
+      payload({ op: "flag-for-review", params: { weekItemId: "wi-1", field: "owner", sheetValue: "Lane", runwayValue: null, policy: "flag-for-review" } }),
+    ];
+    expect(() => assertToolNeverPlansField(payloads, "owner")).toThrow(/payloads\.ts now proposes writing "owner" via op "flag-for-review"/);
+    expect(() => assertToolNeverPlansField(payloads, "resources")).not.toThrow();
+  });
+
+  it("mutation D: FAILS when a flag-for-review payload proposes writing resources, same branch as mutation C with the other guarded field", () => {
+    const payloads = [
+      payload({ op: "flag-for-review", params: { weekItemId: "wi-1", field: "resources", sheetValue: "CD: Lane", runwayValue: null, policy: "flag-for-review" } }),
+    ];
+    expect(() => assertToolNeverPlansField(payloads, "resources")).toThrow(/payloads\.ts now proposes writing "resources" via op "flag-for-review"/);
+    expect(() => assertToolNeverPlansField(payloads, "owner")).not.toThrow();
+  });
+
+  it("control: addProject and createWeekItem payloads never carry params.field, so the dropped op allowlist creates no false positive", () => {
+    const addProjectPayload = payload({ op: "addProject", params: { clientSlug: "acme", name: "Acme", notes: "n", updatedBy: "sheet-sync:test" } });
+    const createWeekItemPayload = payload({ op: "createWeekItem", params: { clientSlug: "acme", projectName: "Acme", title: "t", status: "scheduled", category: "kickoff", notes: "", updatedBy: "sheet-sync:test" } });
+    expect(() => assertToolNeverPlansField([addProjectPayload, createWeekItemPayload], "owner")).not.toThrow();
+    expect(() => assertToolNeverPlansField([addProjectPayload, createWeekItemPayload], "resources")).not.toThrow();
   });
 
   it("computeParity on real Ammonia-shaped input calls the guard and does not throw, today", () => {
@@ -359,5 +389,12 @@ describe("assertToolNeverPlansField, guards toolPlannedFields' hardcoded null ag
       p.op === "updateWeekItemField" ? { ...p, params: { ...p.params, field: "owner" } } : p
     );
     expect(() => assertToolNeverPlansField(mutatedProbePayloads, "owner")).toThrow(/payloads\.ts now proposes writing "owner"/);
+  });
+
+  it("FAILS when the structural probe's own flag-for-review branch plans the guarded field, the exact shape mutations C/D exercise on the real Ammonia pair", () => {
+    const mutatedProbePayloads = buildPayloads(structuralProbeDiff(), "structural-probe-test").map((p) =>
+      p.op === "flag-for-review" ? { ...p, params: { ...p.params, field: "resources" } } : p
+    );
+    expect(() => assertToolNeverPlansField(mutatedProbePayloads, "resources")).toThrow(/payloads\.ts now proposes writing "resources" via op "flag-for-review"/);
   });
 });
