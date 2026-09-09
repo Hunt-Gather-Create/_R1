@@ -112,7 +112,7 @@ function runGuard(cwd: string, remote = "origin", scriptPath = SCRIPT_PATH): Gua
  * specifically exercise install-point scoping use withGuardMarker=false and
  * installGuardMarker() below to control exactly when the marker commit lands.
  */
-function buildRepo(root: string, trunkName: string, withGuardMarker = true) {
+function buildRepo(root: string, trunkName: string, withGuardMarker = true, withHoldFile = true) {
   const originDir = join(root, "origin.git");
   mkdirSync(originDir, { recursive: true });
   git(["init", "--quiet", "--bare", "-b", trunkName], originDir);
@@ -125,12 +125,36 @@ function buildRepo(root: string, trunkName: string, withGuardMarker = true) {
     mkdirSync(join(workDir, "scripts"), { recursive: true });
     writeFile(workDir, "scripts/hygiene-guard.sh", "#!/bin/sh\n# placeholder for install-point tests\n");
   }
+  if (withHoldFile) {
+    // Present but empty: the guard's genuine, silent "zero holds" state.
+    // Every existing test in this suite predates the hold-list addition
+    // and exercises no hold at all, so buildRepo ships one by default,
+    // same shape as withGuardMarker for the install point. Tests that
+    // specifically exercise the hold list use withHoldFile=false plus
+    // writeHoldFile()/appendHoldEntry() below to control its content.
+    writeFile(workDir, ".hygiene-hold", "");
+  }
   git(["add", "."], workDir);
   git(["commit", "--quiet", "-m", "root"], workDir);
   git(["push", "--quiet", "origin", `HEAD:${trunkName}`], workDir);
   git(["symbolic-ref", `refs/remotes/origin/HEAD`, `refs/remotes/origin/${trunkName}`], workDir);
 
   return { originDir, workDir };
+}
+
+/**
+ * Sets the hold list's content on trunk as a new commit, pushed to origin.
+ * Used with buildRepo(..., withHoldFile=false) so a test controls exactly
+ * what the tracked hold list contains, including malformed content or its
+ * total absence (never call this at all, and pass withHoldFile=false, to
+ * get a repo whose trunk never had the file).
+ */
+function writeHoldFile(workDir: string, trunkName: string, content: string) {
+  git(["checkout", "--quiet", trunkName], workDir);
+  writeFile(workDir, ".hygiene-hold", content);
+  git(["add", ".hygiene-hold"], workDir);
+  git(["commit", "--quiet", "-m", "update hold list"], workDir);
+  git(["push", "--quiet", "origin", trunkName], workDir);
 }
 
 /**
@@ -1135,7 +1159,7 @@ describe("hygiene-guard.sh, control 11: content presence fails toward NOT-presen
       "    return 0\n" +
       "  fi\n" +
       '  if [ "$_apply_status" -gt 1 ]; then\n' +
-      '    rm -f "$_wt_records" "$_wt_map" "$_branches"\n' +
+      '    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries"\n' +
       '    _block "could not check whether $_ref reverse-applies onto $_trunk (git apply exited $_apply_status). Not treating an instrument failure as not-present."\n' +
       "    exit 1\n" +
       "  fi\n" +
@@ -1747,5 +1771,332 @@ describe("hygiene-guard.sh, control 16: fault injection, every check refuses rat
     expect(result.stderr).not.toMatch(/branch -D neg\/rename-only/);
     expect(result.stderr).not.toMatch(/branch -D neg\/whitespace/);
     expect(result.stderr).not.toMatch(/branch -D neg\/crlf/);
+  });
+});
+
+describe("hygiene-guard.sh, control 17: content presence is decided before the worktree is ever touched, so an unrelated corrupt worktree never blocks a push (_R1#167 G1_QUEUED reorder)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-reorder-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("a worktree that is NOT content-present, with an unreadable .git, produces no block at all", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "live-work-corrupt"], workDir);
+    writeFile(workDir, "still-in-progress.txt", "unmerged, real work\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "wip"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const wtPath = join(root, "wt-live-work-corrupt");
+    git(["worktree", "add", "--quiet", wtPath, "live-work-corrupt"], workDir);
+    // Deliberately NOT squash-merged into trunk: this branch's content is
+    // genuinely not present in $TRUNK_REF, so the guard must never touch
+    // this worktree's dirt state at all.
+
+    writeFile(wtPath, "scratch-note.txt", "real uncommitted content\n");
+    writeFileSync(join(wtPath, ".git"), "gitdir: /nonexistent/broken-gitdir\n");
+
+    // Confirm the fixture is what it claims to be: git status genuinely
+    // cannot read this worktree, before trusting the guard's verdict on it.
+    expect(() => git(["status", "--porcelain"], wtPath)).toThrow();
+
+    const { status, stdout, stderr } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+    expect(stderr).not.toMatch(/live-work-corrupt/);
+    expect(stderr).not.toMatch(/UNKNOWN dirty-state/);
+  });
+
+  it("mutation: removing the reorder brings the spurious block back on the same not-content-present, corrupt-gitdir fixture", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "live-work-corrupt-2"], workDir);
+    writeFile(workDir, "still-in-progress-2.txt", "unmerged, real work\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "wip"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const wtPath = join(root, "wt-live-work-corrupt-2");
+    git(["worktree", "add", "--quiet", wtPath, "live-work-corrupt-2"], workDir);
+    writeFile(wtPath, "scratch-note.txt", "real uncommitted content\n");
+    writeFileSync(join(wtPath, ".git"), "gitdir: /nonexistent/broken-gitdir\n");
+
+    // Control: the real, fixed guard stays completely silent on this
+    // fixture (re-confirmed here in the same session as the mutant).
+    const control = runGuard(workDir);
+    expect(control.status).toBe(0);
+
+    // Mutation: neutralize the early "decide content presence first"
+    // continue, so the loop falls straight into the dirty-state check
+    // unconditionally, the exact pre-reorder shape TP bounced on.
+    const anchor =
+      '  if ! _is_content_present "$_branch" "$TRUNK_REF"; then\n' + "    continue\n" + "  fi";
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
+    const mutated = source.replace(anchor, '  if false; then\n    continue\n  fi');
+    expect(mutated).not.toBe(source);
+
+    const mutantPath = join(root, "mutant-no-reorder.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutantResult = runGuard(workDir, "origin", mutantPath);
+    // The specific thing this control checks: without the reorder, an
+    // unrelated worktree's unreadable .git blocks the whole push even
+    // though its branch was never a disposal candidate.
+    expect(mutantResult.status).toBe(1);
+    expect(mutantResult.stderr).toMatch(/UNKNOWN dirty-state/);
+    expect(mutantResult.stderr).toMatch(/live-work-corrupt-2/);
+  });
+});
+
+describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresentable as a disposal candidate (_R1#167 G1_QUEUED, Overwatch spec addition)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-hold-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("held ref that IS content-present: no disposal command, hold named, still refuses", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    git(["checkout", "--quiet", "-b", "held/present"], workDir);
+    writeFile(workDir, "held-present.txt", "will be squashed\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "held work"], workDir);
+    const heldSha = git(["rev-parse", "held/present"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "held/present");
+    writeHoldFile(workDir, "runway", `held/present ${heldSha} operator hold, do not touch\n`);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/held: held\/present is under an active hold/);
+    expect(stderr).not.toMatch(/branch -D held\/present/);
+    expect(stderr).not.toMatch(/worktree remove --force.*held\/present/);
+  });
+
+  it("held ref that is NOT content-present: no disposal command, hold named, still refuses", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    git(["checkout", "--quiet", "-b", "held/not-present"], workDir);
+    writeFile(workDir, "held-not-present.txt", "real unmerged work\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "held work, never merged"], workDir);
+    const heldSha = git(["rev-parse", "held/not-present"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    writeHoldFile(workDir, "runway", `held/not-present ${heldSha} operator hold\n`);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/held: held\/not-present is under an active hold/);
+    expect(stderr).not.toMatch(/branch -D held\/not-present/);
+  });
+
+  it("an unheld fossil beside a held one is still caught normally: the hold does not blind the guard", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    git(["checkout", "--quiet", "-b", "held/present-2"], workDir);
+    writeFile(workDir, "held-present-2.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "held"], workDir);
+    const heldSha = git(["rev-parse", "held/present-2"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "held/present-2");
+
+    git(["checkout", "--quiet", "-b", "unheld/fossil"], workDir);
+    writeFile(workDir, "unheld-fossil.txt", "y\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "unheld fossil"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "unheld/fossil");
+
+    writeHoldFile(workDir, "runway", `held/present-2 ${heldSha}\n`);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/held: held\/present-2/);
+    expect(stderr).toMatch(/branch -D unheld\/fossil/);
+  });
+
+  it("name matches but the recorded SHA has moved: still held, and the message says the tip moved off the recorded SHA", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    git(["checkout", "--quiet", "-b", "held/moved"], workDir);
+    writeFile(workDir, "held-moved.txt", "v1\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "v1, this is the SHA the hold entry will record"], workDir);
+    const staleSha = git(["rev-parse", "held/moved"], workDir);
+    writeFile(workDir, "held-moved.txt", "v2\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "v2, one more commit after the hold was recorded"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    writeHoldFile(workDir, "runway", `held/moved ${staleSha}\n`);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/held: held\/moved is under an active hold, but its tip has moved off the recorded SHA/);
+  });
+
+  it("recorded SHA matches even though the branch was renamed: still held", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    git(["checkout", "--quiet", "-b", "held/original-name"], workDir);
+    writeFile(workDir, "held-renamed.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "held work"], workDir);
+    const heldSha = git(["rev-parse", "held/original-name"], workDir);
+    git(["branch", "-m", "held/original-name", "held/renamed"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    writeHoldFile(workDir, "runway", `held/original-name ${heldSha}\n`);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/held: held\/renamed \(recorded in the hold list under a different name, matched by its held commit/);
+  });
+
+  it("entry with no SHA column: malformed, refuses the whole run", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    writeHoldFile(workDir, "runway", "some/branch\n");
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/malformed entry/);
+    expect(stderr).toMatch(/SHA column/);
+  });
+
+  it("entry in origin/... remote-tracking form: refuses and names the line, the census-paste footgun", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    writeHoldFile(workDir, "runway", "origin/mp-cc/clause-seed deadbeef1234\n");
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/malformed entry/);
+    expect(stderr).toMatch(/remote-tracking/);
+    expect(stderr).toMatch(/origin\/mp-cc\/clause-seed/);
+  });
+
+  it("hold file absent from trunk entirely: refuses, 'could not be read', no disposability check ran", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    git(["checkout", "--quiet", "-b", "would-be-fossil"], workDir);
+    writeFile(workDir, "would-be-fossil.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "x"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "would-be-fossil");
+    // Deliberately never calling writeHoldFile: .hygiene-hold never exists on trunk.
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/could not be read/);
+    expect(stderr).not.toMatch(/branch -D would-be-fossil/);
+  });
+
+  it("hold file present but empty: proceeds silently, zero holds (this is buildRepo's own default fixture)", () => {
+    const { workDir } = buildRepo(root, "runway");
+    const { status, stdout } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+  });
+
+  it("recorded SHA the clone does not have: name match still holds, run is not refused for that alone", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    git(["checkout", "--quiet", "-b", "held/unresolvable-sha"], workDir);
+    writeFile(workDir, "held-unresolvable.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "held"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    // A syntactically valid but nonexistent object id -- never landed in this repo.
+    writeHoldFile(workDir, "runway", "held/unresolvable-sha deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n");
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/held: held\/unresolvable-sha is under an active hold \(recorded SHA .* could not be verified in this clone\)/);
+  });
+
+  it("mutation: neutralizing the hold check lets a held, content-present ref acquire a disposal command again", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    git(["checkout", "--quiet", "-b", "held/mutation-target"], workDir);
+    writeFile(workDir, "held-mutation.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "held"], workDir);
+    const heldSha = git(["rev-parse", "held/mutation-target"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "held/mutation-target");
+    writeHoldFile(workDir, "runway", `held/mutation-target ${heldSha}\n`);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    // Control: the real, fixed guard holds it, in the same session as the mutant.
+    const control = runGuard(workDir);
+    expect(control.status).toBe(1);
+    expect(control.stderr).toMatch(/held: held\/mutation-target/);
+    expect(control.stderr).not.toMatch(/branch -D held\/mutation-target/);
+
+    const anchor = '  if _is_held "$_branch" "$_branch_tip"; then\n    _block "$_HOLD_MSG"\n    continue\n  fi';
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
+    const mutated = source.replace(anchor, '  if false; then\n    _block "$_HOLD_MSG"\n    continue\n  fi');
+    expect(mutated).not.toBe(source);
+
+    const mutantPath = join(root, "mutant-no-hold-check.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutantResult = runGuard(workDir, "origin", mutantPath);
+    // The specific thing this control checks: without the hold check, the
+    // held ref is exactly as disposable as an unheld one.
+    expect(mutantResult.status).toBe(1);
+    expect(mutantResult.stderr).toMatch(/branch -D held\/mutation-target/);
+  });
+
+  describe("with a hold active, none of the eleven fault injections may let the held ref acquire a disposal command", () => {
+    let faultRealGit: string;
+    beforeEach(() => {
+      faultRealGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+    });
+
+    it.each([
+      "for-each-ref",
+      "rev-list",
+      "merge-base",
+      "worktree",
+      "status",
+      "read-tree",
+      "cherry",
+      "apply",
+      "diff",
+      "log",
+      "rev-parse",
+    ])("breaking '%s' with a hold active never hands the held ref a disposal command", (failCmd) => {
+      const { workDir } = buildRepo(root, "runway", true, false);
+      git(["checkout", "--quiet", "-b", "held/fault-injection"], workDir);
+      writeFile(workDir, "held-fault.txt", "x\n");
+      git(["add", "."], workDir);
+      git(["commit", "--quiet", "-m", "held"], workDir);
+      const heldSha = git(["rev-parse", "held/fault-injection"], workDir);
+      git(["checkout", "--quiet", "runway"], workDir);
+      squashMergeToTrunk(workDir, "runway", "held/fault-injection");
+      writeHoldFile(workDir, "runway", `held/fault-injection ${heldSha}\n`);
+      git(["checkout", "--quiet", "runway"], workDir);
+      git(["fetch", "--quiet", "origin"], workDir);
+
+      const result = runGuardFaultInjected(workDir, failCmd, root, faultRealGit);
+
+      // The assertion that matters most, per TP: a broken instrument may
+      // make the guard refuse for an unrelated reason, or even (for a
+      // command the hold path doesn't touch) still resolve the hold
+      // correctly, but under no circumstance may the held ref come out
+      // the other end with a real removal command attached to it.
+      expect(result.stderr).not.toMatch(/branch -D held\/fault-injection/);
+      expect(result.stderr).not.toMatch(/worktree remove --force.*held\/fault-injection/);
+    });
   });
 });

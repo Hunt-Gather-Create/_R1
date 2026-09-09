@@ -20,7 +20,7 @@
 # it is the shipped artifact, with no Node dependency for a pre-push hook to
 # fail on if `node` is absent from a contributor's PATH.
 #
-# Usage: sh hygiene-guard.sh [repo-path] [remote-name] [guard-path]
+# Usage: sh hygiene-guard.sh [repo-path] [remote-name] [guard-path] [hold-path]
 #   repo-path    defaults to the current directory. Passed so this can be
 #                tested against a repo other than the one it's invoked in;
 #                a real pre-push invocation never needs to pass it, git already
@@ -33,6 +33,11 @@
 #                below). A deployment that drops this file at a different
 #                path (for example opeff's .githooks/) must pass that path
 #                here, or every branch reads as pre-dating install.
+#   hold-path    defaults to ".hygiene-hold". This repo's path, relative to
+#                repo root, to the tracked hold list in trunk history (see
+#                "HOLD LIST" below). A repo with no such file at that path
+#                in trunk cannot push at all through this guard until one
+#                is added, even an empty one -- fail-closed on purpose.
 #
 # Exit 0: clean, nothing disposable found.
 # Exit 1: REFUSE. Trunk could not be resolved, the install point could not
@@ -203,6 +208,163 @@ if [ "$_install_status" -ne 0 ] || [ -z "$INSTALL_SHA" ]; then
   exit 1
 fi
 
+# --- resolve the hold list: refs under an active hold must be ------------
+# --- UNREPRESENTABLE as disposal candidates, not filtered after the fact --
+# Overwatch spec addition (_R1#167, G1_QUEUED addendum): a filter runs
+# AFTER a disposal candidate has already been decided, so a flag or a
+# failing git call can bypass it and hand out a removal command for held
+# work. The hold has to be a condition on whether a candidate is ever
+# constructed, so this resolves and validates the WHOLE list up front,
+# before the branch loop below ever asks a detector anything, and a held
+# branch never reaches _is_content_present at all (see the loop body).
+#
+# Same trust model as the install point: read from TRUNK_REF's own history
+# via `git show`, never the working tree. Forging or lifting a hold this
+# way requires rewriting shared trunk history, not editing or deleting a
+# file a seat can `rm`.
+#
+# _HOLD_PATH   defaults to ".hygiene-hold" at trunk root. Overridable as a
+#              4th positional arg for a deployment that keeps it elsewhere.
+#
+# File format: one entry per line, "<branch-name> <sha> [reason...]".
+# Blank lines and lines starting with "#" are ignored. Both the name and a
+# resolvable-looking SHA are REQUIRED on every entry:
+#   - a name-only match dies to a rename (the branch keeps its content and
+#     its tip but changes the one field the entry keyed on);
+#   - a SHA-only match dies to one more commit landing on the held branch
+#     (the name survives, the tip does not) -- and a held branch getting
+#     another commit is the ordinary case, not the exotic one.
+# So a governed branch is held if EITHER its current name matches an
+# entry's name column OR its current tip matches an entry's SHA column
+# (once that SHA is confirmed to resolve to a real commit this clone has).
+# Same OR-reasoning as the two fossil detectors: each half catches what
+# the other misses, and here a false hold costs nothing, which makes the
+# OR strictly safer than either half alone.
+#
+# An entry missing its SHA column, or whose name column begins with
+# "$_REMOTE/" (looks like a remote-tracking ref pasted straight from a
+# census instead of the local branch name the loop below actually walks),
+# is a MALFORMED entry: the guard refuses the ENTIRE run and names the
+# offending line. A malformed entry is never skipped and never silently
+# dropped -- a guard that drops the one entry it could not parse is
+# functionally identical, for that ref, to having no hold list at all,
+# which is the exact failure this mechanism exists to rule out. Malformed
+# hold list is unreadable hold list.
+#
+# A present-but-EMPTY file (0 bytes tracked at $_HOLD_PATH in trunk) is a
+# genuine, silent "zero holds" state, distinguished on purpose from the
+# file being absent from trunk entirely or `git show` otherwise failing to
+# retrieve it, which REFUSES instead ("could not be read", nothing ran).
+# An empty hold list and an unreadable one must never render identically.
+_HOLD_PATH="${4:-.hygiene-hold}"
+_hold_entries=$(mktemp 2>/dev/null) || { _block "could not create a temp file for the hold list."; exit 1; }
+: >"$_hold_entries"
+
+_resolve_hold_list() {
+  # Populates $_hold_entries with one TAB-separated "name<TAB>sha<TAB>reason"
+  # line per validated entry (sha here is the RECORDED value verbatim, not
+  # yet resolved -- resolution happens per-lookup in _is_held so a single
+  # unresolvable object in a partial clone never has to be decided here).
+  # Returns 1 if the file cannot be read from trunk at all. Exits 1
+  # directly, from inside this function, the moment any single entry is
+  # malformed -- deliberately not a "return 1" here, so a malformed entry
+  # and an unreadable file both stop the run but are reported with their
+  # own distinct message.
+  _raw_hold=$(_g show "$TRUNK_REF:$_HOLD_PATH" 2>/dev/null)
+  _hold_show_status=$?
+  if [ "$_hold_show_status" -ne 0 ]; then
+    return 1
+  fi
+  [ -n "$_raw_hold" ] || return 0
+
+  _hold_raw_file=$(mktemp 2>/dev/null) || { _block "could not create a temp file for the hold list."; exit 1; }
+  printf '%s\n' "$_raw_hold" >"$_hold_raw_file"
+  while IFS= read -r _hold_line; do
+    case "$_hold_line" in
+      '' | '#'*) continue ;;
+    esac
+    _hold_name=$(printf '%s\n' "$_hold_line" | awk '{print $1}')
+    _hold_sha=$(printf '%s\n' "$_hold_line" | awk '{print $2}')
+    _hold_reason=$(printf '%s\n' "$_hold_line" | sed -E 's/^[^ 	]+[ 	]+[^ 	]+[ 	]*//')
+
+    if [ -z "$_hold_name" ]; then
+      rm -f "$_hold_raw_file"
+      _block "hold list '$_HOLD_PATH' at $TRUNK_REF has a malformed entry: '$_hold_line' (no branch name). Refusing the whole run rather than silently dropping one entry."
+      exit 1
+    fi
+    case "$_hold_name" in
+      "$_REMOTE/"*)
+        rm -f "$_hold_raw_file"
+        _block "hold list '$_HOLD_PATH' at $TRUNK_REF has a malformed entry: '$_hold_line' (entry looks like a remote-tracking ref; hold entries are local branch names)."
+        exit 1
+        ;;
+    esac
+    if ! printf '%s' "$_hold_sha" | grep -Eq '^[0-9a-fA-F]{4,40}$'; then
+      rm -f "$_hold_raw_file"
+      _block "hold list '$_HOLD_PATH' at $TRUNK_REF has a malformed entry: '$_hold_line' (missing or invalid SHA column; the SHA column is required, a name-only hold does not survive a rename)."
+      exit 1
+    fi
+    printf '%s\t%s\t%s\n' "$_hold_name" "$_hold_sha" "$_hold_reason" >>"$_hold_entries"
+  done <"$_hold_raw_file"
+  rm -f "$_hold_raw_file"
+  return 0
+}
+
+if ! _resolve_hold_list; then
+  rm -f "$_hold_entries"
+  _block "hold list '$_HOLD_PATH' at $TRUNK_REF could not be read. Not treating a hold list that cannot be read as empty. No disposability check ran."
+  exit 1
+fi
+
+# --- is a governed branch held? checked before any detector runs -----------
+_HOLD_MSG=""
+_is_held() {
+  # $1 = candidate ref (local branch name), $2 = its current tip SHA.
+  # Returns 0 and sets _HOLD_MSG if $1 matches a hold entry by name or by
+  # tip SHA (or both). Returns 1 (no message set) if the hold list has no
+  # entry for this branch under either key.
+  _ref=$1
+  _tip=$2
+  _HOLD_MSG=""
+  [ -s "$_hold_entries" ] || return 1
+
+  while IFS="$_TAB" read -r _e_name _e_sha _e_reason; do
+    [ -n "$_e_name" ] || continue
+    _name_match=0
+    [ "$_e_name" = "$_ref" ] && _name_match=1
+
+    # Ruling 3: an entry's recorded SHA might not exist in this clone (an
+    # ordinary state in a partial or single-branch clone, not an instrument
+    # failure). Resolve it defensively; an unresolvable SHA never refuses
+    # the run, it only means the SHA half of the OR can't be evaluated for
+    # this entry, and that fact is reported when the name half is what
+    # actually held the branch.
+    _e_resolved=$(_g rev-parse --verify --quiet "${_e_sha}^{commit}" 2>/dev/null)
+    _sha_match=0
+    if [ -n "$_e_resolved" ] && [ "$_e_resolved" = "$_tip" ]; then
+      _sha_match=1
+    fi
+
+    if [ "$_name_match" -eq 1 ] && [ "$_sha_match" -eq 1 ]; then
+      _HOLD_MSG="held: $_ref is under an active hold (recorded $_e_sha). No disposal command. Its owner decides.${_e_reason:+ Reason: $_e_reason}"
+      return 0
+    fi
+    if [ "$_name_match" -eq 1 ] && [ -z "$_e_resolved" ]; then
+      _HOLD_MSG="held: $_ref is under an active hold (recorded SHA $_e_sha could not be verified in this clone). No disposal command. Its owner decides.${_e_reason:+ Reason: $_e_reason}"
+      return 0
+    fi
+    if [ "$_name_match" -eq 1 ]; then
+      _HOLD_MSG="held: $_ref is under an active hold, but its tip has moved off the recorded SHA ($_e_sha); the hold entry needs re-recording. No disposal command. Its owner decides.${_e_reason:+ Reason: $_e_reason}"
+      return 0
+    fi
+    if [ "$_sha_match" -eq 1 ]; then
+      _HOLD_MSG="held: $_ref (recorded in the hold list under a different name, matched by its held commit $_e_sha) is under an active hold. No disposal command. Its owner decides.${_e_reason:+ Reason: $_e_reason}"
+      return 0
+    fi
+  done <"$_hold_entries"
+  return 1
+}
+
 # --- governance: is a branch's fork point at or after INSTALL_SHA? ---------
 _branch_governed() {
   # $1 = candidate ref, $2 = trunk ref. Returns 0 if the branch forked from
@@ -239,7 +401,7 @@ _branch_governed() {
     return 1
   fi
   if [ "$_fork_status" -ne 0 ] || [ -z "$_fork" ]; then
-    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries"
     _block "could not determine $_ref's fork point against $_trunk (git merge-base exited $_fork_status, not the documented 'no common ancestor' exit of 1). Not treating an instrument failure as ungoverned. No disposability check ran."
     exit 1
   fi
@@ -247,7 +409,7 @@ _branch_governed() {
   _g merge-base --is-ancestor "$INSTALL_SHA" "$_fork" 2>/dev/null
   _anc_status=$?
   if [ "$_anc_status" -gt 1 ]; then
-    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries"
     _block "could not determine whether $_ref's fork point ($_fork) is governed (git merge-base --is-ancestor exited $_anc_status, not 0 or 1). Not treating an instrument failure as ungoverned. No disposability check ran."
     exit 1
   fi
@@ -287,7 +449,7 @@ _is_cherry_fossil() {
   _out=$(_g cherry "$_trunk" "$_ref" 2>/dev/null)
   _cherry_status=$?
   if [ "$_cherry_status" -ne 0 ]; then
-    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries"
     _block "could not run git cherry for $_ref against $_trunk (exit $_cherry_status). Not treating an instrument failure as detector A finding nothing."
     exit 1
   fi
@@ -334,13 +496,13 @@ _is_reverse_apply_fossil() {
     return 1 # documented "no common ancestor": a real negative, not a failure
   fi
   if [ "$_base_status" -ne 0 ] || [ -z "$_base" ]; then
-    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries"
     _block "could not determine $_ref's merge-base with $_trunk (git merge-base exited $_base_status). Not treating an instrument failure as not-present."
     exit 1
   fi
 
   _scratch=$(mktemp -d 2>/dev/null) || {
-    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries"
     _block "could not create a scratch directory to check $_ref's content presence."
     exit 1
   }
@@ -355,7 +517,7 @@ _is_reverse_apply_fossil() {
     # read as an empty, all-present patch (DEFECT 4's own shortcut, right
     # below, requires a genuinely successful empty diff, not a failed one).
     rm -rf "$_scratch"
-    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries"
     _block "could not diff $_ref against its merge-base $_base with $_trunk (git diff exited $_diff_status). Not treating an instrument failure as not-present."
     exit 1
   fi
@@ -380,7 +542,7 @@ _is_reverse_apply_fossil() {
   _read_status=$?
   if [ "$_read_status" -ne 0 ]; then
     rm -rf "$_scratch"
-    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries"
     _block "could not read $_trunk into a scratch index to check $_ref (git read-tree exited $_read_status). Not treating an instrument failure as not-present."
     exit 1
   fi
@@ -411,7 +573,7 @@ _is_reverse_apply_fossil() {
     return 0
   fi
   if [ "$_apply_status" -gt 1 ]; then
-    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries"
     _block "could not check whether $_ref reverse-applies onto $_trunk (git apply exited $_apply_status). Not treating an instrument failure as not-present."
     exit 1
   fi
@@ -452,7 +614,7 @@ _is_content_present() {
   _ahead=$(_g rev-list --count "$_trunk..$_ref" 2>/dev/null)
   _ahead_status=$?
   if [ "$_ahead_status" -ne 0 ] || [ -z "$_ahead" ]; then
-    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries"
     _block "could not determine how many commits $_ref is ahead of $_trunk (git rev-list --count exited $_ahead_status). Not treating an instrument failure as a fresh, nothing-to-check branch."
     exit 1
   fi
@@ -598,7 +760,7 @@ _branches_status=$?
 if [ "$_branches_status" -ne 0 ]; then
   # Same class as the worktree-list check above: a failed listing must
   # refuse, not silently process zero branches as a clean repo.
-  rm -f "$_wt_records" "$_wt_map" "$_branches"
+  rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries"
   _block "could not enumerate local branches: 'git for-each-ref refs/heads/' failed in $_REPO (exit $_branches_status). Not treating a failed listing as zero branches. No disposability check ran."
   exit 1
 fi
@@ -614,7 +776,7 @@ if [ ! -s "$_branches" ]; then
   # for-each-ref reported NOTHING, not even trunk's own name, for-each-ref
   # did not enumerate reliably.
   if _g rev-parse --verify --quiet "refs/heads/$TRUNK_BRANCH" >/dev/null 2>&1; then
-    rm -f "$_wt_records" "$_wt_map" "$_branches"
+    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries"
     _block "'git for-each-ref refs/heads/' in $_REPO returned nothing, even though refs/heads/$TRUNK_BRANCH exists. Not treating an empty listing as zero branches. No disposability check ran."
     exit 1
   fi
@@ -625,7 +787,31 @@ while IFS= read -r _branch; do
   [ "$_branch" = "$TRUNK_BRANCH" ] && continue
   _branch_governed "$_branch" "$TRUNK_REF" || continue
 
+  # Held refs are checked BEFORE any detector runs, and no content check
+  # is ever computed for one -- a candidate is never constructed for a
+  # held ref, per Overwatch's spec addition, rather than a held ref's
+  # disposal answer being computed and then discarded by a later filter.
+  _branch_tip=$(_g rev-parse --verify --quiet "refs/heads/$_branch" 2>/dev/null)
+  if [ -z "$_branch_tip" ]; then
+    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries"
+    _block "could not resolve $_branch's own tip commit (git rev-parse failed). Not treating an instrument failure as an unheld branch."
+    exit 1
+  fi
+  if _is_held "$_branch" "$_branch_tip"; then
+    _block "$_HOLD_MSG"
+    continue
+  fi
+
   _wt_path=$(awk -F"$_TAB" -v b="$_branch" '$1==b{print $2; exit}' "$_wt_map")
+
+  # Content presence is decided from refs in the main repo; it never
+  # requires reading the worktree. Decide it FIRST so a worktree that is
+  # not a disposal candidate is never blocked over its own unreadable
+  # dirty state. Reordered per TP bounce on 3d90a3b: an unrelated
+  # worktree with a corrupt .git pointer must not block the whole push.
+  if ! _is_content_present "$_branch" "$TRUNK_REF"; then
+    continue
+  fi
 
   if [ -n "$_wt_path" ]; then
     _count_dirty "$_wt_path"
@@ -639,26 +825,19 @@ while IFS= read -r _branch; do
         continue
         ;;
       dirty)
-        if _is_content_present "$_branch" "$TRUNK_REF"; then
-          _block "worktree DISPOSABLE-BUT-DIRTY: $_branch ($_wt_path) already in $TRUNK_REF (detected via $_DETECTOR), holds $_DIRTY_COUNT uncommitted change(s). No removal command. Its owner decides."
-        fi
+        _block "worktree DISPOSABLE-BUT-DIRTY: $_branch ($_wt_path) already in $TRUNK_REF (detected via $_DETECTOR), holds $_DIRTY_COUNT uncommitted change(s). No removal command. Its owner decides."
         continue
         ;;
     esac
-  fi
-
-  if _is_content_present "$_branch" "$TRUNK_REF"; then
-    if [ -n "$_wt_path" ]; then
-      _block "worktree already in $TRUNK_REF (detected via $_DETECTOR): $_branch ($_wt_path). Disposal: git worktree remove --force $_wt_path"
-    elif [ "$_branch" = "$_main_branch" ]; then
-      _block "branch already in $TRUNK_REF (detected via $_DETECTOR, checked out in the main worktree): $_branch. Disposal: git checkout $TRUNK_BRANCH && git branch -D $_branch"
-    else
-      _block "branch already in $TRUNK_REF (detected via $_DETECTOR): $_branch. Disposal: git branch -D $_branch"
-    fi
+    _block "worktree already in $TRUNK_REF (detected via $_DETECTOR): $_branch ($_wt_path). Disposal: git worktree remove --force $_wt_path"
+  elif [ "$_branch" = "$_main_branch" ]; then
+    _block "branch already in $TRUNK_REF (detected via $_DETECTOR, checked out in the main worktree): $_branch. Disposal: git checkout $TRUNK_BRANCH && git branch -D $_branch"
+  else
+    _block "branch already in $TRUNK_REF (detected via $_DETECTOR): $_branch. Disposal: git branch -D $_branch"
   fi
 done <"$_branches"
 
-rm -f "$_wt_records" "$_wt_map" "$_branches"
+rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries"
 
 if [ "$_fail" -eq 0 ]; then
   _info "clean. No local branch or worktree is fully contained in $TRUNK_REF."
