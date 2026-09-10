@@ -163,6 +163,24 @@
 # clutter. Catching it with 3-way costs someone's work. Same asymmetry as
 # the force-push trigger above: this guard is built to be wrong toward
 # leaving a stale branch alone, never toward destroying real content.
+#
+# A FOURTH KNOWN LIMIT (TP/CC, _R1#167): a branch whose own content already
+# landed in trunk, and which then merges trunk back into itself to stay in
+# sync, is invisible to BOTH detectors below, not just one. `git cherry`
+# reports a spurious '+' for the branch's own commit because the merge
+# changes its patch-id (the same instability the force-push section above
+# already lives with). Reverse-apply misses it too, for an unrelated reason:
+# once the branch has merged trunk in, its merge-base with trunk moves to
+# that merge, so the diff from merge-base to tip is empty, and this guard's
+# own empty-diff-means-UNKNOWN rule (not "nothing to compare here") reads
+# that as not-a-fossil. That empty-diff rule is kept anyway, on purpose: it
+# is what stops an empty diff from being misread as IDENTICAL, which is the
+# safe-direction call this whole guard is built on. Losing it to catch this
+# one shape would trade a guard that already fails toward PERMIT for one
+# that fails less often but in the direction that costs someone's work, and
+# that is a worse trade than the clutter this shape currently costs. Same
+# asymmetry as above: the cost of missing this is one stale branch someone
+# has to clean up by hand, never a destructive command.
 
 set -u
 
