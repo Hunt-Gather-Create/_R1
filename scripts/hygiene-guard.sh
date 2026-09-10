@@ -172,13 +172,17 @@
 # already lives with). Reverse-apply misses it too, for an unrelated reason:
 # once the branch has merged trunk in, its merge-base with trunk moves to
 # that merge, so the diff from merge-base to tip is empty, and this guard's
-# own empty-diff-means-UNKNOWN rule (not "nothing to compare here") reads
-# that as not-a-fossil. That empty-diff rule is kept anyway, on purpose: it
-# is what stops an empty diff from being misread as IDENTICAL, which is the
+# own empty-diff-means-UNKNOWN rule (not IDENTICAL) reads that as
+# not-a-fossil. That empty-diff rule is kept anyway, on purpose: it is what
+# stops an empty diff from being misread as IDENTICAL, which is the
 # safe-direction call this whole guard is built on. Losing it to catch this
-# one shape would trade a guard that already fails toward PERMIT for one
-# that fails less often but in the direction that costs someone's work, and
-# that is a worse trade than the clutter this shape currently costs. Same
+# one shape would trade a DETECTOR that already errs toward missing a
+# fossil for one that errs toward a wrong disposal, and that is a worse
+# trade than the clutter this shape currently costs. This is a statement
+# about the LEFTOVER-NAG DETECTOR ONLY -- the held-object check above does
+# not share this posture and fails closed regardless, on every instrument
+# it depends on, with no flag or exception (see the FORCE-PUSH ORPHAN
+# PROTECTION section above; Overwatch's two-posture ruling, _R1#167). Same
 # asymmetry as above: the cost of missing this is one stale branch someone
 # has to clean up by hand, never a destructive command.
 
