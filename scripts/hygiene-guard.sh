@@ -1081,25 +1081,80 @@ _is_content_present() {
 # and never pipes git status into anything: its own $? is read directly.
 _DIRTY_STATE=""
 _DIRTY_COUNT=0
+_DIRTY_UNKNOWN_REASON=""
 _count_dirty() {
-  # $1 = worktree path. Sets _DIRTY_STATE and _DIRTY_COUNT (globals, POSIX
-  # sh has no multi-value return). unknown must be treated by the caller
-  # exactly like DISPOSABLE-BUT-DIRTY: refuse, no removal command.
+  # $1 = worktree path. Sets _DIRTY_STATE, _DIRTY_COUNT, and (when
+  # _DIRTY_STATE is "unknown") _DIRTY_UNKNOWN_REASON (globals, POSIX sh has
+  # no multi-value return). unknown must be treated by the caller exactly
+  # like DISPOSABLE-BUT-DIRTY: refuse, no removal command.
   _wt=$1
   _out=$(git -C "$_wt" status --porcelain 2>/dev/null)
   _status=$?
   if [ "$_status" -ne 0 ]; then
     _DIRTY_STATE="unknown"
     _DIRTY_COUNT=0
+    _DIRTY_UNKNOWN_REASON="git status could not be read (corrupt or unreadable .git)"
     return
   fi
-  if [ -z "$_out" ]; then
-    _DIRTY_STATE="clean"
-    _DIRTY_COUNT=0
-  else
+  if [ -n "$_out" ]; then
     _DIRTY_STATE="dirty"
     _DIRTY_COUNT=$(printf '%s\n' "$_out" | grep -c .)
+    return
   fi
+
+  # TP reproduced live (_R1#167 G1_BOUNCE), on the same guard's own newest
+  # SHA: `git status --porcelain` reads clean above even when a registered
+  # submodule is UNINITIALIZED and its working directory holds real,
+  # uncommitted, unrecoverable content -- git is blind to anything under an
+  # uninitialized gitlink, so a `worktree remove --force` recommendation
+  # here silently destroys that content with no object, stash, or reflog
+  # entry left behind. `git worktree add` leaves submodules uninitialized
+  # BY DEFAULT, so prototyping inside the submodule path before running
+  # `git submodule update --init` is an ordinary sequence, not a corner
+  # case. Do NOT fix this by running `git submodule update --init` here:
+  # this guard must not mutate the thing it is inspecting, and initializing
+  # a submodule can itself overwrite the very files at risk. `git
+  # submodule status` marks an uninitialized entry with a leading '-' on
+  # its SHA column; treat that, PLUS a non-empty working directory at its
+  # path, as UNKNOWN dirty state -- the same "cannot measure, so refuse"
+  # shape this file already uses for a corrupt .git (above) and a locked
+  # worktree (below), now a third caller of it.
+  _sub_out=$(git -C "$_wt" submodule status 2>/dev/null)
+  _sub_status=$?
+  if [ "$_sub_status" -ne 0 ]; then
+    _DIRTY_STATE="unknown"
+    _DIRTY_COUNT=0
+    _DIRTY_UNKNOWN_REASON="git submodule status could not be read"
+    return
+  fi
+  if [ -n "$_sub_out" ]; then
+    _sub_file=$(mktemp 2>/dev/null) || {
+      _DIRTY_STATE="unknown"
+      _DIRTY_COUNT=0
+      _DIRTY_UNKNOWN_REASON="could not create a temp file to read submodule status"
+      return
+    }
+    printf '%s\n' "$_sub_out" >"$_sub_file"
+    while IFS= read -r _sub_line; do
+      [ -n "$_sub_line" ] || continue
+      case "$_sub_line" in
+        -*)
+          _sub_path=$(printf '%s\n' "$_sub_line" | awk '{print $2}')
+          if [ -n "$_sub_path" ] && [ -n "$(find "$_wt/$_sub_path" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+            rm -f "$_sub_file"
+            _DIRTY_STATE="unknown"
+            _DIRTY_COUNT=0
+            _DIRTY_UNKNOWN_REASON="submodule '$_sub_path' is uninitialized and its working directory is non-empty; git status is blind to it"
+            return
+          fi
+          ;;
+      esac
+    done <"$_sub_file"
+    rm -f "$_sub_file"
+  fi
+
+  _DIRTY_STATE="clean"
+  _DIRTY_COUNT=0
 }
 
 # --- enumerate worktrees. git-common-dir, never directory position ---------
@@ -1324,7 +1379,7 @@ while IFS= read -r _branch; do
         # .git pointer). Zero-dirty and cannot-measure-dirty must never
         # render identically. Refused exactly like DISPOSABLE-BUT-DIRTY: no
         # removal command, owner decides.
-        _block "worktree UNKNOWN dirty-state: $_branch ($_wt_path) -- git status could not be read (corrupt or unreadable .git). No removal command. Its owner decides."
+        _block "worktree UNKNOWN dirty-state: $_branch ($_wt_path) -- $_DIRTY_UNKNOWN_REASON. No removal command. Its owner decides."
         continue
         ;;
       dirty)

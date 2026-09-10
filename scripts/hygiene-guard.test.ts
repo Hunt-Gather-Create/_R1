@@ -60,6 +60,12 @@ const GIT_IDENTITY = [
   "user.email=hygiene-guard-test@example.invalid",
   "-c",
   "gc.auto=0",
+  // Local-path submodules (control 23) need this on modern git (2.38+
+  // disallows the "file" transport by default). Harmless for every other
+  // test: it only relaxes what THIS test harness's own git invocations may
+  // do, never the guard script under test, which runs as its own process.
+  "-c",
+  "protocol.file.allow=always",
 ];
 
 function git(args: string[], cwd: string, env: NodeJS.ProcessEnv = ISOLATED_GIT_ENV): string {
@@ -3049,5 +3055,200 @@ describe("hygiene-guard.sh, control 22: the printed disposal command is usable o
     execFileSync("sh", ["-c", disposalCmd], { cwd: workDir, encoding: "utf8", env: ISOLATED_GIT_ENV });
     const listing = git(["worktree", "list", "--porcelain"], workDir);
     expect(listing).not.toContain(wtPath);
+  });
+});
+
+describe("hygiene-guard.sh, control 23: an uninitialized submodule with real uncommitted content reports UNKNOWN dirty state, never a false clean (_R1#167 G1_BOUNCE, TP reproduced live against this guard's own newest SHA)", () => {
+  let root: string;
+  let subOriginDir: string;
+
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-submodule-")));
+    subOriginDir = join(root, "sub-origin.git");
+    mkdirSync(subOriginDir, { recursive: true });
+    git(["init", "--quiet", "--bare", "-b", "main"], subOriginDir);
+    const subSeed = join(root, "sub-seed");
+    mkdirSync(subSeed, { recursive: true });
+    git(["init", "--quiet", "-b", "main"], subSeed);
+    writeFile(subSeed, "README.md", "sub\n");
+    git(["add", "."], subSeed);
+    git(["commit", "--quiet", "-m", "sub root"], subSeed);
+    git(["push", "--quiet", subOriginDir, "HEAD:main"], subSeed);
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  /**
+   * Adds the submodule to trunk directly, BEFORE any branch below forks
+   * from it -- so every fixture's branch and worktree already carries the
+   * submodule as ordinary shared history, exactly as TP's repro did
+   * (guard installed first, so branch-governance scoping is never the
+   * reason a case passes or fails here).
+   */
+  function addSubmoduleToTrunk(workDir: string, trunkName: string) {
+    git(["checkout", "--quiet", trunkName], workDir);
+    git(["submodule", "add", "--quiet", subOriginDir, "sub"], workDir);
+    git(["commit", "--quiet", "-m", "add submodule"], workDir);
+    git(["push", "--quiet", "origin", trunkName], workDir);
+  }
+
+  it("uninitialized submodule + non-empty working dir: UNKNOWN dirty state, NO removal command, file survives (TP's control 1)", () => {
+    const { workDir } = buildRepo(root, "runway");
+    addSubmoduleToTrunk(workDir, "runway");
+
+    git(["checkout", "--quiet", "-b", "bump-sub"], workDir);
+    writeFile(workDir, "unrelated.txt", "an ordinary change, unrelated to the submodule\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "bump-sub"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "bump-sub");
+
+    const wtPath = join(root, "wt-uninit-nonempty");
+    git(["worktree", "add", "--quiet", wtPath, "bump-sub"], workDir);
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    // Confirm the fixture, own-hands, before trusting the guard's verdict:
+    // the new worktree's submodule is genuinely uninitialized (a leading
+    // '-' on the SHA column, `git worktree add` never runs submodule init),
+    // and git status itself is genuinely blind to the file placed under it.
+    const subStatus = git(["submodule", "status"], wtPath);
+    expect(subStatus).toMatch(/^-/);
+    writeFileSync(join(wtPath, "sub", "orphan-notes.txt"), "orphaned uncommitted work\n");
+    const porcelain = execFileSync("git", ["-C", wtPath, "status", "--porcelain"], {
+      encoding: "utf8",
+      env: ISOLATED_GIT_ENV,
+    }).trim();
+    expect(porcelain).toBe("");
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/worktree UNKNOWN dirty-state: bump-sub/);
+    expect(stderr).toMatch(/submodule 'sub' is uninitialized/);
+    expect(stderr).not.toMatch(/remove --force/);
+
+    // The point of the fix: the file must still be there afterward.
+    expect(existsSync(join(wtPath, "sub", "orphan-notes.txt"))).toBe(true);
+  });
+
+  it("uninitialized submodule + genuinely empty working dir: stays a disposal candidate, not over-refused (TP's control 2)", () => {
+    const { workDir } = buildRepo(root, "runway");
+    addSubmoduleToTrunk(workDir, "runway");
+
+    git(["checkout", "--quiet", "-b", "bump-sub-empty"], workDir);
+    writeFile(workDir, "unrelated-2.txt", "an ordinary change\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "bump-sub-empty"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "bump-sub-empty");
+
+    const wtPath = join(root, "wt-uninit-empty");
+    git(["worktree", "add", "--quiet", wtPath, "bump-sub-empty"], workDir);
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const subStatus = git(["submodule", "status"], wtPath);
+    expect(subStatus).toMatch(/^-/); // uninitialized, but nothing was ever written inside it
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/Disposal: git worktree remove --force/);
+    expect(stderr).not.toMatch(/UNKNOWN dirty-state/);
+  });
+
+  it("initialized submodule with a dirty file inside: already correct today, stays DISPOSABLE-BUT-DIRTY (TP's control 3, negative control)", () => {
+    const { workDir } = buildRepo(root, "runway");
+    addSubmoduleToTrunk(workDir, "runway");
+
+    git(["checkout", "--quiet", "-b", "bump-sub-dirty"], workDir);
+    writeFile(workDir, "unrelated-3.txt", "an ordinary change\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "bump-sub-dirty"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "bump-sub-dirty");
+
+    const wtPath = join(root, "wt-init-dirty");
+    git(["worktree", "add", "--quiet", wtPath, "bump-sub-dirty"], workDir);
+    git(["submodule", "update", "--init", "--quiet"], wtPath);
+    writeFileSync(join(wtPath, "sub", "README.md"), "dirtied, tracked file changed in place\n");
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/worktree DISPOSABLE-BUT-DIRTY: bump-sub-dirty/);
+    expect(stderr).not.toMatch(/remove --force/);
+    expect(stderr).not.toMatch(/UNKNOWN dirty-state/);
+  });
+
+  it("no submodule at all: byte-identical to an ordinary worktree fossil, this fix taxes nothing for ordinary repos (TP's control 4)", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "bump-nosub"], workDir);
+    writeFile(workDir, "unrelated-4.txt", "an ordinary change\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "bump-nosub"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "bump-nosub");
+
+    const wtPath = join(root, "wt-nosub");
+    git(["worktree", "add", "--quiet", wtPath, "bump-nosub"], workDir);
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/Disposal: git worktree remove --force/);
+    expect(stderr).not.toMatch(/UNKNOWN dirty-state/);
+  });
+
+  it("mutation: removing the submodule check lets the uninitialized-and-nonempty case emit the removal command again (TP's control 5)", () => {
+    const { workDir } = buildRepo(root, "runway");
+    addSubmoduleToTrunk(workDir, "runway");
+
+    git(["checkout", "--quiet", "-b", "bump-sub-mut"], workDir);
+    writeFile(workDir, "unrelated-5.txt", "an ordinary change\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "bump-sub-mut"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "bump-sub-mut");
+
+    const wtPath = join(root, "wt-uninit-mut");
+    git(["worktree", "add", "--quiet", wtPath, "bump-sub-mut"], workDir);
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    writeFileSync(join(wtPath, "sub", "orphan-notes-mut.txt"), "orphaned\n");
+
+    // Control: the real, fixed guard refuses UNKNOWN, no removal command,
+    // in the same session as the mutant.
+    const control = runGuard(workDir);
+    expect(control.status).toBe(1);
+    expect(control.stderr).toMatch(/UNKNOWN dirty-state: bump-sub-mut/);
+    expect(control.stderr).not.toMatch(/remove --force/);
+
+    const anchor =
+      '          if [ -n "$_sub_path" ] && [ -n "$(find "$_wt/$_sub_path" -mindepth 1 -print -quit 2>/dev/null)" ]; then\n' +
+      '            rm -f "$_sub_file"\n' +
+      '            _DIRTY_STATE="unknown"\n' +
+      "            _DIRTY_COUNT=0\n" +
+      '            _DIRTY_UNKNOWN_REASON="submodule \'$_sub_path\' is uninitialized and its working directory is non-empty; git status is blind to it"\n' +
+      "            return\n" +
+      "          fi\n";
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
+    const mutated = source.replace(anchor, "");
+    expect(mutated).not.toBe(source);
+
+    const mutantPath = join(root, "mutant-no-submodule-check.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutantResult = runGuard(workDir, "origin", mutantPath);
+    // Without the check, the loop over submodule-status lines never flags
+    // anything, _count_dirty falls through to "clean", and the ordinary
+    // worktree-fossil path prints the destructive command again -- the
+    // exact regression TP's live repro caught.
+    expect(mutantResult.status).toBe(1);
+    expect(mutantResult.stderr).toMatch(/Disposal: git worktree remove --force/);
   });
 });
