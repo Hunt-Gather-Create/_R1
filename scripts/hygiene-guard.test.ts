@@ -39,7 +39,7 @@
  * resolve against the real repository running the suite instead of the
  * isolated tmp fixture.
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,6 +58,13 @@ const GIT_IDENTITY = [
   "user.name=hygiene-guard-test",
   "-c",
   "user.email=hygiene-guard-test@example.invalid",
+  // Suppresses git's own background auto-gc during fixture setup. This is
+  // here to stop an accidental race -- a fixture repo's rapid-fire commits
+  // and squash-merges can trip git's own gc.auto threshold mid-test and
+  // repack while a later command in the same test is still reading loose
+  // objects -- not because auto-gc behavior is itself something this
+  // suite is testing or controlling for. Do not read this line as a
+  // control on gc; it is a determinism guard for the harness alone.
   "-c",
   "gc.auto=0",
   // Local-path submodules (control 23) need this on modern git (2.38+
@@ -885,6 +892,82 @@ describe("hygiene-guard.sh, control 10: two content-presence detectors, OR-combi
     git(["add", "."], workDir);
     git(["commit", "--quiet", "-m", "live work"], workDir);
 
+    const { status, stdout } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+  });
+
+  it("git cherry's per-commit answer is NOT stable across a merge in range, but real unmerged work is still never false-flagged (permanent negative control, QA/TP _R1#167)", () => {
+    // QA proved this directly (own-hands reproduced here, not taken on
+    // faith): a commit whose diff is byte-identical to a commit already
+    // on trunk reports "-" (patch-id equivalent) in isolation. Once a
+    // later merge of trunk into the branch, with a hand-resolved
+    // conflict folded into the merge commit itself, enters the walked
+    // range, that SAME commit reports "+" (no equivalent). Cherry's
+    // per-commit verdict is a property of the walked range, not a
+    // context-free property of the commit.
+    //
+    // The direction is the safe one: this instability can turn a real
+    // fossil into a MISS, never turn real unmerged work into a false
+    // fossil. This test proves the safe half directly, independent of
+    // whether reverse-apply happens to save any particular fossil case:
+    // build a branch that (a) triggers the exact instability QA measured
+    // and (b) still carries genuine, real, unmerged content the hand
+    // resolution keeps. The guard must stay clean.
+    const { workDir } = buildRepo(root, "runway");
+
+    git(["checkout", "--quiet", "-b", "twin"], workDir);
+    writeFile(workDir, "twin.txt", "same content\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add twin.txt"], workDir);
+
+    // Independently commit byte-identical content to trunk -- not a
+    // cherry-pick, not a squash, a separately-authored commit with the
+    // same diff, which is exactly what makes git cherry initially report
+    // it as patch-id equivalent.
+    git(["checkout", "--quiet", "runway"], workDir);
+    writeFile(workDir, "twin.txt", "same content\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add twin.txt (independent, same content)"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+
+    const cherryBefore = git(["cherry", "origin/runway", "twin"], workDir);
+    expect(cherryBefore.split("\n").some((l) => l.startsWith("-"))).toBe(true);
+    expect(cherryBefore.split("\n").some((l) => l.startsWith("+"))).toBe(false);
+
+    // Diverge with REAL, never-merged content, then merge trunk in and
+    // hand-resolve the conflict by keeping that real content. The branch
+    // now genuinely holds work absent from trunk (the divergent line),
+    // and the merge is folded into the merge commit itself, exactly the
+    // shape QA measured.
+    git(["checkout", "--quiet", "twin"], workDir);
+    writeFile(workDir, "twin.txt", "same content DIVERGED, never merged\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "diverge with real unmerged content"], workDir);
+
+    // The merge is expected to conflict on twin.txt (both sides touched
+    // it since the fork), so it is run outside the `git()` helper, which
+    // throws on any nonzero exit. Any status other than the documented
+    // "merge attempted, conflict left for the caller to resolve" (1) is a
+    // genuine fixture-setup failure and must not be swallowed.
+    const mergeAttempt = spawnSync(
+      "git",
+      [...GIT_IDENTITY, "merge", "--quiet", "origin/runway", "-m", "merge runway into twin"],
+      { cwd: workDir, encoding: "utf8", env: ISOLATED_GIT_ENV },
+    );
+    expect(mergeAttempt.status).toBe(1);
+    writeFile(workDir, "twin.txt", "same content DIVERGED, never merged\n");
+    git(["add", "twin.txt"], workDir);
+    git(["commit", "--quiet", "--no-edit"], workDir);
+
+    // Confirm the instability actually manifested: the original commit's
+    // verdict flipped to "+" now that the merge is in range. If this
+    // assertion ever fails, the fixture stopped exercising the mechanism
+    // this test is named for.
+    const cherryAfter = git(["cherry", "origin/runway", "twin"], workDir);
+    expect(cherryAfter.split("\n").filter((l) => l.startsWith("+")).length).toBeGreaterThanOrEqual(1);
+
+    git(["checkout", "--quiet", "runway"], workDir);
     const { status, stdout } = runGuard(workDir);
     expect(status).toBe(0);
     expect(stdout).toMatch(/clean/);
@@ -2503,6 +2586,34 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
     expect(stderr).not.toMatch(/malformed entry/);
   });
 
+  it("a LEADING-WHITESPACE entry's reason column is the reason alone, not the whole raw line (QA-Scout-1 gap on e10fef66)", () => {
+    // QA-Scout-1 found: the reason-extraction sed anchored at column 0, so
+    // an indented entry never matched it at all, and the printed hold
+    // message's "Reason:" carried the entire raw line -- name, SHA, and
+    // class included -- instead of just the reason text after them.
+    const { workDir } = buildRepo(root, "runway", true, false);
+    git(["checkout", "--quiet", "-b", "held/leading-whitespace"], workDir);
+    writeFile(workDir, "held-leading-ws.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "held"], workDir);
+    const heldSha = git(["rev-parse", "held/leading-whitespace"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "held/leading-whitespace");
+    writeHoldFile(
+      workDir,
+      "runway",
+      `   held/leading-whitespace ${heldSha} OPERATOR-HOLD indented on purpose\n`,
+    );
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/held: held\/leading-whitespace is under an active hold/);
+    expect(stderr).toMatch(/Reason: indented on purpose/);
+    expect(stderr).not.toMatch(/Reason: held\/leading-whitespace/);
+    expect(stderr).not.toMatch(new RegExp(`Reason: ${escapeRegExp(heldSha)}`));
+  });
+
   it("a genuinely malformed entry's diagnostic includes a visible rendering, not just the raw line", () => {
     // QA's ask (_R1#167 G1_BOUNCE): once an entry is genuinely malformed
     // for a reason unrelated to CRLF (here: a non-hex second column), the
@@ -3086,10 +3197,10 @@ describe("hygiene-guard.sh, control 23: an uninitialized submodule with real unc
    * (guard installed first, so branch-governance scoping is never the
    * reason a case passes or fails here).
    */
-  function addSubmoduleToTrunk(workDir: string, trunkName: string) {
+  function addSubmoduleToTrunk(workDir: string, trunkName: string, subPath = "sub", origin = subOriginDir) {
     git(["checkout", "--quiet", trunkName], workDir);
-    git(["submodule", "add", "--quiet", subOriginDir, "sub"], workDir);
-    git(["commit", "--quiet", "-m", "add submodule"], workDir);
+    git(["submodule", "add", "--quiet", origin, subPath], workDir);
+    git(["commit", "--quiet", "-m", `add submodule ${subPath}`], workDir);
     git(["push", "--quiet", "origin", trunkName], workDir);
   }
 
@@ -3248,6 +3359,296 @@ describe("hygiene-guard.sh, control 23: an uninitialized submodule with real unc
     // anything, _count_dirty falls through to "clean", and the ordinary
     // worktree-fossil path prints the destructive command again -- the
     // exact regression TP's live repro caught.
+    expect(mutantResult.status).toBe(1);
+    expect(mutantResult.stderr).toMatch(/Disposal: git worktree remove --force/);
+  });
+
+  it("submodule path containing a SPACE: still UNKNOWN, NO removal command, file survives (TP reproduced live on 51255e2f)", () => {
+    // TP's own repro: awk splits git submodule status's path column on
+    // whitespace, so "my sub" became "my", the guard probed a directory
+    // that never existed, read it as empty, and fell through to the
+    // destructive command. This is the same class of gap as the disposal
+    // path's own quoting fix earlier in this file -- a space in a real
+    // path is ordinary on macOS, not exotic.
+    const { workDir } = buildRepo(root, "runway");
+    addSubmoduleToTrunk(workDir, "runway", "my sub");
+
+    git(["checkout", "--quiet", "-b", "bump-sub-space"], workDir);
+    writeFile(workDir, "unrelated-space.txt", "an ordinary change\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "bump-sub-space"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "bump-sub-space");
+
+    const wtPath = join(root, "wt-uninit-space");
+    git(["worktree", "add", "--quiet", wtPath, "bump-sub-space"], workDir);
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const subStatus = git(["submodule", "status"], wtPath);
+    expect(subStatus).toMatch(/^-.{40} my sub$/);
+    writeFileSync(join(wtPath, "my sub", "notes.txt"), "at risk\n");
+    const porcelain = execFileSync("git", ["-C", wtPath, "status", "--porcelain"], {
+      encoding: "utf8",
+      env: ISOLATED_GIT_ENV,
+    }).trim();
+    expect(porcelain).toBe("");
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/worktree UNKNOWN dirty-state: bump-sub-space/);
+    expect(stderr).toMatch(/submodule 'my sub' is uninitialized/);
+    expect(stderr).not.toMatch(/remove --force/);
+    expect(existsSync(join(wtPath, "my sub", "notes.txt"))).toBe(true);
+  });
+
+  it("submodule path containing a single quote: still UNKNOWN, NO removal command, file survives", () => {
+    const { workDir } = buildRepo(root, "runway");
+    addSubmoduleToTrunk(workDir, "runway", "quo'te sub");
+
+    git(["checkout", "--quiet", "-b", "bump-sub-quote"], workDir);
+    writeFile(workDir, "unrelated-quote.txt", "an ordinary change\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "bump-sub-quote"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "bump-sub-quote");
+
+    const wtPath = join(root, "wt-uninit-quote");
+    git(["worktree", "add", "--quiet", wtPath, "bump-sub-quote"], workDir);
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const subStatus = git(["submodule", "status"], wtPath);
+    expect(subStatus).toMatch(/^-.{40} quo'te sub$/);
+    writeFileSync(join(wtPath, "quo'te sub", "notes.txt"), "at risk\n");
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/worktree UNKNOWN dirty-state: bump-sub-quote/);
+    expect(stderr).toMatch(/submodule 'quo'te sub' is uninitialized/);
+    expect(stderr).not.toMatch(/remove --force/);
+    expect(existsSync(join(wtPath, "quo'te sub", "notes.txt"))).toBe(true);
+  });
+
+  it("two submodules, first initialized and second uninitialized+non-empty: the loop does not return on its first (non-matching) entry", () => {
+    const secondOriginDir = join(root, "sub-origin-2.git");
+    mkdirSync(secondOriginDir, { recursive: true });
+    git(["init", "--quiet", "--bare", "-b", "main"], secondOriginDir);
+    const secondSeed = join(root, "sub-seed-2");
+    mkdirSync(secondSeed, { recursive: true });
+    git(["init", "--quiet", "-b", "main"], secondSeed);
+    writeFile(secondSeed, "README.md", "sub2\n");
+    git(["add", "."], secondSeed);
+    git(["commit", "--quiet", "-m", "sub2 root"], secondSeed);
+    git(["push", "--quiet", secondOriginDir, "HEAD:main"], secondSeed);
+
+    const { workDir } = buildRepo(root, "runway");
+    addSubmoduleToTrunk(workDir, "runway", "sub-a", subOriginDir);
+    addSubmoduleToTrunk(workDir, "runway", "sub-b", secondOriginDir);
+
+    git(["checkout", "--quiet", "-b", "bump-two-subs"], workDir);
+    writeFile(workDir, "unrelated-two.txt", "an ordinary change\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "bump-two-subs"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "bump-two-subs");
+
+    const wtPath = join(root, "wt-two-subs");
+    git(["worktree", "add", "--quiet", wtPath, "bump-two-subs"], workDir);
+    // Initialize ONLY the first submodule, leaving the second uninitialized.
+    git(["submodule", "update", "--init", "--quiet", "--", "sub-a"], wtPath);
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    // git()'s own helper trims the whole output, which eats sub-a's
+    // leading space if it's the first line -- assert on absence of a
+    // leading '-' for sub-a rather than presence of a leading space.
+    const subStatus = git(["submodule", "status"], wtPath);
+    expect(subStatus).not.toMatch(/^-.{40} sub-a/m); // initialized: no leading '-'
+    expect(subStatus).toMatch(/^-.{40} sub-b/m); // uninitialized: leading '-'
+    writeFileSync(join(wtPath, "sub-b", "orphan.txt"), "orphaned\n");
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/worktree UNKNOWN dirty-state: bump-two-subs/);
+    expect(stderr).toMatch(/submodule 'sub-b' is uninitialized/);
+    expect(stderr).not.toMatch(/remove --force/);
+  });
+
+  it("fault injection: 'git submodule status' itself failing refuses UNKNOWN, never a false clean (TP's instrument_fail control)", () => {
+    // Uses the shared git-fail shim (control 16) rather than corrupting a
+    // real .git pointer: own-hands testing showed a corrupted submodule
+    // gitdir also breaks the earlier plain `git status --porcelain` call,
+    // which would exercise the PRE-EXISTING corrupt-.git branch instead of
+    // this new one. The shim breaks ONLY the "submodule" subcommand,
+    // leaving "status" answering for real, so this test's failure is
+    // attributable to the submodule-status read and nothing else.
+    const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+    const { workDir } = buildRepo(root, "runway");
+    addSubmoduleToTrunk(workDir, "runway");
+
+    git(["checkout", "--quiet", "-b", "bump-sub-fault"], workDir);
+    writeFile(workDir, "unrelated-fault.txt", "an ordinary change\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "bump-sub-fault"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "bump-sub-fault");
+
+    const wtPath = join(root, "wt-sub-fault");
+    git(["worktree", "add", "--quiet", wtPath, "bump-sub-fault"], workDir);
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const result = runGuardFaultInjected(workDir, "submodule", root, realGit);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/worktree UNKNOWN dirty-state: bump-sub-fault/);
+    expect(result.stderr).toMatch(/git submodule status could not be read/);
+    expect(result.stderr).not.toMatch(/remove --force/);
+  });
+
+  it("mutation: reverting the positional cut to awk field-splitting loses a spaced submodule path, destructive command returns", () => {
+    const { workDir } = buildRepo(root, "runway");
+    addSubmoduleToTrunk(workDir, "runway", "my sub");
+
+    git(["checkout", "--quiet", "-b", "bump-sub-space-mut"], workDir);
+    writeFile(workDir, "unrelated-space-mut.txt", "an ordinary change\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "bump-sub-space-mut"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "bump-sub-space-mut");
+
+    const wtPath = join(root, "wt-uninit-space-mut");
+    git(["worktree", "add", "--quiet", wtPath, "bump-sub-space-mut"], workDir);
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    writeFileSync(join(wtPath, "my sub", "notes-mut.txt"), "at risk\n");
+
+    // Control: the real, fixed guard refuses UNKNOWN for the spaced path.
+    const control = runGuard(workDir);
+    expect(control.status).toBe(1);
+    expect(control.stderr).toMatch(/UNKNOWN dirty-state: bump-sub-space-mut/);
+    expect(control.stderr).not.toMatch(/remove --force/);
+
+    const anchor = '_sub_path=$(printf \'%s\\n\' "$_sub_line" | cut -c43-)';
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
+    const mutated = source.replace(anchor, '_sub_path=$(printf \'%s\\n\' "$_sub_line" | awk \'{print $2}\')');
+    expect(mutated).not.toBe(source);
+
+    const mutantPath = join(root, "mutant-awk-split-submodule-path.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutantResult = runGuard(workDir, "origin", mutantPath);
+    // Reverted to word-splitting, "$_sub_path" becomes "my" -- a
+    // directory that never existed reads as empty, and the destructive
+    // command comes back for a worktree that still holds a real file.
+    expect(mutantResult.status).toBe(1);
+    expect(mutantResult.stderr).toMatch(/Disposal: git worktree remove --force/);
+  });
+
+  /**
+   * Builds a superproject -> mid (its own repo) -> mid/inner submodule
+   * chain: mid itself has "inner" registered as a submodule. Returns
+   * workDir with "mid" added to trunk and squash-merged in via
+   * "bump-nested", plus a worktree at wtPath with ONLY "mid" initialized,
+   * leaving "mid/inner" uninitialized -- the exact shape TP/QA reproduced
+   * live (_R1#167 G1_BOUNCE): a nested submodule uninitialized one level
+   * inside an INITIALIZED top-level one.
+   */
+  function buildNestedSubmoduleFixture(root: string) {
+    const innerOriginDir = join(root, "inner-origin.git");
+    mkdirSync(innerOriginDir, { recursive: true });
+    git(["init", "--quiet", "--bare", "-b", "main"], innerOriginDir);
+    const innerSeed = join(root, "inner-seed");
+    mkdirSync(innerSeed, { recursive: true });
+    git(["init", "--quiet", "-b", "main"], innerSeed);
+    writeFile(innerSeed, "README.md", "inner\n");
+    git(["add", "."], innerSeed);
+    git(["commit", "--quiet", "-m", "inner root"], innerSeed);
+    git(["push", "--quiet", innerOriginDir, "HEAD:main"], innerSeed);
+
+    const midOriginDir = join(root, "mid-origin.git");
+    mkdirSync(midOriginDir, { recursive: true });
+    git(["init", "--quiet", "--bare", "-b", "main"], midOriginDir);
+    const midSeed = join(root, "mid-seed");
+    mkdirSync(midSeed, { recursive: true });
+    git(["init", "--quiet", "-b", "main"], midSeed);
+    git(["submodule", "add", "--quiet", innerOriginDir, "inner"], midSeed);
+    git(["commit", "--quiet", "-m", "mid root + inner submodule"], midSeed);
+    git(["push", "--quiet", midOriginDir, "HEAD:main"], midSeed);
+
+    const { workDir } = buildRepo(root, "runway");
+    addSubmoduleToTrunk(workDir, "runway", "mid", midOriginDir);
+
+    git(["checkout", "--quiet", "-b", "bump-nested"], workDir);
+    writeFile(workDir, "unrelated-nested.txt", "an ordinary change\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "bump-nested"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "bump-nested");
+
+    const wtPath = join(root, "wt-nested");
+    git(["worktree", "add", "--quiet", wtPath, "bump-nested"], workDir);
+    // Initialize ONLY the top-level "mid" submodule, leaving "mid/inner" uninitialized.
+    git(["submodule", "update", "--init", "--quiet", "--", "mid"], wtPath);
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    return { workDir, wtPath };
+  }
+
+  it("a NESTED uninitialized submodule (top-level 'mid' initialized, 'mid/inner' uninitialized) is still UNKNOWN dirty-state, NO removal command, file survives (TP/QA _R1#167 G1_BOUNCE, --recursive)", () => {
+    const { workDir, wtPath } = buildNestedSubmoduleFixture(root);
+
+    // Confirm the shape QA/TP measured: the NON-recursive call the guard
+    // used to make cannot see the nested entry at all -- it reports no
+    // leading '-' anywhere, because the top-level "mid" IS initialized.
+    // Only --recursive surfaces "mid/inner"'s own leading '-'.
+    const subStatusFlat = git(["submodule", "status"], wtPath);
+    expect(subStatusFlat).not.toMatch(/^-/m);
+    const subStatusRecursive = git(["submodule", "status", "--recursive"], wtPath);
+    expect(subStatusRecursive).toMatch(/^-.{40} mid\/inner$/m);
+
+    writeFileSync(join(wtPath, "mid", "inner", "orphan.txt"), "orphaned nested\n");
+    const porcelain = execFileSync("git", ["-C", wtPath, "status", "--porcelain"], {
+      encoding: "utf8",
+      env: ISOLATED_GIT_ENV,
+    }).trim();
+    expect(porcelain).toBe("");
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/worktree UNKNOWN dirty-state: bump-nested/);
+    expect(stderr).toMatch(/submodule 'mid\/inner' is uninitialized/);
+    expect(stderr).not.toMatch(/remove --force/);
+    expect(existsSync(join(wtPath, "mid", "inner", "orphan.txt"))).toBe(true);
+  });
+
+  it("mutation: dropping --recursive from the submodule status call loses a NESTED uninitialized submodule, destructive command returns", () => {
+    const { workDir, wtPath } = buildNestedSubmoduleFixture(root);
+    writeFileSync(join(wtPath, "mid", "inner", "orphan-mut.txt"), "orphaned nested\n");
+
+    // Control: the real, fixed guard refuses UNKNOWN for the nested case.
+    const control = runGuard(workDir);
+    expect(control.status).toBe(1);
+    expect(control.stderr).toMatch(/UNKNOWN dirty-state: bump-nested/);
+    expect(control.stderr).not.toMatch(/remove --force/);
+
+    const anchor = 'git -C "$_wt" submodule status --recursive';
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
+    const mutated = source.replace(anchor, 'git -C "$_wt" submodule status');
+    expect(mutated).not.toBe(source);
+
+    const mutantPath = join(root, "mutant-non-recursive-submodule-status.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutantResult = runGuard(workDir, "origin", mutantPath);
+    // Reverted to non-recursive, "mid/inner"'s own leading '-' is never
+    // seen because "mid" itself IS initialized -- the destructive command
+    // comes back for a worktree that still holds real, nested content.
     expect(mutantResult.status).toBe(1);
     expect(mutantResult.stderr).toMatch(/Disposal: git worktree remove --force/);
   });

@@ -148,6 +148,21 @@
 # it depends on (stdin itself, git cat-file, git merge-base
 # --is-ancestor) -- there is no flag, override, or exception on this side,
 # and there must never be one added later.
+#
+# A THIRD instance of this same asymmetry (TP, _R1#167): a branch whose
+# work LANDED and was then FURTHER EDITED on trunk afterward is not
+# detected as a fossil, by construction. Both detectors below miss it --
+# git cherry finds no patch-id equivalence because the patches genuinely
+# differ once trunk moved on, and reverse-apply cannot apply because the
+# surrounding context no longer matches. `git apply --3way` WOULD catch
+# this shape, but it is deliberately not used: 3-way returns success on
+# GENUINELY unmerged, hand-authored work too (measured: "Applied patch
+# ... with conflicts", exit 0, on real unmerged content, not only on a
+# landed-then-drifted leftover), so it would hand a caller `git branch -D`
+# on content that exists nowhere else. Missing a drifted leftover costs
+# clutter. Catching it with 3-way costs someone's work. Same asymmetry as
+# the force-push trigger above: this guard is built to be wrong toward
+# leaving a stale branch alone, never toward destroying real content.
 
 set -u
 
@@ -456,7 +471,12 @@ _resolve_hold_list() {
     _hold_name=$(printf '%s\n' "$_hold_line" | awk '{print $1}')
     _hold_sha=$(printf '%s\n' "$_hold_line" | awk '{print $2}')
     _hold_class=$(printf '%s\n' "$_hold_line" | awk '{print $3}')
-    _hold_reason=$(printf '%s\n' "$_hold_line" | sed -E 's/^[^ 	]+[ 	]+[^ 	]+[ 	]+[^ 	]+[ 	]*//')
+    # QA-Scout-1 gap on e10fef66: this anchored at column 0, so an entry
+    # with LEADING WHITESPACE never matched at all, and the "reason"
+    # printed in the eventual hold message was the entire raw line, name,
+    # SHA, and class included. Strip leading whitespace first, same as
+    # $_hold_trimmed above, before extracting the reason.
+    _hold_reason=$(printf '%s\n' "$_hold_line" | sed -E 's/^[[:space:]]+//; s/^[^ 	]+[ 	]+[^ 	]+[ 	]+[^ 	]+[ 	]*//')
 
     if [ -z "$_hold_name" ]; then
       rm -f "$_hold_raw_file"
@@ -1119,7 +1139,19 @@ _count_dirty() {
   # path, as UNKNOWN dirty state -- the same "cannot measure, so refuse"
   # shape this file already uses for a corrupt .git (above) and a locked
   # worktree (below), now a third caller of it.
-  _sub_out=$(git -C "$_wt" submodule status 2>/dev/null)
+  #
+  # --recursive (TP/QA, _R1#167 G1_BOUNCE): without it, `git submodule
+  # status` only reports one level deep. A submodule nested inside an
+  # INITIALIZED top-level submodule (superproject -> mid (initialized) ->
+  # mid/inner (uninitialized)) never shows its own leading '-' in the
+  # non-recursive output -- the top-level entry looks healthy and the
+  # nested one is invisible, so real content under mid/inner reads clean
+  # and gets handed a destructive removal command. Reproduced live and
+  # confirmed: the '-' for the nested entry appears under --recursive and
+  # not without it. --recursive's paths are already relative to the
+  # superproject root (e.g. "mid/inner"), so the existing
+  # "$_wt/$_sub_path" probe below needs no change for nesting itself.
+  _sub_out=$(git -C "$_wt" submodule status --recursive 2>/dev/null)
   _sub_status=$?
   if [ "$_sub_status" -ne 0 ]; then
     _DIRTY_STATE="unknown"
@@ -1139,7 +1171,22 @@ _count_dirty() {
       [ -n "$_sub_line" ] || continue
       case "$_sub_line" in
         -*)
-          _sub_path=$(printf '%s\n' "$_sub_line" | awk '{print $2}')
+          # TP reproduced live on this guard's own newest SHA at the time:
+          # a submodule path containing a space (e.g. "my sub") still got
+          # a destructive removal command, because awk splits on
+          # whitespace and `{print $2}` returned only "my" -- the guard
+          # then probed a directory that never existed, found it "empty",
+          # and fell through to clean. `git submodule status` output is
+          # fixed-width for the flag+SHA: one flag character (here always
+          # '-', matched by the case above) followed by exactly 40 hex
+          # characters, then one space, then the path verbatim -- with no
+          # trailing "(describe)" suffix, because describing a ref needs a
+          # working tree an uninitialized submodule doesn't have (verified
+          # own-hands: an initialized entry gets " (heads/...)", an
+          # uninitialized one never does). Cut positionally instead of
+          # splitting on whitespace, so a space OR a single quote in the
+          # path survives intact.
+          _sub_path=$(printf '%s\n' "$_sub_line" | cut -c43-)
           if [ -n "$_sub_path" ] && [ -n "$(find "$_wt/$_sub_path" -mindepth 1 -print -quit 2>/dev/null)" ]; then
             rm -f "$_sub_file"
             _DIRTY_STATE="unknown"
@@ -1158,13 +1205,15 @@ _count_dirty() {
 }
 
 # --- enumerate worktrees. git-common-dir, never directory position ---------
-# UNTESTED (QA gap, accepted cost, _R1#167 G1_BOUNCE): a worktree whose repo
-# has a submodule registered inside it is not covered by this suite. A real
-# test needs a second bare repo registered as a submodule plus submodule
-# state layered on top of the existing worktree fixtures, which QA and TP
-# judged not worth the cost relative to everything else in this pass. Not
-# proven safe or unsafe -- written down so silence here is never read as
-# coverage.
+# A worktree whose repo has a submodule registered inside it IS covered:
+# see _count_dirty's submodule check above and control 23 (_R1#167
+# G1_BOUNCE, TP reproduced live against this guard's own newest SHA at the
+# time) -- an uninitialized submodule holding real, uncommitted content
+# used to read as clean and get handed a `worktree remove --force`
+# recommendation that silently destroyed it. This line used to say that
+# shape was untested and the cost accepted; it is not accepted, it is
+# fixed, and the old wording is removed rather than left to imply a gap
+# that no longer exists.
 _common_dir=$(_g rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
 if [ -z "$_common_dir" ]; then
   _block "could not resolve --git-common-dir for $_REPO. Cannot enumerate worktrees safely."
