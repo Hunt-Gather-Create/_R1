@@ -449,6 +449,23 @@ _HOLD_PATH="${4:-.hygiene-hold}"
 _hold_entries=$(mktemp 2>/dev/null) || { rm -f "$_STDIN_FILE"; _block "could not create a temp file for the hold list."; exit 1; }
 : >"$_hold_entries"
 
+# _R1#167 G2_BOUNCE: a hold entry's NAME can carry a byte that survives
+# every existing validation (non-empty, not a remote-tracking ref) but can
+# never equal a real ref -- a BOM or zero-width space glued to the front of
+# a name, most naturally introduced by copying a branch name out of a web
+# UI or chat client. That byte defeats the name half of the name-or-SHA OR,
+# silently, and the SHA half doesn't always cover for it (PERMANENT+ANY has
+# no SHA to fall back on; OPERATOR-HOLD/COORDINATOR-HOLD stop covering the
+# moment the tip moves, which is the ordinary case). _HOLD_LIST_POISONED
+# records that at least one entry's name is untrustworthy; _is_held
+# consults it, once its own real name/SHA matching has already had a
+# chance to fire, so a poisoned entry degrades every UNMATCHED branch in
+# this run toward held-and-refused rather than toward a silent disposal
+# command. Entries with a clean name are entirely unaffected: this flag
+# starts empty and nothing here touches it unless a bad byte is found.
+_HOLD_LIST_POISONED=""
+_hold_poisoned_desc=""
+
 _resolve_hold_list() {
   # Populates $_hold_entries with one TAB-separated
   # "name<TAB>sha<TAB>class<TAB>reason" line per validated entry (sha here
@@ -504,6 +521,18 @@ _resolve_hold_list() {
       rm -f "$_hold_raw_file"
       _block "hold list '$_HOLD_PATH' at $TRUNK_REF has a malformed entry: '$_hold_line' (visible: $(_visible "$_hold_line")) (no branch name). Refusing the whole run rather than silently dropping one entry."
       exit 1
+    fi
+    # _R1#167 G2_BOUNCE: reject, don't strip. [[:graph:]] under LC_ALL=C is
+    # exactly the visible, non-space, printable ASCII set (0x21-0x7E); a
+    # real branch name never needs anything outside it, and a BOM or
+    # zero-width space always falls outside it. This is per-line, not
+    # per-file: it does not exit, it does not drop the entry, it flags the
+    # whole run as poisoned (see _is_held) and lets every other entry keep
+    # resolving normally, so a clean neighbour still holds on its own merit.
+    if ! printf '%s' "$_hold_name" | LC_ALL=C grep -Eq '^[[:graph:]]+$'; then
+      _HOLD_LIST_POISONED=1
+      _hold_poisoned_desc="${_hold_poisoned_desc:+$_hold_poisoned_desc; }'$_hold_line' (visible: $(_visible "$_hold_line"))"
+      _block "hold list '$_HOLD_PATH' at $TRUNK_REF has an entry whose NAME contains a byte outside the printable set: '$_hold_line' (visible: $(_visible "$_hold_line")). This name can never match a real ref, so it cannot be trusted to say what it does NOT hold. Refusing to let ANY branch fall through to a disposal command in this run until the hold list is fixed. Other, clean entries still hold normally."
     fi
     case "$_hold_name" in
       "$_REMOTE/"*)
@@ -617,6 +646,19 @@ _is_held() {
       return 0
     fi
   done <"$_hold_entries"
+
+  # _R1#167 G2_BOUNCE: only reached once every real entry has had its own
+  # chance to match $_ref by name or by SHA. A poisoned entry's own
+  # (still-attempted, above) SHA half may already have matched and
+  # returned by now; this is the fallback for a branch nothing matched,
+  # while the hold list contains at least one entry whose name we know we
+  # cannot trust. Fail closed rather than let an unmatched branch fall
+  # through to a disposal command on the strength of a list that has
+  # already proven it can hide a real hold.
+  if [ -n "$_HOLD_LIST_POISONED" ]; then
+    _HOLD_MSG="held: $_ref could not be confirmed clear of the hold list, because $_HOLD_PATH contains at least one entry whose name is unreadable ($_hold_poisoned_desc). No disposal command. Fix the poisoned entry, then re-run."
+    return 0
+  fi
   return 1
 }
 

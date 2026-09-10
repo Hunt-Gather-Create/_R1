@@ -2817,6 +2817,118 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
       expect(result.stderr).not.toMatch(/worktree remove --force.*held\/fault-injection/);
     });
   });
+
+  describe("a hold entry's NAME can carry an invisible byte the printable-check must catch (_R1#167 G2_BOUNCE)", () => {
+    // TP's own repro: three fossil branches, three PERMANENT/ANY hold
+    // entries (no SHA to fall back on, so the name half of the OR is the
+    // ONLY thing protecting these), a zero-width space glued to the head
+    // of the middle entry's name only. Built fresh here rather than
+    // reusing TP's fixtures on purpose, so this proof and TP's gate stay
+    // independent measurements of the same defect.
+    function buildThreeFossilsWithHoldFile(holdFileContent: string) {
+      const { workDir } = buildRepo(root, "runway", true, false);
+      for (const name of ["alpha", "bravo", "charlie"]) {
+        git(["checkout", "--quiet", "-b", name], workDir);
+        writeFile(workDir, `${name}.txt`, "x\n");
+        git(["add", "."], workDir);
+        git(["commit", "--quiet", "-m", name], workDir);
+        git(["checkout", "--quiet", "runway"], workDir);
+        squashMergeToTrunk(workDir, "runway", name);
+      }
+      writeHoldFile(workDir, "runway", holdFileContent);
+      git(["checkout", "--quiet", "runway"], workDir);
+      return workDir;
+    }
+
+    it("clean control: three PERMANENT/ANY entries, no bad bytes -- all three hold, zero disposal commands", () => {
+      const workDir = buildThreeFossilsWithHoldFile(
+        "alpha ANY PERMANENT\nbravo ANY PERMANENT\ncharlie ANY PERMANENT\n",
+      );
+      const { status, stderr } = runGuard(workDir);
+      expect(status).toBe(1); // refused: every candidate is held, none disposed
+      expect(stderr).toMatch(/held: alpha is under an active permanent hold/);
+      expect(stderr).toMatch(/held: bravo is under an active permanent hold/);
+      expect(stderr).toMatch(/held: charlie is under an active permanent hold/);
+      expect(stderr).not.toMatch(/Disposal:/);
+      expect(stderr).not.toMatch(/branch -D/);
+    });
+
+    it("a zero-width space on the MIDDLE entry's name: bravo refuses loudly and specifically, alpha and charlie still hold normally, and the fix is per-line not per-file", () => {
+      const zwspName = "​bravo"; // E2 80 8B, glued to the front, not stripped
+      const holdFile = `alpha ANY PERMANENT\n${zwspName} ANY PERMANENT\ncharlie ANY PERMANENT\n`;
+      const workDir = buildThreeFossilsWithHoldFile(holdFile);
+
+      const { status, stderr } = runGuard(workDir);
+      expect(status).toBe(1);
+
+      // Arm 1: loud and specific -- names the offending entry AND the byte,
+      // not a generic "the hold file was rejected".
+      expect(stderr).toMatch(/NAME contains a byte outside the printable set/);
+      expect(stderr).toMatch(new RegExp(escapeRegExp(zwspName)));
+      expect(stderr).toMatch(/visible:/);
+
+      // Arm 2: per line, not per file -- alpha and charlie still hold on
+      // their own real entries, unaffected by bravo's corrupted neighbour.
+      expect(stderr).toMatch(/held: alpha is under an active permanent hold/);
+      expect(stderr).toMatch(/held: charlie is under an active permanent hold/);
+
+      // The defect this whole fix exists for: bravo must never get a
+      // disposal command, precisely because the ONLY entry that could have
+      // named it is the one whose name we can no longer trust.
+      expect(stderr).not.toMatch(/branch -D bravo/);
+      // And the refusal is not silent about WHY bravo, specifically, is
+      // being withheld from disposal.
+      expect(stderr).toMatch(/bravo could not be confirmed clear of the hold list/);
+    });
+
+    it("a BOM on the FIRST entry's name behaves the same as a zero-width space on the middle one: reject by byte range, not by a hand-picked list of characters", () => {
+      const bomName = "﻿alpha"; // EF BB BF
+      const holdFile = `${bomName} ANY PERMANENT\nbravo ANY PERMANENT\ncharlie ANY PERMANENT\n`;
+      const workDir = buildThreeFossilsWithHoldFile(holdFile);
+
+      const { status, stderr } = runGuard(workDir);
+      expect(status).toBe(1);
+      expect(stderr).toMatch(/NAME contains a byte outside the printable set/);
+      expect(stderr).toMatch(/held: bravo is under an active permanent hold/);
+      expect(stderr).toMatch(/held: charlie is under an active permanent hold/);
+      expect(stderr).not.toMatch(/branch -D alpha/);
+    });
+
+    it("mutation: reverting the printable-name check on the pre-fix source brings bravo's disposal command back (RED), the fixed script does not (GREEN)", () => {
+      const zwspName = "​bravo";
+      const holdFile = `alpha ANY PERMANENT\n${zwspName} ANY PERMANENT\ncharlie ANY PERMANENT\n`;
+      const workDir = buildThreeFossilsWithHoldFile(holdFile);
+
+      // GREEN: the real, fixed guard in this working tree.
+      const fixed = runGuard(workDir);
+      expect(fixed.status).toBe(1);
+      expect(fixed.stderr).not.toMatch(/branch -D bravo/);
+
+      // RED: the guard as it shipped at 540462ed, before this fix, with
+      // nothing else touched -- the anchor is the exact block this fix
+      // added, so removing it is equivalent to never having written it.
+      const anchor =
+        '    if ! printf \'%s\' "$_hold_name" | LC_ALL=C grep -Eq \'^[[:graph:]]+$\'; then\n' +
+        "      _HOLD_LIST_POISONED=1\n" +
+        '      _hold_poisoned_desc="${_hold_poisoned_desc:+$_hold_poisoned_desc; }\'$_hold_line\' (visible: $(_visible "$_hold_line"))"\n' +
+        '      _block "hold list \'$_HOLD_PATH\' at $TRUNK_REF has an entry whose NAME contains a byte outside the printable set: \'$_hold_line\' (visible: $(_visible "$_hold_line")). This name can never match a real ref, so it cannot be trusted to say what it does NOT hold. Refusing to let ANY branch fall through to a disposal command in this run until the hold list is fixed. Other, clean entries still hold normally."\n' +
+        "    fi\n";
+      const source = readFileSync(SCRIPT_PATH, "utf8");
+      const occurrences = source.split(anchor).length - 1;
+      expect(occurrences).toBe(1); // targets the real, unique block this fix added
+      const mutated = source.replace(anchor, "");
+      expect(mutated).not.toBe(source);
+      // The fallback in _is_held is now dead code with the flag never set,
+      // which is fine -- it must never fire, and this proves it doesn't
+      // need to: bravo goes back to being decided by name/SHA match alone.
+
+      const mutantPath = join(root, "mutant-no-printable-check.sh");
+      writeFileSync(mutantPath, mutated);
+      const red = runGuard(workDir, "origin", mutantPath);
+      expect(red.status).toBe(1); // still refuses (still a fossil overall) --
+      expect(red.stderr).toMatch(/branch -D bravo/); // -- but now offers to destroy the held one.
+    });
+  });
 });
 
 describe("hygiene-guard.sh, control 20: a locked worktree refuses with no removal command, never `-f -f` (QA gap, _R1#167 G1_BOUNCE)", () => {
