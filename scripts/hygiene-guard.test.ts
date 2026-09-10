@@ -839,7 +839,7 @@ describe("hygiene-guard.sh, control 10: two content-presence detectors, OR-combi
     return names;
   }
 
-  it("detector A (git cherry) catches all three sequential same-file fossils that detector B (reverse-apply) alone would miss but the last", () => {
+  it("detector A (git cherry) still SEES all three sequential same-file fossils that detector B (reverse-apply) alone would miss but the last -- but (_R1#167 G1_BOUNCE 2) only the one reverse-apply also confirms gets a disposal command; the other two are refused as DISPUTED, never auto-disposed from ancestry alone", () => {
     const { workDir } = buildRepo(root, "runway");
     writeFile(workDir, "shared.txt", "");
     git(["add", "."], workDir);
@@ -852,10 +852,23 @@ describe("hygiene-guard.sh, control 10: two content-presence detectors, OR-combi
 
     const { status, stderr } = runGuard(workDir);
     expect(status).toBe(1);
-    for (const branch of fossils) {
-      expect(stderr).toMatch(new RegExp(escapeRegExp(branch)));
+    const lines = stderr.split("\n");
+    // fossil-1 and fossil-2: reverse-apply cannot confirm them (trunk grew
+    // past their append's hunk boundary once later fossils also appended
+    // to shared.txt), so cherry alone must not authorize a disposal
+    // command for either -- DISPUTED, no "Disposal:" line.
+    for (const branch of ["fossil-1", "fossil-2"]) {
+      const line = lines.find((l) => l.includes(branch));
+      expect(line, `no BLOCK line found for ${branch}`).toBeTruthy();
+      expect(line).toMatch(/DISPUTED/);
+      expect(line).not.toMatch(/Disposal:/);
     }
-    expect(stderr).toMatch(/detected via git cherry/);
+    // fossil-3 is the one reverse-apply CAN still confirm directly (it is
+    // the last append, so trunk has not grown past its own hunk boundary):
+    // both detectors agree, and it gets the real disposal command.
+    const fossil3Line = lines.find((l) => l.includes("fossil-3"));
+    expect(fossil3Line).toMatch(/Disposal: git branch -D fossil-3/);
+    expect(fossil3Line).toMatch(/detected via git cherry \(patch-id\) and reverse-apply, in agreement/);
   });
 
   it("detector B (reverse-apply) catches a multi-commit squash that detector A (git cherry) alone cannot, since squashing N commits produces one new patch-id with no equivalent in trunk's separately-committed history", () => {
@@ -971,6 +984,138 @@ describe("hygiene-guard.sh, control 10: two content-presence detectors, OR-combi
     const { status, stdout } = runGuard(workDir);
     expect(status).toBe(0);
     expect(stdout).toMatch(/clean/);
+  });
+});
+
+describe("hygiene-guard.sh, DEFECT 5 (_R1#167 G1_BOUNCE 2): cherry (ancestry) alone must never authorize a disposal command, only reverse-apply (content) can", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-defect5-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  /**
+   * Lands feature.txt's exact patch on trunk via a real squash merge (so
+   * detector B is a genuine, unbroken content check on this file -- no
+   * hunk-boundary confusion), leaving a patch-id-equivalent commit in
+   * trunk's history either way. When `revertAfterLanding` is true, an
+   * extra commit removes feature.txt from trunk right after the squash,
+   * so cherry's patch-id answer (which never forgets) and reverse-apply's
+   * answer (which reads trunk's CURRENT tree) diverge: this is DEFECT 5's
+   * own trigger, content that landed and was later reverted.
+   *
+   * BED VALIDITY GATE (TP's own trap, hit twice on this ticket before this
+   * fix): asserts `rev-list --count` is nonzero and `git cherry -v` prints
+   * a line before ever trusting the guard's verdict, so a byte-identical-
+   * commit collapse (which reads as "zero commits ahead", a false clean)
+   * cannot silently pass this test.
+   */
+  function buildLandedThenMaybeRevertedFixture(workDir: string, revertAfterLanding: boolean) {
+    git(["checkout", "--quiet", "-b", "fossil"], workDir);
+    writeFile(workDir, "feature.txt", "X content line 1\nX content line 2\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add feature X on branch"], workDir);
+
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "fossil");
+
+    if (revertAfterLanding) {
+      git(["rm", "--quiet", "feature.txt"], workDir);
+      git(["commit", "--quiet", "-m", "remove feature.txt"], workDir);
+      git(["push", "--quiet", "origin", "runway"], workDir);
+    }
+
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    // BED VALIDITY GATE, run before scoring anything (TP's own instruction).
+    const ahead = git(["rev-list", "--count", "runway..fossil"], workDir);
+    expect(Number(ahead), "bed invalid: fossil is not ahead of trunk at all").toBeGreaterThan(0);
+    const cherryOut = git(["cherry", "-v", "runway", "fossil"], workDir);
+    expect(cherryOut.length, "bed invalid: git cherry printed nothing").toBeGreaterThan(0);
+  }
+
+  it("CONTROL: content genuinely present in trunk's tree (never reverted) still gets exactly one disposal command, both detectors agreeing", () => {
+    const { workDir } = buildRepo(root, "runway");
+    buildLandedThenMaybeRevertedFixture(workDir, false);
+
+    // stdin gate (TP's second trap): explicit </dev/null via runGuard's
+    // own default (execFileSync's closed pipe) -- not relying on an
+    // inherited tty, so a refusal here can never be the stdin gate firing
+    // for the wrong reason.
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    const disposalLines = stderr.split("\n").filter((l) => l.includes("Disposal:"));
+    expect(disposalLines).toHaveLength(1);
+    expect(disposalLines[0]).toMatch(/git branch -D fossil/);
+    expect(stderr).toMatch(/detected via git cherry \(patch-id\) and reverse-apply, in agreement/);
+  });
+
+  it("REVERTED: content landed then was reverted -- cherry still matches by patch-id forever, but reverse-apply reads trunk's CURRENT tree and disagrees. Zero disposal commands; the branch is the only remaining copy", () => {
+    const { workDir } = buildRepo(root, "runway");
+    buildLandedThenMaybeRevertedFixture(workDir, true);
+
+    // Independent confirmation of cherry's half of the disagreement,
+    // own-hands, before trusting the guard's verdict about it: cherry
+    // still reports this commit as patch-id equivalent, even though
+    // feature.txt is gone from trunk's current tree.
+    const cherryOut = git(["cherry", "runway", "fossil"], workDir);
+    expect(cherryOut.split("\n").some((l) => l.startsWith("-"))).toBe(true);
+    expect(() => git(["cat-file", "-e", "runway:feature.txt"], workDir)).toThrow();
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1); // refusal posture is UNCHANGED -- TP explicit: do not touch this
+    expect(stderr).not.toMatch(/Disposal:/); // the one thing that must change
+    expect(stderr).toMatch(/DISPUTED/);
+    expect(stderr).toMatch(/fossil/);
+    expect(stderr).toMatch(/reverse-apply could not confirm/);
+  });
+
+  it("the reverted and control arms do not render alike (byte-inequality, not just a different assertion path)", () => {
+    const controlRoot = join(root, "control");
+    mkdirSync(controlRoot, { recursive: true });
+    const { workDir: controlDir } = buildRepo(controlRoot, "runway");
+    buildLandedThenMaybeRevertedFixture(controlDir, false);
+    const control = runGuard(controlDir);
+
+    const revertedRoot = join(root, "reverted");
+    mkdirSync(revertedRoot, { recursive: true });
+    const { workDir: revertedDir } = buildRepo(revertedRoot, "runway");
+    buildLandedThenMaybeRevertedFixture(revertedDir, true);
+    const reverted = runGuard(revertedDir);
+
+    expect(control.stderr).not.toBe(reverted.stderr);
+    expect(control.stderr).toMatch(/Disposal:/);
+    expect(reverted.stderr).not.toMatch(/Disposal:/);
+  });
+
+  it("mutation: removing the agreement requirement (DISPUTED silently promoted to CONFIRMED) brings the destructive disposal command back on the reverted arm -- RED without the fix, GREEN with it", () => {
+    const { workDir } = buildRepo(root, "runway");
+    buildLandedThenMaybeRevertedFixture(workDir, true);
+
+    // Control: the real, unmutated script is silent on Disposal for this arm.
+    const controlResult = runGuard(workDir);
+    expect(controlResult.stderr).not.toMatch(/Disposal:/);
+
+    // Mutation: the exact clause that keeps a cherry-only hit from being
+    // treated as confirmed. This is the agreement requirement itself --
+    // removing it collapses DISPUTED back into CONFIRMED, which is
+    // byte-for-byte the pre-fix behavior for this bed.
+    const anchor = '_CONTENT_MODE="disputed"';
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // targets a unique anchor, not a guess
+    const mutated = source.replace(anchor, '_CONTENT_MODE="confirmed"');
+    expect(mutated).not.toBe(source); // the mutation actually landed
+
+    const mutantPath = join(root, "mutant-no-agreement.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutantResult = runGuard(workDir, "origin", mutantPath);
+    expect(mutantResult.status).toBe(1);
+    expect(mutantResult.stderr).toMatch(/Disposal: git branch -D fossil/); // RED: destructive command is back
   });
 });
 

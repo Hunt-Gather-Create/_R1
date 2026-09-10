@@ -1096,18 +1096,44 @@ _mode_diverges() {
   return "$_mdiverges"
 }
 
-# --- combined content-presence check: ahead-count, then cherry, then ------
-# --- reverse-apply, OR-combined. Each detector catches what the other ------
-# --- misses; neither one false-positives on genuine unmerged work. ---------
+# --- combined content-presence check: ahead-count, then both detectors, ---
+# --- cherry (ancestry) advisory, reverse-apply (content) authoritative. ----
+# DEFECT 5 (_R1#167 G1_BOUNCE 2): plain OR let cherry alone authorize a
+# disposal command. cherry answers an ANCESTRY question (does trunk's
+# history contain a commit with this patch-id); reverse-apply answers a
+# CONTENT question (does trunk's actual tree already hold this change).
+# Content landing and later being reverted is the case where they diverge:
+# cherry still says "- <sha>" forever, because history never forgets a
+# patch-id, but the content is gone and this branch is its only remaining
+# copy. Cherry alone used to short-circuit before reverse-apply ever ran,
+# so that divergence was never observed and the guard printed the same
+# "Disposal: git branch -D" line for a genuine fossil and for the one
+# branch holding the last copy of reverted work.
+#
+# Both detectors now always run (no short-circuit on cherry's hit): a
+# reverse-apply PRESENT verdict is sufficient on its own to authorize
+# disposal, agreeing or not with cherry, because it is asking the content
+# question directly against trunk's real tree -- this is also what still
+# catches the squash-of-multiple-commits shape cherry cannot see (ruling
+# 1's "multi" case). A cherry-only hit, with reverse-apply saying NOT
+# present, is reported as a disagreement: no disposal command, because
+# ancestry alone does not prove the content is still there to reclaim by
+# deleting the branch. See the DISPUTED branch below.
 _DETECTOR=""
+_CONTENT_MODE=""
 _is_content_present() {
   # $1 = candidate ref, $2 = trunk ref. Sets _DETECTOR to the name of
   # whichever check fired, for the BLOCK line -- a combined boolean that
   # doesn't say which detector caught it hides a detector silently going
-  # dark, which is the exact class of gap this fix exists to close.
+  # dark, which is the exact class of gap this fix exists to close. Sets
+  # _CONTENT_MODE to "confirmed" (reverse-apply itself found the content
+  # present, safe to dispose) or "disputed" (cherry alone fired, reverse-
+  # apply disagreed) whenever this returns 0; callers must check
+  # _CONTENT_MODE before printing any disposal command.
   _ref=$1
   _trunk=$2
   _DETECTOR=""
+  _CONTENT_MODE=""
 
   # Cheap discriminator, checked first, short-circuits before both detectors
   # below. A fossil had work that is now in trunk; a fresh branch never had
@@ -1136,16 +1162,49 @@ _is_content_present() {
   fi
   [ "$_ahead" -gt 0 ] || return 1
 
-  # git cherry before reverse-apply: cheaper (no scratch index, no patch
-  # file, no read-tree/apply forks) and it is the detector ruling-2's
-  # timing number benefits most from short-circuiting on.
+  # Both detectors run every time now (_R1#167 G1_BOUNCE 2): cherry's hit
+  # alone used to return immediately, which is exactly what let a reverted-
+  # but-patch-id-matching branch print a disposal command without reverse-
+  # apply ever getting a chance to disagree. cherry is still run first
+  # because it is cheaper (no scratch index, no patch file, no read-
+  # tree/apply forks), but its result is now advisory: it only sets
+  # _cherry_hit for the agreement check below, it never returns on its own.
+  _cherry_hit=1
   if _is_cherry_fossil "$_ref" "$_trunk"; then
-    _DETECTOR="git cherry (patch-id)"
+    _cherry_hit=0
+  fi
+
+  _ra_hit=1
+  if _is_reverse_apply_fossil "$_ref" "$_trunk"; then
+    _ra_hit=0
+  fi
+
+  if [ "$_ra_hit" -eq 0 ]; then
+    # reverse-apply is a direct content check against trunk's actual tree,
+    # so its PRESENT verdict authorizes disposal on its own -- agreeing
+    # with cherry or not. This is also what still catches ruling 1's
+    # "multi" shape (a squash of several commits into one diff, which
+    # cherry cannot match against trunk's separately-committed history).
+    if [ "$_cherry_hit" -eq 0 ]; then
+      _DETECTOR="git cherry (patch-id) and reverse-apply, in agreement"
+    else
+      _DETECTOR="reverse-apply"
+    fi
+    _CONTENT_MODE="confirmed"
     return 0
   fi
 
-  if _is_reverse_apply_fossil "$_ref" "$_trunk"; then
-    _DETECTOR="reverse-apply"
+  if [ "$_cherry_hit" -eq 0 ]; then
+    # cherry alone: ancestry says a commit with this patch-id is in
+    # trunk's history, but reverse-apply, asking the content question
+    # directly, could not confirm the change is present in trunk's actual
+    # tree. That disagreement is the destructive case (content landed,
+    # then was reverted, and this branch is the only remaining copy) --
+    # never authorize a disposal command from ancestry alone. Report it
+    # as disputed instead; the caller prints a BLOCK line naming the
+    # disagreement and continues without a Disposal: line.
+    _DETECTOR="git cherry (patch-id)"
+    _CONTENT_MODE="disputed"
     return 0
   fi
 
@@ -1438,6 +1497,18 @@ while IFS= read -r _branch; do
   # dirty state. Reordered per TP bounce on 3d90a3b: an unrelated
   # worktree with a corrupt .git pointer must not block the whole push.
   if ! _is_content_present "$_branch" "$TRUNK_REF"; then
+    continue
+  fi
+
+  # DEFECT 5 (_R1#167 G1_BOUNCE 2): a DISPUTED verdict means cherry (ancestry)
+  # fired but reverse-apply (content, checked directly against trunk's tree)
+  # disagreed. Report the disagreement and stop for this branch, before the
+  # hold check or any dirty/locked worktree logic -- none of that changes
+  # the answer, because no disposal command is going to be printed either
+  # way. Byte-identical to the destructive-case regression bed: the reverted
+  # arm must render this, never "Disposal: git branch -D $_branch".
+  if [ "$_CONTENT_MODE" = "disputed" ]; then
+    _block "branch DISPUTED: $_branch matches $TRUNK_REF's history by patch-id (git cherry) but reverse-apply could not confirm its content is present in $TRUNK_REF's actual tree. Detectors disagree -- this can mean the change landed on $TRUNK_REF and was later reverted, leaving $_branch the only remaining copy, or it can mean reverse-apply's own known gap (an append past a hunk boundary trunk has since grown past). No disposal command. Needs manual verification."
     continue
   fi
 
