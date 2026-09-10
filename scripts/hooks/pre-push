@@ -1,10 +1,10 @@
 #!/bin/sh
-# Local pre-push test run (_R1#107, part 1).
+# Local pre-push test run (_R1#107, part 1) plus the hygiene guard (_R1#167).
 #
-# THIS IS NOT A GATE. It lives in .git, it is not cloned, `--no-verify` walks
-# straight past it, and it protects only machines that ran the installer. It
-# catches the honest mistake cheaply. It does not remove ambiguity, and it
-# would not have caught the PR #128 breakage if the pusher had skipped it.
+# THIS FILE, as a whole, IS NOT A GATE: it lives in .git, it is not cloned,
+# and `git push --no-verify` walks straight past everything in it, hygiene
+# guard included, since that flag operates at the git level, above this
+# script. It protects only machines that ran the installer.
 #
 # The visible signal is .github/workflows/pr-tests.yml, which runs on the PR
 # where everyone can see the result. Do not let anyone describe THIS file as
@@ -14,13 +14,36 @@
 # unprotected and the check is not required, so it REPORTS and does not BLOCK.
 # See docs/runway/test-gates.md.
 #
-# Escape hatches, both deliberate:
-#   git push --no-verify     one-off
-#   RUNWAY_SKIP_PREPUSH=1    session-wide
+# Two steps below, two different postures once you ARE running this file:
+#
+# 1. The hygiene guard has NO escape hatch of its own beyond --no-verify. It
+#    runs first, before the RUNWAY_SKIP_PREPUSH check, and refuses on its own
+#    exit code, never on output text. A documented skip flag is exactly how
+#    the fleet's one prior tree-state check ended up enforcing nothing but a
+#    warning. See scripts/hygiene-guard.sh.
+#    The guard also reads the pre-push ref-update stream ("<local ref>
+#    <local sha> <remote ref> <remote sha>", one line per ref being
+#    pushed) from stdin, to catch a force-push orphaning a held object.
+#    Nothing below this call reads stdin, so it is deliberately left
+#    connected to whatever git itself wired up here rather than captured
+#    and replayed: there is nothing downstream in THIS file to starve.
+# 2. The test-suite step below it DOES have a documented, deliberate skip:
+#    RUNWAY_SKIP_PREPUSH=1. That is what makes the file as a whole "not a
+#    gate" in the sense above; it is not a claim that the hygiene guard step
+#    is equally optional.
 set -e
 
+root=$(git rev-parse --show-toplevel)
+echo "pre-push: checking for fossil state (merged branches/worktrees)."
+if ! sh "$root/scripts/hygiene-guard.sh" "$root" origin; then
+  echo ""
+  echo "pre-push: HYGIENE GUARD REFUSED. Push blocked."
+  echo "pre-push: this guard has no skip flag of its own. git push --no-verify walks past it if you truly mean to."
+  exit 1
+fi
+
 if [ "${RUNWAY_SKIP_PREPUSH:-}" = "1" ]; then
-  echo "pre-push: skipped (RUNWAY_SKIP_PREPUSH=1). The PR check still runs."
+  echo "pre-push: test suite skipped (RUNWAY_SKIP_PREPUSH=1). The PR check still runs."
   exit 0
 fi
 
