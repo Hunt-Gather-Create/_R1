@@ -21,6 +21,12 @@
 #    exit code, never on output text. A documented skip flag is exactly how
 #    the fleet's one prior tree-state check ended up enforcing nothing but a
 #    warning. See scripts/hygiene-guard.sh.
+#    The guard also reads the pre-push ref-update stream ("<local ref>
+#    <local sha> <remote ref> <remote sha>", one line per ref being
+#    pushed) from stdin, to catch a force-push orphaning a held object.
+#    Nothing below this call reads stdin, so it is deliberately left
+#    connected to whatever git itself wired up here rather than captured
+#    and replayed: there is nothing downstream in THIS file to starve.
 # 2. The test-suite step below it DOES have a documented, deliberate skip:
 #    RUNWAY_SKIP_PREPUSH=1. That is what makes the file as a whole "not a
 #    gate" in the sense above; it is not a claim that the hygiene guard step

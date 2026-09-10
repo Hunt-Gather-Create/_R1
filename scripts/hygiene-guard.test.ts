@@ -40,7 +40,7 @@
  * isolated tmp fixture.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -80,13 +80,54 @@ interface GuardResult {
   stderr: string;
 }
 
-/** Runs the real, shipped shell guard as a subprocess, the way pre-push does. */
-function runGuard(cwd: string, remote = "origin", scriptPath = SCRIPT_PATH): GuardResult {
+/**
+ * Runs the real, shipped shell guard as a subprocess, the way pre-push does.
+ * extraEnv layers on top of ISOLATED_GIT_ENV rather than replacing it -- used
+ * by control 17 to add a GIT_TRACE-family variable to an otherwise normal
+ * caller environment, the exact way a developer debugging git would trigger
+ * it, without losing the PATH/HOME isolation the rest of the suite relies on.
+ */
+function runGuard(
+  cwd: string,
+  remote = "origin",
+  scriptPath = SCRIPT_PATH,
+  extraEnv: NodeJS.ProcessEnv = {},
+): GuardResult {
   try {
     const stdout = execFileSync("sh", [scriptPath, cwd, remote], {
       cwd,
       encoding: "utf8",
-      env: ISOLATED_GIT_ENV,
+      env: { ...ISOLATED_GIT_ENV, ...extraEnv },
+    });
+    return { status: 0, stdout, stderr: "" };
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; status?: number };
+    return { status: e.status ?? -1, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
+  }
+}
+
+/**
+ * Runs the real, shipped guard with an explicit pre-push ref-update stream
+ * on stdin -- the "<local ref> <local sha> <remote ref> <remote sha>" lines
+ * git itself provides. Every other test in this suite calls runGuard,
+ * which supplies execFileSync's own default stdin (a pipe closed with
+ * immediate EOF, never a tty): that is real, honest "nothing piped in"
+ * coverage for the orphan-detection trigger, not an accidental gap, so it
+ * is left alone rather than switched to this helper everywhere.
+ */
+function runGuardWithStdin(
+  cwd: string,
+  stdin: string,
+  remote = "origin",
+  scriptPath = SCRIPT_PATH,
+  env: NodeJS.ProcessEnv = ISOLATED_GIT_ENV,
+): GuardResult {
+  try {
+    const stdout = execFileSync("sh", [scriptPath, cwd, remote], {
+      cwd,
+      encoding: "utf8",
+      env,
+      input: stdin,
     });
     return { status: 0, stdout, stderr: "" };
   } catch (err) {
@@ -369,7 +410,9 @@ describe("hygiene-guard.sh, control 1: refuses on a fossil state you construct",
     const { status, stderr } = runGuard(workDir);
     expect(status).toBe(1);
     expect(stderr).toMatch(/worktree already in origin\/runway \(detected via .+?\): fix\/wt-leftover/);
-    expect(stderr).toMatch(new RegExp(`git worktree remove --force ${escapeRegExp(wtPath)}`));
+    // Quoted (QA gap, _R1#167 G1_BOUNCE): a space-containing path made the
+    // unquoted form fail with exit 129 when pasted verbatim.
+    expect(stderr).toMatch(new RegExp(`git worktree remove --force '${escapeRegExp(wtPath)}'`));
   });
 });
 
@@ -578,7 +621,9 @@ describe("hygiene-guard.sh, addendum control 6: a content-present worktree that 
 
     const { status, stderr } = runGuard(workDir);
     expect(status).toBe(1);
-    expect(stderr).toMatch(new RegExp(`git worktree remove --force ${escapeRegExp(wtPath)}`));
+    // Quoted (QA gap, _R1#167 G1_BOUNCE): a space-containing path made the
+    // unquoted form fail with exit 129 when pasted verbatim.
+    expect(stderr).toMatch(new RegExp(`git worktree remove --force '${escapeRegExp(wtPath)}'`));
   });
 });
 
@@ -1127,7 +1172,7 @@ describe("hygiene-guard.sh, control 11: content presence fails toward NOT-presen
     expect(stdout).toMatch(/clean/);
   });
 
-  it("mutation: trusting apply --check's exit code alone (ignoring its stderr) calls the mode-only branch a fossil and hands out git branch -D", () => {
+  it("mutation: skipping the mode-divergence check and trusting apply --check's exit code alone calls the mode-only branch a fossil and hands out git branch -D", () => {
     const { workDir } = buildRepo(root, "runway");
     git(["checkout", "--quiet", "runway"], workDir);
     writeFile(workDir, "CHANGELOG.md", "unreleased\n");
@@ -1145,21 +1190,23 @@ describe("hygiene-guard.sh, control 11: content presence fails toward NOT-presen
     // here in the same session as the mutant for a direct before/after).
     expect(runGuard(workDir).status).toBe(0);
 
-    // Mutation: the exact bug DEFECT 1 named. Trust apply --check's exit
-    // code alone by discarding its stderr instead of capturing and acting
-    // on it -- which is what the script did before the fix, and is
-    // reproduced here as the shipped fix's own anchor line, patched back
-    // to the pre-fix behavior.
+    // Mutation: the exact bug DEFECT 1 named, reintroduced by removing the
+    // call to _mode_diverges -- the fix's load-bearing line after the
+    // GIT_TRACE bounce replaced stderr-capture with a direct mode
+    // comparison. Trusting apply --check's exit code alone again is
+    // exactly what the pre-fix and the pre-GIT_TRACE-fix code both did.
     const anchor =
-      'GIT_INDEX_FILE="$_index" _g apply --cached --reverse --check "$_patch" 2>"$_apply_stderr"\n' +
+      'GIT_INDEX_FILE="$_index" _g apply --whitespace=nowarn --cached --reverse --check "$_patch" >/dev/null 2>/dev/null\n' +
       "  _apply_status=$?\n" +
-      '  _apply_warnings=$(cat "$_apply_stderr" 2>/dev/null)\n' +
       '  rm -rf "$_scratch"\n' +
-      '  if [ "$_apply_status" -eq 0 ] && [ -z "$_apply_warnings" ]; then\n' +
+      '  if [ "$_apply_status" -eq 0 ]; then\n' +
+      '    if _mode_diverges "$_ref" "$_trunk" "$_base"; then\n' +
+      "      return 1\n" +
+      "    fi\n" +
       "    return 0\n" +
       "  fi\n" +
       '  if [ "$_apply_status" -gt 1 ]; then\n' +
-      '    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries"\n' +
+      '    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries" "$_STDIN_FILE"\n' +
       '    _block "could not check whether $_ref reverse-applies onto $_trunk (git apply exited $_apply_status). Not treating an instrument failure as not-present."\n' +
       "    exit 1\n" +
       "  fi\n" +
@@ -1169,7 +1216,7 @@ describe("hygiene-guard.sh, control 11: content presence fails toward NOT-presen
     expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
     const mutated = source.replace(
       anchor,
-      'GIT_INDEX_FILE="$_index" _g apply --cached --reverse --check "$_patch" 2>/dev/null\n  _apply_status=$?\n  rm -rf "$_scratch"\n  [ "$_apply_status" -eq 0 ] && return 0\n  return 1',
+      'GIT_INDEX_FILE="$_index" _g apply --whitespace=nowarn --cached --reverse --check "$_patch" >/dev/null 2>/dev/null\n  _apply_status=$?\n  rm -rf "$_scratch"\n  [ "$_apply_status" -eq 0 ] && return 0\n  return 1',
     );
     expect(mutated).not.toBe(source);
 
@@ -1180,6 +1227,144 @@ describe("hygiene-guard.sh, control 11: content presence fails toward NOT-presen
     expect(mutantResult.status).toBe(1); // false refusal: mode-only now reads as a fossil
     expect(mutantResult.stderr).toMatch(/mode-only/);
     expect(mutantResult.stderr).toMatch(/git branch -D mode-only/); // the destructive remedy DEFECT 1 warned about
+  });
+});
+
+describe("hygiene-guard.sh, control 17: GIT_TRACE and its siblings must never change a verdict (_R1#167 G1_BOUNCE, Overwatch/TP GIT_TRACE finding)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-trace-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  // The exact bed TP measured: one branch, a multi-commit squash, nothing
+  // else in the repo that could cause a refusal on its own. Reverse-apply
+  // is the ONLY detector that can catch this shape (git cherry cannot,
+  // since squashing N commits produces one new patch-id with no
+  // equivalent in trunk's separately-committed history), so this fixture
+  // discriminates the GIT_TRACE regression specifically: if trace output
+  // on stderr defeats reverse-apply, this is the one case with nothing
+  // else to fall back on.
+  function buildSquashFixture(workDir: string) {
+    git(["checkout", "--quiet", "-b", "multi"], workDir);
+    writeFile(workDir, "multi.txt", "a\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "multi 1"], workDir);
+    writeFile(workDir, "multi.txt", "a\nb\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "multi 2"], workDir);
+    writeFile(workDir, "multi.txt", "a\nb\nc\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "multi 3"], workDir);
+    squashMergeToTrunk(workDir, "runway", "multi");
+    git(["checkout", "--quiet", "runway"], workDir);
+  }
+
+  const TRACE_VARS = [
+    "GIT_TRACE",
+    "GIT_TRACE_PERFORMANCE",
+    "GIT_TRACE_SETUP",
+    "GIT_TRACE2",
+    "GIT_TRACE2_EVENT",
+    "GIT_CURL_VERBOSE",
+  ];
+
+  it.each(TRACE_VARS)(
+    "%s=1 in the caller's environment does not change the verdict on a squash-merged fossil",
+    (traceVar) => {
+      const { workDir } = buildRepo(root, "runway");
+      buildSquashFixture(workDir);
+
+      const clean = runGuard(workDir);
+      expect(clean.status).toBe(1);
+      expect(clean.stderr).toMatch(/multi/);
+      expect(clean.stderr).toMatch(/git branch -D multi/);
+
+      const traced = runGuard(workDir, "origin", undefined, { [traceVar]: "1" });
+      // Byte-identical verdict, not just the same exit code: same BLOCK
+      // line, same detector attribution, per TP's own requirement that
+      // this be a full-verdict comparison, not an exit-code-only one.
+      expect(traced.status).toBe(clean.status);
+      expect(traced.stderr).toBe(clean.stderr);
+      expect(traced.stdout).toBe(clean.stdout);
+    },
+  );
+
+  it("GIT_CURL_VERBOSE=1 does not touch the verdict either way, since it only affects network calls this guard never makes", () => {
+    const { workDir } = buildRepo(root, "runway");
+    buildSquashFixture(workDir);
+    const clean = runGuard(workDir);
+    const traced = runGuard(workDir, "origin", undefined, { GIT_CURL_VERBOSE: "1" });
+    expect(traced.status).toBe(clean.status);
+    expect(traced.stderr).toBe(clean.stderr);
+  });
+
+  it("mutation: removing the environment sanitization block lets a GIT_TRACE var reach the guard's own git subprocesses", () => {
+    // This mutation does NOT reintroduce the GIT_TRACE false-clean verdict
+    // by itself: _mode_diverges (the DEFECT 1 replacement) no longer reads
+    // apply's stderr for a verdict at all, so the trace-defeats-the-
+    // detector bug is already closed independent of this sanitization
+    // block. That block is defense-in-depth, requested separately ("this
+    // guard's own git calls must never inherit trace/verbose settings"),
+    // and general timing-stability hygiene. Proving IT is wired needs a
+    // check on what env a git subprocess actually sees, not on the
+    // verdict -- so this uses a PATH shim that logs whether any
+    // GIT_TRACE-family variable is present at invocation time, then
+    // delegates to the real git. A verdict-based assertion here would be
+    // vacuous: it would pass whether or not the sanitization ran, which is
+    // exactly the shape of test this ticket has been finding all night.
+    const { workDir } = buildRepo(root, "runway");
+    buildSquashFixture(workDir);
+
+    const leakLog = join(root, "trace-leak.log");
+    const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+    const shimDir = join(root, "git-leak-shim");
+    mkdirSync(shimDir, { recursive: true });
+    const shimPath = join(shimDir, "git");
+    writeFileSync(
+      shimPath,
+      `#!/bin/sh\n` +
+        `for _v in GIT_TRACE GIT_TRACE2 GIT_TRACE_PERFORMANCE GIT_TRACE_SETUP GIT_CURL_VERBOSE; do\n` +
+        `  eval "_val=\\"\\$$_v\\""\n` +
+        `  if [ -n "$_val" ]; then\n` +
+        `    echo "leak: $_v seen by git $*" >> '${leakLog}'\n` +
+        `  fi\n` +
+        `done\n` +
+        `exec '${realGit}' "$@"\n`,
+    );
+    execFileSync("chmod", ["+x", shimPath]);
+    const shimEnv = { PATH: `${shimDir}:${process.env.PATH ?? ""}`, GIT_TRACE: "1" };
+
+    // Control: the real, fixed guard's git subprocesses never see GIT_TRACE
+    // even though the caller's own environment has it set.
+    rmSync(leakLog, { force: true });
+    const clean = runGuard(workDir, "origin", undefined, shimEnv);
+    expect(clean.status).toBe(1); // verdict is also correct, incidentally
+    expect(existsSync(leakLog)).toBe(false);
+
+    const anchor =
+      "for _trace_var in GIT_TRACE GIT_TRACE_FSMONITOR GIT_TRACE_PACK_ACCESS \\\n" +
+      "  GIT_TRACE_PACKET GIT_TRACE_PACKFILE GIT_TRACE_PERFORMANCE GIT_TRACE_REFS \\\n" +
+      "  GIT_TRACE_SETUP GIT_TRACE_SHALLOW GIT_TRACE_CURL GIT_TRACE_CURL_NO_DATA \\\n" +
+      "  GIT_CURL_VERBOSE GIT_TRACE2 GIT_TRACE2_EVENT GIT_TRACE2_PERF \\\n" +
+      "  GIT_TRACE2_BRIEF GIT_TRACE2_CONFIG_PARAMS GIT_TRACE2_ENV_VARS \\\n" +
+      "  GIT_TRACE2_PARENT_SID; do\n" +
+      '  unset "$_trace_var"\n' +
+      "done";
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
+    const mutated = source.replace(anchor, ": # sanitization removed by mutation");
+    expect(mutated).not.toBe(source);
+
+    const mutantPath = join(root, "mutant-no-env-sanitize.sh");
+    writeFileSync(mutantPath, mutated);
+
+    rmSync(leakLog, { force: true });
+    runGuard(workDir, "origin", mutantPath, shimEnv);
+    expect(existsSync(leakLog)).toBe(true); // the leak this control exists to catch
   });
 });
 
@@ -1549,6 +1734,109 @@ describe("hygiene-guard.sh, control 15: negative-control suite, every false-refu
   });
 });
 
+describe("hygiene-guard.sh, control 19: config-only detector misses TP found on _R1#167 G1_BOUNCE", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-cfgmiss-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("a DELETING fossil (branch removes trunk's trailing-whitespace lines, squash-merged) still refuses identically whether apply.whitespace is unset or warn", () => {
+    const { workDir } = buildRepo(root, "runway");
+    writeFile(workDir, "wsd.txt", "dirty one \ndirty two \nclean\ndirty three \n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "trunk carries whitespace-dirty lines"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+
+    // THREE commits, so a squash merge produces one patch-id with no
+    // equivalent among the branch's own separately-committed patch-ids:
+    // git cherry cannot see this, only reverse-apply can, which is the
+    // exact shape TP measured the config-only miss on.
+    git(["checkout", "--quiet", "-b", "fix/wsdel", "runway"], workDir);
+    writeFile(workDir, "wsd.txt", "dirty one\ndirty two\nclean\ndirty three \n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "strip whitespace, line one"], workDir);
+    writeFile(workDir, "wsd.txt", "dirty one\ndirty two\nclean\ndirty three\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "strip whitespace, line two"], workDir);
+    writeFile(workDir, "wsd.txt", "dirty one\ndirty two \nclean\ndirty three\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "reintroduce then fix, third commit"], workDir);
+    writeFile(workDir, "wsd.txt", "dirty one\ndirty two\nclean\ndirty three\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "final strip"], workDir);
+
+    squashMergeToTrunk(workDir, "runway", "fix/wsdel");
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const unset = runGuard(workDir);
+    expect(unset.status).toBe(1);
+    expect(unset.stderr).toMatch(/fix\/wsdel/);
+
+    git(["config", "apply.whitespace", "warn"], workDir);
+    const warn = runGuard(workDir);
+    expect(warn.status).toBe(1);
+    expect(warn.stderr).toMatch(/fix\/wsdel/);
+    // Byte-identical BLOCK line to the unset run: the config key must not
+    // change which reason the guard gives, only whether it fires at all.
+    expect(warn.stderr).toBe(unset.stderr);
+
+    git(["config", "apply.whitespace", "fix"], workDir);
+    const fix = runGuard(workDir);
+    expect(fix.status).toBe(1);
+    expect(fix.stderr).toBe(unset.stderr);
+  });
+
+  it("a committed .gitattributes line marking a text path binary still refuses identically, and does not false-positive on genuinely unmerged work", () => {
+    const { workDir } = buildRepo(root, "runway");
+    writeFile(workDir, ".gitattributes", "multi.txt binary\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "mark multi.txt binary"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+
+    // THREE commits building the file up, so a squash merge produces one
+    // patch-id with no equivalent among the branch's own commits: git
+    // cherry cannot see this, only reverse-apply can (and git cherry
+    // returning plus for all three commits, with no fossil found, is
+    // exactly what TP measured on this bed).
+    git(["checkout", "--quiet", "-b", "fix/binattr", "runway"], workDir);
+    writeFile(workDir, "multi.txt", "line one\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add multi.txt, line one"], workDir);
+    writeFile(workDir, "multi.txt", "line one\nline two\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add line two"], workDir);
+    writeFile(workDir, "multi.txt", "line one\nline two\nline three\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "add line three"], workDir);
+
+    squashMergeToTrunk(workDir, "runway", "fix/binattr");
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const withAttr = runGuard(workDir);
+    expect(withAttr.status).toBe(1);
+    expect(withAttr.stderr).toMatch(/fix\/binattr/);
+
+    // Genuine unmerged work under the identical attribute must not false-positive.
+    git(["checkout", "--quiet", "-b", "feature/binattr-unmerged", "runway"], workDir);
+    writeFile(workDir, "still-unmerged.txt", "line one\nline two\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "genuinely unmerged, unrelated file"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const negControl = runGuard(workDir);
+    expect(negControl.status).toBe(1); // fix/binattr is still a fossil sitting there
+    expect(negControl.stderr).toMatch(/fix\/binattr/);
+    // The negative: genuinely unmerged work under the same committed
+    // binary attribute must never get a BLOCK line of its own.
+    expect(negControl.stderr).not.toMatch(/feature\/binattr-unmerged/);
+  });
+});
+
 /**
  * A `git` PATH shim that fails exactly ONE named subcommand and passes
  * everything else through to the real git binary untouched. Overwatch's
@@ -1609,6 +1897,25 @@ function runGuardFaultInjected(cwd: string, failSubcommand: string, root: string
   const env = { ...ISOLATED_GIT_ENV, PATH: `${shimDir}:${process.env.PATH ?? ""}` };
   try {
     const stdout = execFileSync("sh", [SCRIPT_PATH, cwd, "origin"], { cwd, encoding: "utf8", env });
+    return { status: 0, stdout, stderr: "" };
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; status?: number };
+    return { status: e.status ?? -1, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
+  }
+}
+
+/** Same as runGuardFaultInjected, but with an explicit stdin ref-update stream. */
+function runGuardFaultInjectedWithStdin(
+  cwd: string,
+  failSubcommand: string,
+  root: string,
+  realGit: string,
+  stdin: string,
+): GuardResult {
+  const shimDir = makeGitFailShim(root, failSubcommand, realGit);
+  const env = { ...ISOLATED_GIT_ENV, PATH: `${shimDir}:${process.env.PATH ?? ""}` };
+  try {
+    const stdout = execFileSync("sh", [SCRIPT_PATH, cwd, "origin"], { cwd, encoding: "utf8", env, input: stdin });
     return { status: 0, stdout, stderr: "" };
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string; status?: number };
@@ -1772,6 +2079,54 @@ describe("hygiene-guard.sh, control 16: fault injection, every check refuses rat
     expect(result.stderr).not.toMatch(/branch -D neg\/whitespace/);
     expect(result.stderr).not.toMatch(/branch -D neg\/crlf/);
   });
+
+  it("breaking 'status' specifically: isolated fixture, so the assertion cannot be satisfied by an unrelated branch (QA note, _R1#167 G1_BOUNCE)", () => {
+    // QA found the shared fixture's `status` entry above is thin: it
+    // asserts only `result.status).not.toBe(0)`, and the shared fixture
+    // has fossil-1, fossil-2, and multi all driving that exit code
+    // regardless of what `status` does. QA applied the D2 mutation
+    // (piping git status into awk instead of reading its own exit code)
+    // and this same it.each entry stayed green, because control 12
+    // independently kills that mutant with its own dedicated fixture --
+    // not a real gap TODAY, but a fault-injection case that would go
+    // vacuous silently if control 12 were ever removed.
+    //
+    // This fixture has exactly ONE governed, content-present branch,
+    // checked out into its own worktree, and NOTHING else that could
+    // cause a refusal. With a healthy `status`, the guard still refuses
+    // (content presence alone earns that), but via a real disposal
+    // command. Breaking `status` must flip the MESSAGE, not just hold the
+    // exit code nonzero -- that flip is the thing this fault-injection
+    // table exists to prove for every entry in it, and this is the one
+    // entry that could not prove it on the shared fixture.
+    const { workDir } = (() => {
+      const built = buildRepo(root, "runway");
+      git(["checkout", "--quiet", "-b", "fix/only-content-present"], built.workDir);
+      writeFile(built.workDir, "only-content.txt", "leftover\n");
+      git(["add", "."], built.workDir);
+      git(["commit", "--quiet", "-m", "leftover"], built.workDir);
+      git(["checkout", "--quiet", "runway"], built.workDir);
+      const wtPath = join(root, "status-isolated-wt");
+      git(["worktree", "add", "--quiet", wtPath, "fix/only-content-present"], built.workDir);
+      squashMergeToTrunk(built.workDir, "runway", "fix/only-content-present");
+      git(["fetch", "--quiet", "origin"], built.workDir);
+      git(["checkout", "--quiet", "runway"], built.workDir);
+      return built;
+    })();
+
+    const baseline = runGuard(workDir);
+    expect(baseline.status).toBe(1);
+    expect(baseline.stderr).toMatch(/Disposal: git worktree remove --force/);
+    expect(baseline.stderr).not.toMatch(/UNKNOWN dirty-state/);
+
+    const faulted = runGuardFaultInjected(workDir, "status", root, realGit);
+    expect(faulted.status).toBe(1);
+    // The discriminating assertion: breaking status specifically changed
+    // WHICH message this exact branch got, not just that some other
+    // branch in the fixture happened to refuse anyway.
+    expect(faulted.stderr).toMatch(/UNKNOWN dirty-state: fix\/only-content-present.*git status could not be read/);
+    expect(faulted.stderr).not.toMatch(/remove --force/);
+  });
 });
 
 describe("hygiene-guard.sh, control 17: content presence is decided before the worktree is ever touched, so an unrelated corrupt worktree never blocks a push (_R1#167 G1_QUEUED reorder)", () => {
@@ -1881,7 +2236,18 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
     expect(stderr).not.toMatch(/worktree remove --force.*held\/present/);
   });
 
-  it("held ref that is NOT content-present: no disposal command, hold named, still refuses", () => {
+  it("held ref that is NOT content-present: completely silent, exactly like an unheld live branch (TP self-correction, _R1#167 G1_BOUNCE)", () => {
+    // Overwatch's actual requirement was that a held ref never BECOME a
+    // disposal candidate, not that holding a ref refuses every push
+    // regardless of whether it was ever a candidate. TP's first relay of
+    // that requirement (asserted here until this rewrite) made this exact
+    // shape refuse -- measured live on agency-doc-kit, where nine refs sit
+    // under hold and none of them would ever be recommended for disposal,
+    // yet the guard blocked every push through the repo until every hold
+    // lifted. A held, genuinely unmerged branch with nothing else pending
+    // must let the push through clean; the hold is not the guard's
+    // business until content-presence says there would be a disposal
+    // command to replace.
     const { workDir } = buildRepo(root, "runway", true, false);
     git(["checkout", "--quiet", "-b", "held/not-present"], workDir);
     writeFile(workDir, "held-not-present.txt", "real unmerged work\n");
@@ -1892,10 +2258,10 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
     writeHoldFile(workDir, "runway", `held/not-present ${heldSha} operator hold\n`);
     git(["checkout", "--quiet", "runway"], workDir);
 
-    const { status, stderr } = runGuard(workDir);
-    expect(status).toBe(1);
-    expect(stderr).toMatch(/held: held\/not-present is under an active hold/);
-    expect(stderr).not.toMatch(/branch -D held\/not-present/);
+    const { status, stdout, stderr } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+    expect(stderr).not.toMatch(/held\/not-present/);
   });
 
   it("an unheld fossil beside a held one is still caught normally: the hold does not blind the guard", () => {
@@ -1925,6 +2291,9 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
   });
 
   it("name matches but the recorded SHA has moved: still held, and the message says the tip moved off the recorded SHA", () => {
+    // Made content-present (squash-merged) so the hold check actually runs
+    // under the corrected spec: it only fires at the point a disposal
+    // command would otherwise be printed.
     const { workDir } = buildRepo(root, "runway", true, false);
     git(["checkout", "--quiet", "-b", "held/moved"], workDir);
     writeFile(workDir, "held-moved.txt", "v1\n");
@@ -1935,21 +2304,29 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
     git(["add", "."], workDir);
     git(["commit", "--quiet", "-m", "v2, one more commit after the hold was recorded"], workDir);
     git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "held/moved");
     writeHoldFile(workDir, "runway", `held/moved ${staleSha}\n`);
     git(["checkout", "--quiet", "runway"], workDir);
 
     const { status, stderr } = runGuard(workDir);
     expect(status).toBe(1);
     expect(stderr).toMatch(/held: held\/moved is under an active hold, but its tip has moved off the recorded SHA/);
+    expect(stderr).not.toMatch(/branch -D held\/moved/);
   });
 
   it("recorded SHA matches even though the branch was renamed: still held", () => {
+    // Made content-present (squash-merged, under the original name, before
+    // the rename) so the hold check actually runs under the corrected
+    // spec: it only fires at the point a disposal command would otherwise
+    // be printed.
     const { workDir } = buildRepo(root, "runway", true, false);
     git(["checkout", "--quiet", "-b", "held/original-name"], workDir);
     writeFile(workDir, "held-renamed.txt", "x\n");
     git(["add", "."], workDir);
     git(["commit", "--quiet", "-m", "held work"], workDir);
     const heldSha = git(["rev-parse", "held/original-name"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "held/original-name");
     git(["branch", "-m", "held/original-name", "held/renamed"], workDir);
     git(["checkout", "--quiet", "runway"], workDir);
     writeHoldFile(workDir, "runway", `held/original-name ${heldSha}\n`);
@@ -1958,6 +2335,75 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
     const { status, stderr } = runGuard(workDir);
     expect(status).toBe(1);
     expect(stderr).toMatch(/held: held\/renamed \(recorded in the hold list under a different name, matched by its held commit/);
+    expect(stderr).not.toMatch(/branch -D held\/renamed/);
+  });
+
+  it("an INDENTED comment does not take the repo offline (QA gap, _R1#167 G1_BOUNCE)", () => {
+    // QA reproduced: the old comment/blank check matched only a '#' in
+    // column 1, so `   # indented for readability` fell through to data
+    // parsing, `$1` became `#`, and the entry was malformed -- refusing
+    // every push in the repo over a formatting choice with no hint at the
+    // real cause. A held branch is present in the same file to prove the
+    // indented comment is genuinely ignored, not merely non-fatal.
+    const { workDir } = buildRepo(root, "runway", true, false);
+    git(["checkout", "--quiet", "-b", "held/indented-comment"], workDir);
+    writeFile(workDir, "held-indented.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "held"], workDir);
+    const heldSha = git(["rev-parse", "held/indented-comment"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "held/indented-comment");
+    writeHoldFile(
+      workDir,
+      "runway",
+      `# a comment in column one\n   # the same comment, indented for readability\n\n   \nheld/indented-comment ${heldSha}\n`,
+    );
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/held: held\/indented-comment/);
+    expect(stderr).not.toMatch(/malformed entry/);
+  });
+
+  it("a CRLF-terminated, terse two-column entry parses correctly instead of refusing the whole run (QA gap, _R1#167 G1_BOUNCE)", () => {
+    // QA reproduced: a trailing CR attached to the SHA column failed the
+    // hex check, and the diagnostic named the SHA as the problem even
+    // though stripping the invisible CR would have made it valid. Stripping
+    // CR before validation means this terse (no reason column) entry now
+    // parses correctly rather than merely producing a better error.
+    const { workDir } = buildRepo(root, "runway", true, false);
+    git(["checkout", "--quiet", "-b", "held/crlf-entry"], workDir);
+    writeFile(workDir, "held-crlf.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "held"], workDir);
+    const heldSha = git(["rev-parse", "held/crlf-entry"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "held/crlf-entry");
+    writeHoldFile(workDir, "runway", `held/crlf-entry ${heldSha}\r\n`);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/held: held\/crlf-entry is under an active hold/);
+    expect(stderr).not.toMatch(/malformed entry/);
+  });
+
+  it("a genuinely malformed entry's diagnostic includes a visible rendering, not just the raw line", () => {
+    // QA's ask (_R1#167 G1_BOUNCE): once an entry is genuinely malformed
+    // for a reason unrelated to CRLF (here: a non-hex second column), the
+    // message should still show a non-printing-character-safe rendering
+    // of the offending line, not just echo it back verbatim, so a hidden
+    // character elsewhere in a future bad entry does not get to hide
+    // behind a raw echo that looks clean.
+    const { workDir } = buildRepo(root, "runway", true, false);
+    writeHoldFile(workDir, "runway", "some/branch not-a-sha-at-all\n");
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/malformed entry/);
+    expect(stderr).toMatch(/visible:/);
   });
 
   it("entry with no SHA column: malformed, refuses the whole run", () => {
@@ -2007,12 +2453,15 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
   });
 
   it("recorded SHA the clone does not have: name match still holds, run is not refused for that alone", () => {
+    // Made content-present (squash-merged) so the hold check actually runs
+    // under the corrected spec.
     const { workDir } = buildRepo(root, "runway", true, false);
     git(["checkout", "--quiet", "-b", "held/unresolvable-sha"], workDir);
     writeFile(workDir, "held-unresolvable.txt", "x\n");
     git(["add", "."], workDir);
     git(["commit", "--quiet", "-m", "held"], workDir);
     git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "held/unresolvable-sha");
     // A syntactically valid but nonexistent object id -- never landed in this repo.
     writeHoldFile(workDir, "runway", "held/unresolvable-sha deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n");
     git(["checkout", "--quiet", "runway"], workDir);
@@ -2098,5 +2547,355 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
       expect(result.stderr).not.toMatch(/branch -D held\/fault-injection/);
       expect(result.stderr).not.toMatch(/worktree remove --force.*held\/fault-injection/);
     });
+  });
+});
+
+describe("hygiene-guard.sh, control 20: a locked worktree refuses with no removal command, never `-f -f` (QA gap, _R1#167 G1_BOUNCE)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-locked-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("content-present worktree, locked with a reason: refuses, names the reason, never prints remove --force or -f -f", () => {
+    // QA confirmed live: `git status` on a locked worktree works fine, so
+    // the old code's content-presence and dirty-state both read correctly
+    // and it printed `git worktree remove --force <path>`, which fails
+    // with exit 128 ("cannot remove a locked working tree... use 'remove
+    // -f -f' to override or unlock first"). Not destructive, but unusable
+    // advice for a state that is very plausibly locked on purpose.
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "fix/locked-content-present"], workDir);
+    writeFile(workDir, "locked-content.txt", "leftover\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "leftover"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    const wtPath = join(root, "locked-wt");
+    git(["worktree", "add", "--quiet", wtPath, "fix/locked-content-present"], workDir);
+    squashMergeToTrunk(workDir, "runway", "fix/locked-content-present");
+    git(["worktree", "lock", "--reason", "operator hold, do not touch", wtPath], workDir);
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/worktree LOCKED: fix\/locked-content-present/);
+    expect(stderr).toMatch(/operator hold, do not touch/);
+    expect(stderr).not.toMatch(/remove --force/);
+    expect(stderr).not.toMatch(/-f -f/);
+  });
+
+  it("content-present worktree, locked with NO reason given: reports '(no reason recorded)', still no removal command", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "fix/locked-no-reason"], workDir);
+    writeFile(workDir, "locked-no-reason.txt", "leftover\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "leftover"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    const wtPath = join(root, "locked-no-reason-wt");
+    git(["worktree", "add", "--quiet", wtPath, "fix/locked-no-reason"], workDir);
+    squashMergeToTrunk(workDir, "runway", "fix/locked-no-reason");
+    git(["worktree", "lock", wtPath], workDir);
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/worktree LOCKED: fix\/locked-no-reason.*\(no reason recorded\)/);
+    expect(stderr).not.toMatch(/remove --force/);
+  });
+
+  it("a locked worktree that is NOT content-present is silent: a lock alone is not a disposal candidate", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "live/locked-unmerged"], workDir);
+    writeFile(workDir, "live-locked.txt", "never merged\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "real unmerged work"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    const wtPath = join(root, "live-locked-wt");
+    git(["worktree", "add", "--quiet", wtPath, "live/locked-unmerged"], workDir);
+    git(["worktree", "lock", "--reason", "in progress", wtPath], workDir);
+
+    const { status, stdout, stderr } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+    expect(stderr).not.toMatch(/live\/locked-unmerged/);
+  });
+
+  it("mutation: removing the locked check lets a locked, content-present worktree get `remove --force` again", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "fix/locked-mutation"], workDir);
+    writeFile(workDir, "locked-mutation.txt", "leftover\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "leftover"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    const wtPath = join(root, "locked-mutation-wt");
+    git(["worktree", "add", "--quiet", wtPath, "fix/locked-mutation"], workDir);
+    squashMergeToTrunk(workDir, "runway", "fix/locked-mutation");
+    git(["worktree", "lock", "--reason", "do not remove", wtPath], workDir);
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    // Control: the real, fixed guard refuses with no removal command, in
+    // the same session as the mutant.
+    const control = runGuard(workDir);
+    expect(control.status).toBe(1);
+    expect(control.stderr).toMatch(/worktree LOCKED: fix\/locked-mutation/);
+    expect(control.stderr).not.toMatch(/remove --force/);
+
+    const anchor =
+      '  if [ -n "$_wt_path" ] && [ -n "$_wt_locked" ]; then\n' +
+      "    # QA gap (_R1#167 G1_BOUNCE): git status reads fine on a locked\n" +
+      "    # worktree, so this has to be checked before the dirty-state branches\n" +
+      "    # below, not folded into them -- a locked worktree's dirty state is\n" +
+      "    # genuinely knowable here, it just must never turn into a `remove\n" +
+      "    # --force` (or `-f -f`) recommendation. A lock is a human saying do not\n" +
+      "    # touch this; the guard's job is to report that, not to teach anyone\n" +
+      "    # how to override a deliberate lock.\n" +
+      '    _block "worktree LOCKED: $_branch ($_wt_path) already in $TRUNK_REF (detected via $_DETECTOR), but the worktree record is locked ($_wt_locked). No removal command. Its owner decides."\n' +
+      "    continue\n" +
+      "  fi\n";
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
+    const mutated = source.replace(anchor, "");
+    expect(mutated).not.toBe(source);
+
+    const mutantPath = join(root, "mutant-no-lock-check.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutantResult = runGuard(workDir, "origin", mutantPath);
+    expect(mutantResult.status).toBe(1);
+    expect(mutantResult.stderr).toMatch(/Disposal: git worktree remove --force/);
+  });
+});
+
+describe("hygiene-guard.sh, control 21: a ref UPDATE that would orphan a held object refuses, not only a ref DELETION (Overwatch ruling, _R1#167 G1_BOUNCE)", () => {
+  let root: string;
+  let realGit: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-orphan-")));
+    realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  /**
+   * This trigger reads the pre-push stdin protocol directly and is
+   * independent of content-presence or governance -- it never depends on
+   * the branch being a disposal candidate, only on a held commit becoming
+   * unreachable. So every fixture here is deliberately a single, genuinely
+   * unmerged branch: absent this check, the guard would find NOTHING to
+   * refuse about it (not a fossil, not content-present, not otherwise
+   * held-and-a-candidate), which is what makes each fixture's refusal (or
+   * lack of one) attributable to this one trigger and nothing else --
+   * exactly the discipline QA's status finding demands applied up front.
+   */
+  function buildHandworkFixture() {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "handwork"], workDir);
+    writeFile(workDir, "handwork.txt", "hand-authored, cannot be reconstructed\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "handwork v1"], workDir);
+    const heldSha = git(["rev-parse", "handwork"], workDir);
+    git(["push", "--quiet", "origin", "handwork"], workDir); // this is what's "already pushed"
+    git(["checkout", "--quiet", "runway"], workDir);
+    writeHoldFile(workDir, "runway", `handwork ${heldSha}\n`);
+    git(["checkout", "--quiet", "handwork"], workDir);
+    return { workDir, heldSha };
+  }
+
+  it("a force-push that moves the ref away from a held commit refuses, even though no ref was ever deleted", () => {
+    const { workDir, heldSha } = buildHandworkFixture();
+
+    // Simulate the force-push: rewrite handwork's tip to a commit that does
+    // NOT contain heldSha as an ancestor (a hard reset to trunk plus a new,
+    // unrelated commit, the ordinary shape of "rebased onto today's main").
+    git(["reset", "--hard", "runway"], workDir);
+    writeFile(workDir, "rebased.txt", "the branch after a force-push\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "rewritten history"], workDir);
+    const newSha = git(["rev-parse", "handwork"], workDir);
+    expect(() => execFileSync("git", ["merge-base", "--is-ancestor", heldSha, newSha], { cwd: workDir, env: ISOLATED_GIT_ENV })).toThrow(); // confirms the fixture: heldSha is genuinely not an ancestor of newSha
+
+    const stdin = `refs/heads/handwork ${newSha} refs/heads/handwork ${heldSha}\n`;
+    const { status, stderr } = runGuardWithStdin(workDir, stdin);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/orphan a held object/);
+    expect(stderr).toMatch(new RegExp(heldSha));
+  });
+
+  it("a deletion of the ref holding a held commit refuses too: a delete is just the update whose new tip is nothing", () => {
+    const { workDir, heldSha } = buildHandworkFixture();
+    const zero = "0".repeat(40);
+    const stdin = `(delete) ${zero} refs/heads/handwork ${heldSha}\n`;
+    const { status, stderr } = runGuardWithStdin(workDir, stdin);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/orphan a held object/);
+  });
+
+  it("an ordinary fast-forward on the held branch (new tip still contains the held commit) is silent from this trigger", () => {
+    const { workDir, heldSha } = buildHandworkFixture();
+    writeFile(workDir, "one-more.txt", "one more commit, held commit still an ancestor\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "advance the held branch"], workDir);
+    const newSha = git(["rev-parse", "handwork"], workDir);
+
+    const stdin = `refs/heads/handwork ${newSha} refs/heads/handwork ${heldSha}\n`;
+    const { status, stdout, stderr } = runGuardWithStdin(workDir, stdin);
+    // handwork itself is real, unmerged, not-content-present work: no
+    // disposal candidate, no hold-message refusal, and now no orphan
+    // refusal either, since the held commit is still an ancestor of the
+    // new tip.
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+    expect(stderr).not.toMatch(/orphan/);
+  });
+
+  it("a ref-update naming an unrelated branch, with the held branch untouched, does not orphan anything", () => {
+    const { workDir } = buildHandworkFixture();
+    git(["checkout", "--quiet", "-b", "unrelated/branch"], workDir);
+    writeFile(workDir, "unrelated.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "unrelated work"], workDir);
+    const unrelatedSha = git(["rev-parse", "unrelated/branch"], workDir);
+    const zero = "0".repeat(40);
+
+    const stdin = `refs/heads/unrelated/branch ${unrelatedSha} refs/heads/unrelated/branch ${zero}\n`;
+    const { status, stdout, stderr } = runGuardWithStdin(workDir, stdin);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+    expect(stderr).not.toMatch(/orphan/);
+  });
+
+  it("empty stdin (a real, genuinely empty push spec) proceeds silently: empty and absent must not render alike", () => {
+    const { workDir } = buildRepo(root, "runway");
+    const { status, stdout } = runGuardWithStdin(workDir, "");
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+  });
+
+  it("no hold list entries at all: the trigger is a no-op regardless of what stdin says", () => {
+    const { workDir } = buildRepo(root, "runway"); // ships the default empty .hygiene-hold
+    git(["checkout", "--quiet", "-b", "some/branch"], workDir);
+    writeFile(workDir, "x.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "x"], workDir);
+    const sha = git(["rev-parse", "some/branch"], workDir);
+    const zero = "0".repeat(40);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const stdin = `refs/heads/some/branch ${zero} refs/heads/some/branch ${sha}\n`;
+    const { status, stdout } = runGuardWithStdin(workDir, stdin);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+  });
+
+  it("fault injection: breaking 'cat-file' refuses rather than treating an unresolvable old tip as 'nothing to orphan'", () => {
+    const { workDir, heldSha } = buildHandworkFixture();
+    const newSha = git(["rev-parse", "handwork"], workDir);
+    const stdin = `refs/heads/handwork ${newSha} refs/heads/handwork ${heldSha}\n`;
+
+    // Isolation, same discipline as the status fixture above: this bed's
+    // ONLY branch besides trunk is `handwork`, which is not content-present
+    // and not a fossil, so absent this trigger the guard would be clean.
+    // A refusal here is attributable to this trigger and nothing else.
+    const healthy = runGuardWithStdin(workDir, stdin);
+    expect(healthy.status).toBe(0);
+
+    const faulted = runGuardFaultInjectedWithStdin(workDir, "cat-file", root, realGit, stdin);
+    expect(faulted.status).not.toBe(0);
+    expect(faulted.stderr).toMatch(/git cat-file -e failed/);
+    expect(faulted.stderr).not.toMatch(/orphan a held object/); // never silently reported "not orphaned"
+  });
+
+  it("fault injection: breaking 'merge-base' refuses rather than treating an unresolvable reachability question as 'nothing to orphan'", () => {
+    const { workDir, heldSha } = buildHandworkFixture();
+    const newSha = git(["rev-parse", "handwork"], workDir);
+    const stdin = `refs/heads/handwork ${newSha} refs/heads/handwork ${heldSha}\n`;
+
+    const healthy = runGuardWithStdin(workDir, stdin);
+    expect(healthy.status).toBe(0);
+
+    const faulted = runGuardFaultInjectedWithStdin(workDir, "merge-base", root, realGit, stdin);
+    expect(faulted.status).not.toBe(0);
+    expect(faulted.stderr).toMatch(/git merge-base --is-ancestor failed/);
+  });
+
+  it("mutation: removing the call to _check_orphaned_holds lets the force-push through with no refusal at all", () => {
+    const { workDir, heldSha } = buildHandworkFixture();
+    git(["reset", "--hard", "runway"], workDir);
+    writeFile(workDir, "rebased.txt", "the branch after a force-push\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "rewritten history"], workDir);
+    const newSha = git(["rev-parse", "handwork"], workDir);
+    const stdin = `refs/heads/handwork ${newSha} refs/heads/handwork ${heldSha}\n`;
+
+    // Control: the real, fixed guard refuses, in the same session as the mutant.
+    const control = runGuardWithStdin(workDir, stdin);
+    expect(control.status).toBe(1);
+    expect(control.stderr).toMatch(/orphan a held object/);
+
+    const anchor = "\n_check_orphaned_holds\n";
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
+    const mutated = source.replace(anchor, "\n\n");
+    expect(mutated).not.toBe(source);
+
+    const mutantPath = join(root, "mutant-no-orphan-check.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutantResult = runGuardWithStdin(workDir, stdin, "origin", mutantPath);
+    // Without the call, the force-push goes through: handwork is still
+    // just an ordinary, non-content-present, unheld-by-the-loop branch.
+    expect(mutantResult.status).toBe(0);
+    expect(mutantResult.stdout).toMatch(/clean/);
+  });
+});
+
+describe("hygiene-guard.sh, control 22: the printed disposal command is usable on a space-containing path (QA gap, _R1#167 G1_BOUNCE)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-space-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("a worktree at a path with a space gets a single-quoted, pasteable `git worktree remove --force` command", () => {
+    // QA reproduced: the guard's printed command was unquoted, so pasting
+    // it verbatim against a path containing a space (ordinary on macOS)
+    // exited 129. Detection itself was already correct; this is only the
+    // message text, so the control both checks the quoting AND proves the
+    // quoted command actually works when run for real.
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "fix/space-in-path"], workDir);
+    writeFile(workDir, "space-path.txt", "leftover\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "leftover"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    const wtPath = join(root, "space probe", "wt with space");
+    mkdirSync(join(root, "space probe"), { recursive: true });
+    git(["worktree", "add", "--quiet", wtPath, "fix/space-in-path"], workDir);
+    squashMergeToTrunk(workDir, "runway", "fix/space-in-path");
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    const match = stderr.match(/Disposal: (git worktree remove --force '.*')$/m);
+    expect(match).not.toBeNull();
+    const disposalCmd = match![1];
+    expect(disposalCmd).toContain(`'${wtPath}'`);
+
+    // Prove it is actually pasteable, not just quoted-looking: run the
+    // printed command for real and confirm the worktree is gone.
+    execFileSync("sh", ["-c", disposalCmd], { cwd: workDir, encoding: "utf8", env: ISOLATED_GIT_ENV });
+    const listing = git(["worktree", "list", "--porcelain"], workDir);
+    expect(listing).not.toContain(wtPath);
   });
 });
