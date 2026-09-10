@@ -29,6 +29,8 @@ For LOCKED architectural decisions, see `DECISIONS.md` at repo root.
 - End users say "Project" / "Task" — never "L1" / "L2". Internal helper / function / variable / file names can keep L1/L2 (those are JS identifiers). Anything that renders to user-facing text (chart headers, kind tags, ARIA labels, badge text) must use Project / Task. See DECISIONS.md D-16.
 - Gantt embed must NOT import from `react-dom/server` anywhere reachable from the App Router — Next.js 16 Turbopack bans it via the `react-server` export condition. Use the RSC slot pattern (D-13).
 
+- **`pnpm runway:migrate` without `--apply` STILL WRITES TO PROD when the migration calls the operations helpers.** The runner's `dryRun` flag is a log-prefix label and nothing else, `scripts/runway-migrate.ts:63-70`; it never reaches `updateProjectStatus`, `updateProjectField` or `updateWeekItemField`, which each call `getRunwayDb()` and write. So a "DRY-RUN" transcript and a real apply produce the same prod mutation and the same output shape, which is why nobody caught it. Found 2026-09-07 when a dry run of `kathy-bp-cgx-2026-09-07` landed all 10 close writes, and the `--apply` pass that followed then wrote its "pre-state" snapshot AFTER the data had already moved, leaving the REVERT script pointed at a post-state file. Until the runner is fixed: treat every run as live, put the real safety in step-0 assertions that abort on drift, and never trust a snapshot taken by a batch that was dry-run first. Ticketed as jasonburks23/_R1#150.
+
 ## Common failure modes
 
 - **"I'll write tests later"** — Tests are not a separate step. If your plan has a "write tests" step at the end, your plan is wrong. Rewrite it with tests woven into each build step.

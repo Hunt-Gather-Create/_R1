@@ -101,3 +101,11 @@ di-tp-exit-debrief.md
 # NOT covered by this; the durable fix is a naming marker, not a wider glob.
 scripts/diagnostics/*-2026-06-*
 scripts/runway-migrations/*-2026-06-*.ts
+
+# DI-TP batch of 2026-09-02 and 2026-09-07 (_R1#166). Same scoped-month
+# rule as the 2026-06 line above, not a directory ignore: these 26 files
+# import MigrationContext from "../runway-migrate" like every tracked
+# migration in this directory, several are the REVERT path for prod
+# batches already applied, and moving them out of scripts/runway-migrations/
+# breaks that sibling import. Ignoring them in place, by name, is the point.
+scripts/runway-migrations/*-2026-09-*.ts
