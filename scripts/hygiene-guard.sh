@@ -358,9 +358,10 @@ fi
 # _HOLD_PATH   defaults to ".hygiene-hold" at trunk root. Overridable as a
 #              4th positional arg for a deployment that keeps it elsewhere.
 #
-# File format: one entry per line, "<branch-name> <sha> [reason...]".
-# Blank lines and lines starting with "#" are ignored. Both the name and a
-# resolvable-looking SHA are REQUIRED on every entry:
+# File format: one entry per line, "<branch-name> <sha> <class> [reason...]".
+# Blank lines and lines starting with "#" are ignored. The name, a
+# resolvable-looking SHA (or the literal "ANY", see below), and the class
+# are all REQUIRED on every entry:
 #   - a name-only match dies to a rename (the branch keeps its content and
 #     its tip but changes the one field the entry keyed on);
 #   - a SHA-only match dies to one more commit landing on the held branch
@@ -373,7 +374,26 @@ fi
 # the other misses, and here a false hold costs nothing, which makes the
 # OR strictly safer than either half alone.
 #
-# An entry missing its SHA column, or whose name column begins with
+# CLASS COLUMN (_R1#167 G1_QUEUED, TP's item 4). One of three literal
+# values, case-sensitive, nothing else legal:
+#   OPERATOR-HOLD, COORDINATOR-HOLD -- a landing hold: this ref is expected
+#     to eventually land and the hold to be lifted. The tip-moved advisory
+#     below (name matches, recorded SHA does not) exists for these two
+#     classes, because their recorded SHA is a snapshot that is expected to
+#     go stale as work continues and needing re-recording is exactly the
+#     situation worth flagging.
+#   PERMANENT -- not a landing hold. The tip-moved advisory does NOT exist
+#     for this class: a permanent hold is pinned by name, not by a
+#     snapshot that is expected to catch up, so a SHA mismatch under
+#     PERMANENT is reported as an ordinary hold, not as something needing
+#     re-recording.
+# The literal SHA value "ANY" is legal ONLY when the class column is
+# PERMANENT -- it means this entry never pins a specific commit, matching
+# by name alone regardless of tip. Under OPERATOR-HOLD or COORDINATOR-HOLD,
+# a landing hold's whole point is to pin the exact commit under hold, so
+# "ANY" there is a malformed entry, not a wildcard.
+#
+# An entry missing its SHA column, its class column, or whose name column begins with
 # "$_REMOTE/" (looks like a remote-tracking ref pasted straight from a
 # census instead of the local branch name the loop below actually walks),
 # is a MALFORMED entry: the guard refuses the ENTIRE run and names the
@@ -393,10 +413,11 @@ _hold_entries=$(mktemp 2>/dev/null) || { rm -f "$_STDIN_FILE"; _block "could not
 : >"$_hold_entries"
 
 _resolve_hold_list() {
-  # Populates $_hold_entries with one TAB-separated "name<TAB>sha<TAB>reason"
-  # line per validated entry (sha here is the RECORDED value verbatim, not
-  # yet resolved -- resolution happens per-lookup in _is_held so a single
-  # unresolvable object in a partial clone never has to be decided here).
+  # Populates $_hold_entries with one TAB-separated
+  # "name<TAB>sha<TAB>class<TAB>reason" line per validated entry (sha here
+  # is the RECORDED value verbatim, not yet resolved -- resolution happens
+  # per-lookup in _is_held so a single unresolvable object in a partial
+  # clone never has to be decided here).
   # Returns 1 if the file cannot be read from trunk at all. Exits 1
   # directly, from inside this function, the moment any single entry is
   # malformed -- deliberately not a "return 1" here, so a malformed entry
@@ -434,7 +455,8 @@ _resolve_hold_list() {
     esac
     _hold_name=$(printf '%s\n' "$_hold_line" | awk '{print $1}')
     _hold_sha=$(printf '%s\n' "$_hold_line" | awk '{print $2}')
-    _hold_reason=$(printf '%s\n' "$_hold_line" | sed -E 's/^[^ 	]+[ 	]+[^ 	]+[ 	]*//')
+    _hold_class=$(printf '%s\n' "$_hold_line" | awk '{print $3}')
+    _hold_reason=$(printf '%s\n' "$_hold_line" | sed -E 's/^[^ 	]+[ 	]+[^ 	]+[ 	]+[^ 	]+[ 	]*//')
 
     if [ -z "$_hold_name" ]; then
       rm -f "$_hold_raw_file"
@@ -448,12 +470,39 @@ _resolve_hold_list() {
         exit 1
         ;;
     esac
-    if ! printf '%s' "$_hold_sha" | grep -Eq '^[0-9a-fA-F]{4,40}$'; then
+    if [ -z "$_hold_sha" ]; then
       rm -f "$_hold_raw_file"
       _block "hold list '$_HOLD_PATH' at $TRUNK_REF has a malformed entry: '$_hold_line' (visible: $(_visible "$_hold_line")) (missing or invalid SHA column; the SHA column is required, a name-only hold does not survive a rename)."
       exit 1
     fi
-    printf '%s\t%s\t%s\n' "$_hold_name" "$_hold_sha" "$_hold_reason" >>"$_hold_entries"
+    # ANY is legal only under class PERMANENT -- validated after we know
+    # the class, but the class itself is validated first so a bad class
+    # is reported as a bad class and not misread as a bad SHA.
+    if [ -z "$_hold_class" ]; then
+      rm -f "$_hold_raw_file"
+      _block "hold list '$_HOLD_PATH' at $TRUNK_REF has a malformed entry: '$_hold_line' (visible: $(_visible "$_hold_line")) (missing class column; every entry must be one of OPERATOR-HOLD, COORDINATOR-HOLD, PERMANENT)."
+      exit 1
+    fi
+    case "$_hold_class" in
+      OPERATOR-HOLD | COORDINATOR-HOLD | PERMANENT) ;;
+      *)
+        rm -f "$_hold_raw_file"
+        _block "hold list '$_HOLD_PATH' at $TRUNK_REF has a malformed entry: '$_hold_line' (visible: $(_visible "$_hold_line")) (unrecognized class '$_hold_class'; must be one of OPERATOR-HOLD, COORDINATOR-HOLD, PERMANENT)."
+        exit 1
+        ;;
+    esac
+    if [ "$_hold_sha" = "ANY" ]; then
+      if [ "$_hold_class" != "PERMANENT" ]; then
+        rm -f "$_hold_raw_file"
+        _block "hold list '$_HOLD_PATH' at $TRUNK_REF has a malformed entry: '$_hold_line' (visible: $(_visible "$_hold_line")) (SHA 'ANY' is only legal under class PERMANENT; $_hold_class is a landing hold and must pin an exact commit)."
+        exit 1
+      fi
+    elif ! printf '%s' "$_hold_sha" | grep -Eq '^[0-9a-fA-F]{4,40}$'; then
+      rm -f "$_hold_raw_file"
+      _block "hold list '$_HOLD_PATH' at $TRUNK_REF has a malformed entry: '$_hold_line' (visible: $(_visible "$_hold_line")) (missing or invalid SHA column; the SHA column is required, a name-only hold does not survive a rename)."
+      exit 1
+    fi
+    printf '%s\t%s\t%s\t%s\n' "$_hold_name" "$_hold_sha" "$_hold_class" "$_hold_reason" >>"$_hold_entries"
   done <"$_hold_raw_file"
   rm -f "$_hold_raw_file"
   return 0
@@ -477,7 +526,7 @@ _is_held() {
   _HOLD_MSG=""
   [ -s "$_hold_entries" ] || return 1
 
-  while IFS="$_TAB" read -r _e_name _e_sha _e_reason; do
+  while IFS="$_TAB" read -r _e_name _e_sha _e_class _e_reason; do
     [ -n "$_e_name" ] || continue
     _name_match=0
     [ "$_e_name" = "$_ref" ] && _name_match=1
@@ -487,8 +536,14 @@ _is_held() {
     # failure). Resolve it defensively; an unresolvable SHA never refuses
     # the run, it only means the SHA half of the OR can't be evaluated for
     # this entry, and that fact is reported when the name half is what
-    # actually held the branch.
-    _e_resolved=$(_g rev-parse --verify --quiet "${_e_sha}^{commit}" 2>/dev/null)
+    # actually held the branch. "ANY" (PERMANENT class only) is never
+    # resolved at all -- it is a wildcard, not a commit reference, and
+    # asking git to resolve the literal string "ANY" would just fail the
+    # same way a genuinely bad SHA would, which is not what "ANY" means.
+    _e_resolved=""
+    if [ "$_e_sha" != "ANY" ]; then
+      _e_resolved=$(_g rev-parse --verify --quiet "${_e_sha}^{commit}" 2>/dev/null)
+    fi
     _sha_match=0
     if [ -n "$_e_resolved" ] && [ "$_e_resolved" = "$_tip" ]; then
       _sha_match=1
@@ -496,6 +551,15 @@ _is_held() {
 
     if [ "$_name_match" -eq 1 ] && [ "$_sha_match" -eq 1 ]; then
       _HOLD_MSG="held: $_ref is under an active hold (recorded $_e_sha). No disposal command. Its owner decides.${_e_reason:+ Reason: $_e_reason}"
+      return 0
+    fi
+    # PERMANENT is not a landing hold: it is pinned by name, so a SHA that
+    # is "ANY" (always) or that fails to match the current tip is still an
+    # ordinary hold under this class, never the tip-moved advisory below.
+    # That advisory exists only for the two landing classes, where a stale
+    # recorded SHA is itself the thing worth flagging.
+    if [ "$_name_match" -eq 1 ] && [ "$_e_class" = "PERMANENT" ]; then
+      _HOLD_MSG="held: $_ref is under an active permanent hold (class PERMANENT). No disposal command. Its owner decides.${_e_reason:+ Reason: $_e_reason}"
       return 0
     fi
     if [ "$_name_match" -eq 1 ] && [ -z "$_e_resolved" ]; then
@@ -590,8 +654,10 @@ _check_orphaned_holds() {
     exit 1
   }
   : >"$_held_objs"
-  while IFS="$_TAB" read -r _e_name _e_sha _e_reason; do
-    [ -n "$_e_sha" ] || continue
+  while IFS="$_TAB" read -r _e_name _e_sha _e_class _e_reason; do
+    # "ANY" (PERMANENT class only) pins no specific commit, so there is
+    # nothing here for an orphaning force-push to make unreachable.
+    [ -n "$_e_sha" ] && [ "$_e_sha" != "ANY" ] || continue
     _e_resolved=$(_g rev-parse --verify --quiet "${_e_sha}^{commit}" 2>/dev/null)
     [ -n "$_e_resolved" ] || continue
     printf '%s\t%s\n' "$_e_resolved" "$_e_name" >>"$_held_objs"

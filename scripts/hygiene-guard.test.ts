@@ -2226,7 +2226,7 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
     const heldSha = git(["rev-parse", "held/present"], workDir);
     git(["checkout", "--quiet", "runway"], workDir);
     squashMergeToTrunk(workDir, "runway", "held/present");
-    writeHoldFile(workDir, "runway", `held/present ${heldSha} operator hold, do not touch\n`);
+    writeHoldFile(workDir, "runway", `held/present ${heldSha} OPERATOR-HOLD operator hold, do not touch\n`);
     git(["checkout", "--quiet", "runway"], workDir);
 
     const { status, stderr } = runGuard(workDir);
@@ -2255,7 +2255,7 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
     git(["commit", "--quiet", "-m", "held work, never merged"], workDir);
     const heldSha = git(["rev-parse", "held/not-present"], workDir);
     git(["checkout", "--quiet", "runway"], workDir);
-    writeHoldFile(workDir, "runway", `held/not-present ${heldSha} operator hold\n`);
+    writeHoldFile(workDir, "runway", `held/not-present ${heldSha} OPERATOR-HOLD operator hold\n`);
     git(["checkout", "--quiet", "runway"], workDir);
 
     const { status, stdout, stderr } = runGuard(workDir);
@@ -2281,7 +2281,7 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
     git(["checkout", "--quiet", "runway"], workDir);
     squashMergeToTrunk(workDir, "runway", "unheld/fossil");
 
-    writeHoldFile(workDir, "runway", `held/present-2 ${heldSha}\n`);
+    writeHoldFile(workDir, "runway", `held/present-2 ${heldSha} OPERATOR-HOLD\n`);
     git(["checkout", "--quiet", "runway"], workDir);
 
     const { status, stderr } = runGuard(workDir);
@@ -2305,13 +2305,121 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
     git(["commit", "--quiet", "-m", "v2, one more commit after the hold was recorded"], workDir);
     git(["checkout", "--quiet", "runway"], workDir);
     squashMergeToTrunk(workDir, "runway", "held/moved");
-    writeHoldFile(workDir, "runway", `held/moved ${staleSha}\n`);
+    writeHoldFile(workDir, "runway", `held/moved ${staleSha} OPERATOR-HOLD\n`);
     git(["checkout", "--quiet", "runway"], workDir);
 
     const { status, stderr } = runGuard(workDir);
     expect(status).toBe(1);
     expect(stderr).toMatch(/held: held\/moved is under an active hold, but its tip has moved off the recorded SHA/);
     expect(stderr).not.toMatch(/branch -D held\/moved/);
+  });
+
+  it("class COORDINATOR-HOLD also gets the tip-moved advisory: it is not OPERATOR-HOLD-only (_R1#167 item 4)", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    git(["checkout", "--quiet", "-b", "held/moved-coord"], workDir);
+    writeFile(workDir, "held-moved-coord.txt", "v1\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "v1"], workDir);
+    const staleSha = git(["rev-parse", "held/moved-coord"], workDir);
+    writeFile(workDir, "held-moved-coord.txt", "v2\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "v2, one more commit after the hold was recorded"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "held/moved-coord");
+    writeHoldFile(workDir, "runway", `held/moved-coord ${staleSha} COORDINATOR-HOLD\n`);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/held: held\/moved-coord is under an active hold, but its tip has moved off the recorded SHA/);
+    expect(stderr).not.toMatch(/branch -D held\/moved-coord/);
+  });
+
+  it("class PERMANENT with a real recorded SHA that has since moved: still held, but NOT the tip-moved advisory (_R1#167 item 4)", () => {
+    // Same shape as the two tests above -- one more commit lands on the
+    // held branch after the hold was recorded -- but under PERMANENT the
+    // advisory text ("tip has moved ... needs re-recording") must not
+    // appear, because a permanent hold is pinned by name, not by a
+    // snapshot that is expected to go stale.
+    const { workDir } = buildRepo(root, "runway", true, false);
+    git(["checkout", "--quiet", "-b", "held/permanent-moved"], workDir);
+    writeFile(workDir, "held-permanent-moved.txt", "v1\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "v1"], workDir);
+    const staleSha = git(["rev-parse", "held/permanent-moved"], workDir);
+    writeFile(workDir, "held-permanent-moved.txt", "v2\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "v2"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "held/permanent-moved");
+    writeHoldFile(workDir, "runway", `held/permanent-moved ${staleSha} PERMANENT\n`);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/held: held\/permanent-moved is under an active permanent hold \(class PERMANENT\)/);
+    expect(stderr).not.toMatch(/tip has moved/);
+    expect(stderr).not.toMatch(/branch -D held\/permanent-moved/);
+  });
+
+  it("class PERMANENT with SHA 'ANY': held by name alone, current tip never checked (_R1#167 item 4)", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    git(["checkout", "--quiet", "-b", "held/permanent-any"], workDir);
+    writeFile(workDir, "held-permanent-any.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "held"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "held/permanent-any");
+    writeHoldFile(workDir, "runway", "held/permanent-any ANY PERMANENT a long-lived branch, never expected to land\n");
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/held: held\/permanent-any is under an active permanent hold \(class PERMANENT\)/);
+    expect(stderr).toMatch(/Reason: a long-lived branch, never expected to land/);
+    expect(stderr).not.toMatch(/tip has moved/);
+    expect(stderr).not.toMatch(/branch -D held\/permanent-any/);
+  });
+
+  it("mutation: removing the PERMANENT special-case wires the ANY entry into the wrong message (_R1#167 item 4)", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    git(["checkout", "--quiet", "-b", "held/permanent-any-mut"], workDir);
+    writeFile(workDir, "held-permanent-any-mut.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "held"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    squashMergeToTrunk(workDir, "runway", "held/permanent-any-mut");
+    writeHoldFile(workDir, "runway", "held/permanent-any-mut ANY PERMANENT\n");
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    // Control: the real, fixed guard reports the PERMANENT-class message.
+    const control = runGuard(workDir);
+    expect(control.status).toBe(1);
+    expect(control.stderr).toMatch(/active permanent hold \(class PERMANENT\)/);
+
+    const anchor =
+      '    if [ "$_name_match" -eq 1 ] && [ "$_e_class" = "PERMANENT" ]; then\n' +
+      '      _HOLD_MSG="held: $_ref is under an active permanent hold (class PERMANENT). No disposal command. Its owner decides.${_e_reason:+ Reason: $_e_reason}"\n' +
+      "      return 0\n" +
+      "    fi\n";
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
+    const mutated = source.replace(anchor, "");
+    expect(mutated).not.toBe(source);
+
+    const mutantPath = join(root, "mutant-no-permanent-class.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutantResult = runGuard(workDir, "origin", mutantPath);
+    // Without the special-case, ANY's unresolved SHA falls into the
+    // generic "could not be verified in this clone" branch instead --
+    // still held, but the wrong message, proving the special-case (and
+    // this control) is load-bearing rather than redundant with an
+    // adjacent branch that would have caught it anyway.
+    expect(mutantResult.status).toBe(1);
+    expect(mutantResult.stderr).not.toMatch(/active permanent hold \(class PERMANENT\)/);
+    expect(mutantResult.stderr).toMatch(/could not be verified in this clone/);
   });
 
   it("recorded SHA matches even though the branch was renamed: still held", () => {
@@ -2329,7 +2437,7 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
     squashMergeToTrunk(workDir, "runway", "held/original-name");
     git(["branch", "-m", "held/original-name", "held/renamed"], workDir);
     git(["checkout", "--quiet", "runway"], workDir);
-    writeHoldFile(workDir, "runway", `held/original-name ${heldSha}\n`);
+    writeHoldFile(workDir, "runway", `held/original-name ${heldSha} OPERATOR-HOLD\n`);
     git(["checkout", "--quiet", "runway"], workDir);
 
     const { status, stderr } = runGuard(workDir);
@@ -2356,7 +2464,7 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
     writeHoldFile(
       workDir,
       "runway",
-      `# a comment in column one\n   # the same comment, indented for readability\n\n   \nheld/indented-comment ${heldSha}\n`,
+      `# a comment in column one\n   # the same comment, indented for readability\n\n   \nheld/indented-comment ${heldSha} OPERATOR-HOLD\n`,
     );
     git(["checkout", "--quiet", "runway"], workDir);
 
@@ -2380,7 +2488,7 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
     const heldSha = git(["rev-parse", "held/crlf-entry"], workDir);
     git(["checkout", "--quiet", "runway"], workDir);
     squashMergeToTrunk(workDir, "runway", "held/crlf-entry");
-    writeHoldFile(workDir, "runway", `held/crlf-entry ${heldSha}\r\n`);
+    writeHoldFile(workDir, "runway", `held/crlf-entry ${heldSha} OPERATOR-HOLD\r\n`);
     git(["checkout", "--quiet", "runway"], workDir);
 
     const { status, stderr } = runGuard(workDir);
@@ -2415,6 +2523,50 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
     expect(status).toBe(1);
     expect(stderr).toMatch(/malformed entry/);
     expect(stderr).toMatch(/SHA column/);
+  });
+
+  it("entry with no class column: malformed, refuses the whole run (_R1#167 item 4, class REQUIRED)", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    writeHoldFile(workDir, "runway", "some/branch deadbeef1234\n");
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/malformed entry/);
+    expect(stderr).toMatch(/class column/);
+  });
+
+  it("entry with an unrecognized class value: malformed, names the bad value (_R1#167 item 4)", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    writeHoldFile(workDir, "runway", "some/branch deadbeef1234 URGENT-HOLD\n");
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/malformed entry/);
+    expect(stderr).toMatch(/unrecognized class 'URGENT-HOLD'/);
+  });
+
+  it("SHA 'ANY' under class OPERATOR-HOLD: malformed, ANY is only legal under PERMANENT (_R1#167 item 4)", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    writeHoldFile(workDir, "runway", "some/branch ANY OPERATOR-HOLD\n");
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/malformed entry/);
+    expect(stderr).toMatch(/ANY.*only legal under class PERMANENT/);
+  });
+
+  it("SHA 'ANY' under class COORDINATOR-HOLD: malformed too, not just OPERATOR-HOLD (_R1#167 item 4)", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    writeHoldFile(workDir, "runway", "some/branch ANY COORDINATOR-HOLD\n");
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/malformed entry/);
+    expect(stderr).toMatch(/ANY.*only legal under class PERMANENT/);
   });
 
   it("entry in origin/... remote-tracking form: refuses and names the line, the census-paste footgun", () => {
@@ -2463,7 +2615,7 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
     git(["checkout", "--quiet", "runway"], workDir);
     squashMergeToTrunk(workDir, "runway", "held/unresolvable-sha");
     // A syntactically valid but nonexistent object id -- never landed in this repo.
-    writeHoldFile(workDir, "runway", "held/unresolvable-sha deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n");
+    writeHoldFile(workDir, "runway", "held/unresolvable-sha deadbeefdeadbeefdeadbeefdeadbeefdeadbeef OPERATOR-HOLD\n");
     git(["checkout", "--quiet", "runway"], workDir);
 
     const { status, stderr } = runGuard(workDir);
@@ -2480,7 +2632,7 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
     const heldSha = git(["rev-parse", "held/mutation-target"], workDir);
     git(["checkout", "--quiet", "runway"], workDir);
     squashMergeToTrunk(workDir, "runway", "held/mutation-target");
-    writeHoldFile(workDir, "runway", `held/mutation-target ${heldSha}\n`);
+    writeHoldFile(workDir, "runway", `held/mutation-target ${heldSha} OPERATOR-HOLD\n`);
     git(["checkout", "--quiet", "runway"], workDir);
 
     // Control: the real, fixed guard holds it, in the same session as the mutant.
@@ -2533,7 +2685,7 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
       const heldSha = git(["rev-parse", "held/fault-injection"], workDir);
       git(["checkout", "--quiet", "runway"], workDir);
       squashMergeToTrunk(workDir, "runway", "held/fault-injection");
-      writeHoldFile(workDir, "runway", `held/fault-injection ${heldSha}\n`);
+      writeHoldFile(workDir, "runway", `held/fault-injection ${heldSha} OPERATOR-HOLD\n`);
       git(["checkout", "--quiet", "runway"], workDir);
       git(["fetch", "--quiet", "origin"], workDir);
 
@@ -2703,7 +2855,7 @@ describe("hygiene-guard.sh, control 21: a ref UPDATE that would orphan a held ob
     const heldSha = git(["rev-parse", "handwork"], workDir);
     git(["push", "--quiet", "origin", "handwork"], workDir); // this is what's "already pushed"
     git(["checkout", "--quiet", "runway"], workDir);
-    writeHoldFile(workDir, "runway", `handwork ${heldSha}\n`);
+    writeHoldFile(workDir, "runway", `handwork ${heldSha} OPERATOR-HOLD\n`);
     git(["checkout", "--quiet", "handwork"], workDir);
     return { workDir, heldSha };
   }
