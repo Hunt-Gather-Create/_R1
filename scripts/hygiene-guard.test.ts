@@ -1754,6 +1754,7 @@ describe("hygiene-guard.sh, control 12: the dirty check reports UNKNOWN, never a
       try {
         const out = execFileSync("sh", ["-c", `git -C "${wt}" status --porcelain 2>/dev/null | awk 'NF{c++} END{print c+0}'`], {
           encoding: "utf8",
+          env: ISOLATED_GIT_ENV,
         });
         return Number(out.trim());
       } catch {
@@ -1761,6 +1762,52 @@ describe("hygiene-guard.sh, control 12: the dirty check reports UNKNOWN, never a
       }
     };
     expect(buggyCountDirty(wtPath)).toBe(0); // false clean: git status's own fatal exit never surfaces
+  });
+
+  it("control: buggyCountDirty stays isolated from an ambient GIT_DIR, the exact leak a real pre-push hook creates (_R1#175)", () => {
+    // A second, unrelated repo standing in for "the repo git actually set
+    // GIT_DIR to when the hook ran". It carries a committed file the
+    // target repo does not have, so a leaked GIT_DIR (ambient index,
+    // target's actual files) reports that file as deleted: a nonzero
+    // count that can only come from reading the wrong repo, not from
+    // ambient untracked noise that a leak-scoped scan might just miss.
+    const { workDir: ambientRepo } = buildRepo(root, "runway");
+    writeFile(ambientRepo, "ambient-only.txt", "tracked only in the ambient repo\n");
+    git(["add", "."], ambientRepo);
+    git(["commit", "--quiet", "-m", "ambient-only file"], ambientRepo);
+
+    // The actual target: a plain, genuinely clean worktree.
+    const { workDir: targetRepo } = buildRepo(join(root, "target"), "runway");
+
+    const buggyCountDirty = (wt: string): number => {
+      try {
+        const out = execFileSync("sh", ["-c", `git -C "${wt}" status --porcelain 2>/dev/null | awk 'NF{c++} END{print c+0}'`], {
+          encoding: "utf8",
+          env: ISOLATED_GIT_ENV,
+        });
+        return Number(out.trim());
+      } catch {
+        return -1;
+      }
+    };
+
+    // Same ambient shape a real pre-push hook creates: GIT_DIR pointing at
+    // a different repo than the one named by -C. Without env isolation,
+    // GIT_DIR overrides -C and this reads the ambient repo's dirty count
+    // instead of the target's 0. With isolation, -C wins and the read
+    // stays scoped to targetRepo regardless of what the parent process's
+    // environment happens to hold.
+    const leakedEnv = { ...process.env, GIT_DIR: join(ambientRepo, ".git") };
+    const out = execFileSync("sh", ["-c", `git -C "${targetRepo}" status --porcelain 2>/dev/null | awk 'NF{c++} END{print c+0}'`], {
+      encoding: "utf8",
+      env: leakedEnv,
+    });
+    // Positive control: prove the ambient GIT_DIR is actually live and
+    // would leak if nothing stripped it, so a "0" result below is
+    // isolation working and not the ambient repo happening to be clean.
+    expect(Number(out.trim())).toBeGreaterThan(0);
+
+    expect(buggyCountDirty(targetRepo)).toBe(0);
   });
 });
 
