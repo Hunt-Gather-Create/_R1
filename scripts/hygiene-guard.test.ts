@@ -1764,7 +1764,31 @@ describe("hygiene-guard.sh, control 12: the dirty check reports UNKNOWN, never a
     expect(buggyCountDirty(wtPath)).toBe(0); // false clean: git status's own fatal exit never surfaces
   });
 
-  it("control: buggyCountDirty stays isolated from an ambient GIT_DIR, the exact leak a real pre-push hook creates (_R1#175)", () => {
+  // The actual mechanism under test: it takes an AMBIENT env, one that may
+  // already carry a real leak, and scrubs the four GIT_* worktree-identity
+  // vars itself before calling git. That mirrors the shipped fix, which
+  // scrubs whatever is ambient at the call site rather than being handed
+  // a pre-cleaned env from outside. Passing leakedEnv straight into this
+  // function is what makes the leak an actually injected one instead of
+  // a JS variable nothing downstream ever reads.
+  const scopedCountDirty = (wt: string, ambientEnv: NodeJS.ProcessEnv): number => {
+    const scoped = { ...ambientEnv };
+    delete scoped.GIT_DIR;
+    delete scoped.GIT_WORK_TREE;
+    delete scoped.GIT_INDEX_FILE;
+    delete scoped.GIT_COMMON_DIR;
+    try {
+      const out = execFileSync("sh", ["-c", `git -C "${wt}" status --porcelain 2>/dev/null | awk 'NF{c++} END{print c+0}'`], {
+        encoding: "utf8",
+        env: scoped,
+      });
+      return Number(out.trim());
+    } catch {
+      return -1;
+    }
+  };
+
+  it("control: scopedCountDirty stays isolated from an ambient GIT_DIR, the exact leak a real pre-push hook creates (_R1#175)", () => {
     // A second, unrelated repo standing in for "the repo git actually set
     // GIT_DIR to when the hook ran". It carries a committed file the
     // target repo does not have, so a leaked GIT_DIR (ambient index,
@@ -1779,35 +1803,57 @@ describe("hygiene-guard.sh, control 12: the dirty check reports UNKNOWN, never a
     // The actual target: a plain, genuinely clean worktree.
     const { workDir: targetRepo } = buildRepo(join(root, "target"), "runway");
 
-    const buggyCountDirty = (wt: string): number => {
+    // Built from ISOLATED_GIT_ENV plus one override, not raw process.env,
+    // so an ambient GIT_WORK_TREE, GIT_INDEX_FILE, or GIT_COMMON_DIR
+    // already sitting in this vitest process can't ride along and
+    // confound the positive-control arm below with a leak that isn't the
+    // one this test claims to be injecting.
+    const leakedEnv = { ...ISOLATED_GIT_ENV, GIT_DIR: join(ambientRepo, ".git") };
+
+    // Positive control: prove the leak is real by running the RAW,
+    // unscoped git call under leakedEnv with no stripping at all, spawned
+    // as its own subprocess with GIT_DIR genuinely exported. If this
+    // doesn't come back nonzero, leakedEnv never leaked and a 0 below
+    // would pass for the wrong reason.
+    const rawLeak = execFileSync("sh", ["-c", `git -C "${targetRepo}" status --porcelain 2>/dev/null | awk 'NF{c++} END{print c+0}'`], {
+      encoding: "utf8",
+      env: leakedEnv,
+    });
+    expect(Number(rawLeak.trim())).toBeGreaterThan(0);
+
+    // scopedCountDirty receives leakedEnv itself as the ambient env it
+    // runs under. Its own scrub is what has to do the work here, not a
+    // hardcoded clean env swapped in from outside the function.
+    expect(scopedCountDirty(targetRepo, leakedEnv)).toBe(0);
+  });
+
+  it("mutation: removing scopedCountDirty's own scrub brings the leak back on this exact fixture (_R1#175)", () => {
+    const { workDir: ambientRepo } = buildRepo(root, "runway");
+    writeFile(ambientRepo, "ambient-only.txt", "tracked only in the ambient repo\n");
+    git(["add", "."], ambientRepo);
+    git(["commit", "--quiet", "-m", "ambient-only file"], ambientRepo);
+    const { workDir: targetRepo } = buildRepo(join(root, "target"), "runway");
+    const leakedEnv = { ...ISOLATED_GIT_ENV, GIT_DIR: join(ambientRepo, ".git") };
+
+    // Control: the fixed helper stays green on this fixture in the same
+    // session as the mutant, same discipline as control 12's own
+    // mutation test.
+    expect(scopedCountDirty(targetRepo, leakedEnv)).toBe(0);
+
+    // Mutant: the exact pre-fix shape, no scrub at all, the ambient env
+    // (with its live leak) passed straight through to git.
+    const unscopedCountDirty = (wt: string, ambientEnv: NodeJS.ProcessEnv): number => {
       try {
         const out = execFileSync("sh", ["-c", `git -C "${wt}" status --porcelain 2>/dev/null | awk 'NF{c++} END{print c+0}'`], {
           encoding: "utf8",
-          env: ISOLATED_GIT_ENV,
+          env: ambientEnv,
         });
         return Number(out.trim());
       } catch {
         return -1;
       }
     };
-
-    // Same ambient shape a real pre-push hook creates: GIT_DIR pointing at
-    // a different repo than the one named by -C. Without env isolation,
-    // GIT_DIR overrides -C and this reads the ambient repo's dirty count
-    // instead of the target's 0. With isolation, -C wins and the read
-    // stays scoped to targetRepo regardless of what the parent process's
-    // environment happens to hold.
-    const leakedEnv = { ...process.env, GIT_DIR: join(ambientRepo, ".git") };
-    const out = execFileSync("sh", ["-c", `git -C "${targetRepo}" status --porcelain 2>/dev/null | awk 'NF{c++} END{print c+0}'`], {
-      encoding: "utf8",
-      env: leakedEnv,
-    });
-    // Positive control: prove the ambient GIT_DIR is actually live and
-    // would leak if nothing stripped it, so a "0" result below is
-    // isolation working and not the ambient repo happening to be clean.
-    expect(Number(out.trim())).toBeGreaterThan(0);
-
-    expect(buggyCountDirty(targetRepo)).toBe(0);
+    expect(unscopedCountDirty(targetRepo, leakedEnv)).toBeGreaterThan(0);
   });
 });
 
