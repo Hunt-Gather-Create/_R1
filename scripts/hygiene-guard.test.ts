@@ -4186,3 +4186,133 @@ describe("hygiene-guard.sh, control 23: an uninitialized submodule with real unc
     expect(mutantResult.stderr).toMatch(/Disposal: git worktree remove --force/);
   });
 });
+
+/**
+ * _R1#173: the empty-listing canary at the "for-each-ref returned nothing"
+ * check assumes trunk is a local branch whenever it is checked out. That
+ * assumption breaks in a repo where trunk exists only as a remote-tracking
+ * ref and the checked-out local branch has a different name: the canary's
+ * own `rev-parse --verify refs/heads/$TRUNK_BRANCH` probe finds nothing,
+ * so a genuinely broken `for-each-ref` (exit 0, empty stdout) reads as an
+ * honest "no local branches", identical to a real clean repo.
+ *
+ * `git symbolic-ref -q HEAD` is independent of trunk's name: it reports
+ * whatever local branch is actually checked out. If for-each-ref claims
+ * zero local branches while HEAD is attached to one, that is proof the
+ * listing lied, with no dependency on which branch trunk happens to be.
+ */
+function makeGitEmptyOutputShim(root: string, targetSubcommand: string, realGit: string): string {
+  const shimDir = join(root, "git-empty-shim");
+  mkdirSync(shimDir, { recursive: true });
+  const shimPath = join(shimDir, "git");
+  const script = `#!/bin/sh
+_target='${targetSubcommand}'
+_real='${realGit}'
+_sub=""
+_skip=0
+for _a in "$@"; do
+  if [ "$_skip" = "1" ]; then
+    _skip=0
+    continue
+  fi
+  case "$_a" in
+    -C|-c)
+      _skip=1
+      continue
+      ;;
+    -*)
+      continue
+      ;;
+    *)
+      _sub="$_a"
+      break
+      ;;
+  esac
+done
+if [ "$_sub" = "$_target" ]; then
+  exit 0
+fi
+exec "$_real" "$@"
+`;
+  writeFileSync(shimPath, script);
+  execFileSync("chmod", ["+x", shimPath]);
+  return shimDir;
+}
+
+describe("hygiene-guard.sh, control 25: the empty-listing canary must fire when trunk is not a local branch (_R1#173)", () => {
+  let root: string;
+  let realGit: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-empty-listing-")));
+    realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  /**
+   * Arm C's bed: trunk on origin is "runway" (origin/HEAD points at it),
+   * but the local checkout is a differently-named branch, so
+   * refs/heads/runway never exists locally. This is the ticket's own
+   * "trunk exists only as a remote-tracking ref" shape.
+   */
+  function buildNoLocalTrunkFixture(): { workDir: string } {
+    const { workDir } = buildRepo(root, "runway");
+    git(["branch", "-m", "runway", "local-trunk"], workDir);
+    return { workDir };
+  }
+
+  it("ARM C (defect): for-each-ref exits 0 with empty output, no local 'runway' branch exists, current canary reads false clean", () => {
+    const { workDir } = buildNoLocalTrunkFixture();
+    const shimDir = makeGitEmptyOutputShim(root, "for-each-ref", realGit);
+    const env = { ...ISOLATED_GIT_ENV, PATH: `${shimDir}:${process.env.PATH ?? ""}` };
+    const result = (() => {
+      try {
+        const stdout = execFileSync("sh", [SCRIPT_PATH, workDir, "origin"], { cwd: workDir, encoding: "utf8", env });
+        return { status: 0, stdout, stderr: "" };
+      } catch (err) {
+        const e = err as { stdout?: string; stderr?: string; status?: number };
+        return { status: e.status ?? -1, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
+      }
+    })();
+    // The defect this proves: a broken for-each-ref reads as an honest
+    // empty listing whenever the local checkout isn't named "runway",
+    // because the old canary's trunk-existence probe can never fire in
+    // that case. Confirmed RED against the pre-fix script (status 0, not
+    // 1) before the symbolic-ref-based probe below was added; stays
+    // GREEN now because that probe no longer depends on trunk's name.
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/for-each-ref.*returned nothing|empty listing/);
+  });
+
+  it("ARM D (control): same break, but the checked-out branch IS named 'runway' locally, existing canary already fires", () => {
+    const { workDir } = buildRepo(root, "runway");
+    const shimDir = makeGitEmptyOutputShim(root, "for-each-ref", realGit);
+    const env = { ...ISOLATED_GIT_ENV, PATH: `${shimDir}:${process.env.PATH ?? ""}` };
+    let result: GuardResult;
+    try {
+      const stdout = execFileSync("sh", [SCRIPT_PATH, workDir, "origin"], { cwd: workDir, encoding: "utf8", env });
+      result = { status: 0, stdout, stderr: "" };
+    } catch (err) {
+      const e = err as { stdout?: string; stderr?: string; status?: number };
+      result = { status: e.status ?? -1, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
+    }
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/for-each-ref.*returned nothing/);
+  });
+
+  it("negative control: a genuinely empty refs/heads with a detached HEAD must stay clean, not a false refuse", () => {
+    const { workDir } = buildRepo(root, "runway");
+    const sha = git(["rev-parse", "HEAD"], workDir);
+    git(["checkout", "--quiet", "--detach", sha], workDir);
+    git(["branch", "-D", "runway"], workDir);
+    const localBranches = git(["for-each-ref", "--format=%(refname:short)", "refs/heads/"], workDir);
+    expect(localBranches).toBe("");
+    const symref = spawnSync("git", ["symbolic-ref", "-q", "HEAD"], { cwd: workDir, env: ISOLATED_GIT_ENV });
+    expect(symref.status).not.toBe(0); // detached: symbolic-ref itself is silent/nonzero
+
+    const { status, stdout } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+  });
+});
