@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 
+import { chicagoToday } from "@/lib/runway/date-chicago";
+
 // ---------------------------------------------------------------------------
 // Mock the Runway DB. The cron does:
 //   db.select(...).from(weekItems).where(...) → candidates
@@ -161,7 +163,11 @@ describe("runwayAutoPromote (cron)", () => {
   });
 
   it("promotes one in-window scheduled L2 and writes audit row tagged with date-scoped batch id", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    // The cron computes today via chicagoToday() (refs _R1#128), not the
+    // server's UTC clock, so the expectation must derive from the same
+    // source or it drifts wrong every day between 00:00Z and ~05:00Z / 06:00Z
+    // (Chicago's UTC offset, -5 CDT or -6 CST), refs _R1#172.
+    const today = chicagoToday();
     mockSelectWhere.mockResolvedValueOnce([
       {
         id: "wi-in-window",
