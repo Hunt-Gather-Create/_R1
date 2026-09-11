@@ -35,7 +35,53 @@ set -e
 
 root=$(git rev-parse --show-toplevel)
 echo "pre-push: checking for fossil state (merged branches/worktrees)."
-if ! sh "$root/scripts/hygiene-guard.sh" "$root" origin; then
+
+# _R1#171: origin is the fork in any repo that has one (_R1 itself), so a
+# hardcoded "origin" below made the guard resolve trunk against the fork's
+# stale branch and refuse every push. Two settings, both defaulting to
+# today's behaviour so no other repo's pre-push changes: hygiene.remote
+# (default "origin") and hygiene.trunk (default empty, meaning "resolve it
+# from the remote's own HEAD", exactly as before this existed).
+#
+# `git config --get` exits 1 for "not set", indistinguishable from any other
+# failure unless separated -- same contract hygiene-guard.sh already holds
+# for merge-base at _resolve_trunk / _branch_governed. Read inside an `if`
+# so `set -e` above does not abort this script on the ordinary "not set"
+# exit 1. Anything else means the config read itself is broken, and that
+# must refuse rather than silently fall back to "origin".
+hygiene_remote=origin
+if remote_cfg=$(git config --get hygiene.remote 2>/dev/null); then
+  # Exit 0: set. An empty value is treated as unset, never passed through
+  # (an empty hygiene.remote would otherwise reach hygiene-guard.sh as "").
+  if [ -n "$remote_cfg" ]; then
+    hygiene_remote="$remote_cfg"
+  fi
+else
+  remote_cfg_status=$?
+  if [ "$remote_cfg_status" -ne 1 ]; then
+    echo ""
+    echo "pre-push: HYGIENE GUARD REFUSED. 'git config --get hygiene.remote' failed with exit $remote_cfg_status, not the documented 'not set' exit of 1. Not defaulting to origin for an instrument failure."
+    echo "pre-push: this guard has no skip flag of its own. git push --no-verify walks past it if you truly mean to."
+    exit 1
+  fi
+fi
+
+hygiene_trunk=""
+if trunk_cfg=$(git config --get hygiene.trunk 2>/dev/null); then
+  if [ -n "$trunk_cfg" ]; then
+    hygiene_trunk="$trunk_cfg"
+  fi
+else
+  trunk_cfg_status=$?
+  if [ "$trunk_cfg_status" -ne 1 ]; then
+    echo ""
+    echo "pre-push: HYGIENE GUARD REFUSED. 'git config --get hygiene.trunk' failed with exit $trunk_cfg_status, not the documented 'not set' exit of 1. Not defaulting to HEAD-derived trunk resolution for an instrument failure."
+    echo "pre-push: this guard has no skip flag of its own. git push --no-verify walks past it if you truly mean to."
+    exit 1
+  fi
+fi
+
+if ! sh "$root/scripts/hygiene-guard.sh" "$root" "$hygiene_remote" "" "" "$hygiene_trunk"; then
   echo ""
   echo "pre-push: HYGIENE GUARD REFUSED. Push blocked."
   echo "pre-push: this guard has no skip flag of its own. git push --no-verify walks past it if you truly mean to."

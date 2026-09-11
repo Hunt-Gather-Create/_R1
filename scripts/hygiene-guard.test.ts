@@ -286,6 +286,82 @@ describe("hygiene-guard.sh, trunk resolution, exercised through the guard's exit
   });
 });
 
+/**
+ * Runs the real, shipped guard with an explicit trunk-branch override, the
+ * 5th positional argument added for _R1#171. guard-path and hold-path (3rd,
+ * 4th args) are passed as empty strings, not omitted, to reach the 5th
+ * position while keeping their own defaults: "${3:-default}" in POSIX sh
+ * treats an empty string the same as unset, exactly the "empty means
+ * unset, never passed through" contract this ticket also requires of
+ * pre-push's own config reads.
+ */
+function runGuardWithTrunkOverride(cwd: string, remote: string, trunkOverride: string): GuardResult {
+  try {
+    const stdout = execFileSync("sh", [SCRIPT_PATH, cwd, remote, "", "", trunkOverride], {
+      cwd,
+      encoding: "utf8",
+      env: ISOLATED_GIT_ENV,
+    });
+    return { status: 0, stdout, stderr: "" };
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; status?: number };
+    return { status: e.status ?? -1, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
+  }
+}
+
+describe("hygiene-guard.sh, control 24: explicit trunk-branch override, 5th positional arg (_R1#171)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-trunk-override-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("an override naming the same branch HEAD would have resolved anyway still finds the install point and reports clean", () => {
+    const { workDir } = buildRepo(root, "runway");
+    const { status, stdout } = runGuardWithTrunkOverride(workDir, "origin", "runway");
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+  });
+
+  it("an override naming a branch that does not exist as <remote>/<branch> REFUSES by name, and does not fall back to HEAD-derived resolution", () => {
+    // origin/HEAD resolves to "runway" here, and "runway" is clean (no
+    // fossil, guard installed). If the override silently fell back to
+    // HEAD-derived resolution on failure, this would incorrectly report
+    // exit 0 clean; the fix must refuse instead.
+    const { workDir } = buildRepo(root, "runway");
+    const { status, stderr } = runGuardWithTrunkOverride(workDir, "origin", "does-not-exist");
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/configured trunk branch 'does-not-exist' does not resolve as 'origin\/does-not-exist'/);
+    expect(stderr).not.toMatch(/clean/);
+  });
+
+  it("an override naming a DIFFERENT real branch than HEAD's default actually switches resolution, proven by a distinct install-point refusal naming that branch", () => {
+    // "runway" (HEAD's default) has the guard installed and is clean.
+    // "other-trunk" is a second real branch on origin that does NOT carry
+    // the guard file. An override that merely validated the ref existed,
+    // without actually being used for TRUNK_REF, would still resolve
+    // against "runway" and report clean -- this proves the override value
+    // itself drives every downstream lookup, not just the existence check.
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "--orphan", "other-trunk"], workDir);
+    git(["rm", "-rf", "--quiet", "."], workDir);
+    writeFile(workDir, "README.md", "other trunk, no guard installed\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "other-trunk root"], workDir);
+    git(["push", "--quiet", "origin", "other-trunk"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const defaultResolved = runGuardWithTrunkOverride(workDir, "origin", "runway");
+    expect(defaultResolved.status).toBe(0);
+
+    const { status, stderr } = runGuardWithTrunkOverride(workDir, "origin", "other-trunk");
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/could not resolve an install point: no commit on origin\/other-trunk adds/);
+  });
+});
+
 describe("hygiene-guard.sh, the reverse-apply primitive, exercised through the guard's exit code", () => {
   let root: string;
   beforeEach(() => {
