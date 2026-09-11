@@ -218,6 +218,23 @@ for _trace_var in GIT_TRACE GIT_TRACE_FSMONITOR GIT_TRACE_PACK_ACCESS \
   unset "$_trace_var"
 done
 
+# A real pre-push invocation runs this script with GIT_DIR set in the
+# environment to the pushing worktree's own gitdir (TP, _R1#175). GIT_DIR
+# overrides every -C flag below, in _g and at the handful of call sites
+# that bypass it, so without this the repo argument this script was told
+# to inspect is advisory: git reads GIT_DIR's index/refs against whatever
+# directory -C names, producing either a false clean (a real fossil in
+# $_REPO goes unseen because GIT_DIR points elsewhere) or a block naming a
+# ref that does not exist in $_REPO at all. GIT_WORK_TREE, GIT_INDEX_FILE
+# and GIT_COMMON_DIR are the same class of leak and are scrubbed for the
+# same reason, even though TP's env sweep found only GIT_DIR itself
+# currently flips a verdict. Same placement and rationale as the
+# GIT_TRACE family above: once, before the first git call anywhere in
+# this file, so no call site can forget to.
+for _repo_var in GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR; do
+  unset "$_repo_var"
+done
+
 _REPO="${1:-$(pwd)}"
 _REMOTE="${2:-origin}"
 _GUARD_PATH="${3:-scripts/hygiene-guard.sh}"

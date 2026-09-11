@@ -1678,6 +1678,113 @@ describe("hygiene-guard.sh, control 17: GIT_TRACE and its siblings must never ch
   });
 });
 
+describe("hygiene-guard.sh, control 26: GIT_DIR and its worktree-identity siblings must never override the repo argument (TP, _R1#174)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-gitdir-leak-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  // The exact mechanism TP measured own-hands: _g is `git -C "$_REPO" "$@"`
+  // with no scrubbing, and GIT_DIR overrides -C for every call through it,
+  // not just the dirty-check call site #175 fixed in the test file. A real
+  // pre-push run never diverges _REPO from GIT_DIR for the repo being
+  // pushed, but the guard also enumerates OTHER linked worktrees by path
+  // (the dirty check at :1259/:1302, the worktree list read at :1372),
+  // and those ARE a different directory than the one GIT_DIR names. This
+  // fixture reproduces the divergence directly, the same way TP's own
+  // measurement did, rather than only through the harder-to-drive
+  // multi-worktree shape.
+  function buildFossilFixture(workDir: string) {
+    git(["checkout", "--quiet", "-b", "fossil-one"], workDir);
+    writeFile(workDir, "fossil-one.txt", "a\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "fossil-one 1"], workDir);
+    writeFile(workDir, "fossil-one.txt", "a\nb\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "fossil-one 2"], workDir);
+    squashMergeToTrunk(workDir, "runway", "fossil-one");
+    git(["checkout", "--quiet", "runway"], workDir);
+  }
+
+  it("direction 1: a repo with a real fossil still REFUSES, byte-identical to the no-leak verdict, when GIT_DIR is exported pointing at an unrelated clean repo", () => {
+    const { workDir: fossilBed } = buildRepo(root, "runway");
+    buildFossilFixture(fossilBed);
+    const { workDir: cleanBed } = buildRepo(join(root, "clean-bed"), "runway");
+
+    const baseline = runGuard(fossilBed);
+    expect(baseline.status).toBe(1);
+    expect(baseline.stderr).toMatch(/fossil-one/);
+    expect(baseline.stderr).toMatch(/git branch -D fossil-one/);
+
+    const leaked = runGuard(fossilBed, "origin", undefined, { GIT_DIR: join(cleanBed, ".git") });
+    // Byte-identical, not just the same exit code, per TP's own requirement
+    // (control 17's precedent): a leak that changes WHICH fossil gets
+    // named, or drops the disposal command, is still a defect even if the
+    // exit code happens to survive.
+    expect(leaked.status).toBe(baseline.status);
+    expect(leaked.stderr).toBe(baseline.stderr);
+    expect(leaked.stdout).toBe(baseline.stdout);
+  });
+
+  it("direction 2: the guard never names a ref that does not exist in the repo it was given, even with GIT_DIR pointed at a repo that has one", () => {
+    const { workDir: fossilBed } = buildRepo(root, "runway");
+    buildFossilFixture(fossilBed);
+    const { workDir: cleanBed } = buildRepo(join(root, "clean-bed"), "runway");
+
+    const cleanBaseline = runGuard(cleanBed);
+    expect(cleanBaseline.status).toBe(0);
+    expect(cleanBaseline.stdout).toMatch(/hygiene-guard: clean/);
+
+    const leaked = runGuard(cleanBed, "origin", undefined, { GIT_DIR: join(fossilBed, ".git") });
+    // fossil-one exists only in fossilBed. A leak that reads fossilBed's
+    // refs while claiming to inspect cleanBed would hand back a BLOCK line
+    // (or a disposal command) naming a branch that is not present in the
+    // repo the guard was told to check -- exactly the DIRECTION 2 failure
+    // TP measured. Byte-identical to cleanBed's own baseline is the
+    // strongest form of this assertion; the explicit name check below is
+    // the one that would survive even if some future change made the two
+    // verdicts diverge in a way that still avoided naming a foreign ref.
+    expect(leaked.status).toBe(cleanBaseline.status);
+    expect(leaked.stdout).toBe(cleanBaseline.stdout);
+    expect(leaked.stderr).not.toMatch(/fossil-one/);
+  });
+
+  it("mutation: removing the GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_COMMON_DIR scrub brings the false clean back on direction 1's exact fixture", () => {
+    const { workDir: fossilBed } = buildRepo(root, "runway");
+    buildFossilFixture(fossilBed);
+    const { workDir: cleanBed } = buildRepo(join(root, "clean-bed"), "runway");
+
+    // Control: the real, fixed guard is unaffected (re-asserted here in
+    // the same session as the mutant, same discipline as control 12's own
+    // mutation test).
+    const fixed = runGuard(fossilBed, "origin", undefined, { GIT_DIR: join(cleanBed, ".git") });
+    expect(fixed.status).toBe(1);
+    expect(fixed.stderr).toMatch(/fossil-one/);
+
+    const anchor =
+      "for _repo_var in GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR; do\n" +
+      '  unset "$_repo_var"\n' +
+      "done";
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
+    const mutated = source.replace(anchor, ": # GIT_DIR scrub removed by mutation");
+    expect(mutated).not.toBe(source);
+
+    const mutantPath = join(root, "mutant-no-gitdir-scrub.sh");
+    writeFileSync(mutantPath, mutated);
+
+    const mutant = runGuard(fossilBed, "origin", mutantPath, { GIT_DIR: join(cleanBed, ".git") });
+    // The false clean this control exists to catch: without the scrub,
+    // GIT_DIR overrides -C and the guard reads cleanBed's (empty) fossil
+    // state instead of fossilBed's real one.
+    expect(mutant.status).toBe(0);
+  });
+});
+
 describe("hygiene-guard.sh, control 12: the dirty check reports UNKNOWN, never a false clean, when it cannot read git status (_R1#167 G1_BOUNCE 4, DEFECT 2)", () => {
   let root: string;
   beforeEach(() => {
