@@ -20,7 +20,7 @@
 # it is the shipped artifact, with no Node dependency for a pre-push hook to
 # fail on if `node` is absent from a contributor's PATH.
 #
-# Usage: sh hygiene-guard.sh [repo-path] [remote-name] [guard-path] [hold-path]
+# Usage: sh hygiene-guard.sh [repo-path] [remote-name] [guard-path] [hold-path] [trunk-branch]
 #   repo-path    defaults to the current directory. Passed so this can be
 #                tested against a repo other than the one it's invoked in;
 #                a real pre-push invocation never needs to pass it, git already
@@ -44,6 +44,16 @@
 #                unparseable data and this guard refuses (fails safe, but
 #                the cause looks like a parser bug to whoever tries to
 #                share one hold list across repos this way).
+#   trunk-branch defaults to empty, meaning "resolve it from remote-name's
+#                own HEAD", exactly as before this argument existed (_R1#171).
+#                Pass a branch name (never a "<remote>/<branch>" ref) to
+#                override that resolution outright -- needed by any fork
+#                whose remote's default branch is not the same name as the
+#                fork's own trunk (_R1: remote "upstream" defaults to
+#                "main", trunk is "runway"). An explicit value that does not
+#                resolve as "<remote-name>/<trunk-branch>" REFUSES; it never
+#                falls back to HEAD-derived resolution, on the same
+#                degrade-toward-refuse contract as every other input here.
 #
 # Stdin: this script now reads the pre-push ref-update stream from stdin
 # ("<local ref> <local sha> <remote ref> <remote sha>", one line per ref
@@ -211,6 +221,7 @@ done
 _REPO="${1:-$(pwd)}"
 _REMOTE="${2:-origin}"
 _GUARD_PATH="${3:-scripts/hygiene-guard.sh}"
+_TRUNK_OVERRIDE="${5:-}"
 
 _g() {
   # Run git in the target repo. -C, not cd, so this script's own cwd is
@@ -311,12 +322,26 @@ _resolve_trunk() {
   return 1
 }
 
-TRUNK_BRANCH=$(_resolve_trunk)
-_trunk_status=$?
-if [ "$_trunk_status" -ne 0 ] || [ -z "$TRUNK_BRANCH" ]; then
-  rm -f "$_STDIN_FILE"
-  _block "could not resolve trunk from refs/remotes/$_REMOTE/HEAD or 'git remote show $_REMOTE' in $_REPO. Not guessing a branch name. No disposability check ran."
-  exit 1
+# An explicit trunk-branch override (5th arg) is validated and used as-is,
+# with NO fallback to HEAD-derived resolution on failure: a caller that
+# configured a trunk explicitly gets a refusal naming what it configured,
+# never a silent switch to a different, unconfigured answer (_R1#171).
+if [ -n "$_TRUNK_OVERRIDE" ]; then
+  if _g rev-parse --verify --quiet "refs/remotes/$_REMOTE/$_TRUNK_OVERRIDE" >/dev/null 2>&1; then
+    TRUNK_BRANCH="$_TRUNK_OVERRIDE"
+  else
+    rm -f "$_STDIN_FILE"
+    _block "configured trunk branch '$_TRUNK_OVERRIDE' does not resolve as '$_REMOTE/$_TRUNK_OVERRIDE' in $_REPO. Not falling back to HEAD-derived resolution for an explicitly configured trunk. No disposability check ran."
+    exit 1
+  fi
+else
+  TRUNK_BRANCH=$(_resolve_trunk)
+  _trunk_status=$?
+  if [ "$_trunk_status" -ne 0 ] || [ -z "$TRUNK_BRANCH" ]; then
+    rm -f "$_STDIN_FILE"
+    _block "could not resolve trunk from refs/remotes/$_REMOTE/HEAD or 'git remote show $_REMOTE' in $_REPO. Not guessing a branch name. No disposability check ran."
+    exit 1
+  fi
 fi
 TRUNK_REF="$_REMOTE/$TRUNK_BRANCH"
 
