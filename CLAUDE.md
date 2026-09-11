@@ -107,7 +107,7 @@ Chain: CC builds → QA-Scout-1 in-lane → TP weighs and routes → Overwatch g
 
 **EXCEPTION** is allowed only when one of these is true, and **say which one applies when you use it**:
 1. No standing seat covers the work.
-2. Every relevant seat is over its compact band.
+2. Every relevant seat is at the point where native compaction is about to fire. Context depth short of that is not a reason; the window is 1M and the fire point is a measured fact that lives in Hemingway, not a number written here. Reworded 2026-09-11; the old wording said "over its compact band", a 200K-era phrase.
 3. It is a one-shot read that costs more to hand over than to run.
 
 **Why this is here and not in memory:** a practice that lives only in memory loses to a written instruction that says otherwise, every time. CLAUDE.md is injected each session as authoritative; memory arrives as background context that says it is not an instruction. When the two conflict the file wins by construction. This section previously said all work goes to *subagents*, which is why four PRs got built without the bots ever being opened. If a decision should change what you do, it goes here. Memory is for lessons; the file is for the action.
