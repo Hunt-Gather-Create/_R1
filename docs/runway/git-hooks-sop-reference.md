@@ -90,7 +90,7 @@ pre-push: HYGIENE GUARD REFUSED. Push blocked.
 
 That refusal is correct behavior, not a bug: the guard will not measure against a trunk it cannot see itself on. Step 2e fixes it. Measured 2026-09-11 on the TP checkout, first push after B2.
 
-**The installer flips mode bits on four scripts.** `scripts/install-hooks.sh` runs `chmod +x scripts/*.mjs` before it writes the pin. On `_R1` that turns `scripts/build-with-migrations.mjs`, `scripts/runway-deploy-target.mjs`, `scripts/runway-schema-parity-check.mjs` and `scripts/runway-schema-push.mjs` from 100644 to 100755 in the working tree. None of the four has a shebang. Expect four mode-only lines in `git status` after 2d. The CC ticket should either commit them at 755 or leave the mode change unstaged; do not let it ride into an unrelated commit.
+**The installer flips mode bits on four scripts.** `scripts/install-hooks.sh` runs `chmod +x scripts/*.mjs` before it writes the pin. On `_R1` that turns `scripts/build-with-migrations.mjs`, `scripts/runway-deploy-target.mjs`, `scripts/runway-schema-parity-check.mjs` and `scripts/runway-schema-push.mjs` from 100644 to 100755 in the working tree. None of the four has a shebang. Expect four mode-only lines in `git status` after 2d. jasonburks23/_R1#178's call: do not commit the mode flips, since Overwatch measured they are not load bearing for the gate. Reset them after install with `git checkout -- scripts/*.mjs`.
 
 Two escape hatches, and their reach. `RUNWAY_SKIP_PREPUSH=1` skips the test suite step only; the hygiene guard still runs. `git push --no-verify` walks past everything and is not permitted for any Runway seat. `git commit --no-verify` is the line the pre-commit prints; the same rule applies.
 

@@ -1,0 +1,6 @@
+#!/bin/sh
+# Runway's real pre-push lives in scripts/hooks/pre-push (test suite plus the
+# hygiene guard, _R1#107 and _R1#167). This shim exists so the fleet-standard
+# hooks dir .githooks carries all three required hook types and the real hook
+# still runs. stdin (the pushed refs) passes through exec untouched.
+exec "$(git rev-parse --show-toplevel)/scripts/hooks/pre-push" "$@"
