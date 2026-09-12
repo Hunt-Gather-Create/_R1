@@ -239,6 +239,15 @@ _REPO="${1:-$(pwd)}"
 _REMOTE="${2:-origin}"
 _GUARD_PATH="${3:-scripts/hygiene-guard.sh}"
 _TRUNK_OVERRIDE="${5:-}"
+# _MODE (opeff#1040): "push" (default) is everything this file did before
+# this arg existed -- the pre-push stdin protocol, the local branch/worktree
+# walk under refs/heads/. "remote-sweep" is a second, additive mode: it
+# skips the pre-push-only machinery entirely and instead walks
+# refs/remotes/$_REMOTE/, reporting the same content-presence verdict a
+# scheduled, non-push caller can read (see the remote-sweep block below).
+# Validated once _block exists, a few lines down, so a bad value gets the
+# same BLOCK-and-refuse treatment as every other malformed input here.
+_MODE="${6:-push}"
 
 _g() {
   # Run git in the target repo. -C, not cd, so this script's own cwd is
@@ -254,6 +263,14 @@ _block() {
 _info() {
   echo "hygiene-guard: $*"
 }
+
+case "$_MODE" in
+  push | remote-sweep) ;;
+  *)
+    _block "unrecognized mode '$_MODE' (6th argument); must be 'push' or 'remote-sweep'. Not guessing which one was meant."
+    exit 1
+    ;;
+esac
 
 # QA gap (_R1#167 G1_BOUNCE): a worktree path containing a space, entirely
 # ordinary on macOS, made the printed `git worktree remove --force <path>`
@@ -281,7 +298,26 @@ _visible() {
 # otherwise reference this under `set -u` before it was ever assigned.
 _TAB=$(printf '\t')
 
+# Initialized empty here, unconditionally, so `set -u` never trips: a
+# detector function's own failure-cleanup path (_is_cherry_fossil,
+# _is_reverse_apply_fossil, _branch_governed) references these four
+# unconditionally on an instrument-failure exit, and MODE=remote-sweep
+# below skips every push-mode block that would otherwise mktemp them a
+# real path. Push mode overwrites all four with real temp files before any
+# of them are read for anything but cleanup; remote-sweep mode never
+# creates worktree/branch temp files at all, so they stay empty here and
+# an eventual `rm -f ""` is a harmless no-op.
+_wt_records=""
+_wt_map=""
+_branches=""
+_STDIN_FILE=""
+
 # --- read stdin: the pre-push ref-update stream, captured once, up front ---
+# MODE=remote-sweep never reads this: it is not a real push, so there is no
+# ref-update stream to protect the force-push-orphan trigger with, and
+# requiring one here would make a scheduled, non-interactive caller either
+# fabricate a fake stream or get refused for having none to give.
+if [ "$_MODE" = "push" ]; then
 # Overwatch ruling (_R1#167 G1_BOUNCE): a force-push deletes no ref, so the
 # leftover check above (content already in trunk) never fires on it, a
 # name-keyed hold sees the name still present, and an object-keyed hold sees
@@ -315,6 +351,7 @@ if ! cat >"$_STDIN_FILE" 2>/dev/null; then
   _block "could not read the pre-push ref-update stream from stdin. Not treating an unreadable stdin as 'no ref updates'. No disposability check ran."
   exit 1
 fi
+fi # $_MODE = push (stdin capture)
 
 # --- resolve trunk, from the repo, never a literal branch name --------------
 _resolve_trunk() {
@@ -840,7 +877,9 @@ _check_orphaned_holds() {
   return 0
 }
 
-_check_orphaned_holds
+# remote-sweep is not a real push (no ref-update stream exists to protect),
+# so the force-push-orphan trigger has nothing to read and does not run.
+[ "$_MODE" = "push" ] && _check_orphaned_holds
 
 # --- governance: is a branch's fork point at or after INSTALL_SHA? ---------
 _branch_governed() {
@@ -1368,6 +1407,147 @@ _count_dirty() {
   _DIRTY_STATE="clean"
   _DIRTY_COUNT=0
 }
+
+# --- MODE: remote-sweep (opeff#1040) ----------------------------------------
+# The branch loop below only ever sees refs/heads/, so a branch that was
+# merged into trunk and then had its LOCAL branch deleted, but was never
+# deleted on the remote, is invisible to every check above it. GitHub's
+# auto-delete-on-merge setting only fires for a PR merged through GitHub's
+# own merge button; a repo that also lands work by pushing a squash or a
+# commit-tree SHA directly never trips that checkbox, which is why the
+# fleet's remote-branch backlog exists at all.
+#
+# This mode walks refs/remotes/$_REMOTE/ instead of refs/heads/ and applies
+# the SAME content-presence test as the branch loop below: both detectors
+# (_is_cherry_fossil, _is_reverse_apply_fossil) through the same
+# _is_content_present combiner, confirmed-vs-disputed exactly as before,
+# and the SAME hold list via _is_held, keyed on the bare branch name so one
+# hold list covers a branch whether it is being checked locally or here.
+#
+# Two differences from the local branch loop, both deliberate:
+#
+# 1. NO install-point governance filter. The "only branches forked at or
+#    after install are governed" rule (see SCOPE, top of file) exists so a
+#    guard that BLOCKS a live push does not demand a backlog cleanup as its
+#    entry fee. This mode blocks nothing -- it has no worktree to disturb
+#    and prints a delete command it never runs -- so there is no
+#    enforceability wall to protect, and the whole existing remote backlog
+#    is in scope from this mode's first run, not just what accumulates after
+#    today.
+# 2. The disposal command is `git push $_REMOTE --delete <branch>`, never
+#    `git worktree remove --force` or `git branch -D`. A remote delete is
+#    NOT reflog-recoverable on this machine the way a local branch delete
+#    is (the commit stays reachable in some clone until it is gc'd, but
+#    this guard has no way to know who else has one). This mode therefore
+#    NEVER runs that command; it only ever prints it, once, per branch, for
+#    a human to choose to run.
+#
+# Freshness of refs/remotes/$_REMOTE/ is this mode's CALLER's job, not this
+# script's: this mode walks whatever the most recent `git fetch $_REMOTE
+# --prune` left behind. It does not fetch on its own, so a stale
+# remote-tracking snapshot reports stale results -- see
+# scripts/hygiene-guard-remote-sweep.sh, the scheduled caller that runs the
+# fetch first.
+if [ "$_MODE" = "remote-sweep" ]; then
+  _remote_refs_file=$(mktemp 2>/dev/null) || {
+    rm -f "$_hold_entries"
+    _block "could not create a temp file for remote-branch enumeration."
+    exit 1
+  }
+  _g for-each-ref --format='%(refname:short)' "refs/remotes/$_REMOTE/" >"$_remote_refs_file" 2>/dev/null
+  _rr_status=$?
+  if [ "$_rr_status" -ne 0 ]; then
+    rm -f "$_remote_refs_file" "$_hold_entries"
+    _block "could not enumerate remote-tracking refs under refs/remotes/$_REMOTE/ (git for-each-ref exited $_rr_status). Not treating a failed listing as zero remote branches. No remote sweep ran."
+    exit 1
+  fi
+
+  # cut, not read+IFS, for the same reason the branch/worktree records below
+  # use cut: a name containing a literal tab is not a real concern here (git
+  # ref names cannot contain one), but there is no reason to reach for a
+  # weaker tool than the rest of this file already standardized on.
+  while IFS= read -r _rref; do
+    [ -n "$_rref" ] || continue
+    # refs/remotes/<remote>/HEAD is a symbolic ref pointing at trunk, not a
+    # branch of its own; deleting it would be deleting the remote's default
+    # branch pointer, never a real disposal candidate. Measured live on
+    # this ticket's own bed: `%(refname:short)` collapses that symref to
+    # the BARE remote name ("origin"), not "origin/HEAD" -- for-each-ref's
+    # own short-name logic for a remote's HEAD symref, not a formatting
+    # choice this script makes. Skipped by exact match on the bare remote
+    # name FIRST, before the prefix-strip below (which would otherwise
+    # leave it unchanged, since "origin" does not start with "origin/",
+    # and let it through as a fake "branch" whose content is trivially
+    # trunk's own tip -- confirmed live: it prints a nonsensical `git push
+    # origin --delete origin` without this check).
+    [ "$_rref" = "$_REMOTE" ] && continue
+    _rbranch=${_rref#"$_REMOTE/"}
+    [ -n "$_rbranch" ] || continue
+    [ "$_rbranch" = "HEAD" ] && continue
+    [ "$_rbranch" = "$TRUNK_BRANCH" ] && continue
+
+    # Ancestor check FIRST, ahead of the shared cherry/reverse-apply
+    # pipeline (measured live on this ticket's own bed): a TRUE merge (a
+    # real merge commit, not a squash) leaves the branch's own tip
+    # reachable from trunk through that merge commit's second parent, so
+    # `rev-list --count trunk..branch` is 0. _is_content_present's own
+    # cheap discriminator treats a zero-ahead branch as "nothing to check
+    # yet" (the brand-new, never-diverged case it was written for) and
+    # returns before either detector runs -- correct for a fresh branch,
+    # but it silently skips a genuinely, fully-merged branch too, since
+    # both shapes read as zero-ahead. This is the same asymmetry the
+    # squash case has for a different reason (no ancestor edge at all,
+    # ahead > 0, needs cherry/reverse-apply); a true merge has the
+    # opposite shape (ancestor edge exists, ahead == 0), so it needs the
+    # ancestor check the header comment says is "never used here" for
+    # squash -- but a squash branch genuinely fails this check (exit 1,
+    # "not an ancestor"), so it falls through to the existing pipeline
+    # unchanged. Scoped to this remote-sweep arm only: the local
+    # branch/worktree loop below is untouched, since this ticket's
+    # acceptance is about the remote arm's own behavior, not a change to
+    # already-hardened, separately-tested local-branch logic.
+    _g merge-base --is-ancestor "$_rref" "$TRUNK_REF" 2>/dev/null
+    _ranc_status=$?
+    if [ "$_ranc_status" -eq 0 ]; then
+      _DETECTOR="ancestor (fully merged into $TRUNK_REF)"
+      _CONTENT_MODE="confirmed"
+    elif [ "$_ranc_status" -eq 1 ]; then
+      if ! _is_content_present "$_rref" "$TRUNK_REF"; then
+        continue
+      fi
+    else
+      rm -f "$_remote_refs_file" "$_hold_entries"
+      _block "could not determine whether $_rref is an ancestor of $TRUNK_REF (git merge-base --is-ancestor exited $_ranc_status). Not treating an instrument failure as not-an-ancestor."
+      exit 1
+    fi
+
+    if [ "$_CONTENT_MODE" = "disputed" ]; then
+      _block "remote branch DISPUTED: $_rref matches $TRUNK_REF's history by patch-id (git cherry) but reverse-apply could not confirm its content is present in $TRUNK_REF's actual tree. Detectors disagree -- this can mean the change landed on $TRUNK_REF and was later reverted, leaving $_rref the only remaining copy, or it can mean reverse-apply's own known gap. No disposal command. Needs manual verification."
+      continue
+    fi
+
+    _rtip=$(_g rev-parse --verify --quiet "$_rref" 2>/dev/null)
+    if [ -z "$_rtip" ]; then
+      rm -f "$_remote_refs_file" "$_hold_entries"
+      _block "could not resolve $_rref's own tip commit (git rev-parse failed). Not treating an instrument failure as an unheld remote branch."
+      exit 1
+    fi
+    if _is_held "$_rbranch" "$_rtip"; then
+      _block "remote branch $_rref: $_HOLD_MSG"
+      continue
+    fi
+
+    _block "remote branch already in $TRUNK_REF (detected via $_DETECTOR): $_rref. Disposal: git push $_REMOTE --delete $(_shquote "$_rbranch")"
+  done <"$_remote_refs_file"
+  rm -f "$_remote_refs_file" "$_hold_entries"
+
+  if [ "$_fail" -eq 0 ]; then
+    _info "remote sweep clean. No remote branch under refs/remotes/$_REMOTE/ is fully contained in $TRUNK_REF."
+    exit 0
+  fi
+  echo "hygiene-guard: remote sweep found disposable, held, or disputed remote-branch state relative to $TRUNK_REF. See line(s) above. Nothing was deleted; disposal commands are printed only." >&2
+  exit 1
+fi
 
 # --- enumerate worktrees. git-common-dir, never directory position ---------
 # A worktree whose repo has a submodule registered inside it IS covered:
