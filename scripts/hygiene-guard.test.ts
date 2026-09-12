@@ -3641,11 +3641,16 @@ describe("hygiene-guard.sh, control 21: a ref UPDATE that would orphan a held ob
     expect(control.status).toBe(1);
     expect(control.stderr).toMatch(/orphan a held object/);
 
-    const anchor = "\n_check_orphaned_holds\n";
+    // opeff#1040: the call site grew a MODE=push guard so remote-sweep mode
+    // (which has no ref-update stream to protect) skips it; the anchor
+    // below was updated to match the current call-site line verbatim, same
+    // mutation intent (a source-level removal of the call, not just the
+    // guard around it).
+    const anchor = '\n[ "$_MODE" = "push" ] && _check_orphaned_holds\n';
     const source = readFileSync(SCRIPT_PATH, "utf8");
     const occurrences = source.split(anchor).length - 1;
     expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
-    const mutated = source.replace(anchor, "\n\n");
+    const mutated = source.replace(anchor, '\n[ "$_MODE" = "push" ] && true\n');
     expect(mutated).not.toBe(source);
 
     const mutantPath = join(root, "mutant-no-orphan-check.sh");

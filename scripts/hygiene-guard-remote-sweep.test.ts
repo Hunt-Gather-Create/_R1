@@ -140,20 +140,20 @@ describe("hygiene-guard.sh remote-sweep mode, exercised through the guard's exit
   it("names a squash-merged remote branch disposable with the delete command, after its local branch is gone", () => {
     const { workDir } = buildRepo(root);
     squashMergeAndOrphanRemote(workDir, "feat/squash-orphan", "squash-orphan.txt");
-    const { status, stdout } = runRemoteSweep(workDir);
+    const { status, stderr } = runRemoteSweep(workDir);
     expect(status).toBe(1);
-    expect(stdout).toMatch(/origin\/feat\/squash-orphan/);
-    expect(stdout).toMatch(/Disposal: git push origin --delete 'feat\/squash-orphan'/);
+    expect(stderr).toMatch(/origin\/feat\/squash-orphan/);
+    expect(stderr).toMatch(/Disposal: git push origin --delete 'feat\/squash-orphan'/);
   });
 
   it("names a true-merged (--no-ff) remote branch disposable with the delete command", () => {
     const { workDir } = buildRepo(root);
     trueMergeAndOrphanRemote(workDir, "feat/true-orphan", "true-orphan.txt");
-    const { status, stdout } = runRemoteSweep(workDir);
+    const { status, stderr } = runRemoteSweep(workDir);
     expect(status).toBe(1);
-    expect(stdout).toMatch(/origin\/feat\/true-orphan/);
-    expect(stdout).toMatch(/Disposal: git push origin --delete 'feat\/true-orphan'/);
-    expect(stdout).toMatch(/detected via ancestor/);
+    expect(stderr).toMatch(/origin\/feat\/true-orphan/);
+    expect(stderr).toMatch(/Disposal: git push origin --delete 'feat\/true-orphan'/);
+    expect(stderr).toMatch(/detected via ancestor/);
   });
 
   it("never names a remote branch whose content is genuinely not on trunk, and the fixture's diff genuinely cannot reverse-apply", () => {
@@ -186,9 +186,9 @@ describe("hygiene-guard.sh remote-sweep mode, exercised through the guard's exit
     git(["checkout", "--quiet", "trunk"], workDir);
     git(["branch", "-D", "feat/unmerged"], workDir);
 
-    const { status, stdout } = runRemoteSweep(workDir);
+    const { status, stdout, stderr } = runRemoteSweep(workDir);
     expect(status).toBe(0);
-    expect(stdout).not.toMatch(/feat\/unmerged/);
+    expect(stdout + stderr).not.toMatch(/feat\/unmerged/);
   });
 
   it("reports a held remote branch as held, with no delete command, even though its content is fully present", () => {
@@ -211,17 +211,17 @@ describe("hygiene-guard.sh remote-sweep mode, exercised through the guard's exit
     git(["commit", "--quiet", "-m", "hold feat/held"], workDir);
     git(["push", "--quiet", "origin", "trunk"], workDir);
 
-    const { status, stdout } = runRemoteSweep(workDir);
+    const { status, stderr } = runRemoteSweep(workDir);
     expect(status).toBe(1);
-    expect(stdout).toMatch(/origin\/feat\/held.*held:/s);
-    expect(stdout).not.toMatch(/Disposal: git push origin --delete 'feat\/held'/);
+    expect(stderr).toMatch(/origin\/feat\/held.*held:/s);
+    expect(stderr).not.toMatch(/Disposal: git push origin --delete 'feat\/held'/);
   });
 
   it("never reports the remote's collapsed HEAD symref (%(refname:short) resolves refs/remotes/origin/HEAD to the bare 'origin') as a disposable branch", () => {
     const { workDir } = buildRepo(root);
-    const { status, stdout } = runRemoteSweep(workDir);
+    const { status, stdout, stderr } = runRemoteSweep(workDir);
     expect(status).toBe(0);
-    expect(stdout).not.toMatch(/delete 'origin'/);
+    expect(stdout + stderr).not.toMatch(/delete 'origin'/);
   });
 
   it("push mode (no 6th argument) is unaffected: still reads the pre-push stdin protocol and refuses a terminal stdin exactly as before", () => {
