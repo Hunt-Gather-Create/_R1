@@ -5,6 +5,93 @@ set -euo pipefail
 # Usage:
 #   scripts/worktree-clean.sh          # dry-run (show what would be removed)
 #   scripts/worktree-clean.sh --force  # actually remove them
+#
+# _R1#170 item 4: disposability is decided by CONTENT presence, never
+# ancestry. `git branch --merged` walks parent edges, and a squash merge
+# creates none for the branch that got squashed -- it exits clean, prints a
+# tidy summary, and removes nothing, on a branch whose every change already
+# lives in trunk. That is the exact shape this repo squash-merges through
+# GitHub, so the old check missed the common case, not an edge case.
+#
+# is_content_present below is the same two-step check scripts/hygiene-guard.sh
+# uses for the same reason: diff the branch against its own merge-base with
+# trunk, read trunk's tree into a scratch index (GIT_INDEX_FILE, so nothing
+# touches the real working tree or the caller's real staged changes), then
+# `git apply --cached --reverse --check` that diff. A clean reverse-apply
+# means trunk already contains every change the branch makes.
+#
+# Every instrument call's exit status is checked directly. An empty diff
+# against the branch's own merge-base is read as UNKNOWN, not identical --
+# it means the branch made no unique change at all (for example an
+# --allow-empty commit), which is not evidence trunk already has its
+# content, since there is no content to have. Any other instrument failure
+# (merge-base, diff, read-tree, or apply itself erroring rather than
+# returning its documented negative) is UNKNOWN too. UNKNOWN never reads as
+# disposable: this script only ever proposes removing what it could
+# affirmatively prove is already in trunk.
+
+# $1 = candidate ref, $2 = trunk ref. Echoes one of: present | absent | unknown
+is_content_present() {
+  local ref="$1" trunk="$2"
+  local base base_status scratch patch index diff_status read_status apply_status
+
+  base=$(git merge-base "$ref" "$trunk" 2>/dev/null)
+  base_status=$?
+  if [ "$base_status" -eq 1 ] && [ -z "$base" ]; then
+    echo "absent" # documented "no common ancestor": a real negative
+    return 0
+  fi
+  if [ "$base_status" -ne 0 ] || [ -z "$base" ]; then
+    echo "unknown"
+    return 0
+  fi
+
+  scratch=$(mktemp -d 2>/dev/null) || {
+    echo "unknown"
+    return 0
+  }
+  patch="$scratch/patch.diff"
+  index="$scratch/index"
+
+  git diff --binary "$base" "$ref" >"$patch" 2>/dev/null
+  diff_status=$?
+  if [ "$diff_status" -ne 0 ]; then
+    rm -rf "$scratch"
+    echo "unknown"
+    return 0
+  fi
+
+  if [ ! -s "$patch" ]; then
+    rm -rf "$scratch"
+    # DEFECT 4 shape (see scripts/hygiene-guard.sh): an empty diff against
+    # the branch's own merge-base means no unique content was ever
+    # contributed. That is not evidence of presence in trunk.
+    echo "unknown"
+    return 0
+  fi
+
+  GIT_INDEX_FILE="$index" git read-tree "$trunk" 2>/dev/null
+  read_status=$?
+  if [ "$read_status" -ne 0 ]; then
+    rm -rf "$scratch"
+    echo "unknown"
+    return 0
+  fi
+
+  GIT_INDEX_FILE="$index" git apply --whitespace=nowarn --cached --reverse --check "$patch" >/dev/null 2>/dev/null
+  apply_status=$?
+  rm -rf "$scratch"
+  if [ "$apply_status" -eq 0 ]; then
+    echo "present"
+    return 0
+  fi
+  if [ "$apply_status" -gt 1 ]; then
+    echo "unknown"
+    return 0
+  fi
+  echo "absent" # apply's documented "does not apply": a real negative
+  return 0
+}
 
 force=false
 for arg in "$@"; do
@@ -33,29 +120,36 @@ git worktree list --porcelain | grep "^branch " | sed 's|branch refs/heads/||' |
   # Skip runway itself
   [ "$branch" = "runway" ] && continue
 
-  if git branch --merged upstream/runway | grep -qw "$branch"; then
-    merged_count=$((merged_count + 1))
+  verdict=$(is_content_present "$branch" upstream/runway)
 
-    # Find the worktree path for this branch
-    worktree_path=$(git worktree list --porcelain | awk -v b="refs/heads/$branch" '
-      /^worktree / { path = substr($0, 10) }
-      /^branch /   { if (substr($0, 8) == b) print path }
-    ')
+  # Find the worktree path for this branch
+  worktree_path=$(git worktree list --porcelain | awk -v b="refs/heads/$branch" '
+    /^worktree / { path = substr($0, 10) }
+    /^branch /   { if (substr($0, 8) == b) print path }
+  ')
 
-    if [ -z "$worktree_path" ]; then
-      echo "  WARNING: could not find worktree path for branch $branch"
-      continue
-    fi
-
-    if [ "$force" = true ]; then
-      echo "  Removing: $branch ($worktree_path)"
-      git worktree remove "$worktree_path"
-      git branch -d "$branch"
-      removed_count=$((removed_count + 1))
-    else
-      echo "  merged:   $branch ($worktree_path)"
-    fi
+  if [ -z "$worktree_path" ]; then
+    echo "  WARNING: could not find worktree path for branch $branch"
+    continue
   fi
+
+  case "$verdict" in
+    present)
+      merged_count=$((merged_count + 1))
+      if [ "$force" = true ]; then
+        echo "  Removing: $branch ($worktree_path)"
+        git worktree remove "$worktree_path"
+        git branch -d "$branch"
+        removed_count=$((removed_count + 1))
+      else
+        echo "  merged:   $branch ($worktree_path)"
+      fi
+      ;;
+    unknown)
+      echo "  UNKNOWN:  $branch ($worktree_path) -- content presence in upstream/runway could not be determined, not touching it"
+      ;;
+    absent) ;; # not merged, nothing to report
+  esac
 done
 
 echo ""
