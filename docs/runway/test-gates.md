@@ -49,8 +49,10 @@ It catches the honest mistake cheaply. **It does not remove ambiguity.** It woul
 Install it once per clone and once per worktree:
 
 ```bash
-sh scripts/hooks/install.sh
+sh scripts/install-hooks.sh
 ```
+
+`scripts/hooks/install.sh` is now a deprecated shim to the line above, refs opeff#1008.
 
 Skip it deliberately when you mean to:
 
