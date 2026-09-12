@@ -109,3 +109,9 @@ scripts/runway-migrations/*-2026-06-*.ts
 # batches already applied, and moving them out of scripts/runway-migrations/
 # breaks that sibling import. Ignoring them in place, by name, is the point.
 scripts/runway-migrations/*-2026-09-*.ts
+
+# Seat tool state, machine-local, never work (git SOP six-numbers bar, 2026-09-12)
+.claude/.headroom_wrap_marker.json
+.claude/.headroom_wrap_owners.json
+.planning/.pending-auth-captures.jsonl
+.serena/
