@@ -1516,14 +1516,21 @@ if [ ! -s "$_branches" ]; then
   # guard to a false "clean". Unlike worktree list, an empty branch list at
   # exit 0 CAN be genuine (a repo where the only local branch is trunk
   # itself, filtered out below before ever reaching this loop's body -- see
-  # "passes when the only branch is trunk itself"). Distinguish the two
-  # with an independent query: trunk is a local branch too whenever it is
-  # checked out, so if refs/heads/$TRUNK_BRANCH genuinely exists but
-  # for-each-ref reported NOTHING, not even trunk's own name, for-each-ref
-  # did not enumerate reliably.
-  if _g rev-parse --verify --quiet "refs/heads/$TRUNK_BRANCH" >/dev/null 2>&1; then
+  # "passes when the only branch is trunk itself"), OR a repo with no
+  # local branches at all (a detached HEAD with nothing checked out).
+  # Distinguish a lie from the genuine case with an independent query that
+  # does NOT depend on trunk's name or on trunk being the branch that is
+  # checked out (_R1#173): `git symbolic-ref -q HEAD` reports whatever
+  # local branch HEAD is actually attached to, if any. If HEAD resolves to
+  # a refs/heads/* ref, at least one local branch provably exists, so an
+  # empty for-each-ref listing is provably a lie regardless of which
+  # branch that is or whether it happens to be trunk. A detached HEAD
+  # leaves symbolic-ref silent, and that is the one shape where an empty
+  # listing must still be trusted.
+  _sym_head=$(_g symbolic-ref --quiet HEAD 2>/dev/null)
+  if [ -n "$_sym_head" ]; then
     rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries" "$_STDIN_FILE"
-    _block "'git for-each-ref refs/heads/' in $_REPO returned nothing, even though refs/heads/$TRUNK_BRANCH exists. Not treating an empty listing as zero branches. No disposability check ran."
+    _block "'git for-each-ref refs/heads/' in $_REPO returned nothing, even though HEAD is attached to '$_sym_head'. Not treating an empty listing as zero branches. No disposability check ran."
     exit 1
   fi
 fi
