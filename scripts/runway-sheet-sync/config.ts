@@ -33,6 +33,24 @@ export const SHEETS: SheetConfig[] = [
     engagementCode: "LPP-2604-02",
     label: "Website Revamp Phase 2",
   },
+  {
+    sheetId: "1JuPXk46yjAAav8fu7U6CEg8ILLd9TzALcmZYeGE3XOk",
+    clientSlug: "beyond-petro",
+    engagementCode: "BPC-2602-01",
+    label: "Spilltracker Website Refresh",
+  },
+  {
+    sheetId: "1lt-Guu94c-mBvHdNVjHLwDHP0CstxDLBOMpop1he-Cw",
+    clientSlug: "beyond-petro",
+    engagementCode: "BPC-2605-01",
+    label: "Ammonia Landing Page",
+  },
+  {
+    sheetId: "14x2WqepMH2iexwinkZ1mQQJY37TbSvqu1NhBqNL_dp0",
+    clientSlug: "nfm",
+    engagementCode: "NFM-2601",
+    label: "Cedar Park Digital Screen",
+  },
 ];
 
 export function getSheetConfig(sheetId: string): SheetConfig | undefined {
