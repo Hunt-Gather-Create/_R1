@@ -236,6 +236,14 @@ function squashMergeToTrunk(workDir: string, trunkName: string, featureBranch: s
   git(["push", "--quiet", "origin", trunkName], workDir);
 }
 
+/** Same shape, but a real (--no-ff) merge, which leaves an ancestor edge squash never does. The local branch is kept, unlike the remote-sweep suite's orphan fixture, since this arm's own subject is a local branch the guard walks under refs/heads/. */
+function trueMergeToTrunk(workDir: string, trunkName: string, featureBranch: string) {
+  git(["checkout", "--quiet", trunkName], workDir);
+  git(["pull", "--quiet", "origin", trunkName], workDir);
+  git(["merge", "--quiet", "--no-ff", "-m", `merge ${featureBranch}`, featureBranch], workDir);
+  git(["push", "--quiet", "origin", trunkName], workDir);
+}
+
 describe("hygiene-guard.sh, trunk resolution, exercised through the guard's exit code", () => {
   let root: string;
   beforeEach(() => {
@@ -502,6 +510,88 @@ describe("hygiene-guard.sh, control 1: refuses on a fossil state you construct",
     // Quoted (QA gap, _R1#167 G1_BOUNCE): a space-containing path made the
     // unquoted form fail with exit 129 when pasted verbatim.
     expect(stderr).toMatch(new RegExp(`git worktree remove --force '${escapeRegExp(wtPath)}'`));
+  });
+});
+
+describe("hygiene-guard.sh, control 27: local arm ancestor detection, is-ancestor first step for a true (--no-ff) merge (jasonburks23/_R1#179, remote-arm parity with opeff#1040)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-local-ancestor-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("names a local branch merged into trunk with --no-ff, detector ancestor, disposal command", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "feat/true-merged"], workDir);
+    writeFile(workDir, "true-merged.txt", "true merge content\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "true merge work"], workDir);
+    trueMergeToTrunk(workDir, "runway", "feat/true-merged");
+    git(["fetch", "--quiet", "origin"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/branch already in origin\/runway \(detected via ancestor.*?\): feat\/true-merged/);
+    expect(stderr).toMatch(/Disposal: git branch -D feat\/true-merged/);
+  });
+
+  it("still names a squash-merged local branch by content, same output as before this change", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "fix/leftover-parity"], workDir);
+    writeFile(workDir, "leftover-parity.txt", "leftover\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "leftover fix"], workDir);
+    squashMergeToTrunk(workDir, "runway", "fix/leftover-parity");
+    git(["fetch", "--quiet", "origin"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/branch already in origin\/runway \(detected via .+?\): fix\/leftover-parity/);
+    expect(stderr).not.toMatch(/detected via ancestor/);
+    expect(stderr).toMatch(/Disposal: git branch -D fix\/leftover-parity/);
+  });
+
+  it("never names a local branch with real content trunk lacks, true-merge check included", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["checkout", "--quiet", "-b", "feature/unmerged-parity"], workDir);
+    writeFile(workDir, "unmerged-parity.txt", "still working\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "in flight"], workDir);
+
+    const { status, stdout } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+  });
+
+  it("never names a brand-new local branch pointed at trunk's own current tip, zero commits ahead: merge-base --is-ancestor is trivially true here and must not be mistaken for a real merge", () => {
+    const { workDir } = buildRepo(root, "runway");
+    git(["branch", "feat/just-branched-parity"], workDir);
+
+    const ahead = git(["rev-list", "--count", "origin/runway..feat/just-branched-parity"], workDir);
+    expect(ahead).toBe("0");
+
+    const { status, stdout } = runGuard(workDir);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/clean/);
+  });
+
+  it("still reports a held true-merged branch as held, with no disposal command", () => {
+    const { workDir } = buildRepo(root, "runway", true, false);
+    writeHoldFile(workDir, "runway", "feat/held-true-merge ANY PERMANENT operator hold, do not touch\n");
+    git(["checkout", "--quiet", "-b", "feat/held-true-merge"], workDir);
+    writeFile(workDir, "held-true-merge.txt", "held content\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "held work"], workDir);
+    trueMergeToTrunk(workDir, "runway", "feat/held-true-merge");
+    git(["fetch", "--quiet", "origin"], workDir);
+
+    const { status, stderr } = runGuard(workDir);
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/feat\/held-true-merge/);
+    expect(stderr).not.toMatch(/Disposal:/);
   });
 });
 
@@ -2698,11 +2788,11 @@ describe("hygiene-guard.sh, control 17: content presence is decided before the w
     // continue, so the loop falls straight into the dirty-state check
     // unconditionally, the exact pre-reorder shape TP bounced on.
     const anchor =
-      '  if ! _is_content_present "$_branch" "$TRUNK_REF"; then\n' + "    continue\n" + "  fi";
+      '    if ! _is_content_present "$_branch" "$TRUNK_REF"; then\n' + "      continue\n" + "    fi";
     const source = readFileSync(SCRIPT_PATH, "utf8");
     const occurrences = source.split(anchor).length - 1;
     expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
-    const mutated = source.replace(anchor, '  if false; then\n    continue\n  fi');
+    const mutated = source.replace(anchor, '    if false; then\n      continue\n    fi');
     expect(mutated).not.toBe(source);
 
     const mutantPath = join(root, "mutant-no-reorder.sh");
