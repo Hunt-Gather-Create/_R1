@@ -7,8 +7,8 @@
  * apply pass that followed recorded the already-mutated state as the
  * "pre-state" snapshot.
  *
- * These tests exercise the real call site — `updateProjectStatus` against a
- * real SQLite-backed `getRunwayDb()` connection — not a mock of the write
+ * These tests exercise the real call site, `updateProjectStatus` against a
+ * real SQLite-backed `getRunwayDb()` connection, not a mock of the write
  * path. A test that only checks the log prefix would have missed the bug
  * that shipped; this one asserts the row itself.
  */
@@ -28,7 +28,7 @@ import { withDryRun } from "@/lib/runway/runway-als";
 import { updateProjectStatus } from "@/lib/runway/operations-writes";
 import { projects } from "@/lib/db/runway-schema";
 
-describe("#150 — getRunwayDb() refuses writes under withDryRun(true)", () => {
+describe("#150: getRunwayDb() refuses writes under withDryRun(true)", () => {
   let dbPath: string;
 
   beforeEach(async () => {

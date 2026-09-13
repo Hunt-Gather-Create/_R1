@@ -16,6 +16,7 @@ import { resolve, basename, extname } from "path";
 import { createInterface } from "readline";
 import { runIfDirect } from "./lib/run-script";
 import { withBatchId, withDryRun } from "@/lib/runway/runway-als";
+import { wrapForDryRun } from "@/lib/db/runway";
 import { SNAPSHOT_PATH } from "./runway-pull";
 
 // ── Types ──────────────────────────────────────────────────
@@ -63,6 +64,16 @@ export function deriveMigrationBatchId(migrationPath: string): string {
   );
 }
 
+/**
+ * #150: build the drizzle instance handed to a migration as `ctx.db`. This is
+ * a second, separate place a write executor gets created, distinct from
+ * `getRunwayDb()`, so it needs its own `wrapForDryRun` call or a migration
+ * that writes via `ctx.db` directly bypasses the dry-run guard entirely.
+ */
+export function buildMigrationDb(client: Parameters<typeof drizzle>[0]): DrizzleDb {
+  return wrapForDryRun(drizzle(client));
+}
+
 export function createMigrationContext(db: DrizzleDb, dryRun: boolean): MigrationContext {
   const logs: string[] = [];
   return {
@@ -80,7 +91,7 @@ export function createMigrationContext(db: DrizzleDb, dryRun: boolean): Migratio
  * #150 defect 2: the pre-apply snapshot at SNAPSHOT_PATH is the only thing a
  * REVERT script can trust as "before this batch ran." If `--apply` overwrites
  * it while one is already sitting there, a later revert restores to the
- * wrong pre-state without any error — that is what turned the 2026-09-07 dry
+ * wrong pre-state without any error, and that is what turned the 2026-09-07 dry
  * run into an inert revert. `--force-snapshot` is the explicit opt-in to
  * overwrite it anyway (e.g. the existing file is stale from an unrelated run).
  */
@@ -180,9 +191,9 @@ async function run() {
   console.log(`Target: ${target} (${url})`);
   console.log(`Mode: ${shouldApply ? "APPLY" : "DRY-RUN"}\n`);
 
-  // Connect
+  // Connect.
   const client = createClient({ url: url!, authToken: process.env.RUNWAY_AUTH_TOKEN });
-  const db = drizzle(client);
+  const db = buildMigrationDb(client);
 
   // Auto-snapshot before applying
   if (shouldApply) {

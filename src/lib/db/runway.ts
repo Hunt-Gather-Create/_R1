@@ -20,10 +20,10 @@ const BLOCKED_WRITE_METHODS = new Set(["insert", "update", "delete"]);
  * `db.transaction(cb)` hands `cb` a fresh `tx` object from the real driver,
  * not this proxy, so `transaction` is special-cased to re-wrap that `tx`
  * before the caller's callback sees it. Without this, every write routed
- * through a transaction — which is most of them — would bypass the guard
+ * through a transaction, which is most of them, would bypass the guard
  * entirely and the dry run would keep silently mutating prod.
  */
-function wrapForDryRun<T extends object>(executor: T): T {
+export function wrapForDryRun<T extends object>(executor: T): T {
   return new Proxy(executor, {
     get(target, prop) {
       if (typeof prop === "string" && BLOCKED_WRITE_METHODS.has(prop) && getCurrentDryRun()) {

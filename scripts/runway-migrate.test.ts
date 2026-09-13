@@ -1,11 +1,16 @@
 import { describe, it, expect, vi } from "vitest";
+import { eq } from "drizzle-orm";
 import {
   assertSnapshotNotOverwritten,
+  buildMigrationDb,
   createMigrationContext,
   deriveMigrationBatchId,
   validateMigrationModule,
   type MigrationContext,
 } from "./runway-migrate";
+import { withDryRun } from "@/lib/runway/runway-als";
+import { projects } from "@/lib/db/runway-schema";
+import { createTestDb, seedTestDb, cleanupTestDb, getProject } from "@/lib/runway/test-db";
 
 describe("assertSnapshotNotOverwritten (#150 defect 2)", () => {
   const snapshotPath = "data/runway-snapshot.json";
@@ -77,6 +82,40 @@ describe("createMigrationContext", () => {
     const mockDb = { select: vi.fn() };
     const ctx = createMigrationContext(mockDb as unknown as MigrationContext["db"], true);
     expect(ctx.db).toBe(mockDb);
+  });
+});
+
+describe("#150: a migration's ctx.db is wrapped the same as getRunwayDb()", () => {
+  let dbPath: string;
+
+  it("refuses a direct ctx.db.update() write under a dry run, and applies it otherwise", async () => {
+    const testDb = await createTestDb();
+    dbPath = testDb.dbPath;
+    await seedTestDb(testDb.client);
+
+    // The actual call site: buildMigrationDb is what run() calls to build
+    // the object handed to a migration's up() as ctx.db.
+    const wrappedDb = buildMigrationDb(testDb.client);
+
+    const before = await getProject(testDb.db, "pj-social-cgx");
+    expect(before?.status).toBe("not-started");
+
+    // A migration that writes via ctx.db directly, like the 5 real
+    // migrations in scripts/runway-migrations that never call
+    // updateProjectStatus/updateProjectField/updateWeekItemField.
+    const writeViaCtxDb = async () =>
+      wrappedDb.update(projects).set({ status: "awaiting-client" }).where(eq(projects.id, "pj-social-cgx"));
+
+    await expect(withDryRun(true, writeViaCtxDb)).rejects.toThrow(/dry-run/i);
+
+    const afterDryRun = await getProject(testDb.db, "pj-social-cgx");
+    expect(afterDryRun?.status).toBe("not-started");
+
+    await writeViaCtxDb();
+    const afterApply = await getProject(testDb.db, "pj-social-cgx");
+    expect(afterApply?.status).toBe("awaiting-client");
+
+    cleanupTestDb(dbPath);
   });
 });
 
