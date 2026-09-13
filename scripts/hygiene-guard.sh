@@ -1720,13 +1720,59 @@ while IFS= read -r _branch; do
   [ "$_branch" = "$TRUNK_BRANCH" ] && continue
   _branch_governed "$_branch" "$TRUNK_REF" || continue
 
-  # Content presence is decided from refs in the main repo; it never
-  # requires reading the worktree. Decide it FIRST so a worktree that is
-  # not a disposal candidate is never blocked over its own unreadable
-  # dirty state. Reordered per TP bounce on 3d90a3b: an unrelated
-  # worktree with a corrupt .git pointer must not block the whole push.
-  if ! _is_content_present "$_branch" "$TRUNK_REF"; then
-    continue
+  # Ancestor check first (jasonburks23/_R1#179, parity with the remote-sweep
+  # arm's own fix under opeff#1040): a TRUE merge (a real merge commit, not
+  # a squash) leaves this branch's own tip reachable from trunk through
+  # that merge commit's second parent, so `rev-list --count trunk..branch`
+  # is 0. _is_content_present's own cheap discriminator treats a
+  # zero-ahead branch as "nothing to check yet" (the brand-new,
+  # never-diverged case it was written for) and returns before either
+  # detector runs -- correct for a fresh branch, but it silently skips a
+  # genuinely, fully-merged branch too, since both shapes read as
+  # zero-ahead. A squash-merged branch has no ancestor edge at all
+  # (exit 1), so it falls through to the existing content detectors
+  # unchanged.
+  #
+  # Measured live on this ticket's own bed: a brand-new branch pointed at
+  # trunk's own current tip (control 8's "ordinary first act of any
+  # ticket" case, and the zero-commit fixtures control 2 already covers)
+  # is ALSO trivially an ancestor of trunk, `merge-base --is-ancestor`
+  # cannot tell "just created, never diverged" apart from "diverged, did
+  # real work, got merged back" on its own. Only a branch whose tip is
+  # DISTINCT from trunk's tip, yet still an ancestor, has actually
+  # traveled through a real merge commit's second parent. Skip the
+  # is-ancestor call entirely when the tips are identical, and let it fall
+  # through to the existing zero-ahead discriminator unchanged, rather
+  # than flagging every fresh branch the moment it is created.
+  _anc_branch_tip=$(_g rev-parse --verify --quiet "refs/heads/$_branch" 2>/dev/null)
+  _anc_trunk_tip=$(_g rev-parse --verify --quiet "$TRUNK_REF" 2>/dev/null)
+  if [ -z "$_anc_branch_tip" ] || [ -z "$_anc_trunk_tip" ]; then
+    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries" "$_STDIN_FILE"
+    _block "could not resolve $_branch or $TRUNK_REF to a commit for the ancestor check (git rev-parse failed). Not treating an instrument failure as not-an-ancestor."
+    exit 1
+  fi
+  if [ "$_anc_branch_tip" = "$_anc_trunk_tip" ]; then
+    _anc_status=1
+  else
+    _g merge-base --is-ancestor "refs/heads/$_branch" "$TRUNK_REF" 2>/dev/null
+    _anc_status=$?
+  fi
+  if [ "$_anc_status" -eq 0 ]; then
+    _DETECTOR="ancestor (fully merged into $TRUNK_REF)"
+    _CONTENT_MODE="confirmed"
+  elif [ "$_anc_status" -eq 1 ]; then
+    # Content presence is decided from refs in the main repo; it never
+    # requires reading the worktree. Decide it FIRST so a worktree that is
+    # not a disposal candidate is never blocked over its own unreadable
+    # dirty state. Reordered per TP bounce on 3d90a3b: an unrelated
+    # worktree with a corrupt .git pointer must not block the whole push.
+    if ! _is_content_present "$_branch" "$TRUNK_REF"; then
+      continue
+    fi
+  else
+    rm -f "$_wt_records" "$_wt_map" "$_branches" "$_hold_entries" "$_STDIN_FILE"
+    _block "could not determine whether $_branch is an ancestor of $TRUNK_REF (git merge-base --is-ancestor exited $_anc_status). Not treating an instrument failure as not-an-ancestor."
+    exit 1
   fi
 
   # DEFECT 5 (_R1#167 G1_BOUNCE 2): a DISPUTED verdict means cherry (ancestry)
