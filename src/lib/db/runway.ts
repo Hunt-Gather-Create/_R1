@@ -2,6 +2,52 @@ import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
 import * as schema from "./runway-schema";
 import { assertRunwayProdWriteAllowed } from "./runway-prod-write-guard";
+import { getCurrentDryRun } from "@/lib/runway/runway-als";
+
+/**
+ * #150: the write methods a dry run must never reach. A migration's `up()`
+ * calls `updateProjectStatus` / `updateProjectField` / `updateWeekItemField`,
+ * and each of those calls `getRunwayDb()` for itself, so the flag has to live
+ * at this single choke point rather than in each helper.
+ */
+const BLOCKED_WRITE_METHODS = new Set(["insert", "update", "delete"]);
+
+/**
+ * Wrap a drizzle executor (the db itself, or a transaction's `tx`) so that
+ * insert/update/delete throw while `getCurrentDryRun()` is true. Reads pass
+ * through unchanged.
+ *
+ * `db.transaction(cb)` hands `cb` a fresh `tx` object from the real driver,
+ * not this proxy, so `transaction` is special-cased to re-wrap that `tx`
+ * before the caller's callback sees it. Without this, every write routed
+ * through a transaction, which is most of them, would bypass the guard
+ * entirely and the dry run would keep silently mutating prod.
+ */
+export function wrapForDryRun<T extends object>(executor: T): T {
+  return new Proxy(executor, {
+    get(target, prop) {
+      if (typeof prop === "string" && BLOCKED_WRITE_METHODS.has(prop) && getCurrentDryRun()) {
+        return () => {
+          throw new Error(
+            `Runway dry-run: refused ${prop}() call. This migration is running without --apply and must not write.`
+          );
+        };
+      }
+
+      if (prop === "transaction") {
+        const original = Reflect.get(target, prop, target) as (
+          fn: (tx: unknown) => unknown,
+          ...rest: unknown[]
+        ) => unknown;
+        return (fn: (tx: unknown) => unknown, ...rest: unknown[]) =>
+          original.call(target, (tx: unknown) => fn(wrapForDryRun(tx as object)), ...rest);
+      }
+
+      const value = Reflect.get(target, prop, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as T;
+}
 
 /**
  * Explicitly pinned connection, set once per process before anything opens one.
@@ -78,7 +124,7 @@ export function resetRunwayConnectionForTests(): void {
 
 export function getRunwayDb() {
   if (!_db) {
-    _db = drizzle(getRunwayClient(), { schema });
+    _db = wrapForDryRun(drizzle(getRunwayClient(), { schema }));
   }
   return _db;
 }

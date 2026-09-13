@@ -6,14 +6,18 @@
  *   pnpm runway:migrate scripts/runway-migrations/001-example.ts --apply   # Apply changes
  *   pnpm runway:migrate scripts/runway-migrations/001-example.ts --apply --target prod  # Prod (requires confirmation)
  *   pnpm runway:migrate scripts/runway-migrations/001-example.ts --apply --target prod --yes  # Skip confirmation
+ *   pnpm runway:migrate scripts/runway-migrations/001-example.ts --apply --force-snapshot  # Overwrite an existing pre-apply snapshot
  */
 
 import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
+import { existsSync } from "fs";
 import { resolve, basename, extname } from "path";
 import { createInterface } from "readline";
 import { runIfDirect } from "./lib/run-script";
-import { withBatchId } from "@/lib/runway/runway-als";
+import { withBatchId, withDryRun } from "@/lib/runway/runway-als";
+import { wrapForDryRun } from "@/lib/db/runway";
+import { SNAPSHOT_PATH } from "./runway-pull";
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -60,6 +64,16 @@ export function deriveMigrationBatchId(migrationPath: string): string {
   );
 }
 
+/**
+ * #150: build the drizzle instance handed to a migration as `ctx.db`. This is
+ * a second, separate place a write executor gets created, distinct from
+ * `getRunwayDb()`, so it needs its own `wrapForDryRun` call or a migration
+ * that writes via `ctx.db` directly bypasses the dry-run guard entirely.
+ */
+export function buildMigrationDb(client: Parameters<typeof drizzle>[0]): DrizzleDb {
+  return wrapForDryRun(drizzle(client));
+}
+
 export function createMigrationContext(db: DrizzleDb, dryRun: boolean): MigrationContext {
   const logs: string[] = [];
   return {
@@ -71,6 +85,29 @@ export function createMigrationContext(db: DrizzleDb, dryRun: boolean): Migratio
     },
     logs,
   };
+}
+
+/**
+ * #150 defect 2: the pre-apply snapshot at SNAPSHOT_PATH is the only thing a
+ * REVERT script can trust as "before this batch ran." If `--apply` overwrites
+ * it while one is already sitting there, a later revert restores to the
+ * wrong pre-state without any error, and that is what turned the 2026-09-07 dry
+ * run into an inert revert. `--force-snapshot` is the explicit opt-in to
+ * overwrite it anyway (e.g. the existing file is stale from an unrelated run).
+ */
+export function assertSnapshotNotOverwritten(opts: {
+  shouldApply: boolean;
+  forceSnapshot: boolean;
+  snapshotExists: boolean;
+  snapshotPath: string;
+}): void {
+  if (!opts.shouldApply || opts.forceSnapshot || !opts.snapshotExists) return;
+  throw new Error(
+    `Refusing to apply: a snapshot already exists at ${opts.snapshotPath}. ` +
+      `--apply captures a fresh pre-state snapshot there before writing, and would ` +
+      `overwrite the existing one before anyone confirmed it isn't this batch's real ` +
+      `pre-state. Pass --force-snapshot to overwrite it anyway.`
+  );
 }
 
 async function confirm(prompt: string): Promise<boolean> {
@@ -98,6 +135,19 @@ async function run() {
   const targetIdx = args.indexOf("--target");
   const target = targetIdx !== -1 ? args[targetIdx + 1] : "local";
   const skipConfirm = args.includes("--yes");
+  const forceSnapshot = args.includes("--force-snapshot");
+
+  try {
+    assertSnapshotNotOverwritten({
+      shouldApply,
+      forceSnapshot,
+      snapshotExists: existsSync(SNAPSHOT_PATH),
+      snapshotPath: SNAPSHOT_PATH,
+    });
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  }
 
   // Determine DB URL
   const isProd = target === "prod";
@@ -141,9 +191,9 @@ async function run() {
   console.log(`Target: ${target} (${url})`);
   console.log(`Mode: ${shouldApply ? "APPLY" : "DRY-RUN"}\n`);
 
-  // Connect
+  // Connect.
   const client = createClient({ url: url!, authToken: process.env.RUNWAY_AUTH_TOKEN });
-  const db = drizzle(client);
+  const db = buildMigrationDb(client);
 
   // Auto-snapshot before applying
   if (shouldApply) {
@@ -180,10 +230,14 @@ async function run() {
     }
   };
 
+  // #150: the runner is the only place that knows whether this is a real
+  // apply. Set the dry-run flag in the ambient context here so getRunwayDb()
+  // refuses to write for the whole call tree below, no matter which helper
+  // ends up opening the connection.
   if (shouldApply) {
     await withBatchId(migrationBatchId, runMigration);
   } else {
-    await runMigration();
+    await withDryRun(true, runMigration);
   }
 }
 
