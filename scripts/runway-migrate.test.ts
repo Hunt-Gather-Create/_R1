@@ -1,10 +1,59 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  assertSnapshotNotOverwritten,
   createMigrationContext,
   deriveMigrationBatchId,
   validateMigrationModule,
   type MigrationContext,
 } from "./runway-migrate";
+
+describe("assertSnapshotNotOverwritten (#150 defect 2)", () => {
+  const snapshotPath = "data/runway-snapshot.json";
+
+  it("refuses when --apply would overwrite an existing snapshot without --force-snapshot", () => {
+    expect(() =>
+      assertSnapshotNotOverwritten({
+        shouldApply: true,
+        forceSnapshot: false,
+        snapshotExists: true,
+        snapshotPath,
+      })
+    ).toThrow(/force-snapshot/);
+  });
+
+  it("proceeds when --force-snapshot is passed", () => {
+    expect(() =>
+      assertSnapshotNotOverwritten({
+        shouldApply: true,
+        forceSnapshot: true,
+        snapshotExists: true,
+        snapshotPath,
+      })
+    ).not.toThrow();
+  });
+
+  it("proceeds when no snapshot exists yet", () => {
+    expect(() =>
+      assertSnapshotNotOverwritten({
+        shouldApply: true,
+        forceSnapshot: false,
+        snapshotExists: false,
+        snapshotPath,
+      })
+    ).not.toThrow();
+  });
+
+  it("proceeds on a dry run regardless of an existing snapshot, since dry runs don't write one", () => {
+    expect(() =>
+      assertSnapshotNotOverwritten({
+        shouldApply: false,
+        forceSnapshot: false,
+        snapshotExists: true,
+        snapshotPath,
+      })
+    ).not.toThrow();
+  });
+});
 
 describe("createMigrationContext", () => {
   it("creates context with dryRun=true by default", () => {

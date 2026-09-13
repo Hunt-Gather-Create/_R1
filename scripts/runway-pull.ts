@@ -142,7 +142,7 @@ function formatDiff(diff: SnapshotDiff): string {
 
 // ── CLI ────────────────────────────────────────────────────
 
-const SNAPSHOT_PATH = resolve(process.cwd(), "data/runway-snapshot.json");
+export const SNAPSHOT_PATH = resolve(process.cwd(), "data/runway-snapshot.json");
 
 const TABLE_MAP = { clients, projects, weekItems, pipelineItems, updates, teamMembers } as const;
 
