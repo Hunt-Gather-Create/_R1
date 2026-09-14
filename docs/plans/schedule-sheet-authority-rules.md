@@ -8,6 +8,10 @@
 
 ---
 
+## 0. Status
+
+Signed by the operator on 2026-09-14 on jasonburks23/_R1#155 with two calls: K1 is option B, and the HDL Schedule is excluded. This is the authority rule for schedule-sheet writes until the operator changes it.
+
 ## 1. Why this document exists
 
 The operator review sheet has a settled authority rule. Column M is the only cell that can
@@ -61,15 +65,17 @@ It does not invent a new taxonomy.
 | `pre-header` | banner rows above the column header | none, ever | not a task row. Read for the project banner only. |
 | `column-header` | the row reading checkbox then TASKS | none, ever | it is the contract marker. |
 | `section-header` | a phase label, no numeric prefix | none. Carried as the section name for the rows under it. | a phase is a container. Run 2 and run 4 both separated these correctly on their own. |
-| `rollup` | the one section header whose dates envelope every leaf | none, ever | it restates the other rows. Writing it would double the board. |
+| `rollup` | the one section header whose dates envelope every leaf ON THE WHOLE SHEET, not just its own phase | none, ever | it restates the other rows. Writing it would double the board. A phase header whose span matches only its own tasks is a plain section header, which is every phase row on NFM and Merit. |
 | `milestone` | a gate row, marked with asterisks | none, ever. See rule G1. | a gate is a moment in the plan, not work to schedule. Runs 2, 3 and 4 all found these and skipped them. |
 | `leaf` | an indented, numbered task row | one week item, if Table B passes | this is the only class the sheet actually authorizes. |
 | `leaf-unnumbered` | indented and dated, no number | one week item, if Table B passes, AND a flag | it is real work, seen on Soundly row 47. It has no stable number, so identity falls back to the title. That is a known hazard and must stay visible. |
-| `spacer` | empty title, no dates | none, ever | layout. |
-| `empty-template` | empty title but a checkbox or a date present | none. Flag the row. | a half-filled row is a gap, not a task. LPP-2604-02 is 500 of these and the tool correctly read zero tasks from it. |
+| `spacer` | empty title, no dates, with or without an unticked checkbox | none, ever, no flag | layout, or an unused template row. Merit rows 29 to 45 and 438 rows on EDF are this shape. Flagging them is noise. |
+| `empty-template` | empty title but a date or a ticked checkbox present | none. Flag the row. | a row someone started filling and left is a gap, not a task. An unticked checkbox alone is not a start; see `spacer`. |
 
-**Rule G1, gate rows carrying a duration.** The EDF v3 walk on 2026-09-07 found gate rows with
-spans, a 23 day design lock and a 2 day dev lock. A gate is a moment. The tool must not collapse
+**Rule G1, gate rows carrying a duration.** G1 fires only when a milestone row's due date is later
+than its start date. A milestone with start equal to due is the normal shape, seven per sheet on
+NFM and every one on Merit, and gets no flag. The EDF v3 walk on 2026-09-07 found gate rows with
+real spans, a 23 day design lock and a 2 day dev lock. A gate is a moment. The tool must not collapse
 that span to a single date, and must not turn the gate into a task to make the span fit.
 
 Authorized action: **no write, and a flag naming the row, both dates and the span in days.** The
@@ -106,15 +112,17 @@ Columns are as `parse-sheet.ts:10-22` reads them.
 | D | priority | **not intent** | parsed, carried in notes context, never a write of its own. |
 | E | START DATE | intent | start date. |
 | F | DUE DATE | intent | end date. |
-| G | unlabeled | **operator reserved** | never read, never written, never flagged. |
+| G | DURATION | **computed, never read** | a formula from E and F on every sheet checked. Never read, never written, never flagged. |
 | H | PREDECESSOR | intent, structural | carried into notes. Does not itself schedule anything. |
 | I | LAG | intent, structural | carried into notes UNCHANGED. See rule L1. |
 | J | RESOURCE | intent, but not assignable | carried into notes as text. See rule R1. |
 | K | STATUS | **derived, never read as intent** | see rule K1. |
-| L and beyond | any | **operator reserved** | never read. |
+| L and beyond | DURATION, DAYS LEFT, the Gantt grid | **computed, never read** | never read. Not empty; every sheet checked carries a second duration and the Gantt columns here. |
 
-**Rule L1, lag is carried unchanged and is never clamped.** Spilltracker carries a `-1` lag and NFM
-fast-tracks four phases the same way. Both are deliberate scheduling, not errors. The parser regex
+**Rule L1, lag is carried unchanged and is never clamped.** A negative lag is deliberate
+scheduling, a fast-track, not an error. The 2026-09-07 run record carries the `-1` case; the live
+sheets checked on 2026-09-14 carried lags of blank, 0, 1, and 3 only, so the rule is protective, not
+currently exercised. The parser regex
 at `parse-sheet.ts:140` already accepts a negative value, and it must keep doing so. A validator
 that clamps a negative lag to zero would produce a plan that looks clean and describes a schedule
 nobody wrote.
@@ -123,21 +131,28 @@ This is M1's observable event. The proof is a committed parity artifact showing 
 through. A clamping build cannot produce that artifact, which is what makes the check real.
 
 **Rule K1, a hand-typed status is protected, not authoritative.** Status is derived from column B.
-Run 1 found a hand-typed "On going" in column K, and the tool flagged it. What it should DO was
-undefined. The answer:
+On some sheets column K is empty, NFM, Merit, Ammonia. On others a person types into it on nearly
+every task row: EDF has "Not Started" or "On going" on 20 of 26. Run 1 found a hand-typed
+"On going" and the tool flagged it. What it should DO was undefined. The answer, option B per the
+operator on 2026-09-14, stated in full in section 7:
 
 - The tool never reads column K as the status to write.
-- On any row where column K is not empty, the tool plans **no status field for that row**, and
-  plans the other fields normally.
+- On any row where column K is not empty, the tool still plans status **from the checkbox**, and
+  plans the other fields normally. The typed text never changes what is written.
 - The flag names the row and the literal text.
+
+Contradiction case: a ticked checkbox with a typed "Not Started" in K, EDF row 36. Flag it as a
+contradiction naming both cells; the checkbox still decides the status.
 
 Reasoning: a person typed into a column the contract says is derived. They were trying to say
 something the sheet cannot carry, which is exactly the run 2 finding that the sheet encodes two
 states while reality has three. Overwriting them is wrong. Guessing what they meant is worse. Step
 around that one field and make the text visible.
 
-**Rule R1, the tool never plans a person.** Column J holds ROLES, not people. Ammonia's column J
-reads "Design + Creatives", "Dev + QA", "Account", "BP". Runway's `validateRoleTagOnResources`
+**Rule R1, the tool never plans a person.** Column J holds a role on some sheets and a person's
+first name on others, and mixes them on EDF and Merit: "Civ Creative", "NFM", "Lane", "Leslie",
+"Kathy", "Civ → EDF". The tool cannot tell which is which. Ammonia's column J reads "Design +
+Creatives", "Dev + QA", "Account", "BP". Runway's `validateRoleTagOnResources`
 needs a role bound to a person, for example "CD: Lane". The sheet does not contain that binding and
 cannot be made to.
 
@@ -163,6 +178,20 @@ Named so nobody reads silence as a ruling.
   cannot see the difference and reporting the score honestly is what lets a person tell. Standing
   limit, `_R1#153`.
 - **Anything about writing TO a sheet.** The tool is shadow only, operator ruling 2026-09-07.
+
+**Two items decided by the operator on 2026-09-14, after the pass over seven live sheets:**
+
+- **K1 outcome is option B, operator's call.** The checkbox in column B always decides status, on
+  every row. Typed text in column K is never written and never suppresses the status; the tool
+  flags it as information, naming the row and the literal text. The contradiction case, a ticked
+  checkbox with a typed "Not Started" in K, EDF row 36, is flagged loudly and the checkbox still
+  wins. Option A, no status planned when K holds text, is retired.
+- **A sheet with no header row is refused, not guessed.** When no row reading checkbox then TASKS
+  is found on any tab, the tool refuses the whole sheet with one line naming the sheet and the tabs
+  searched, and writes nothing. Header position may vary, row 9 on the older Soundly RX Card
+  template, row 10 on the current one; the classifier finds it by content, not by row number. The
+  HDL Schedule is an old sheet of a different kind and is excluded from the tool's scope, operator's
+  call; it is the example, not a target.
 
 ## 8. Tests owed
 
