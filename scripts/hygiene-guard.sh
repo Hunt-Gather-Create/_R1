@@ -1506,8 +1506,28 @@ if [ "$_MODE" = "remote-sweep" ]; then
     # branch/worktree loop below is untouched, since this ticket's
     # acceptance is about the remote arm's own behavior, not a change to
     # already-hardened, separately-tested local-branch logic.
-    _g merge-base --is-ancestor "$_rref" "$TRUNK_REF" 2>/dev/null
-    _ranc_status=$?
+    # Tip-equality guard first (jasonburks23/_R1#180, parity with the
+    # local-branch arm's own fix under jasonburks23/_R1#179): a branch just
+    # pushed from trunk with no commits of its own has a tip identical to
+    # trunk's tip, and is-ancestor is trivially true for it, the same false
+    # positive #179 fixed on the local arm. Only a branch whose tip is
+    # DISTINCT from trunk's tip, yet still an ancestor, has actually
+    # traveled through a real merge commit's second parent. Skip the
+    # is-ancestor call when the tips are identical and let it fall through
+    # to the existing zero-ahead discriminator unchanged.
+    _ranc_branch_tip=$(_g rev-parse --verify --quiet "$_rref" 2>/dev/null)
+    _ranc_trunk_tip=$(_g rev-parse --verify --quiet "$TRUNK_REF" 2>/dev/null)
+    if [ -z "$_ranc_branch_tip" ] || [ -z "$_ranc_trunk_tip" ]; then
+      rm -f "$_remote_refs_file" "$_hold_entries"
+      _block "could not resolve $_rref or $TRUNK_REF to a commit for the ancestor check (git rev-parse failed). Not treating an instrument failure as not-an-ancestor."
+      exit 1
+    fi
+    if [ "$_ranc_branch_tip" = "$_ranc_trunk_tip" ]; then
+      _ranc_status=1
+    else
+      _g merge-base --is-ancestor "$_rref" "$TRUNK_REF" 2>/dev/null
+      _ranc_status=$?
+    fi
     if [ "$_ranc_status" -eq 0 ]; then
       _DETECTOR="ancestor (fully merged into $TRUNK_REF)"
       _CONTENT_MODE="confirmed"

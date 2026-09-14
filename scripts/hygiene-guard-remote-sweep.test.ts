@@ -121,6 +121,13 @@ function trueMergeAndOrphanRemote(workDir: string, branchName: string, fileName:
   git(["branch", "-D", branchName], workDir);
 }
 
+/** Pushes branchName straight off trunk's own tip, no commits of its own. */
+function pushFreshBranchAtTrunkTip(workDir: string, branchName: string) {
+  git(["checkout", "--quiet", "-b", branchName, "trunk"], workDir);
+  git(["push", "--quiet", "origin", branchName], workDir);
+  git(["checkout", "--quiet", "trunk"], workDir);
+}
+
 describe("hygiene-guard.sh remote-sweep mode, exercised through the guard's exit code", () => {
   let root: string;
   beforeEach(() => {
@@ -215,6 +222,16 @@ describe("hygiene-guard.sh remote-sweep mode, exercised through the guard's exit
     expect(status).toBe(1);
     expect(stderr).toMatch(/origin\/feat\/held.*held:/s);
     expect(stderr).not.toMatch(/Disposal: git push origin --delete 'feat\/held'/);
+  });
+
+  it("reports clean (exit 0) on a freshly pushed remote branch whose tip equals trunk's tip, its local branch still deleted (_R1#180)", () => {
+    const { workDir } = buildRepo(root);
+    pushFreshBranchAtTrunkTip(workDir, "feat/fresh-at-tip");
+    git(["branch", "-D", "feat/fresh-at-tip"], workDir);
+
+    const { status, stdout, stderr } = runRemoteSweep(workDir);
+    expect(status).toBe(0);
+    expect(stdout + stderr).not.toMatch(/feat\/fresh-at-tip/);
   });
 
   it("never reports the remote's collapsed HEAD symref (%(refname:short) resolves refs/remotes/origin/HEAD to the bare 'origin') as a disposable branch", () => {
