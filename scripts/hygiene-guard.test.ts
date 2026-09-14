@@ -3601,6 +3601,174 @@ describe("hygiene-guard.sh, control 18: a ref under an active hold is unrepresen
   });
 });
 
+describe("hygiene-guard.sh, hold-list reader locale pin (_R1#169): the leading-whitespace strip at :585 and the reason strip at :597 must not decide the run differently depending on the invoking locale, same as the printable-byte check at :611 already does", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hygiene-locale-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  // A caller environment that puts the pre-fix sed calls into "strip
+  // multi-byte whitespace too" mode. LC_ALL is explicitly cleared (not
+  // omitted) so a real LC_ALL already set on the machine running this
+  // suite can never leak through and mask the divergence.
+  const UTF8_ENV = { LANG: "en_US.UTF-8", LC_ALL: "" };
+  // A caller environment that already matches the fix's own pin, so a
+  // correct guard behaves identically in both environments.
+  const C_ENV = { LANG: "C", LC_ALL: "C" };
+
+  /**
+   * Reverts only the :585 pin (the comment-vs-data decision) on the
+   * fixed, shipped source, leaving :597 and :611 untouched. Used to
+   * reproduce 1525c78's :585 behavior without hand-writing a second copy
+   * of the script that could drift from the real one.
+   */
+  function revert585Pin(source: string): string {
+    const anchor = "_hold_trimmed=$(printf '%s' \"$_hold_line\" | LC_ALL=C sed -E 's/^[[:space:]]+//')";
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // targets the real, unique line this fix pinned
+    return source.replace(anchor, anchor.replace("| LC_ALL=C sed", "| sed"));
+  }
+
+  /** Same idea as revert585Pin, for the :597 reason-extraction pin alone. */
+  function revert597Pin(source: string): string {
+    const anchor = "_hold_reason=$(printf '%s\\n' \"$_hold_line\" | LC_ALL=C sed -E ";
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // targets the real, unique line this fix pinned
+    return source.replace(anchor, anchor.replace("| LC_ALL=C sed -E ", "| sed -E "));
+  }
+
+  function writeMutant(name: string, content: string): string {
+    const mutantPath = join(root, name);
+    writeFileSync(mutantPath, content);
+    return mutantPath;
+  }
+
+  it("acceptance 1: a comment line whose ONLY content is a leading NBSP then '#' gives the SAME (refuse) result under both locales on the tip, where the two pre-fix locales disagreed", () => {
+    // The literal bytes are C2 A0 (NBSP in UTF-8) directly glued to '#',
+    // so this line is either a harmless comment (NBSP stripped, '#'
+    // matches) or a malformed/poisoned data line (NBSP survives, glued
+    // to '#' so it never matches the comment case), and nothing else.
+    const holdFile = " # a comment, not real data\n";
+    const { workDir } = buildRepo(root, "runway", true, false);
+    writeHoldFile(workDir, "runway", holdFile);
+
+    // GREEN: the real, fixed guard. Both invoking locales must refuse,
+    // because a byte that cannot be proven to be a harmless comment must
+    // fail toward refuse, not toward silently passing it through.
+    const fixedUtf8 = runGuard(workDir, "origin", SCRIPT_PATH, UTF8_ENV);
+    const fixedC = runGuard(workDir, "origin", SCRIPT_PATH, C_ENV);
+    expect(fixedUtf8.status).toBe(1);
+    expect(fixedC.status).toBe(1);
+
+    // RED: 1525c78's own behavior, reproduced by reverting only the :585
+    // pin on the current source. The two locales must disagree here --
+    // that disagreement is the defect this ticket exists to close.
+    const preFixSource = revert585Pin(readFileSync(SCRIPT_PATH, "utf8"));
+    const preFixPath = writeMutant("pre-fix-585.sh", preFixSource);
+    const preFixUtf8 = runGuard(workDir, "origin", preFixPath, UTF8_ENV);
+    const preFixC = runGuard(workDir, "origin", preFixPath, C_ENV);
+    expect(preFixUtf8.status).toBe(0); // NBSP stripped: reads as a harmless comment
+    expect(preFixC.status).toBe(1); // NBSP survives: reads as poisoned/malformed data
+  });
+
+  it("acceptance 2 (permit-direction control): a REAL hold entry with a leading NBSP glued to its name still poisons the run under both locales, before and after this fix", () => {
+    // TP's control: this fix must never let a genuinely poisoned name
+    // start passing. The NBSP here is glued to the front of a real
+    // branch name, not standing alone before a '#', so awk's own field
+    // split (unaffected by either sed pin) always keeps it attached to
+    // the name, and :611's printable check always catches it.
+    const holdFile = " held/real deadbeef PERMANENT operator hold\n";
+    const { workDir } = buildRepo(root, "runway", true, false);
+    writeHoldFile(workDir, "runway", holdFile);
+
+    const fixedUtf8 = runGuard(workDir, "origin", SCRIPT_PATH, UTF8_ENV);
+    const fixedC = runGuard(workDir, "origin", SCRIPT_PATH, C_ENV);
+    expect(fixedUtf8.status).toBe(1);
+    expect(fixedC.status).toBe(1);
+
+    const preFixSource = revert585Pin(revert597Pin(readFileSync(SCRIPT_PATH, "utf8")));
+    const preFixPath = writeMutant("pre-fix-both.sh", preFixSource);
+    const preFixUtf8 = runGuard(workDir, "origin", preFixPath, UTF8_ENV);
+    const preFixC = runGuard(workDir, "origin", preFixPath, C_ENV);
+    expect(preFixUtf8.status).toBe(1); // stayed red-refuse before the fix too --
+    expect(preFixC.status).toBe(1); // -- in both locales: no permit-direction flip exists here.
+  });
+
+  it("acceptance 3: ordinary ASCII leading spaces and tabs on a comment line are still stripped and skipped under both locales, on the tip", () => {
+    // ASCII space and tab are locale-invariant members of [[:space:]] in
+    // every locale on this machine, so pinning LC_ALL=C must not stop
+    // the guard from recognizing an everyday indented comment.
+    const holdFile = "   \t  # ordinary indented comment\n\t# tab-led comment\n";
+    const { workDir } = buildRepo(root, "runway", true, false);
+    writeHoldFile(workDir, "runway", holdFile);
+
+    const fixedUtf8 = runGuard(workDir, "origin", SCRIPT_PATH, UTF8_ENV);
+    const fixedC = runGuard(workDir, "origin", SCRIPT_PATH, C_ENV);
+    expect(fixedUtf8.status).toBe(0);
+    expect(fixedC.status).toBe(0);
+  });
+
+  it("mutation on :585 alone: removing its pin brings back the UTF-8-locale permit of acceptance 1's comment line (caught), while the LC_ALL=C-locale run stays refuse either way (not caught there)", () => {
+    const holdFile = " # a comment, not real data\n";
+    const { workDir } = buildRepo(root, "runway", true, false);
+    writeHoldFile(workDir, "runway", holdFile);
+
+    const fixed = runGuard(workDir, "origin", SCRIPT_PATH, UTF8_ENV);
+    expect(fixed.status).toBe(1); // GREEN under the real, fixed script
+
+    const mutantSource = revert585Pin(readFileSync(SCRIPT_PATH, "utf8"));
+    const mutantPath = writeMutant("mutant-585-only.sh", mutantSource);
+    const mutantUtf8 = runGuard(workDir, "origin", mutantPath, UTF8_ENV);
+    const mutantC = runGuard(workDir, "origin", mutantPath, C_ENV);
+    expect(mutantUtf8.status).toBe(0); // RED under en_US.UTF-8: this is the arm that catches the :585 mutation
+    expect(mutantC.status).toBe(1); // this arm does not catch it: the invoking locale already matched C
+  });
+
+  it("mutation on :597 alone: no fixture in this suite can make its pin observable, because the field-consuming half of the same sed call already normalizes away anything the leading-whitespace half would have stripped differently", () => {
+    // Verified by construction, not asserted on faith: any raw line whose
+    // leading run mixes an NBSP with real ASCII whitespace also corrupts
+    // awk's OWN field split for _hold_name/_hold_sha/_hold_class -- awk
+    // is unaffected by either sed pin and, on this shell, never treats
+    // NBSP as a field separator -- so that entry always refuses earlier,
+    // on a bad-SHA or bad-class message, before _hold_reason is ever
+    // read. And any line where the NBSP is glued directly to the name
+    // with no separating ASCII whitespace is already fully consumed by
+    // the SAME regex's own `[^ \t]+` first-field match regardless of
+    // whether the leading-whitespace half ran first, so the two locales
+    // produce byte-identical $_hold_reason values either way. Both
+    // constructions are exercised below across both locales: all four
+    // cells match the fixed script's own output, so the claim is
+    // narrowed to "no observable arm" rather than manufacturing one.
+    const gluedHoldFile = " held/glued deadbeef PERMANENT some reason text\n";
+    const spacedHoldFile = "   held/spaced deadbeef PERMANENT some reason text\n";
+
+    for (const holdFile of [gluedHoldFile, spacedHoldFile]) {
+      // A fresh sub-root per iteration: buildRepo always names its
+      // clone "work" under the root it is given, so reusing one root
+      // across iterations collides on that fixed path.
+      const iterRoot = realpathSync(mkdtempSync(join(root, "iter-")));
+      const { workDir } = buildRepo(iterRoot, "runway", true, false);
+      writeHoldFile(workDir, "runway", holdFile);
+
+      const fixedUtf8 = runGuard(workDir, "origin", SCRIPT_PATH, UTF8_ENV);
+      const fixedC = runGuard(workDir, "origin", SCRIPT_PATH, C_ENV);
+
+      const mutantSource = revert597Pin(readFileSync(SCRIPT_PATH, "utf8"));
+      const mutantPath = writeMutant(`mutant-597-only-${holdFile === gluedHoldFile ? "glued" : "spaced"}.sh`, mutantSource);
+      const mutantUtf8 = runGuard(workDir, "origin", mutantPath, UTF8_ENV);
+      const mutantC = runGuard(workDir, "origin", mutantPath, C_ENV);
+
+      expect(mutantUtf8.status).toBe(fixedUtf8.status);
+      expect(mutantUtf8.stderr).toBe(fixedUtf8.stderr);
+      expect(mutantC.status).toBe(fixedC.status);
+      expect(mutantC.stderr).toBe(fixedC.stderr);
+    }
+  });
+});
+
 describe("hygiene-guard.sh, control 20: a locked worktree refuses with no removal command, never `-f -f` (QA gap, _R1#167 G1_BOUNCE)", () => {
   let root: string;
   beforeEach(() => {

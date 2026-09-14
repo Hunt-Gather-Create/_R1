@@ -582,7 +582,7 @@ _resolve_hold_list() {
     # name/sha/reason extraction below already tolerates leading
     # whitespace on its own (awk splits on any whitespace), so only this
     # exact-string comparison needed the trim.
-    _hold_trimmed=$(printf '%s' "$_hold_line" | sed -E 's/^[[:space:]]+//')
+    _hold_trimmed=$(printf '%s' "$_hold_line" | LC_ALL=C sed -E 's/^[[:space:]]+//')
     case "$_hold_trimmed" in
       '' | '#'*) continue ;;
     esac
@@ -594,7 +594,7 @@ _resolve_hold_list() {
     # printed in the eventual hold message was the entire raw line, name,
     # SHA, and class included. Strip leading whitespace first, same as
     # $_hold_trimmed above, before extracting the reason.
-    _hold_reason=$(printf '%s\n' "$_hold_line" | sed -E 's/^[[:space:]]+//; s/^[^ 	]+[ 	]+[^ 	]+[ 	]+[^ 	]+[ 	]*//')
+    _hold_reason=$(printf '%s\n' "$_hold_line" | LC_ALL=C sed -E 's/^[[:space:]]+//; s/^[^ 	]+[ 	]+[^ 	]+[ 	]+[^ 	]+[ 	]*//')
 
     if [ -z "$_hold_name" ]; then
       rm -f "$_hold_raw_file"
