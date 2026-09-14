@@ -8,6 +8,10 @@
 
 ---
 
+## 0. Status
+
+Signed by the operator on 2026-09-14 on jasonburks23/_R1#155 with two calls: K1 is option B, and the HDL Schedule is excluded. This is the authority rule for schedule-sheet writes until the operator changes it.
+
 ## 1. Why this document exists
 
 The operator review sheet has a settled authority rule. Column M is the only cell that can
@@ -129,16 +133,16 @@ through. A clamping build cannot produce that artifact, which is what makes the 
 **Rule K1, a hand-typed status is protected, not authoritative.** Status is derived from column B.
 On some sheets column K is empty, NFM, Merit, Ammonia. On others a person types into it on nearly
 every task row: EDF has "Not Started" or "On going" on 20 of 26. Run 1 found a hand-typed
-"On going" and the tool flagged it. What it should DO was undefined. The answer, which needs the
-operator's choice between two options, both stated in section 7:
+"On going" and the tool flagged it. What it should DO was undefined. The answer, option B per the
+operator on 2026-09-14, stated in full in section 7:
 
 - The tool never reads column K as the status to write.
-- On any row where column K is not empty, the tool plans **no status field for that row**, and
-  plans the other fields normally.
+- On any row where column K is not empty, the tool still plans status **from the checkbox**, and
+  plans the other fields normally. The typed text never changes what is written.
 - The flag names the row and the literal text.
 
 Contradiction case: a ticked checkbox with a typed "Not Started" in K, EDF row 36. Flag it as a
-contradiction naming both cells; the outcome for status follows the option chosen in section 7.
+contradiction naming both cells; the checkbox still decides the status.
 
 Reasoning: a person typed into a column the contract says is derived. They were trying to say
 something the sheet cannot carry, which is exactly the run 2 finding that the sheet encodes two
@@ -175,20 +179,19 @@ Named so nobody reads silence as a ruling.
   limit, `_R1#153`.
 - **Anything about writing TO a sheet.** The tool is shadow only, operator ruling 2026-09-07.
 
-**Two items that need the operator's word before M1 builds, found on the 2026-09-14 pass over
-seven live sheets:**
+**Two items decided by the operator on 2026-09-14, after the pass over seven live sheets:**
 
-- **K1 outcome, option A or B.** Option A, as drafted: when column K holds typed text, the tool
-  plans no status for that row and flags the text. On EDF that suppresses status on 20 of 26 cards.
-  Option B: the checkbox always wins, status is planned from it on every row, and typed text in K
-  is flagged as information only, with the contradiction case flagged loudly. Recommendation: B.
-  The checkbox is the contract every sheet shares; typed text in K is a habit on some sheets and
-  should not silently blank a field on most of a board.
-- **A sheet with no header row.** The HDL Schedule sheet has no row reading checkbox then TASKS on
-  any tab; it is a different artifact, a QA worklist, not a project plan. Rule: when no header row
-  is found, the tool refuses the whole sheet with one line naming the sheet and the tabs searched,
-  writes nothing, guesses nothing. Header position may vary, row 9 on the older Soundly RX Card
-  template, row 10 on the current template; the classifier finds it by content, not by row number.
+- **K1 outcome is option B, operator's call.** The checkbox in column B always decides status, on
+  every row. Typed text in column K is never written and never suppresses the status; the tool
+  flags it as information, naming the row and the literal text. The contradiction case, a ticked
+  checkbox with a typed "Not Started" in K, EDF row 36, is flagged loudly and the checkbox still
+  wins. Option A, no status planned when K holds text, is retired.
+- **A sheet with no header row is refused, not guessed.** When no row reading checkbox then TASKS
+  is found on any tab, the tool refuses the whole sheet with one line naming the sheet and the tabs
+  searched, and writes nothing. Header position may vary, row 9 on the older Soundly RX Card
+  template, row 10 on the current one; the classifier finds it by content, not by row number. The
+  HDL Schedule is an old sheet of a different kind and is excluded from the tool's scope, operator's
+  call; it is the example, not a target.
 
 ## 8. Tests owed
 
