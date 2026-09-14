@@ -512,8 +512,10 @@ describe("updateWeekItemFieldsAction", () => {
 
   // P1.1 server validators (TP review on b7c89f3). Client modal is the
   // primary gate but cannot be trusted — drafters frequently title-case
-  // dayOfWeek (`feedback_dayofweek_lowercase`); per
-  // `feedback_sheet_authority_cuts_both_ways` server must enforce.
+  // dayOfWeek (see the Hemingway note "dayOfWeek has no validator and
+  // stores lowercase, so a title-case day from prose is silently accepted
+  // and breaks comparisons"); per the Hemingway note "Sheet column M is
+  // the sole authority for what action to take" server must enforce.
   it("rejects an empty title with a clear error before touching the DB", async () => {
     mockedRow = { id: "wi-1", title: "T", weekOf: "2026-06-01" };
     const result = await updateWeekItemFieldsAction({

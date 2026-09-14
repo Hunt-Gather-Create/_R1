@@ -11,7 +11,7 @@
  *   - docs/tmp/slack-modal-pre-plan.md (v7) - Modal flows + Wave 4
  *   - docs/tmp/slack-modal-pre-plan.md (v7) - A3, hint render order
  *   - docs/tmp/slack-modal-pre-plan.md (v7) - B5, all date inputs use datepicker
- *   - project_slack_modal_spec.md (Modal 1, Task field design)
+ *   - docs/slack-modal.md (Modal 1, Task field design)
  *
  * Civ voice (LOCKED): hyphens not em-dashes, no AI-sounding language, plain
  * copy. No tier-letter shorthand in user-facing strings (the parent project /
@@ -136,7 +136,7 @@ const DATE_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "range", label: "Range" },
 ];
 
-// Resource role labels per project_slack_modal_spec.md Modal 1.
+// Resource role labels per docs/slack-modal.md Modal 1.
 const RESOURCE_ROLE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "AM", label: "AM" },
   { value: "CD", label: "CD" },

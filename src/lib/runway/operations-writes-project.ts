@@ -43,8 +43,10 @@ import type {
 
 /**
  * Compute the lowercase weekday name (monday..sunday) for an ISO date.
- * Prod stores weekItem.dayOfWeek lowercase (feedback_dayofweek_lowercase) —
- * any title-case write silently breaks downstream case-sensitive filters.
+ * Prod stores weekItem.dayOfWeek lowercase, per the Hemingway note
+ * "dayOfWeek has no validator and stores lowercase, so a title-case day
+ * from prose is silently accepted and breaks comparisons"; any title-case
+ * write silently breaks downstream case-sensitive filters.
  * Used by the deadline-L2 cascade in updateProjectField (#22).
  */
 const DAYS_OF_WEEK = [
@@ -389,9 +391,13 @@ export async function updateProjectField(
     //       stay internally consistent with their parent envelope. Pre-fix,
     //       only `date` was written and start/end/dayOfWeek drifted
     //       (Convergix Events Page Staging L2 e896... was the canonical
-    //       example). dayOfWeek is lowercased per prod convention
-    //       (feedback_dayofweek_lowercase).
-    //   (c) Direction-aware write order per feedback_l2_date_write_ordering:
+    //       example). dayOfWeek is lowercased per prod convention, per the
+    //       Hemingway note "dayOfWeek has no validator and stores
+    //       lowercase, so a title-case day from prose is silently accepted
+    //       and breaks comparisons".
+    //   (c) Direction-aware write order per the Hemingway note "A
+    //       cross-field date validator compares the new value against the
+    //       STORED other end, so write order depends on move direction":
     //       FORWARD moves write endDate first; BACKWARD moves write
     //       startDate first. Direct tx.update bypasses the helper's
     //       cross-field validator today, but mirroring the rule keeps this
@@ -589,7 +595,9 @@ export interface OverrideProjectDateData extends Record<string, unknown> {
  * Audit row uses update_type = "date-override" and the idempotency key
  * includes BOTH oldValue and newValue so revert + retry on the same target
  * value (oldValue=A → newValue=B, then revert B → A, then re-fire A → B)
- * generates three distinct keys (per feedback_revert_idempotency_poisoning).
+ * generates three distinct keys, per the Hemingway note "A revert removes
+ * data rows but not their audit rows, so a retry with the same values is
+ * silently skipped as a duplicate".
  */
 export async function overrideProjectDate(
   params: OverrideProjectDateParams,
