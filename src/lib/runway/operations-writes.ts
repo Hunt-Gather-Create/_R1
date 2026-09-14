@@ -65,9 +65,10 @@ export async function updateProjectStatus(
   const db = getRunwayDb();
 
   // Issue #4b: whitelist newStatus against the L1 enum. Closes the
-  // "writes garbage silently" loophole previously documented in auto-memory
-  // feedback_l1_vs_l2_status_enums.md. Runs before client/project lookup so
-  // invalid statuses fail fast.
+  // "writes garbage silently" loophole, per the Hemingway note "L1 and L2
+  // status are two different enum lists with no shared values, and the L1
+  // field has no validator". Runs before client/project lookup so invalid
+  // statuses fail fast.
   if (!(L1_PROJECT_STATUSES_ARR as readonly string[]).includes(newStatus)) {
     return {
       ok: false,

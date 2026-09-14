@@ -9,7 +9,7 @@
  * Spec sources:
  *   - docs/tmp/slack-modal-pre-plan.md (v7) - "Modal flows" Team Member,
  *     "Wave 6" section, and "C3" mode/currentValues contract.
- *   - project memory: project_slack_modal_spec.md (Modal 4 - Team Member,
+ *   - docs/slack-modal.md (Modal 4 - Team Member,
  *     schema-corrected from runway-schema.ts).
  *
  * Civ voice rules (locked 2026-04-30):

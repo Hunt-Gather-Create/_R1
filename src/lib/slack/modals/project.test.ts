@@ -7,7 +7,7 @@
  *   - docs/tmp/slack-modal-pre-plan.md (v7) — §"Modal flows" (line 376),
  *     §A3 hint render order, §B5 datepicker-only dates, §B6 single Project
  *     builder, §C3 mode/currentValues + edit headers
- *   - project_slack_modal_spec.md (Modal 2 + Modal 3 field design)
+ *   - docs/slack-modal.md (Modal 2 + Modal 3 field design)
  *
  * What the builder must do:
  *   - Header swap across all 4 mode×retainerMode combos:

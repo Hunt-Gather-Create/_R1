@@ -112,6 +112,6 @@ If holdout or code-correctness QA returns FAIL:
 
 1. Compose a new spec with the corrections (NOT a free-form fix request)
 2. Bump the batchId date stamp if needed (re-running same batchId may cause idempotency collision on partial-applied state)
-3. Bump `updatedBy` if Round 1 already partially applied (per `feedback_revert_idempotency_poisoning` rule)
+3. Bump `updatedBy` if Round 1 already partially applied (per the Hemingway note "A revert removes data rows but not their audit rows, so a retry with the same values is silently skipped as a duplicate")
 4. Re-dispatch fresh drafter (clean context, not SendMessage)
 5. Re-DRY_RUN, re-rails-check, re-QA

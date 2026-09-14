@@ -15,7 +15,7 @@
  *   - docs/tmp/slack-modal-pre-plan.md (v7) - "Modal flows" (line 376),
  *     §A3 hint render order, §B5 datepicker-only dates, §B6 single Project
  *     builder, §C3 mode/currentValues + edit headers
- *   - project_slack_modal_spec.md (Modal 2 + Modal 3 field design)
+ *   - docs/slack-modal.md (Modal 2 + Modal 3 field design)
  *
  * Civ voice (LOCKED): hyphens not em-dashes, no AI-sounding language, plain
  * copy. No tier-letter shorthand in user-facing strings (the
@@ -169,7 +169,7 @@ const ENGAGEMENT_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "break-fix", label: "Break-fix" },
 ];
 
-// Resource role labels per project_slack_modal_spec.md Modal 2.
+// Resource role labels per docs/slack-modal.md Modal 2.
 const RESOURCE_ROLE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "AM", label: "AM" },
   { value: "CD", label: "CD" },

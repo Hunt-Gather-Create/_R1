@@ -508,7 +508,9 @@ export async function createWeekItem(
   // sectionId joins the key (4-level hierarchy): same-titled tasks in the
   // same week under DIFFERENT sections are distinct creates — without this,
   // per-section boilerplate titles ("Client review") silently dedupe, the
-  // exact failure mode of gotcha_createwi_idempotency_dedupes_across_l1s.
+  // exact failure mode described in the Hemingway note "createWeekItem
+  // dedupes by client, title, week and writer, not by project, so two
+  // creates under different L1s collide and report success".
   const idemKey = generateIdempotencyKey(
     "create-week-item",
     clientId ?? "none",

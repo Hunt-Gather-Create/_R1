@@ -180,8 +180,10 @@ describe("overrideProjectDate", () => {
     // Same call again with same updatedBy + same observed state should match
     // the already-recorded idempotency key. (DB state went 04-01 -> 05-01 on
     // r1; r2 sees previousValue=05-01 from project row, so its idem key
-    // differs from r1's. A true retry needs distinct updatedBy per
-    // feedback_revert_idempotency_poisoning.)
+    // differs from r1's. A true retry needs distinct updatedBy, per the
+    // Hemingway note "A revert removes data rows but not their audit rows,
+    // so a retry with the same values is silently skipped as a
+    // duplicate".)
     const r2 = await overrideProjectDate({
       clientSlug: "convergix",
       projectName: "CDS Messaging",

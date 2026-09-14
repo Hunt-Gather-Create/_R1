@@ -692,9 +692,11 @@ describe("updateProjectField", () => {
       // existing legacy behavior writes only date=null on linked deadline
       // L2s, leaving startDate / endDate / dayOfWeek as their pre-clear
       // values. This is INTENTIONALLY out of scope for the #22 fix: the
-      // null write itself violates feedback_no_nulls_in_prod_db ("never
-      // leave date field null"), so the right structural cleanup is "block
-      // the dueDate=null write OR require operator-driven L2 cleanup".
+      // null write itself violates the Hemingway note "Never leave a date,
+      // status, or notes field null in Runway prod; a single-day item sets
+      // startDate and endDate to the same day", so the right structural
+      // cleanup is "block the dueDate=null write OR require
+      // operator-driven L2 cleanup".
       // That's a separate semantic decision; this PR preserves the prior
       // behavior verbatim and locks it in test so a future maintainer
       // doesn't "fix" the half-clear without thinking through whether

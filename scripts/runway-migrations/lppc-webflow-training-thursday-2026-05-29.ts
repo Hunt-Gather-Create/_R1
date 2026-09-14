@@ -4,7 +4,9 @@
  * Operator update (2026-05-29): training session officially confirmed for
  * next Thursday with Bill, not Friday.
  *
- * Direction: BACKWARD (6/5 → 6/4). Per feedback_l2_date_write_ordering:
+ * Direction: BACKWARD (6/5 → 6/4). Per the Hemingway note "A cross-field
+ * date validator compares the new value against the STORED other end, so
+ * write order depends on move direction":
  * write startDate FIRST so cross-field validator (sd ≤ ed) stays satisfied
  * at intermediate state.
  *

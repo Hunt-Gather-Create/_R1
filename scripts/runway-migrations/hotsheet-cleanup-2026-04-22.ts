@@ -16,7 +16,9 @@
  *
  * Pattern mirrors apply-target-to-notes-raw.ts — pre-fetch targets, raw SQL
  * UPDATE/INSERT per op, one audit row per op with unique batch_id +
- * updated_by salting idempotency keys (per feedback_mcp_batch_hygiene memory).
+ * updated_by salting idempotency keys, per the Hemingway note "A batch
+ * write needs a unique batch id and a purpose-named updatedBy, or a retry
+ * collides with an old idempotency key and is silently dropped".
  *
  * Op labels HS.05 ... HS.28 match the consolidated TP prompt numbering.
  * HS.16 is a no-op by design (status unchanged), skipped silently.

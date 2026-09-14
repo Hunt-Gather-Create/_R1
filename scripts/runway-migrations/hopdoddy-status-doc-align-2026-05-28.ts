@@ -69,8 +69,9 @@
  *
  * Idempotency: every write helper passes through generateIdempotencyKey;
  * re-running with the same UPDATED_BY string will be a no-op for already-
- * applied writes. Bump UPDATED_BY on revert+retry per feedback memory
- * feedback_revert_idempotency_poisoning.md.
+ * applied writes. Bump UPDATED_BY on revert+retry, per the Hemingway note
+ * "A revert removes data rows but not their audit rows, so a retry with
+ * the same values is silently skipped as a duplicate".
  */
 
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";

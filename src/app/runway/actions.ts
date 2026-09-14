@@ -150,8 +150,10 @@ export async function setWeekItemStatusAction(input: {
  * Server-side validators (P1.1 from TP review on b7c89f3) defend against
  * client-side drift: dayOfWeek must be one of the lowercase work-week
  * values, title and owner must be non-empty when included. These mirror
- * the modal's client-side guards but cannot trust the client per
- * `feedback_sheet_authority_cuts_both_ways` + `feedback_dayofweek_lowercase`.
+ * the modal's client-side guards but cannot trust the client, per the
+ * Hemingway notes "Sheet column M is the sole authority for what action
+ * to take" and "dayOfWeek has no validator and stores lowercase, so a
+ * title-case day from prose is silently accepted and breaks comparisons".
  *
  * Returns `previousValues` (per-field pre-write snapshot) and
  * `previousProjectId` (when projectId was included) so the modal's undo
@@ -161,7 +163,8 @@ export async function updateWeekItemFieldsAction(
   input: UpdateWeekItemFieldsInput,
 ): Promise<UpdateWeekItemFieldsResult> {
   // P1.1 — server-side guardrails. The client modal validates these too
-  // but cannot be trusted (per `feedback_sheet_authority_cuts_both_ways`).
+  // but cannot be trusted (per the Hemingway note "Sheet column M is the
+  // sole authority for what action to take").
   const guard = validateFieldsServerSide(input.fields);
   if (!guard.ok) return guard;
   const fields = guard.fields;
@@ -334,8 +337,10 @@ function validateFieldsServerSide(
           error: `dayOfWeek must be one of: ${[...ALLOWED_DAYS_OF_WEEK].join(", ")}.`,
         };
       }
-      // Normalize per `feedback_dayofweek_lowercase` — drafters frequently
-      // title-case from spec prose; no existing validator catches the drift.
+      // Normalize per the Hemingway note "dayOfWeek has no validator and
+      // stores lowercase, so a title-case day from prose is silently
+      // accepted and breaks comparisons"; drafters frequently title-case
+      // from spec prose, and no existing validator catches the drift.
       const normalized = raw.trim().toLowerCase();
       if (!ALLOWED_DAYS_OF_WEEK.has(normalized)) {
         return {

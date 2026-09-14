@@ -10,7 +10,8 @@
  * uses those advanced forms, it falls back to free-text editing so we
  * don't silently collapse data the editor can't faithfully round-trip.
  *
- * Canonical role list per `feedback_naming_and_field_conventions.md`:
+ * Canonical role list per the Hemingway note "A Runway card title carries
+ * the project and the event, never the client name or the category word":
  * AM, CD, Dev, CW, PM, CM, Strat.
  */
 
