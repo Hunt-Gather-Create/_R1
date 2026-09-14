@@ -103,7 +103,11 @@ export async function runSheet(
   const bundle = await readClientBundle(db, config.clientSlug);
   const diff = diffSheet(parsed, bundle, ledger, runId);
   const payloads = buildPayloads(diff, runId);
-  const report = renderReport(diff, payloads);
+  // Ledger row count BEFORE this run's reconcile/link — the fact that tells
+  // the report whether a zero match count is a true first run or a matcher
+  // stuck at zero against rows it has seen before (_R1#152).
+  const priorLedgerRowCount = Object.keys(prior.entries).length;
+  const { report, error: matchedCounterError } = renderReport(diff, payloads, priorLedgerRowCount);
 
   const date = new Date().toISOString().slice(0, 10);
   mkdirSync(outDir, { recursive: true });
@@ -123,6 +127,13 @@ export async function runSheet(
   } else {
     saveLedger(ledgerPath, ledger);
     ledgerSink = ledgerPath;
+  }
+
+  if (matchedCounterError) {
+    throw new Error(
+      `runway-sheet-sync: ${sheetId} matched 0 sheet tasks against a populated ledger ` +
+        `(${priorLedgerRowCount} banked row(s)) — matcher appears broken, not a first run. See ${reportPath}`
+    );
   }
 
   let appliedCount: number | undefined;
