@@ -78,12 +78,27 @@ interface PushResult {
   combined: string;
 }
 
-/** Pushes localRef to remote/remoteBranch from workDir, through the real installed hook. */
-function push(workDir: string, remote: string, refspec: string, env: NodeJS.ProcessEnv = ISOLATED_GIT_ENV): PushResult {
-  const result = spawnSync("git", [...GIT_IDENTITY, "push", remote, refspec], {
+/**
+ * Pushes localRef(s) to remote/remoteBranch from workDir, through the real
+ * installed hook. refspec accepts an array so a single invocation can carry
+ * more than one ref update (_R1#148 acceptance 3: one delete plus one real
+ * ref, in one `git push`). A 15s timeout on the child process is the hard
+ * timeout the fleet's testing rule requires for any test that runs the code
+ * under test: pnpm test:run inside a fixture with no package.json fails
+ * fast, but a hang here must still not stall the suite.
+ */
+function push(
+  workDir: string,
+  remote: string,
+  refspec: string | string[],
+  env: NodeJS.ProcessEnv = ISOLATED_GIT_ENV,
+): PushResult {
+  const refspecs = Array.isArray(refspec) ? refspec : [refspec];
+  const result = spawnSync("git", [...GIT_IDENTITY, "push", remote, ...refspecs], {
     cwd: workDir,
     encoding: "utf8",
     env,
+    timeout: 15000,
   });
   const stdout = result.stdout ?? "";
   const stderr = result.stderr ?? "";
@@ -345,4 +360,132 @@ exec "$_real" "$@"
     expect(reverted.combined).toMatch(/HYGIENE GUARD REFUSED/);
     expect(reverted.combined).toMatch(/could not resolve an install point: no commit on origin\/runway adds/);
   });
+});
+
+/**
+ * _R1#148: a delete-only push runs the full suite for no reason (a delete
+ * pushes no code). The condition under test: EVERY ref-update line on
+ * pre-push's own stdin has a local sha of all zeros (git's own marker for
+ * "this ref is being deleted"). If and only if every line is a delete, the
+ * suite step is skipped; the hygiene guard above it always still runs.
+ *
+ * These tests drive the REAL, installed pre-push through a real `git push`,
+ * same discipline as the _R1#171 suite above: assert on the push's own exit
+ * code and printed output, never by reading pre-push's source and reasoning
+ * about what it should do.
+ *
+ * RUNWAY_SKIP_PREPUSH=1 is baked into ISOLATED_GIT_ENV above so the _R1#171
+ * suite never reaches the suite step at all (its fixtures have no
+ * package.json for pnpm test:run to run against). These tests are about
+ * that exact step, so SUITE_ENV below unsets it: a fixture with no
+ * package.json makes `pnpm test:run` fail fast (no timeout risk), which is
+ * fine, since every assertion here is about whether the "running the test
+ * suite" line was printed at all, not about the suite's own result.
+ */
+describe("scripts/hooks/pre-push, delete-only pushes skip the suite step (_R1#148)", () => {
+  let root: string;
+  const SUITE_ENV = { ...ISOLATED_GIT_ENV };
+  delete SUITE_ENV.RUNWAY_SKIP_PREPUSH;
+
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "prepush-delete-")));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  /** A single-remote repo, guard installed and wired, empty (valid) hold list. Same shape as the first _R1#171 fixture above. */
+  function buildSimpleFixture() {
+    const originDir = join(root, "origin.git");
+    mkdirSync(originDir, { recursive: true });
+    git(["init", "--quiet", "--bare", "-b", "runway"], originDir);
+
+    const workDir = join(root, "work");
+    mkdirSync(workDir, { recursive: true });
+    git(["init", "--quiet", "-b", "runway"], workDir);
+    git(["remote", "add", "origin", originDir], workDir);
+    mkdirSync(join(workDir, "scripts"), { recursive: true });
+    execFileSync("cp", [HYGIENE_GUARD_PATH, join(workDir, "scripts", "hygiene-guard.sh")]);
+    writeFile(workDir, ".hygiene-hold", "");
+    writeFile(workDir, "README.md", "root\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "root"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+    git(["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/runway"], workDir);
+    installHooks(workDir);
+    return { originDir, workDir };
+  }
+
+  it("acceptance 1: deleting a throwaway branch does not run the suite, and the delete completes", () => {
+    const { workDir } = buildSimpleFixture();
+    git(["checkout", "--quiet", "-b", "throwaway"], workDir);
+    writeFile(workDir, "throwaway.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "throwaway commit"], workDir);
+    git(["push", "--quiet", "origin", "throwaway"], workDir);
+
+    const result = push(workDir, "origin", ":throwaway", SUITE_ENV);
+    expect(result.status).toBe(0);
+    expect(result.combined).toMatch(/pre-push: delete-only push, test suite skipped/);
+    expect(result.combined).not.toMatch(/pre-push: running the test suite/);
+
+    const remoteRefs = git(["ls-remote", "origin", "refs/heads/throwaway"], workDir);
+    expect(remoteRefs).toBe("");
+  }, 20000);
+
+  it("acceptance 2: a real commit push still runs the suite (prints the suite line)", () => {
+    const { workDir } = buildSimpleFixture();
+    git(["checkout", "--quiet", "-b", "feature"], workDir);
+    writeFile(workDir, "feature.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "feature commit"], workDir);
+
+    const result = push(workDir, "origin", "feature", SUITE_ENV);
+    expect(result.combined).toMatch(/pre-push: running the test suite/);
+    expect(result.combined).not.toMatch(/delete-only push, test suite skipped/);
+  }, 20000);
+
+  it("acceptance 3: a mixed push, one delete and one real ref in one invocation, still runs the suite", () => {
+    const { workDir } = buildSimpleFixture();
+    git(["checkout", "--quiet", "-b", "throwaway2"], workDir);
+    writeFile(workDir, "throwaway2.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "throwaway2 commit"], workDir);
+    git(["push", "--quiet", "origin", "throwaway2"], workDir);
+
+    git(["checkout", "--quiet", "-b", "feature2"], workDir);
+    writeFile(workDir, "feature2.txt", "x\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "feature2 commit"], workDir);
+
+    const result = push(workDir, "origin", ["feature2", ":throwaway2"], SUITE_ENV);
+    expect(result.combined).toMatch(/pre-push: running the test suite/);
+    expect(result.combined).not.toMatch(/delete-only push, test suite skipped/);
+  }, 20000);
+
+  it("acceptance 4 / TP refinement: the guard still refuses a delete-only push that would orphan a held commit", () => {
+    const { workDir } = buildSimpleFixture();
+    git(["checkout", "--quiet", "-b", "handwork"], workDir);
+    writeFile(workDir, "handwork.txt", "hand-authored, cannot be reconstructed\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "handwork v1"], workDir);
+    const heldSha = git(["rev-parse", "handwork"], workDir);
+    git(["push", "--quiet", "origin", "handwork"], workDir);
+
+    git(["checkout", "--quiet", "runway"], workDir);
+    writeFile(workDir, ".hygiene-hold", `handwork ${heldSha} OPERATOR-HOLD\n`);
+    git(["add", ".hygiene-hold"], workDir);
+    git(["commit", "--quiet", "-m", "hold handwork"], workDir);
+    git(["push", "--quiet", "origin", "runway"], workDir);
+
+    git(["checkout", "--quiet", "handwork"], workDir);
+    const result = push(workDir, "origin", ":handwork", ISOLATED_GIT_ENV);
+    expect(result.status).not.toBe(0);
+    expect(result.combined).toMatch(/HYGIENE GUARD REFUSED/);
+    expect(result.combined).toMatch(/orphan a held object/);
+    expect(result.combined).not.toMatch(/delete-only push, test suite skipped/);
+
+    const remoteRefs = git(["ls-remote", "origin", "refs/heads/handwork"], workDir);
+    expect(remoteRefs).not.toBe("");
+  }, 20000);
 });
