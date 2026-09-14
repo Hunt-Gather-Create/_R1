@@ -24,17 +24,38 @@
 #    The guard also reads the pre-push ref-update stream ("<local ref>
 #    <local sha> <remote ref> <remote sha>", one line per ref being
 #    pushed) from stdin, to catch a force-push orphaning a held object.
-#    Nothing below this call reads stdin, so it is deliberately left
-#    connected to whatever git itself wired up here rather than captured
-#    and replayed: there is nothing downstream in THIS file to starve.
+#    _R1#148 needs that same stream below, after the guard has already run,
+#    to tell a delete-only push from a real one. Stdin can only be read
+#    once, so it is captured to a temp file up front and fed to the guard
+#    from that file, never left connected straight through as before.
 # 2. The test-suite step below it DOES have a documented, deliberate skip:
-#    RUNWAY_SKIP_PREPUSH=1. That is what makes the file as a whole "not a
-#    gate" in the sense above; it is not a claim that the hygiene guard step
-#    is equally optional.
+#    RUNWAY_SKIP_PREPUSH=1. _R1#148 adds a second, narrower skip that is not
+#    an escape hatch: when EVERY ref-update line says "delete" (local sha is
+#    all zeros), there is no code in this push for the suite to have an
+#    opinion about, so the suite step does not run. A push that deletes one
+#    ref and updates another still runs the suite; only a push that deletes
+#    everything and adds nothing skips it. The hygiene guard runs on a
+#    delete-only push exactly as it does on any other push.
 set -e
 
 root=$(git rev-parse --show-toplevel)
 echo "pre-push: checking for fossil state (merged branches/worktrees)."
+
+# Capture the pre-push ref-update stream once, before anything reads stdin.
+# The hygiene guard below expects this same stream on ITS stdin, so it is
+# replayed from this file, byte for byte, rather than read twice from the
+# original pipe (which would give the guard nothing on its second read).
+stdin_file=$(mktemp) || {
+  echo ""
+  echo "pre-push: could not create a temp file to capture the pre-push ref-update stream."
+  exit 1
+}
+trap 'rm -f "$stdin_file"' EXIT
+if ! cat >"$stdin_file"; then
+  echo ""
+  echo "pre-push: could not read the pre-push ref-update stream from stdin."
+  exit 1
+fi
 
 # _R1#171: origin is the fork in any repo that has one (_R1 itself), so a
 # hardcoded "origin" below made the guard resolve trunk against the fork's
@@ -81,7 +102,7 @@ else
   fi
 fi
 
-if ! sh "$root/scripts/hygiene-guard.sh" "$root" "$hygiene_remote" "" "" "$hygiene_trunk"; then
+if ! sh "$root/scripts/hygiene-guard.sh" "$root" "$hygiene_remote" "" "" "$hygiene_trunk" <"$stdin_file"; then
   echo ""
   echo "pre-push: HYGIENE GUARD REFUSED. Push blocked."
   echo "pre-push: this guard has no skip flag of its own. git push --no-verify walks past it if you truly mean to."
@@ -90,6 +111,31 @@ fi
 
 if [ "${RUNWAY_SKIP_PREPUSH:-}" = "1" ]; then
   echo "pre-push: test suite skipped (RUNWAY_SKIP_PREPUSH=1). The PR check still runs."
+  exit 0
+fi
+
+# _R1#148: a delete-only push (every ref-update line's local sha is all
+# zeros) pushes no code, so there is nothing for the suite to have an
+# opinion about. A push is read from the captured stream, never from a
+# branch name or any other proxy: any line whose local sha is NOT all
+# zeros means at least one ref is being created or updated, and the suite
+# runs. An empty stream (zero lines) is not "all deletes"; it never reaches
+# git's pre-push invocation in practice, so it takes the ordinary path
+# below and runs the suite rather than being read as vacuously true.
+all_deletes=1
+line_count=0
+while IFS= read -r ref_line || [ -n "$ref_line" ]; do
+  [ -z "$ref_line" ] && continue
+  line_count=$((line_count + 1))
+  local_sha=$(printf '%s\n' "$ref_line" | awk '{print $2}')
+  case "$local_sha" in
+    0000000000000000000000000000000000000000) ;;
+    *) all_deletes=0 ;;
+  esac
+done <"$stdin_file"
+
+if [ "$line_count" -gt 0 ] && [ "$all_deletes" -eq 1 ]; then
+  echo "pre-push: delete-only push, test suite skipped. The PR check does not apply either: nothing was pushed."
   exit 0
 fi
 
