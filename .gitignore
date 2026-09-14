@@ -93,22 +93,18 @@ docs/tmp/
 *.service-account.json
 di-tp-exit-debrief.md
 
-# DI-TP one-off diagnostics + migrations (data-integrity working files, never
-# committed to runway per fleet rule). Scoped to 2026-06 ON PURPOSE: dated
-# migration scripts are this repo's normal tracked convention (42 of them are
-# committed upstream), so a date-agnostic glob here would swallow the
-# convention rather than the exception. A DI-TP file from any other month is
-# NOT covered by this; the durable fix is a naming marker, not a wider glob.
+# DI-TP one-off diagnostics (data-integrity working files, never committed
+# to runway per fleet rule). Scoped to 2026-06 ON PURPOSE: this glob has no
+# tracked convention to collide with, unlike the migrations marker below.
 scripts/diagnostics/*-2026-06-*
-scripts/runway-migrations/*-2026-06-*.ts
 
-# DI-TP batch of 2026-09-02 and 2026-09-07 (_R1#166). Same scoped-month
-# rule as the 2026-06 line above, not a directory ignore: these 26 files
-# import MigrationContext from "../runway-migrate" like every tracked
-# migration in this directory, several are the REVERT path for prod
-# batches already applied, and moving them out of scripts/runway-migrations/
-# breaks that sibling import. Ignoring them in place, by name, is the point.
-scripts/runway-migrations/*-2026-09-*.ts
+# DI-TP working migrations, _R1#168: a naming marker, not a date. A dated
+# glob here expires every month and nothing notices, which is what #168
+# happened on. Tracked migrations import MigrationContext from
+# "../runway-migrate" like every other file in this directory and never
+# carry this suffix, so the marker glob covers every DI-TP working script
+# forever without swallowing the tracked convention it lives beside.
+scripts/runway-migrations/*.di.ts
 
 # Seat tool state, machine-local, never work (git SOP six-numbers bar, 2026-09-12)
 .claude/.headroom_wrap_marker.json
