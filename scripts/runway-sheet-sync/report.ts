@@ -5,9 +5,26 @@
 import type { DiffResult, SyncPayload } from "./types";
 import type { ParityResult } from "./parity/types";
 
-export function renderReport(diff: DiffResult, payloads: SyncPayload[]): string {
+export interface RenderedReport {
+  report: string;
+  /**
+   * True when `matched` is 0 against a ledger that already held rows from a
+   * prior run — a matcher stuck at zero produces the same counts a genuine
+   * first run would, so this is the signal a caller must treat as failure
+   * (_R1#152). False for a true first run (empty ledger) or any non-zero
+   * match count.
+   */
+  error: boolean;
+}
+
+export function renderReport(
+  diff: DiffResult,
+  payloads: SyncPayload[],
+  priorLedgerRowCount = 0
+): RenderedReport {
   const c = diff.counts;
   const lines: string[] = [];
+  let error = false;
 
   lines.push(`# Runway Sheet Sync — Diff Report`);
   lines.push("");
@@ -41,12 +58,22 @@ export function renderReport(diff: DiffResult, payloads: SyncPayload[]): string 
   lines.push("");
 
   if (c.matched === 0 && c["leaf-tasks"] > 0) {
-    lines.push(
-      `> **Expected on a first run:** near-zero matches. Existing Runway WIs were hand-created ` +
-        `with different titles, so sheet tasks land "missing" and Runway items land "orphaned". ` +
-        `That IS the delta — not a bug. The mismatched-field bucket becomes meaningful once the ` +
-        `identity ledger has a clean run behind it (§3 Phase 1a).`
-    );
+    if (priorLedgerRowCount === 0) {
+      lines.push(
+        `> **Expected on a first run:** near-zero matches. Existing Runway WIs were hand-created ` +
+          `with different titles, so sheet tasks land "missing" and Runway items land "orphaned". ` +
+          `That IS the delta — not a bug. The mismatched-field bucket becomes meaningful once the ` +
+          `identity ledger has a clean run behind it (§3 Phase 1a).`
+      );
+    } else {
+      error = true;
+      lines.push(
+        `> **ERROR: ledger populated, nothing matched.** The identity ledger already holds ` +
+          `${priorLedgerRowCount} row(s) banked from a prior run, but this run matched 0 sheet ` +
+          `tasks. A matcher stuck at zero would print the same counts a genuine first run does, so ` +
+          `this is a failure, not a note. Do not apply these payloads until the matcher is fixed.`
+      );
+    }
     lines.push("");
   }
 
@@ -89,7 +116,7 @@ export function renderReport(diff: DiffResult, payloads: SyncPayload[]): string 
     lines.push("");
   }
 
-  return lines.join("\n");
+  return { report: lines.join("\n"), error };
 }
 
 /**

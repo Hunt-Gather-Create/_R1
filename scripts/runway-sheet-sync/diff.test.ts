@@ -295,15 +295,16 @@ describe("renderReport", () => {
   it("includes the first-run expectation note when zero matches", () => {
     const tasks = [leaf({ title: "Nothing like prod", resolvedTitle: "Nothing like prod" })];
     const diff = diffSheet(parsedWith(tasks), { ...BUNDLE, weekItems: [] }, emptyLedger(), "run-1");
-    const md = renderReport(diff, buildPayloads(diff, "run-1"));
-    expect(md).toContain("Expected on a first run");
-    expect(md).toContain("missing-in-runway");
+    const { report, error } = renderReport(diff, buildPayloads(diff, "run-1"));
+    expect(report).toContain("Expected on a first run");
+    expect(report).toContain("missing-in-runway");
+    expect(error).toBe(false);
   });
 
   it("renders orphans with the never-delete policy note", () => {
     const diff = diffSheet(parsedWith([leaf({})]), BUNDLE, emptyLedger(), "run-1");
-    const md = renderReport(diff, []);
-    expect(md).toContain("Hand-created legacy item");
-    expect(md).toContain("never deletes");
+    const { report } = renderReport(diff, []);
+    expect(report).toContain("Hand-created legacy item");
+    expect(report).toContain("never deletes");
   });
 });
