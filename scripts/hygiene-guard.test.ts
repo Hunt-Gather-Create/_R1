@@ -1799,6 +1799,49 @@ describe("hygiene-guard.sh, control 26: GIT_DIR and its worktree-identity siblin
     git(["checkout", "--quiet", "runway"], workDir);
   }
 
+  // _R1#176: this fixture is a LOCAL BRANCH fossil, and the guard's branch
+  // walk never calls _count_dirty at all -- that call only runs against
+  // worktrees found by `git worktree list` (:1372, :1834). GIT_WORK_TREE,
+  // GIT_INDEX_FILE, and GIT_COMMON_DIR each change what a git call sees only
+  // through call sites _count_dirty and the worktree enumeration reach, so a
+  // branch-only fossil can never exercise their scrub lines -- confirmed
+  // own-hands: injecting any of the three alone against buildFossilFixture's
+  // bed leaves the guard's BLOCK line byte-identical, mutated scrub or not.
+  // A worktree-registered fossil is what QA-Scout-1's #174 combination gate
+  // (cited on the ticket) used to reach those call sites, so it's what the
+  // three per-variable arms below use instead.
+  function buildWorktreeFossilFixture(root: string, workDir: string): string {
+    git(["checkout", "--quiet", "-b", "wt-fossil"], workDir);
+    writeFile(workDir, "wt-fossil.txt", "w1\n");
+    git(["add", "."], workDir);
+    git(["commit", "--quiet", "-m", "wt-fossil 1"], workDir);
+    git(["checkout", "--quiet", "runway"], workDir);
+    const wtPath = join(root, "wt-fossil-dir");
+    git(["worktree", "add", "--quiet", wtPath, "wt-fossil"], workDir);
+    squashMergeToTrunk(workDir, "runway", "wt-fossil");
+    git(["checkout", "--quiet", "runway"], workDir);
+    return wtPath;
+  }
+
+  // Mutates only the named variable out of the scrub loop's list, leaving
+  // the other three (including GIT_DIR) scrubbed. This is deliberately
+  // narrower than the existing full-loop mutation below: a compound mutant
+  // that drops all four at once can't tell you which variable's OWN line
+  // matters (feedback: compound mutation masks a dead half), so each arm
+  // here mutates and proves exactly one variable.
+  function mutateScrubLoopDropping(varName: string): string {
+    const all = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"];
+    const remaining = all.filter((v) => v !== varName);
+    const anchor = `for _repo_var in ${all.join(" ")}; do`;
+    const replacement = `for _repo_var in ${remaining.join(" ")}; do`;
+    const source = readFileSync(SCRIPT_PATH, "utf8");
+    const occurrences = source.split(anchor).length - 1;
+    expect(occurrences).toBe(1); // mutation targets a unique anchor, not a guess
+    const mutated = source.replace(anchor, replacement);
+    expect(mutated).not.toBe(source);
+    return mutated;
+  }
+
   it("direction 1: a repo with a real fossil still REFUSES, byte-identical to the no-leak verdict, when GIT_DIR is exported pointing at an unrelated clean repo", () => {
     const { workDir: fossilBed } = buildRepo(root, "runway");
     buildFossilFixture(fossilBed);
@@ -1842,7 +1885,7 @@ describe("hygiene-guard.sh, control 26: GIT_DIR and its worktree-identity siblin
     expect(leaked.stderr).not.toMatch(/fossil-one/);
   });
 
-  it("mutation: removing the GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_COMMON_DIR scrub brings the false clean back on direction 1's exact fixture", () => {
+  it("mutation, GIT_DIR only: removing the whole scrub loop brings the false clean back on direction 1's exact fixture, which injects GIT_DIR alone and so proves only GIT_DIR's own line (_R1#176: this branch-only fixture never reaches GIT_WORK_TREE, GIT_INDEX_FILE, or GIT_COMMON_DIR's call sites; see the three worktree-fossil arms below for those)", () => {
     const { workDir: fossilBed } = buildRepo(root, "runway");
     buildFossilFixture(fossilBed);
     const { workDir: cleanBed } = buildRepo(join(root, "clean-bed"), "runway");
@@ -1872,6 +1915,114 @@ describe("hygiene-guard.sh, control 26: GIT_DIR and its worktree-identity siblin
     // GIT_DIR overrides -C and the guard reads cleanBed's (empty) fossil
     // state instead of fossilBed's real one.
     expect(mutant.status).toBe(0);
+  });
+
+  it("mutation, GIT_WORK_TREE only: fixed guard is byte-identical to no-injection on a single worktree-registered fossil, and removing only GIT_WORK_TREE's own line corrupts the BLOCK to a false DISPOSABLE-BUT-DIRTY with no disposal command (_R1#176, QA-Scout-1's message-degradation mechanism)", () => {
+    const { workDir } = buildRepo(root, "runway");
+    const wtPath = buildWorktreeFossilFixture(root, workDir);
+    const { workDir: cleanBed } = buildRepo(join(root, "clean-bed"), "runway");
+
+    const baseline = runGuard(workDir);
+    expect(baseline.status).toBe(1);
+    expect(baseline.stderr).toMatch(/wt-fossil/);
+    expect(baseline.stderr).toMatch(new RegExp(`git worktree remove --force '${escapeRegExp(wtPath)}'`));
+
+    // Control: the fixed guard, GIT_WORK_TREE injected alone, is
+    // byte-identical to the no-injection baseline.
+    const fixed = runGuard(workDir, "origin", undefined, { GIT_WORK_TREE: cleanBed });
+    expect(fixed.status).toBe(baseline.status);
+    expect(fixed.stderr).toBe(baseline.stderr);
+    expect(fixed.stdout).toBe(baseline.stdout);
+
+    const mutantPath = join(root, "mutant-no-git-work-tree-scrub.sh");
+    writeFileSync(mutantPath, mutateScrubLoopDropping("GIT_WORK_TREE"));
+    const mutant = runGuard(workDir, "origin", mutantPath, { GIT_WORK_TREE: cleanBed });
+    // Without this line's own scrub, GIT_WORK_TREE overrides the working
+    // tree _count_dirty's `git status` compares against: wt-fossil-dir's
+    // own index/HEAD get diffed against cleanBed's files instead of its
+    // own, and cleanBed never tracked wt-fossil.txt, so that file reads as
+    // a real deletion. The BLOCK degrades from a correct disposal command
+    // to a false DISPOSABLE-BUT-DIRTY -- wrong reason, wrong remedy, the
+    // same message-corruption shape QA-Scout-1 measured on the unfixed
+    // guard, just a different fabricated diff count on this fixture.
+    expect(mutant.stderr).not.toBe(baseline.stderr);
+    expect(mutant.stderr).toMatch(/DISPOSABLE-BUT-DIRTY/);
+    expect(mutant.stderr).toMatch(/holds \d+ uncommitted change/);
+    expect(mutant.stderr).not.toMatch(/git worktree remove --force/);
+  });
+
+  it("mutation, GIT_INDEX_FILE only: fixed guard is byte-identical to no-injection on a single worktree-registered fossil, and removing only GIT_INDEX_FILE's own line degrades the BLOCK to an UNKNOWN dirty-state with no disposal command (_R1#176)", () => {
+    const { workDir } = buildRepo(root, "runway");
+    const wtPath = buildWorktreeFossilFixture(root, workDir);
+    // A small, unrelated repo whose tracked content and object store both
+    // diverge from wt-fossil-dir's: a foreign index built from a repo that
+    // happens to hold the SAME blobs (e.g. a later clone of this same
+    // origin) reads clean by coincidence, not because the scrub worked, and
+    // would silently pass for the wrong reason (feedback: mutation table
+    // must target the exercised seam). This repo shares no object with
+    // wt-fossil-dir at all, so a leaked index can only fail loudly.
+    const indexLeakDir = join(root, "index-leak-bed");
+    mkdirSync(indexLeakDir, { recursive: true });
+    git(["init", "--quiet", "-b", "runway"], indexLeakDir);
+    writeFile(indexLeakDir, "ambient-only.txt", "tracked only in the index-leak repo\n");
+    git(["add", "."], indexLeakDir);
+    git(["commit", "--quiet", "-m", "ambient-only file"], indexLeakDir);
+    const foreignIndex = join(indexLeakDir, ".git", "index");
+
+    const baseline = runGuard(workDir);
+    expect(baseline.status).toBe(1);
+    expect(baseline.stderr).toMatch(/wt-fossil/);
+    expect(baseline.stderr).toMatch(new RegExp(`git worktree remove --force '${escapeRegExp(wtPath)}'`));
+
+    // Control: the fixed guard, GIT_INDEX_FILE injected alone, is
+    // byte-identical to the no-injection baseline.
+    const fixed = runGuard(workDir, "origin", undefined, { GIT_INDEX_FILE: foreignIndex });
+    expect(fixed.status).toBe(baseline.status);
+    expect(fixed.stderr).toBe(baseline.stderr);
+    expect(fixed.stdout).toBe(baseline.stdout);
+
+    const mutantPath = join(root, "mutant-no-git-index-file-scrub.sh");
+    writeFileSync(mutantPath, mutateScrubLoopDropping("GIT_INDEX_FILE"));
+    const mutant = runGuard(workDir, "origin", mutantPath, { GIT_INDEX_FILE: foreignIndex });
+    // Without this line's own scrub, GIT_INDEX_FILE overrides which index
+    // `git status --porcelain` reads inside _count_dirty: the foreign
+    // index names blobs that don't exist in wt-fossil-dir's object store at
+    // all, so git status itself fails ("could not be read"), and the BLOCK
+    // degrades to UNKNOWN with no removal command.
+    expect(mutant.stderr).not.toBe(baseline.stderr);
+    expect(mutant.stderr).toMatch(/UNKNOWN dirty-state/);
+    expect(mutant.stderr).not.toMatch(/git worktree remove --force/);
+  });
+
+  it("mutation, GIT_COMMON_DIR only: fixed guard is byte-identical to no-injection on a single worktree-registered fossil, and removing only GIT_COMMON_DIR's own line breaks worktree enumeration itself, refusing for the wrong reason with no disposability check at all (_R1#176)", () => {
+    const { workDir } = buildRepo(root, "runway");
+    const wtPath = buildWorktreeFossilFixture(root, workDir);
+    const { workDir: cleanBed } = buildRepo(join(root, "clean-bed"), "runway");
+
+    const baseline = runGuard(workDir);
+    expect(baseline.status).toBe(1);
+    expect(baseline.stderr).toMatch(/wt-fossil/);
+    expect(baseline.stderr).toMatch(new RegExp(`git worktree remove --force '${escapeRegExp(wtPath)}'`));
+
+    // Control: the fixed guard, GIT_COMMON_DIR injected alone, is
+    // byte-identical to the no-injection baseline.
+    const fixed = runGuard(workDir, "origin", undefined, { GIT_COMMON_DIR: join(cleanBed, ".git") });
+    expect(fixed.status).toBe(baseline.status);
+    expect(fixed.stderr).toBe(baseline.stderr);
+    expect(fixed.stdout).toBe(baseline.stdout);
+
+    const mutantPath = join(root, "mutant-no-git-common-dir-scrub.sh");
+    writeFileSync(mutantPath, mutateScrubLoopDropping("GIT_COMMON_DIR"));
+    const mutant = runGuard(workDir, "origin", mutantPath, { GIT_COMMON_DIR: join(cleanBed, ".git") });
+    // Without this line's own scrub, GIT_COMMON_DIR overrides where the
+    // guard's `git rev-parse --git-common-dir` / worktree-list call reads
+    // shared ref/object data from, well before the fossil walk even starts.
+    // The result is not a false clean and not a degraded dirty-state: it is
+    // a wrong, earlier refusal reason with no disposability check run at
+    // all, still fail-closed but not the correct BLOCK line.
+    expect(mutant.stderr).not.toBe(baseline.stderr);
+    expect(mutant.stderr).not.toMatch(/git worktree remove --force/);
+    expect(mutant.stderr).toMatch(/No disposability check ran/);
   });
 });
 
@@ -1961,6 +2112,14 @@ describe("hygiene-guard.sh, control 12: the dirty check reports UNKNOWN, never a
     expect(buggyCountDirty(wtPath)).toBe(0); // false clean: git status's own fatal exit never surfaces
   });
 
+  // _R1#176, ask 3: this helper reproduces the shell scrub-and-status
+  // pattern as a standalone JS primitive, its own `execFileSync` call with
+  // its own env-scoping logic. It does NOT call hygiene-guard.sh and does
+  // not exercise a single line of the shipped script. A reader who sees
+  // this test go green should not conclude anything about
+  // scripts/hygiene-guard.sh's own scrub loop (control 26, below, is what
+  // exercises that); this only proves the pattern is sound as a primitive.
+  //
   // The actual mechanism under test: it takes an AMBIENT env, one that may
   // already carry a real leak, and scrubs the four GIT_* worktree-identity
   // vars itself before calling git. That mirrors the shipped fix, which
