@@ -106,4 +106,9 @@ export interface ParityResult {
   };
   rows: ParityRowVerdict[];
   counts: Record<ParityVerdict, number>;
+  /** _R1#156: how many rows the tool could not resolve on its own,
+   * HAND_ONLY + DISAGREE. Trending to zero across schedules IS the
+   * milestone. Never reduced by a post-run tidy — a row that needed a human
+   * to reason about it stays counted even after someone fixes it by hand. */
+  interventions: number;
 }

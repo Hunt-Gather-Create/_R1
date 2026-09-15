@@ -328,6 +328,19 @@ export function computeParity(
   const counts: Record<ParityVerdict, number> = { AGREE: 0, DISAGREE: 0, TOOL_ONLY: 0, HAND_ONLY: 0 };
   for (const r of rows) counts[r.verdict]++;
 
+  // _R1#156 intervention count, defined ONCE, here: HAND_ONLY + DISAGREE,
+  // the rows the tool could not resolve on its own. HAND_ONLY is a row the
+  // tool never even proposed; DISAGREE is a row the tool proposed something
+  // for but got wrong. Both needed a person to notice and reason about the
+  // row, which is the bar the ticket sets. TOOL_ONLY and AGREE are excluded
+  // on purpose: TOOL_ONLY means the tool proposed something prod has never
+  // seen, not that it was wrong, and AGREE means it needed no help at all.
+  // This number must never be reduced by a post-run tidy — a row that
+  // needed a human to reason about it during the walk stays counted even
+  // after someone fixes it by hand afterwards, per the ticket's "the trap
+  // to design out".
+  const interventions = counts.HAND_ONLY + counts.DISAGREE;
+
   return {
     sheetId: parsed.config.sheetId,
     clientSlug: parsed.config.clientSlug,
@@ -337,5 +350,6 @@ export function computeParity(
     l1: diff.l1,
     rows,
     counts,
+    interventions,
   };
 }

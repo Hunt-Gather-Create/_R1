@@ -74,8 +74,15 @@ describe("runParity, the real CLI call site, not a re-implementation of it", () 
 
     const onDisk = JSON.parse(readFileSync(outPath, "utf8"));
     expect(onDisk.runId).toBe(result.runId);
+    expect(onDisk.interventions).toBe(result.interventions);
     const md = readFileSync(join(dir, "verdict.md"), "utf8");
     expect(md).toContain("DISAGREE");
+    // _R1#156: interventions = HAND_ONLY + DISAGREE = 0 + 1 = 1, printed as
+    // its own line, plus a measured wall-clock line and the honest
+    // tokens-zero line, none of which touch the verdict.json above.
+    expect(md).toContain("interventions: 1");
+    expect(md).toMatch(/wall-clock: \d+ms/);
+    expect(md).toContain("tokens: 0, no model in the path");
 
     rmSync(dir, { recursive: true, force: true });
   });
