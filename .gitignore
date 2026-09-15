@@ -93,10 +93,12 @@ docs/tmp/
 *.service-account.json
 di-tp-exit-debrief.md
 
-# DI-TP one-off diagnostics (data-integrity working files, never committed
-# to runway per fleet rule). Scoped to 2026-06 ON PURPOSE: this glob has no
-# tracked convention to collide with, unlike the migrations marker below.
-scripts/diagnostics/*-2026-06-*
+# DI-TP one-off diagnostics, _R1#183: a naming marker, not a date, same fix
+# as #168 below. check-stale-scheduled.ts and the other tracked file under
+# this directory never carry the .di suffix, so the marker glob covers
+# every DI-TP working script forever without swallowing either of them.
+scripts/diagnostics/*.di.ts
+scripts/diagnostics/*.di.mjs
 
 # DI-TP working migrations, _R1#168: a naming marker, not a date. A dated
 # glob here expires every month and nothing notices, which is what #168

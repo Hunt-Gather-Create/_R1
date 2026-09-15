@@ -139,3 +139,71 @@ describe("gitignore DI-TP marker, _R1#168", () => {
     expect(anyIgnored).toBe(false);
   });
 });
+
+describe("gitignore DI-TP marker, scripts/diagnostics, _R1#183", () => {
+  let root: string;
+  let tipDir: string;
+
+  beforeAll(() => {
+    root = mkdtempSync(join(tmpdir(), "gitignore-di-marker-diagnostics-"));
+    const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: __dirname,
+      encoding: "utf8",
+      env: ISOLATED_GIT_ENV,
+    }).trim();
+    const headSha = git(["rev-parse", "HEAD"], repoRoot);
+    tipDir = join(root, "tip-clone");
+    execFileSync("git", ["clone", "--quiet", repoRoot, tipDir], { env: ISOLATED_GIT_ENV });
+    git(["checkout", "--quiet", headSha], tipDir);
+  });
+
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("ignores a DI-TP working script carrying the .di.ts marker", () => {
+    const { ignored, verbose } = checkIgnore("scripts/diagnostics/x-2026-10-01.di.ts", tipDir);
+    expect(ignored).toBe(true);
+    expect(verbose).toMatch(/scripts\/diagnostics\/\*\.di\.ts/);
+  });
+
+  it("ignores a DI-TP working script carrying the .di.mjs marker", () => {
+    const { ignored, verbose } = checkIgnore("scripts/diagnostics/x-2026-10-01.di.mjs", tipDir);
+    expect(ignored).toBe(true);
+    expect(verbose).toMatch(/scripts\/diagnostics\/\*\.di\.mjs/);
+  });
+
+  it("does not ignore the same path without the .di marker", () => {
+    const { ignored } = checkIgnore("scripts/diagnostics/x-2026-10-01.ts", tipDir);
+    expect(ignored).toBe(false);
+  });
+
+  it("no longer ignores the old month-scoped shape, proving the dated line is gone", () => {
+    const { ignored } = checkIgnore("scripts/diagnostics/x-2026-06-01.ts", tipDir);
+    expect(ignored).toBe(false);
+  });
+
+  it("swallows none of the currently tracked files under scripts/diagnostics", () => {
+    const tracked = git(["ls-files", "scripts/diagnostics"], tipDir)
+      .split("\n")
+      .filter((line) => line.length > 0);
+    expect(tracked.length).toBeGreaterThan(0);
+
+    let anyIgnored = false;
+    try {
+      execFileSync("git", [...GIT_IDENTITY, "check-ignore", "--stdin", "-v"], {
+        cwd: tipDir,
+        input: tracked.join("\n"),
+        encoding: "utf8",
+        env: ISOLATED_GIT_ENV,
+      });
+      anyIgnored = true;
+    } catch (err) {
+      const e = err as { status?: number };
+      if (e.status !== 1) {
+        throw err;
+      }
+    }
+    expect(anyIgnored).toBe(false);
+  });
+});
