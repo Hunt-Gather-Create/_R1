@@ -305,6 +305,65 @@ describe("computeParity, comparator unit test: owner/resources/category on an 18
   });
 });
 
+describe("_R1#156 intervention count: HAND_ONLY + DISAGREE, the rows the tool could not resolve on its own", () => {
+  it("2 HAND_ONLY + 1 DISAGREE reports interventions: 3, not the HAND_ONLY count alone", () => {
+    const tasks: LeafTask[] = [leaf({ category: "kickoff" })]; // tool always derives a non-null category
+    const parsed = parsedWith(tasks);
+    const prodSnapshot = {
+      clientSlug: "acme",
+      capturedAt: "2026-09-14T22:00:00Z",
+      client: { id: "c-1", slug: "acme", name: "Acme" },
+      projects: [{ id: "p-1", name: "Widget Refresh", status: null, category: null, notes: "ACM-2601-01" }],
+      weekItems: [
+        // Matches the one leaf task, category disagrees (prod null vs
+        // tool-derived "kickoff") -> DISAGREE.
+        prodRow({ id: "wi-1", projectId: "p-1", title: "Kickoff call", weekOf: "2026-06-01", category: null }),
+        // Two prod rows under the same L1 with no sheet counterpart at all
+        // -> HAND_ONLY, HAND_ONLY.
+        prodRow({ id: "wi-2", projectId: "p-1", title: "Prod-only task A", weekOf: "2026-06-08" }),
+        prodRow({ id: "wi-3", projectId: "p-1", title: "Prod-only task B", weekOf: "2026-06-15" }),
+      ],
+    };
+    const result = computeParity(parsed, prodSnapshot, "test-run-interventions-3");
+    expect(result.counts).toEqual({ AGREE: 0, DISAGREE: 1, TOOL_ONLY: 0, HAND_ONLY: 2 });
+    expect(result.interventions).toBe(3);
+
+    // Mutation the ticket names by hand: a formula that counts only
+    // HAND_ONLY (dropping DISAGREE) would report 2 here, not 3. This
+    // assertion is the one that goes red under that mutation.
+    expect(result.interventions).not.toBe(result.counts.HAND_ONLY);
+    expect(result.interventions).toBe(result.counts.HAND_ONLY + result.counts.DISAGREE);
+  });
+
+  it("a run where every row agrees and nothing is prod-only reports interventions: 0", () => {
+    const tasks: LeafTask[] = [leaf({ category: "kickoff" })];
+    const parsed = parsedWith(tasks);
+    const prodSnapshot = {
+      clientSlug: "acme",
+      capturedAt: "2026-09-14T22:00:00Z",
+      client: { id: "c-1", slug: "acme", name: "Acme" },
+      projects: [{ id: "p-1", name: "Widget Refresh", status: null, category: null, notes: "ACM-2601-01" }],
+      weekItems: [
+        prodRow({
+          id: "wi-1",
+          projectId: "p-1",
+          title: "Kickoff call",
+          weekOf: "2026-06-01",
+          startDate: "2026-06-01",
+          endDate: "2026-06-01",
+          status: "scheduled",
+          category: "kickoff",
+          owner: null,
+          resources: null,
+        }),
+      ],
+    };
+    const result = computeParity(parsed, prodSnapshot, "test-run-interventions-0");
+    expect(result.counts).toEqual({ AGREE: 1, DISAGREE: 0, TOOL_ONLY: 0, HAND_ONLY: 0 });
+    expect(result.interventions).toBe(0);
+  });
+});
+
 describe("assertToolNeverPlansField, guards toolPlannedFields' hardcoded null against a silent _R1#159 landing", () => {
   it("control: today's real updateWeekItemField payload, which only ever writes status/startDate/endDate, does not throw", () => {
     expect(() => assertToolNeverPlansField([payload({})], "owner")).not.toThrow();

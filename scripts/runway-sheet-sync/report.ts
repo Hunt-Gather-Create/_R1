@@ -124,7 +124,22 @@ export function renderReport(
  * JSON is the artifact of record. This is a reader's aid over it and is
  * never re-parsed as an input, so it carries no byte-identical requirement.
  */
-export function renderParityReport(result: ParityResult): string {
+/**
+ * _R1#156 cost line. Deliberately NOT part of ParityResult (parity/types.ts)
+ * or the verdict .json cli.ts writes — that file's bytes feed
+ * computeParityRunId and the CLI's own "byte-identical on the same inputs"
+ * rule, and wall-clock time is never the same between two runs. Cost lives
+ * only in this reader's aid, which carries no byte-identical requirement.
+ */
+export interface ParityCost {
+  wallClockMs: number;
+  /** Always 0 today — nothing in the sync pipeline calls a model
+   * (_R1#156). Printed honestly rather than omitted, so "how token
+   * efficient is this" has a real answer instead of silence. */
+  tokens: number;
+}
+
+export function renderParityReport(result: ParityResult, cost?: ParityCost): string {
   const lines: string[] = [];
   lines.push(`# Runway Sheet Sync, Parity Report`);
   lines.push("");
@@ -144,6 +159,16 @@ export function renderParityReport(result: ParityResult): string {
   lines.push(`| TOOL_ONLY | ${result.counts.TOOL_ONLY} |`);
   lines.push(`| HAND_ONLY | ${result.counts.HAND_ONLY} |`);
   lines.push("");
+  lines.push(`interventions: ${result.interventions}`);
+  lines.push("");
+
+  if (cost) {
+    lines.push(`## Cost`);
+    lines.push("");
+    lines.push(`- wall-clock: ${cost.wallClockMs}ms`);
+    lines.push(`- tokens: ${cost.tokens}, no model in the path`);
+    lines.push("");
+  }
 
   lines.push(`## Rows`);
   lines.push("");

@@ -79,12 +79,24 @@ export function runParity(opts: RunParityOptions): ParityResult {
     engagementCode: opts.engagementCode,
     label: opts.label,
   };
+  // Wall-clock measured around the actual compute, per sheet, for the
+  // report's cost line. Never fed into computeParityRunId or writeParityResult
+  // below — those stay bytes-of-the-two-frozen-files only, so a re-run on
+  // the same inputs still produces a byte-identical verdict file.
+  const wallClockStart = Date.now();
   const parsed = parseSheet(fixture, config);
   const runId = computeParityRunId(sheetFixtureRaw, prodSnapshotRaw);
   const result = computeParity(parsed, prodSnapshot, runId, fixture.exportedAt);
+  const wallClockMs = Date.now() - wallClockStart;
 
   writeParityResult(result, opts.outPath);
-  writeFileSync(opts.outPath.replace(/\.json$/, ".md"), renderParityReport(result));
+  writeFileSync(
+    opts.outPath.replace(/\.json$/, ".md"),
+    // tokens is hardcoded 0: nothing in the sync pipeline calls a model
+    // today (_R1#156, model-free.test.ts enforces it stays that way). Once
+    // a model exists somewhere in the path, this becomes a real count.
+    renderParityReport(result, { wallClockMs, tokens: 0 })
+  );
 
   return result;
 }
@@ -119,7 +131,7 @@ async function main(): Promise<void> {
   }
 
   const result = runParity({ sheetFixturePath, prodSnapshotPath, engagementCode, label, outPath });
-  console.log(JSON.stringify({ runId: result.runId, counts: result.counts, outPath }, null, 2));
+  console.log(JSON.stringify({ runId: result.runId, counts: result.counts, interventions: result.interventions, outPath }, null, 2));
   process.exit(0);
 }
 
