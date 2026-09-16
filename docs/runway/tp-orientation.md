@@ -1,6 +1,54 @@
-# Runway (TP) orientation: the reference layer moved out of CLAUDE.md
+# Runway TP orientation: the reference layer moved out of CLAUDE.md
 
 CLAUDE.md holds only the rules that must win over memory and fire without a lookup. This file holds the why, the history, and the how-to that used to sit beside them. Read it when a rule in CLAUDE.md needs its reasoning, or on the first session in a new seat. Moved out 2026-09-13, following the Ops seat's split under opeff#580.
+
+## Navigation map
+
+| If the task needs | Read |
+|---|---|
+| Strategic context, why X exists | `VISION.md` |
+| An architectural or operational call | `DECISIONS.md` |
+| Picking up an item, filing work, phase planning | `ROADMAP.md` and GitHub Issues on jasonburks23/_R1 |
+| Re-orienting to project state | `STATUS.md` |
+| Executing a feature with a design | `docs/plans/<feature>.md` |
+| Subsystem behavior, debugging, patterns | `.claude/MEMORY.md` |
+| Architecture and module map | `docs/runway.md` |
+| The reasoning behind any rule in CLAUDE.md | this file |
+| React and Next.js performance | `.claude/skills/vercel-react-best-practices/` |
+| Cross-fork Vercel preview | `.claude/skills/canary/SKILL.md` |
+| Prod data writes | `.claude/skills/data-integrity-tp/SKILL.md` |
+| Visual QA against production | `.claude/skills/runway-visual-qa/SKILL.md` |
+| Git hooks, the refused commit, the certifier | `docs/runway/git-hooks-sop-reference.md` |
+
+## Commands
+
+```bash
+pnpm dev              # Dev server at localhost:3000
+pnpm build            # Production build. Connects to two live Turso databases; do not run casually.
+pnpm test:run         # Tests, single run
+pnpm lint             # ESLint
+pnpm format           # Prettier
+pnpm runway:smoke     # Playwright smoke tests against runway.startround1.com
+
+# Runway database, separate Turso instance, needs RUNWAY_DATABASE_URL in .env.local
+pnpm runway:generate  # Generate migrations
+pnpm runway:push      # Push schema to Turso, dev flow, sources .env.local
+pnpm runway:schema-push # Deploy-time schema push, prod-gated via VERCEL_ENV, runs first in pnpm build
+pnpm runway:studio    # Open Drizzle Studio
+pnpm runway:pull      # Pull prod data to local
+pnpm runway:gantt     # Render Gantt CLI
+pnpm runway:sheet-sync # Sheet to Runway diff report, read-only
+```
+
+## Post-build pipeline, in order, before a push
+
+1. `/gsd:code-review`, alias `/code-review`
+2. `/update-docs` if patterns or versions changed
+3. `/pr-ready`
+4. `/preflight`: build, grep gate, tests, lint
+5. `/canary` for runway-targeted PRs
+6. `/atomic-commits`
+7. CC pushes to the fork through the real hook and opens the PR; the operator merges.
 
 ## Why the rules live in CLAUDE.md and the lessons live here
 
@@ -18,9 +66,9 @@ A practice that lives only in memory loses to a written instruction that says ot
 
 Operator, verbatim, 2026-08-26: "use them as part of protocol for coding tasks and gate 1 qa." Standing seats, not per-ticket subagents. Operator, 2026-08-26: "just be sure you follow up with your bots regularly." Do not dispatch and drift. Anchor any watcher on the last event id actually observed, never on a guessed timestamp. An unacked dispatch did not happen.
 
-The seat table in CLAUDE.md is the source of truth for the three pubkeys and the room. The fleet registry, `~/.claude/skills/buzz-agent-stats/seats.json`, and any chat relay are downstream and sync from it. A relay plus an attestation about the relay is still a relay. Re-verify with `buzz channels members --channel 46290a49-2e54-40a9-99ec-f79652a83337`, which returns role `bot` for the two bots; never from memory or from another seat's copy. A seeded config once confused the CC room with the Overwatch room; a dispatch fired into the wrong one lands as a record that wakes no bot.
+`etc/fleet-seat-registry.json` at agencyos-operational-efficiency is the source of truth for the three pubkeys and the room. Anything else holding a copy, `~/.claude/skills/buzz-agent-stats/seats.json`, this file, a chat relay, is downstream and syncs from it. A relay plus an attestation about the relay is still a relay. Re-verify with `buzz channels members --channel 46290a49-2e54-40a9-99ec-f79652a83337`, which returns role `bot` for the two bots; never from memory or from another seat's copy. A seeded config once confused the CC room with the Overwatch room; a dispatch fired into the wrong one lands as a record that wakes no bot.
 
-Runway (CC) accepts messages from this seat only; its `respond_to` allowlist has one entry. That is deliberate: this seat owns its own bots. QA-Scout-1's allowlist is wider, eight seats. Both were misconfigured on 2026-08-26 and silently dropped every dispatch until repaired. A bot that cannot hear you looks exactly like a bot ignoring you.
+Runway CC accepts messages from this seat only; its `respond_to` allowlist has one entry. That is deliberate: this seat owns its own bots. QA-Scout-1's allowlist is wider, eight seats. Both were misconfigured on 2026-08-26 and silently dropped every dispatch until repaired. A bot that cannot hear you looks exactly like a bot ignoring you.
 
 ## How to actually run the room
 
@@ -45,6 +93,14 @@ Operator, verbatim, 2026-08-27: "If you get a directive from Overwatch, you take
 The conflict case: on 2026-08-26 Overwatch's repo said pages route through it while the operator-installed `operator-fence` skill couples a red fence to its page. Overwatch withdrew its instruction and routed the conflict to the operator. Two operator-authored instructions in conflict is the operator's call.
 
 Verify before acting on a peer measurement. Overwatch has published numbers that did not survive a second sample. Reproduce a finding own-hands before paging or bouncing on it. A claim that confirms the shape you are already hunting is the one that gets waved through.
+
+## Memory rules, this repo's local knowledge store
+
+`.claude/MEMORY.md` is the knowledge layer, observed patterns and gotchas; `DECISIONS.md` holds
+locked architectural calls, not `MEMORY.md`. When a non-obvious pattern or gotcha turns up: add it
+to `MEMORY.md` under the existing Scripts, Patterns, or Gotchas headings, one to two lines each;
+if it is a locked decision, add a `DECISIONS.md` entry instead and reference it; remove entries
+that go stale. This is separate from Hemingway, the fleet's shared memory tool.
 
 ## Git hygiene, where the detail lives
 
