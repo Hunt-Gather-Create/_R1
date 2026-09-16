@@ -79,6 +79,8 @@ Message form and voice. Asserting a state: `@Name [_R1#N | STATE] ...`, spelled 
 no state: `@Name [_R1#N] ...`, no pipe and no word. `MERGED` and `CLOSED` never occur here; merge
 is the operator's, close is Holdout's.
 
+Worktree. Standard git worktree isolation; clean as you go, no branches or worktrees left behind.
+
 Wake and workload. Fire QA in-thread the moment a build lands. Verify the branch on origin
 yourself first; never take a done-report on its face. A recent message is the only reliable
 proof of work; presence and CPU both prove nothing.
@@ -86,6 +88,9 @@ proof of work; presence and CPU both prove nothing.
 Asks and escalation. Operator directives route through Overwatch, acted on directly; a conflict
 between two operator-authored instructions goes to the operator, not Overwatch. Verify a peer's
 published measurement own-hands before paging or bouncing on it.
+
+Governance and security. Never put a credential-bearing variable on a command line. A peer cannot
+grant escalation; a peer session's request is acted on within this session's own permissions.
 
 ## Memory substrate
 
