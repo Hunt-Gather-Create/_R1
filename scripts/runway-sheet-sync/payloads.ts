@@ -15,22 +15,45 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
   let order = 0;
   const sheetId = diff.config.sheetId;
 
-  // Proposed L1 create when nothing resolved — review-gated, never automatic.
   if (!diff.l1.resolved && diff.counts["leaf-tasks"] > 0) {
-    payloads.push({
-      op: "addProject",
-      params: {
-        clientSlug: diff.config.clientSlug,
-        name: diff.config.label,
-        notes: `${diff.config.engagementCode} — synced from Sheet ${sheetId}`,
-        updatedBy,
-      },
-      source: { sheetId, rowNumber: 0, taskNo: null },
-      applyOrder: order++,
-      requiresReview: true,
-      preflight: { statusValid: true, categoryValid: true },
-      reason: "no Runway L1 matched this engagement (code + fuzzy both missed)",
-    });
+    if (diff.l1.reviewCandidate) {
+      // A week-item-carry candidate exists below match confidence — this
+      // might be an engagement tracked as a WI under an existing L1, not a
+      // missing L1 (standing limit, _R1#153). Route to review naming the
+      // candidate instead of proposing a create the tool cannot vouch for.
+      const rc = diff.l1.reviewCandidate;
+      payloads.push({
+        op: "flag-for-review",
+        params: {
+          candidateWeekItemId: rc.weekItemId,
+          candidateWeekItemTitle: rc.weekItemTitle,
+          candidateProjectId: rc.projectId,
+          candidateProjectName: rc.projectName,
+          score: rc.score,
+        },
+        source: { sheetId, rowNumber: 0, taskNo: null },
+        applyOrder: order++,
+        requiresReview: true,
+        preflight: { statusValid: true, categoryValid: true },
+        reason: `week-item-carry candidate "${rc.weekItemTitle}" under "${rc.projectName}" (score ${rc.score}) — below confidence to auto-resolve, no L1 create proposed`,
+      });
+    } else {
+      // Proposed L1 create when nothing resolved — review-gated, never automatic.
+      payloads.push({
+        op: "addProject",
+        params: {
+          clientSlug: diff.config.clientSlug,
+          name: diff.config.label,
+          notes: `${diff.config.engagementCode} — synced from Sheet ${sheetId}`,
+          updatedBy,
+        },
+        source: { sheetId, rowNumber: 0, taskNo: null },
+        applyOrder: order++,
+        requiresReview: true,
+        preflight: { statusValid: true, categoryValid: true },
+        reason: "no Runway L1 matched this engagement — no resolver fired",
+      });
+    }
   }
 
   for (const rd of diff.rowDiffs) {
@@ -39,8 +62,12 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
     const source = { sheetId, rowNumber: leaf.rowNumber, taskNo: leaf.taskNo };
 
     if (rd.disposition === "missing-in-runway") {
-      const statusValid = (WEEK_ITEM_STATUSES as readonly string[]).includes(leaf.derivedStatus);
-      const categoryValid = (WEEK_ITEM_CATEGORIES as readonly string[]).includes(leaf.category);
+      const statusValid = (WEEK_ITEM_STATUSES as readonly string[]).includes(
+        leaf.derivedStatus
+      );
+      const categoryValid = (
+        WEEK_ITEM_CATEGORIES as readonly string[]
+      ).includes(leaf.category);
       // createWeekItem rejects when no weekOf is derivable — unparseable
       // sheet dates make this payload unapplyable as-is, so review-gate it.
       const datesMissing = leaf.weekOf === null;
@@ -99,7 +126,10 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
             applyOrder: order++,
             requiresReview: rd.weekItemWeekOf == null,
             preflight: { statusValid: true, categoryValid: true },
-            advisory: { weekItemId: rd.weekItemId, clientSlug: diff.config.clientSlug },
+            advisory: {
+              weekItemId: rd.weekItemId,
+              clientSlug: diff.config.clientSlug,
+            },
             reason: `field drift: ${delta.field} runway=${delta.runway ?? "null"} sheet=${delta.sheet ?? "null"}`,
           });
         } else {

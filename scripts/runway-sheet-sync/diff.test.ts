@@ -60,14 +60,66 @@ function emptyLedger(): Ledger {
 const BUNDLE: RunwayClientBundle = {
   client: { id: "cl_1", slug: "acme", name: "Acme" },
   projects: [
-    { id: "p_widget", name: "Widget Refresh", status: "in-progress", category: null, notes: "ACM-2601-01 SOW" },
-    { id: "p_other", name: "Brand Guidelines", status: "in-progress", category: null, notes: null },
+    {
+      id: "p_widget",
+      name: "Widget Refresh",
+      status: "in-progress",
+      category: null,
+      notes: "ACM-2601-01 SOW",
+    },
+    {
+      id: "p_other",
+      name: "Brand Guidelines",
+      status: "in-progress",
+      category: null,
+      notes: null,
+    },
   ],
   weekItems: [
-    { id: "wi_kick", projectId: "p_widget", title: "Kickoff call", weekOf: "2026-06-01", startDate: "2026-06-01", endDate: "2026-06-01", status: "completed", category: "kickoff", notes: null },
-    { id: "wi_comps", projectId: "p_widget", title: "Comps", weekOf: "2026-06-01", startDate: "2026-06-02", endDate: "2026-06-04", status: "blocked", category: "delivery", notes: null },
-    { id: "wi_hand", projectId: "p_widget", title: "Hand-created legacy item", weekOf: "2026-06-08", startDate: null, endDate: null, status: null, category: null, notes: null },
-    { id: "wi_othr", projectId: "p_other", title: "Logo pass", weekOf: "2026-06-01", startDate: null, endDate: null, status: null, category: null, notes: null },
+    {
+      id: "wi_kick",
+      projectId: "p_widget",
+      title: "Kickoff call",
+      weekOf: "2026-06-01",
+      startDate: "2026-06-01",
+      endDate: "2026-06-01",
+      status: "completed",
+      category: "kickoff",
+      notes: null,
+    },
+    {
+      id: "wi_comps",
+      projectId: "p_widget",
+      title: "Comps",
+      weekOf: "2026-06-01",
+      startDate: "2026-06-02",
+      endDate: "2026-06-04",
+      status: "blocked",
+      category: "delivery",
+      notes: null,
+    },
+    {
+      id: "wi_hand",
+      projectId: "p_widget",
+      title: "Hand-created legacy item",
+      weekOf: "2026-06-08",
+      startDate: null,
+      endDate: null,
+      status: null,
+      category: null,
+      notes: null,
+    },
+    {
+      id: "wi_othr",
+      projectId: "p_other",
+      title: "Logo pass",
+      weekOf: "2026-06-01",
+      startDate: null,
+      endDate: null,
+      status: null,
+      category: null,
+      notes: null,
+    },
   ],
 };
 
@@ -85,7 +137,15 @@ describe("resolveL1", () => {
     parsed.meta.codeDrift = true;
     const drifted: RunwayClientBundle = {
       ...BUNDLE,
-      projects: [{ id: "p_drift", name: "Old Code Project", status: null, category: null, notes: "ACM-2600-99" }],
+      projects: [
+        {
+          id: "p_drift",
+          name: "Old Code Project",
+          status: null,
+          category: null,
+          notes: "ACM-2600-99",
+        },
+      ],
     };
     const res = resolveL1(parsed, drifted);
     expect(res.resolved).toBe(true);
@@ -96,7 +156,15 @@ describe("resolveL1", () => {
   it("falls back to fuzzy title, unresolved below threshold", () => {
     const noCode: RunwayClientBundle = {
       ...BUNDLE,
-      projects: [{ id: "p_x", name: "Totally Unrelated Thing", status: null, category: null, notes: null }],
+      projects: [
+        {
+          id: "p_x",
+          name: "Totally Unrelated Thing",
+          status: null,
+          category: null,
+          notes: null,
+        },
+      ],
     };
     const res = resolveL1(parsedWith([]), noCode);
     expect(res.resolved).toBe(false);
@@ -104,15 +172,383 @@ describe("resolveL1", () => {
   });
 });
 
+/**
+ * _R1#153 — resolveL1 as an ordered list of named resolvers: engagement-code,
+ * ledger-identity, project-name fuzzy, week-item-carry. Each fixture below is
+ * built so only its target resolver fires; every earlier resolver in the
+ * list must miss, or that resolver would fire first and mask the one under
+ * test. Comments on each fixture name what the OTHER resolvers see and why
+ * they miss.
+ */
+describe("resolveL1 — named resolvers (#153)", () => {
+  function parsedFor(
+    config: SheetConfig,
+    meta: Partial<ParsedSheet["meta"]> = {}
+  ): ParsedSheet {
+    return {
+      config,
+      meta: {
+        bannerVariant: "A",
+        engagementTitle: config.label,
+        bannerCode: config.engagementCode,
+        codeDrift: false,
+        headerRowNumber: 10,
+        ...meta,
+      },
+      rows: [],
+      leafTasks: [],
+      flags: [],
+    };
+  }
+
+  it("resolver 1, engagement-code: fires on a code match nothing else could solve", () => {
+    const config: SheetConfig = {
+      sheetId: "s-code",
+      clientSlug: "acme",
+      engagementCode: "ACM-9001-01",
+      label: "Totally Different Words Nobody Fuzzy Matches",
+    };
+    const bundle: RunwayClientBundle = {
+      client: { id: "cl_1", slug: "acme", name: "Acme" },
+      projects: [
+        {
+          id: "p_code",
+          name: "Random Name Co",
+          status: null,
+          category: null,
+          notes: "ACM-9001-01 SOW",
+        },
+      ],
+      weekItems: [
+        {
+          id: "wi_unrelated",
+          projectId: "p_code",
+          title: "Unrelated week item title",
+          weekOf: null,
+          startDate: null,
+          endDate: null,
+          status: null,
+          category: null,
+          notes: null,
+        },
+      ],
+    };
+    const res = resolveL1(parsedFor(config), bundle, emptyLedger());
+    expect(res.resolved).toBe(true);
+    expect(res.method).toBe("code");
+    expect(res.projectId).toBe("p_code");
+  });
+
+  it("resolver 2, ledger-identity: fires on an L1 the ledger already banked, code and fuzzy both miss", () => {
+    const config: SheetConfig = {
+      sheetId: "s-ledger",
+      clientSlug: "acme",
+      engagementCode: "ZZZ-0000-00",
+      label: "Nonmatching Engagement Words",
+    };
+    const bundle: RunwayClientBundle = {
+      client: { id: "cl_1", slug: "acme", name: "Acme" },
+      projects: [
+        {
+          id: "p_banked",
+          name: "Banked Project Alpha",
+          status: null,
+          category: null,
+          notes: null,
+        },
+      ],
+      weekItems: [
+        {
+          id: "wi_banked",
+          projectId: "p_banked",
+          title: "Some unrelated week item",
+          weekOf: null,
+          startDate: null,
+          endDate: null,
+          status: null,
+          category: null,
+          notes: null,
+        },
+      ],
+    };
+    const ledger: Ledger = {
+      sheetId: config.sheetId,
+      updatedAt: "",
+      lastRunId: "run-1",
+      entries: {
+        "1.1": {
+          key: "1.1",
+          taskNo: "1.1",
+          title: "Some unrelated week item",
+          rowNumber: 12,
+          weekItemId: "wi_banked",
+          state: "matched",
+          lastSeenRunId: "run-1",
+          lastSeenContentHash: null,
+        },
+      },
+    };
+    const res = resolveL1(parsedFor(config), bundle, ledger);
+    expect(res.resolved).toBe(true);
+    expect(res.method).toBe("ledger-identity");
+    expect(res.projectId).toBe("p_banked");
+  });
+
+  it("resolver 3, project-name fuzzy: fires on a project-name match, no week item carries the title", () => {
+    const config: SheetConfig = {
+      sheetId: "s-fuzzy",
+      clientSlug: "acme",
+      engagementCode: "ZZZ-0000-00",
+      label: "Brand Refresh Sprint",
+    };
+    const bundle: RunwayClientBundle = {
+      client: { id: "cl_1", slug: "acme", name: "Acme" },
+      projects: [
+        {
+          id: "p_brand",
+          name: "Brand Refresh Sprint",
+          status: null,
+          category: null,
+          notes: null,
+        },
+      ],
+      weekItems: [
+        {
+          id: "wi_unrelated",
+          projectId: "p_brand",
+          title: "Unrelated week item title",
+          weekOf: null,
+          startDate: null,
+          endDate: null,
+          status: null,
+          category: null,
+          notes: null,
+        },
+      ],
+    };
+    const res = resolveL1(parsedFor(config), bundle, emptyLedger());
+    expect(res.resolved).toBe(true);
+    expect(res.method).toBe("fuzzy");
+    expect(res.projectId).toBe("p_brand");
+  });
+
+  it("resolver 4, week-item-carry: fires when the engagement identity matches a week item title, not a project name", () => {
+    const config: SheetConfig = {
+      sheetId: "s-carry",
+      clientSlug: "acme",
+      engagementCode: "ZZZ-0000-00",
+      label: "Phase 2.1 Homepage",
+    };
+    const bundle: RunwayClientBundle = {
+      client: { id: "cl_1", slug: "acme", name: "Acme" },
+      projects: [
+        {
+          id: "p_revamp",
+          name: "Website Revamp",
+          status: null,
+          category: null,
+          notes: null,
+        },
+      ],
+      weekItems: [
+        {
+          id: "wi_phase21",
+          projectId: "p_revamp",
+          title: "Phase 2.1 Homepage",
+          weekOf: null,
+          startDate: null,
+          endDate: null,
+          status: null,
+          category: null,
+          notes: null,
+        },
+      ],
+    };
+    const res = resolveL1(parsedFor(config), bundle, emptyLedger());
+    expect(res.resolved).toBe(true);
+    expect(res.method).toBe("week-item-carry");
+    expect(res.projectId).toBe("p_revamp");
+    expect(res.weekItemCarry?.weekItemId).toBe("wi_phase21");
+  });
+
+  it("week-item-carry candidate below match threshold routes to review, does not resolve", () => {
+    const config: SheetConfig = {
+      sheetId: "s-carry-weak",
+      clientSlug: "acme",
+      engagementCode: "ZZZ-0000-00",
+      label: "Phase 2.1 Homepage",
+    };
+    const bundle: RunwayClientBundle = {
+      client: { id: "cl_1", slug: "acme", name: "Acme" },
+      // "Homepage Phase Revision" scores 0.615 against "Phase 2.1 Homepage" —
+      // above the 0.55 candidate floor, below the 0.75 match floor.
+      projects: [
+        {
+          id: "p_revamp",
+          name: "Website Revamp",
+          status: null,
+          category: null,
+          notes: null,
+        },
+      ],
+      weekItems: [
+        {
+          id: "wi_weak",
+          projectId: "p_revamp",
+          title: "Homepage Phase Revision",
+          weekOf: null,
+          startDate: null,
+          endDate: null,
+          status: null,
+          category: null,
+          notes: null,
+        },
+      ],
+    };
+    const res = resolveL1(parsedFor(config), bundle, emptyLedger());
+    expect(res.resolved).toBe(false);
+    expect(res.reviewCandidate?.weekItemId).toBe("wi_weak");
+    expect(res.reviewCandidate?.projectId).toBe("p_revamp");
+  });
+
+  it("LPPC 2604-01 fixture: resolves via week-item-carry, does not propose a new project", () => {
+    const config: SheetConfig = {
+      sheetId: "lppc-2604-01",
+      clientSlug: "lppc",
+      engagementCode: "LPP-2604-01",
+      label: "Phase 2.1 Homepage",
+    };
+    const parsed = parsedFor(config, {
+      bannerCode: "LPP-2603-01",
+      codeDrift: true,
+    });
+    const bundle: RunwayClientBundle = {
+      client: { id: "cl_lppc", slug: "lppc", name: "LPPC" },
+      projects: [
+        {
+          id: "p_revamp",
+          name: "Website Revamp",
+          status: "in-progress",
+          category: null,
+          notes: null,
+        },
+      ],
+      weekItems: [
+        {
+          id: "wi_phase21",
+          projectId: "p_revamp",
+          title: "Phase 2.1 Homepage",
+          weekOf: "2026-06-01",
+          startDate: null,
+          endDate: null,
+          status: "scheduled",
+          category: null,
+          notes: null,
+        },
+      ],
+    };
+    const diff = diffSheet(parsed, bundle, emptyLedger(), "run-lppc");
+    expect(diff.l1.resolved).toBe(true);
+    expect(diff.l1.projectId).toBe("p_revamp");
+    expect(diff.l1.method).toBe("week-item-carry");
+    const payloads = buildPayloads(diff, "run-lppc");
+    expect(payloads.some((p) => p.op === "addProject")).toBe(false);
+  });
+
+  it("Soundly RX Card fixture: no resolver fires, report reads 'no resolver fired', create still proposed", () => {
+    const config: SheetConfig = {
+      sheetId: "soundly-rx-card",
+      clientSlug: "soundly",
+      engagementCode: "SND-2602-01",
+      label: "RX Card Rebuild",
+    };
+    const parsed = parsedFor(config);
+    parsed.leafTasks = [
+      {
+        rowNumber: 12,
+        taskNo: "1.1",
+        rawLabel: "1.1 Kickoff",
+        title: "Kickoff",
+        resolvedTitle: "Kickoff",
+        startDate: "2026-06-01",
+        endDate: "2026-06-01",
+        weekOf: "2026-06-01",
+        completed: false,
+        derivedStatus: "scheduled",
+        category: "kickoff",
+        section: null,
+        priority: null,
+        predecessorRow: null,
+        lag: null,
+        resource: null,
+        notes: "[Sheet 1.1]",
+        notesTruncated: false,
+        sortOrder: 0,
+      },
+    ];
+    const bundle: RunwayClientBundle = {
+      client: { id: "cl_soundly", slug: "soundly", name: "Soundly" },
+      projects: [
+        {
+          id: "p_a",
+          name: "AARP Campaign",
+          status: null,
+          category: null,
+          notes: null,
+        },
+        {
+          id: "p_b",
+          name: "Retail Signage",
+          status: null,
+          category: null,
+          notes: null,
+        },
+      ],
+      weekItems: [
+        {
+          id: "wi_x",
+          projectId: "p_a",
+          title: "Kickoff call",
+          weekOf: null,
+          startDate: null,
+          endDate: null,
+          status: null,
+          category: null,
+          notes: null,
+        },
+      ],
+    };
+    const diff = diffSheet(parsed, bundle, emptyLedger(), "run-soundly");
+    expect(diff.l1.resolved).toBe(false);
+    expect(diff.l1.method).toBe("none");
+    expect(diff.l1.reviewCandidate).toBeUndefined();
+    expect(diff.l1.evidence?.map((e) => e.resolver).sort()).toEqual(
+      ["code", "fuzzy", "ledger-identity", "week-item-carry"].sort()
+    );
+    const { report } = renderReport(diff, buildPayloads(diff, "run-soundly"));
+    expect(report).toContain("no resolver fired");
+    const payloads = buildPayloads(diff, "run-soundly");
+    expect(payloads.some((p) => p.op === "addProject")).toBe(true);
+  });
+});
+
 describe("statusDelta (§2.4 update policy)", () => {
   it("never overwrites protected human-set statuses", () => {
-    expect(statusDelta("scheduled", "blocked")?.action).toBe("protected-no-write");
-    expect(statusDelta("completed", "at-risk")?.action).toBe("protected-no-write");
-    expect(statusDelta("completed", "in-progress")?.action).toBe("protected-no-write");
+    expect(statusDelta("scheduled", "blocked")?.action).toBe(
+      "protected-no-write"
+    );
+    expect(statusDelta("completed", "at-risk")?.action).toBe(
+      "protected-no-write"
+    );
+    expect(statusDelta("completed", "in-progress")?.action).toBe(
+      "protected-no-write"
+    );
   });
 
   it("flags completed-revert instead of writing", () => {
-    expect(statusDelta("scheduled", "completed")?.action).toBe("flag-for-review");
+    expect(statusDelta("scheduled", "completed")?.action).toBe(
+      "flag-for-review"
+    );
   });
 
   it("promotes scheduled → completed as the only safe write", () => {
@@ -130,8 +566,23 @@ describe("diffSheet", () => {
   it("buckets matched / mismatched / missing and finds orphans", () => {
     const tasks = [
       leaf({}), // exact title match to wi_kick, but derived scheduled vs completed → flag
-      leaf({ rowNumber: 14, taskNo: "2.1", title: "Comps", resolvedTitle: "Comps", startDate: "2026-06-02", endDate: "2026-06-05", weekOf: "2026-06-01", sortOrder: 1 }), // endDate drift but blocked → protected
-      leaf({ rowNumber: 18, taskNo: "3.1", title: "Brand new task", resolvedTitle: "Brand new task", sortOrder: 2 }),
+      leaf({
+        rowNumber: 14,
+        taskNo: "2.1",
+        title: "Comps",
+        resolvedTitle: "Comps",
+        startDate: "2026-06-02",
+        endDate: "2026-06-05",
+        weekOf: "2026-06-01",
+        sortOrder: 1,
+      }), // endDate drift but blocked → protected
+      leaf({
+        rowNumber: 18,
+        taskNo: "3.1",
+        title: "Brand new task",
+        resolvedTitle: "Brand new task",
+        sortOrder: 2,
+      }),
     ];
     const ledger = emptyLedger();
     // reconcile ledger first (normally done by CLI)
@@ -141,7 +592,10 @@ describe("diffSheet", () => {
 
     const kick = diff.rowDiffs.find((r) => r.leaf?.taskNo === "1.1")!;
     expect(kick.disposition).toBe("mismatched-field");
-    expect(kick.deltas![0]).toMatchObject({ field: "status", action: "flag-for-review" });
+    expect(kick.deltas![0]).toMatchObject({
+      field: "status",
+      action: "flag-for-review",
+    });
 
     const comps = diff.rowDiffs.find((r) => r.leaf?.taskNo === "2.1")!;
     expect(comps.disposition).toBe("mismatched-field");
@@ -159,7 +613,13 @@ describe("diffSheet", () => {
 
   it("never fuzzy-adopts a WI under a different L1 when the sheet's L1 is resolved", () => {
     // Only near-identical title lives under p_other; pool must stay L1-scoped.
-    const tasks = [leaf({ title: "Logo pass v2", resolvedTitle: "Logo pass v2", taskNo: "7.1" })];
+    const tasks = [
+      leaf({
+        title: "Logo pass v2",
+        resolvedTitle: "Logo pass v2",
+        taskNo: "7.1",
+      }),
+    ];
     const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
     const rd = diff.rowDiffs.find((r) => r.leaf)!;
     expect(rd.disposition).toBe("missing-in-runway");
@@ -170,23 +630,52 @@ describe("diffSheet", () => {
     const diff = diffSheet(parsedWith([]), BUNDLE, emptyLedger(), "run-1");
     expect(diff.orphans).toHaveLength(0);
     expect(diff.counts["runway-only-orphan"]).toBe(0);
-    expect(diff.flags.some((f) => f.includes("orphan analysis skipped (unfilled template)"))).toBe(true);
+    expect(
+      diff.flags.some((f) =>
+        f.includes("orphan analysis skipped (unfilled template)")
+      )
+    ).toBe(true);
   });
 
   it("emits FORWARD ordering: endDate delta before startDate delta", () => {
     const tasks = [
-      leaf({ title: "Kickoff call", resolvedTitle: "Kickoff call", startDate: "2026-06-03", endDate: "2026-06-04", weekOf: "2026-06-01", completed: true, derivedStatus: "completed" }),
+      leaf({
+        title: "Kickoff call",
+        resolvedTitle: "Kickoff call",
+        startDate: "2026-06-03",
+        endDate: "2026-06-04",
+        weekOf: "2026-06-01",
+        completed: true,
+        derivedStatus: "completed",
+      }),
     ];
     const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
     const kick = diff.rowDiffs.find((r) => r.leaf)!;
-    const dateFields = kick.deltas!.filter((d) => d.field.endsWith("Date")).map((d) => d.field);
+    const dateFields = kick
+      .deltas!.filter((d) => d.field.endsWith("Date"))
+      .map((d) => d.field);
     expect(dateFields).toEqual(["endDate", "startDate"]);
   });
 
   it("flags mid-week collision under a different L1 without adopting", () => {
-    const tasks = [leaf({ title: "Logo pass", resolvedTitle: "Logo pass", taskNo: "5.1", weekOf: "2026-06-01" })];
+    const tasks = [
+      leaf({
+        title: "Logo pass",
+        resolvedTitle: "Logo pass",
+        taskNo: "5.1",
+        weekOf: "2026-06-01",
+      }),
+    ];
     const ledger = emptyLedger();
-    ledger.entries["5.1"] = { key: "5.1", taskNo: "5.1", title: "Logo pass", rowNumber: 12, weekItemId: null, state: "pending-create", lastSeenRunId: "run-0" };
+    ledger.entries["5.1"] = {
+      key: "5.1",
+      taskNo: "5.1",
+      title: "Logo pass",
+      rowNumber: 12,
+      weekItemId: null,
+      state: "pending-create",
+      lastSeenRunId: "run-0",
+    };
     const diff = diffSheet(parsedWith(tasks), BUNDLE, ledger, "run-1");
     const rd = diff.rowDiffs.find((r) => r.leaf)!;
     expect(rd.disposition).toBe("missing-in-runway");
@@ -196,9 +685,22 @@ describe("diffSheet", () => {
   });
 
   it("uses ledger-banked WI ids before fuzzy (ledger-first)", () => {
-    const tasks = [leaf({ title: "Renamed beyond recognition", resolvedTitle: "Renamed beyond recognition" })];
+    const tasks = [
+      leaf({
+        title: "Renamed beyond recognition",
+        resolvedTitle: "Renamed beyond recognition",
+      }),
+    ];
     const ledger = emptyLedger();
-    ledger.entries["1.1"] = { key: "1.1", taskNo: "1.1", title: "Kickoff call", rowNumber: 12, weekItemId: "wi_kick", state: "matched", lastSeenRunId: "run-0" };
+    ledger.entries["1.1"] = {
+      key: "1.1",
+      taskNo: "1.1",
+      title: "Kickoff call",
+      rowNumber: 12,
+      weekItemId: "wi_kick",
+      state: "matched",
+      lastSeenRunId: "run-0",
+    };
     const diff = diffSheet(parsedWith(tasks), BUNDLE, ledger, "run-1");
     const rd = diff.rowDiffs.find((r) => r.leaf)!;
     expect(rd.weekItemId).toBe("wi_kick");
@@ -208,7 +710,13 @@ describe("diffSheet", () => {
 
 describe("buildPayloads", () => {
   it("emits self-contained createWeekItem payloads with landmines pre-applied", () => {
-    const tasks = [leaf({ title: "Brand new task", resolvedTitle: "Brand new task [Design]", taskNo: "3.1" })];
+    const tasks = [
+      leaf({
+        title: "Brand new task",
+        resolvedTitle: "Brand new task [Design]",
+        taskNo: "3.1",
+      }),
+    ];
     const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
     const payloads = buildPayloads(diff, "run-1");
     expect(payloads).toHaveLength(1);
@@ -229,7 +737,12 @@ describe("buildPayloads", () => {
 
   it("proposes a review-gated addProject when L1 unresolved", () => {
     const noL1: RunwayClientBundle = { ...BUNDLE, projects: [], weekItems: [] };
-    const diff = diffSheet(parsedWith([leaf({})]), noL1, emptyLedger(), "run-1");
+    const diff = diffSheet(
+      parsedWith([leaf({})]),
+      noL1,
+      emptyLedger(),
+      "run-1"
+    );
     const payloads = buildPayloads(diff, "run-1");
     expect(payloads[0].op).toBe("addProject");
     expect(payloads[0].requiresReview).toBe(true);
@@ -237,7 +750,15 @@ describe("buildPayloads", () => {
 
   it("splits mismatches into writes and review flags per §2.4", () => {
     const tasks = [
-      leaf({ rowNumber: 14, taskNo: "2.1", title: "Comps", resolvedTitle: "Comps", startDate: "2026-06-02", endDate: "2026-06-05", weekOf: "2026-06-01" }),
+      leaf({
+        rowNumber: 14,
+        taskNo: "2.1",
+        title: "Comps",
+        resolvedTitle: "Comps",
+        startDate: "2026-06-02",
+        endDate: "2026-06-05",
+        weekOf: "2026-06-01",
+      }),
     ];
     const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
     const payloads = buildPayloads(diff, "run-1");
@@ -251,30 +772,62 @@ describe("buildPayloads", () => {
   it("shapes update params EXACTLY as UpdateWeekItemFieldParams with the RUNWAY row's weekOf", () => {
     // wi_comps lives in weekOf 2026-06-01; sheet task drifted to next week.
     const tasks = [
-      leaf({ rowNumber: 14, taskNo: "2.1", title: "Comps", resolvedTitle: "Comps", startDate: "2026-06-09", endDate: "2026-06-12", weekOf: "2026-06-08", completed: true, derivedStatus: "completed" }),
+      leaf({
+        rowNumber: 14,
+        taskNo: "2.1",
+        title: "Comps",
+        resolvedTitle: "Comps",
+        startDate: "2026-06-09",
+        endDate: "2026-06-12",
+        weekOf: "2026-06-08",
+        completed: true,
+        derivedStatus: "completed",
+      }),
     ];
     const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
-    const update = buildPayloads(diff, "run-1").find((p) => p.op === "updateWeekItemField")!;
+    const update = buildPayloads(diff, "run-1").find(
+      (p) => p.op === "updateWeekItemField"
+    )!;
     // Helper looks up by (weekOf, weekItemTitle) against the Runway row.
     expect(update.params.weekOf).toBe("2026-06-01"); // NOT the sheet's 2026-06-08
     expect(update.params.weekItemTitle).toBe("Comps");
-    expect(Object.keys(update.params).sort()).toEqual(["field", "newValue", "updatedBy", "weekItemTitle", "weekOf"]);
+    expect(Object.keys(update.params).sort()).toEqual([
+      "field",
+      "newValue",
+      "updatedBy",
+      "weekItemTitle",
+      "weekOf",
+    ]);
     expect(update.advisory).toMatchObject({ weekItemId: "wi_comps" });
   });
 
   it("review-gates create payloads with unparseable dates (no weekOf derivable)", () => {
-    const tasks = [leaf({ title: "Dateless task", resolvedTitle: "Dateless task", startDate: null, endDate: null, weekOf: null })];
+    const tasks = [
+      leaf({
+        title: "Dateless task",
+        resolvedTitle: "Dateless task",
+        startDate: null,
+        endDate: null,
+        weekOf: null,
+      }),
+    ];
     const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
-    const create = buildPayloads(diff, "run-1").find((p) => p.op === "createWeekItem")!;
+    const create = buildPayloads(diff, "run-1").find(
+      (p) => p.op === "createWeekItem"
+    )!;
     expect(create.requiresReview).toBe(true);
     expect(create.preflight.datesMissing).toBe(true);
     expect(create.reason).toContain("dates unparseable");
   });
 
   it("keeps sortOrder advisory, never a createWeekItem param", () => {
-    const tasks = [leaf({ title: "Brand new task", resolvedTitle: "Brand new task" })];
+    const tasks = [
+      leaf({ title: "Brand new task", resolvedTitle: "Brand new task" }),
+    ];
     const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
-    const create = buildPayloads(diff, "run-1").find((p) => p.op === "createWeekItem")!;
+    const create = buildPayloads(diff, "run-1").find(
+      (p) => p.op === "createWeekItem"
+    )!;
     expect(create.params.sortOrder).toBeUndefined();
     expect(create.advisory).toMatchObject({ sortOrder: 0 });
   });
@@ -282,19 +835,45 @@ describe("buildPayloads", () => {
   it("brands canceled-status divergence with a terminal-state reason", () => {
     const canceledBundle: RunwayClientBundle = {
       ...BUNDLE,
-      weekItems: [{ id: "wi_c", projectId: "p_widget", title: "Kickoff call", weekOf: "2026-06-01", startDate: "2026-06-01", endDate: "2026-06-01", status: "canceled", category: null, notes: null }],
+      weekItems: [
+        {
+          id: "wi_c",
+          projectId: "p_widget",
+          title: "Kickoff call",
+          weekOf: "2026-06-01",
+          startDate: "2026-06-01",
+          endDate: "2026-06-01",
+          status: "canceled",
+          category: null,
+          notes: null,
+        },
+      ],
     };
     const tasks = [leaf({ completed: true, derivedStatus: "completed" })];
-    const diff = diffSheet(parsedWith(tasks), canceledBundle, emptyLedger(), "run-1");
-    const flag = buildPayloads(diff, "run-1").find((p) => p.op === "flag-for-review")!;
+    const diff = diffSheet(
+      parsedWith(tasks),
+      canceledBundle,
+      emptyLedger(),
+      "run-1"
+    );
+    const flag = buildPayloads(diff, "run-1").find(
+      (p) => p.op === "flag-for-review"
+    )!;
     expect(flag.reason).toContain("terminal-state divergence");
   });
 });
 
 describe("renderReport", () => {
   it("includes the first-run expectation note when zero matches", () => {
-    const tasks = [leaf({ title: "Nothing like prod", resolvedTitle: "Nothing like prod" })];
-    const diff = diffSheet(parsedWith(tasks), { ...BUNDLE, weekItems: [] }, emptyLedger(), "run-1");
+    const tasks = [
+      leaf({ title: "Nothing like prod", resolvedTitle: "Nothing like prod" }),
+    ];
+    const diff = diffSheet(
+      parsedWith(tasks),
+      { ...BUNDLE, weekItems: [] },
+      emptyLedger(),
+      "run-1"
+    );
     const { report, error } = renderReport(diff, buildPayloads(diff, "run-1"));
     expect(report).toContain("Expected on a first run");
     expect(report).toContain("missing-in-runway");
@@ -302,7 +881,12 @@ describe("renderReport", () => {
   });
 
   it("renders orphans with the never-delete policy note", () => {
-    const diff = diffSheet(parsedWith([leaf({})]), BUNDLE, emptyLedger(), "run-1");
+    const diff = diffSheet(
+      parsedWith([leaf({})]),
+      BUNDLE,
+      emptyLedger(),
+      "run-1"
+    );
     const { report } = renderReport(diff, []);
     expect(report).toContain("Hand-created legacy item");
     expect(report).toContain("never deletes");
