@@ -22,8 +22,12 @@ the file; ruling received:
   where upstream did not already carry it.
 - Keep upstream's hygiene-guard config steps and worktree-removal rule; they are rules, not
   history, so they stay in `CLAUDE.md` core, not the orientation doc.
-- Match this branch's nine-section WS1 order in the final `CLAUDE.md`, since upstream's own
-  order differs from the standard and the fleet health check reads section order.
+- Match this branch's eight-heading WS1 order in the final `CLAUDE.md`, since upstream's own
+  order differs from the standard and the fleet health check reads section order. Gate-1 caught
+  a wording slip here: an earlier draft of this table and the dev's own report both said "nine
+  sections", but the "own" and "not own" sections are merged into one heading, "What you own,
+  what you do not own", matching the Overwatch exemplar, so the core body has eight `##` headings,
+  not nine. Corrected per the second bounce.
 - Two-block survival table: block 1 traces upstream's 213 lines, block 2 catches any sentence
   the 261-line fork copy carried that upstream's independent rewrite dropped, so nothing the fork
   carried vanishes silently.
@@ -72,13 +76,14 @@ sometimes trimmed in wording but not gone.
 |---|---|---|---|
 | "Dev seat model routing, Runway-TP plus CC": base session runs Opus and orchestrates only, building and analysis run on Sonnet, Sonnet 4.6 is the ceiling, ~200k context per task, never Haiku for judgment work, locked 2026-08-13, pointer to `docs/planning/whats-changed-2026-08-13.md` | Absent from upstream `CLAUDE.md`, `tp-orientation.md`, and `git-hooks-sop-reference.md`; confirmed by grep for "Opus", "Sonnet 4.6", and the pointer doc's filename across all three | KEPT, restored | Core operating principle 5. This is live fleet policy governing which model this seat and CC run on, distinct from the product-runtime AI cost control, D-05, and from the global model-tiering-for-delegated-work block; its detail doc still exists in the upstream tree, so it is not stale. Upstream's rewrite dropped it without a pointer and that is treated as an omission, not a deliberate policy reversal, since no reasoning for dropping it appears anywhere upstream |
 | All other fork-only wording, e.g. the old file's more verbose gloss on each post-build pipeline step, the "relay plus an attestation about the relay is still a relay" line, the "why this is here and not memory" framing, the reporting-line conflict history, the bot-liveness proof detail | Present upstream, in `tp-orientation.md`, sometimes trimmed | KEPT or MOVED, no action needed | Confirmed present in upstream's own orientation doc at the lines cited in block 1 above; not duplicated here since block 1 already traces them from the upstream side |
+| Old fork line 100: "All three verified 2026-08-27 with `buzz channels members --channel 46290a49-...`... Re-verify from that command, never from memory or from another seat's copy." Gate-1 caught this on the second pass, it was silent here on the first bounce's redo | Present upstream, `tp-orientation.md`'s dispatch-routing-why section, but with the 2026-08-27 verification date dropped; the re-verify instruction and the exact command survive verbatim | DROPPED, named here, the date only | A dated one-time verification stamp, not a rule; the load-bearing instruction is "re-verify from that command, never from memory", which upstream's rewrite kept. The date itself has no ongoing force once the seat table it verified is gone from `CLAUDE.md` in favor of the registry pointer, see the fix logged just below |
 
 ## Content this branch added beyond upstream's orientation doc
 
 Reused `docs/runway/tp-orientation.md` as instructed and appended three sections upstream's copy
 lacked, each carried over from this branch's now-dropped `docs/standards/runway-orientation.md`:
 "Navigation map" and "Commands", both needed because upstream's `CLAUDE.md` puts this content in
-core while this branch's nine-section order does not have a slot for it there, so it moves to
+core while this branch's eight-heading order does not have a slot for it there, so it moves to
 orientation; and "Post-build pipeline", same reasoning. Also appended "Memory rules, this repo's
 local knowledge store", the Scripts/Patterns/Gotchas heading convention, which upstream's rewrite
 trimmed to one line in `CLAUDE.md` itself and did not carry into its orientation doc at the same
@@ -92,3 +97,16 @@ commands, post-build pipeline, and the memory-rules heading convention. This bra
 `docs/standards/runway-orientation.md` and its content are retired, superseded by the reused
 upstream doc per the bounce ruling. One restored rule, block 2's dev-seat model routing
 principle, that upstream's independent rewrite had silently dropped.
+
+## Second gate-1 bounce, two fixes
+
+Gate-1 read the second pass clean on base, coverage, the restored routing rule, the Runway rules,
+mirror, and count, then caught two small things. One, load-bearing: `tp-orientation.md`'s
+dispatch-routing-why section still said "The seat table in CLAUDE.md is the source of truth for
+the three pubkeys and the room", a sentence this branch's own edit to `CLAUDE.md` made false,
+since the table moved out in favor of the registry pointer back on the first pass. Reworded to
+name `etc/fleet-seat-registry.json` at agencyos-operational-efficiency as the source of truth,
+kept the re-verify command unchanged. Two: block 2 above was silent on the old fork's
+2026-08-27 verification date at old line 100, now added as a named drop. Also corrected this
+table's own "nine-section" wording to "eight" throughout, since "What you own, what you do not
+own" is one merged heading, matching the Overwatch exemplar, not two.
