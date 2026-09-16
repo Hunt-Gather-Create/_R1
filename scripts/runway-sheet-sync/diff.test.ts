@@ -173,14 +173,14 @@ describe("resolveL1", () => {
 });
 
 /**
- * _R1#153 — resolveL1 as an ordered list of named resolvers: engagement-code,
+ * _R1#153: resolveL1 as an ordered list of named resolvers: engagement-code,
  * ledger-identity, project-name fuzzy, week-item-carry. Each fixture below is
  * built so only its target resolver fires; every earlier resolver in the
  * list must miss, or that resolver would fire first and mask the one under
  * test. Comments on each fixture name what the OTHER resolvers see and why
  * they miss.
  */
-describe("resolveL1 — named resolvers (#153)", () => {
+describe("resolveL1: named resolvers (#153)", () => {
   function parsedFor(
     config: SheetConfig,
     meta: Partial<ParsedSheet["meta"]> = {}
@@ -380,7 +380,7 @@ describe("resolveL1 — named resolvers (#153)", () => {
     };
     const bundle: RunwayClientBundle = {
       client: { id: "cl_1", slug: "acme", name: "Acme" },
-      // "Homepage Phase Revision" scores 0.615 against "Phase 2.1 Homepage" —
+      // "Homepage Phase Revision" scores 0.615 against "Phase 2.1 Homepage":
       // above the 0.55 candidate floor, below the 0.75 match floor.
       projects: [
         {

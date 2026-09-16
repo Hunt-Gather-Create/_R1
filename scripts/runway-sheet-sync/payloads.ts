@@ -51,7 +51,7 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
         applyOrder: order++,
         requiresReview: true,
         preflight: { statusValid: true, categoryValid: true },
-        reason: "no Runway L1 matched this engagement — no resolver fired",
+        reason: "no Runway L1 matched this engagement, no resolver fired",
       });
     }
   }
