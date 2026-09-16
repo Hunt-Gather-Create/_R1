@@ -29,14 +29,14 @@ function l1ResolutionSummary(l1: DiffResult["l1"]): string {
   if (l1.reviewCandidate) {
     const rc = l1.reviewCandidate;
     return (
-      `**ROUTED TO REVIEW** — week-item-carry candidate "${rc.weekItemTitle}" (score ${rc.score}) ` +
-      `under "${rc.projectName}" — no L1 create proposed`
+      `**ROUTED TO REVIEW**: week-item-carry candidate "${rc.weekItemTitle}" (score ${rc.score}) ` +
+      `under "${rc.projectName}", no L1 create proposed`
     );
   }
   const evidence = (l1.evidence ?? [])
     .map((e) => `${e.resolver}: ${e.detail}`)
     .join("; ");
-  return `**UNRESOLVED — no resolver fired** (${evidence || "no evidence"}) — L1 create proposed in payloads`;
+  return `**UNRESOLVED: no resolver fired** (${evidence || "no evidence"}), L1 create proposed in payloads`;
 }
 
 export function renderReport(
@@ -136,7 +136,7 @@ export function renderReport(
     lines.push(`|---|---|---|---|`);
     for (const o of diff.orphans) {
       lines.push(
-        `| ${o.weekItemId} | ${o.title} | ${o.weekOf ?? "—"} | ${o.status ?? "—"} |`
+        `| ${o.weekItemId} | ${o.title} | ${o.weekOf ?? "-"} | ${o.status ?? "-"} |`
       );
     }
     lines.push("");

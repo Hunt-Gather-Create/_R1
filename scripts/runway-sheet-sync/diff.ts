@@ -146,7 +146,7 @@ function resolveByLedgerIdentity(
     detail:
       projectIds.size === 0
         ? `${bankedWiIds.length} banked week item(s), none found in the current bundle`
-        : `${bankedWiIds.length} banked week item(s) resolve to ${projectIds.size} distinct projects — no single L1`,
+        : `${bankedWiIds.length} banked week item(s) resolve to ${projectIds.size} distinct projects: no single L1`,
     score: 0,
   };
 }
@@ -192,7 +192,7 @@ function resolveByProjectNameFuzzy(
 /**
  * Resolver 4: the engagement is carried as a WEEK ITEM under a live L1 of
  * this client, not as its own L1 project (standing limit, §7 of the
- * authority rules doc — the tool cannot tell an L1-as-project miss from an
+ * authority rules doc: the tool cannot tell an L1-as-project miss from an
  * L1-as-week-item miss, so it never invents the distinction; it only
  * surfaces the WI and names the parent). A strong title match resolves to
  * the parent with a flag; a weak one is too uncertain to resolve and routes
@@ -240,7 +240,7 @@ function resolveByWeekItemCarry(
     return {
       resolved: false,
       resolver: "week-item-carry",
-      detail: `candidate "${best.wi.title}" (score ${score}) under "${project.name}" — below confidence, routed to review`,
+      detail: `candidate "${best.wi.title}" (score ${score}) under "${project.name}": below confidence, routed to review`,
       score,
       reviewCandidate: {
         weekItemId: best.wi.id,
@@ -393,7 +393,7 @@ export function diffSheet(
 
   if (l1.resolved && l1.weekItemCarry) {
     flags.push(
-      `L1: resolved via week-item-carry — engagement carried as week item "${l1.weekItemCarry.weekItemTitle}" (id ${l1.weekItemCarry.weekItemId}) under "${l1.projectName}"`
+      `L1: resolved via week-item-carry, engagement carried as week item "${l1.weekItemCarry.weekItemTitle}" (id ${l1.weekItemCarry.weekItemId}) under "${l1.projectName}"`
     );
   }
 
@@ -535,8 +535,8 @@ export function diffSheet(
   if (!l1.resolved && parsed.leafTasks.length > 0) {
     flags.push(
       l1.reviewCandidate
-        ? `L1: no resolver fired with confidence — week-item-carry candidate "${l1.reviewCandidate.weekItemTitle}" (score ${l1.reviewCandidate.score}) under "${l1.reviewCandidate.projectName}" routed to review, orphan analysis skipped, no create proposed`
-        : "L1: no matching Runway project resolved — orphan analysis skipped, L1 create proposed in payloads"
+        ? `L1: no resolver fired with confidence, week-item-carry candidate "${l1.reviewCandidate.weekItemTitle}" (score ${l1.reviewCandidate.score}) under "${l1.reviewCandidate.projectName}" routed to review, orphan analysis skipped, no create proposed`
+        : "L1: no matching Runway project resolved, orphan analysis skipped, L1 create proposed in payloads"
     );
   }
 

@@ -203,7 +203,7 @@ export interface DiffResult {
     weekItemCarry?: { weekItemId: string; weekItemTitle: string };
     /**
      * Set when week-item-carry found a candidate below its match threshold.
-     * Unresolved, but the candidate blocks the auto-create payload — routes
+     * Unresolved, but the candidate blocks the auto-create payload: routes
      * to review naming the WI instead (_R1#153, standing limit: the tool
      * cannot tell an L1-as-project miss from an L1-as-week-item miss).
      */

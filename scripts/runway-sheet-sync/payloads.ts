@@ -17,7 +17,7 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
 
   if (!diff.l1.resolved && diff.counts["leaf-tasks"] > 0) {
     if (diff.l1.reviewCandidate) {
-      // A week-item-carry candidate exists below match confidence — this
+      // A week-item-carry candidate exists below match confidence: this
       // might be an engagement tracked as a WI under an existing L1, not a
       // missing L1 (standing limit, _R1#153). Route to review naming the
       // candidate instead of proposing a create the tool cannot vouch for.
@@ -35,16 +35,16 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
         applyOrder: order++,
         requiresReview: true,
         preflight: { statusValid: true, categoryValid: true },
-        reason: `week-item-carry candidate "${rc.weekItemTitle}" under "${rc.projectName}" (score ${rc.score}) — below confidence to auto-resolve, no L1 create proposed`,
+        reason: `week-item-carry candidate "${rc.weekItemTitle}" under "${rc.projectName}" (score ${rc.score}): below confidence to auto-resolve, no L1 create proposed`,
       });
     } else {
-      // Proposed L1 create when nothing resolved — review-gated, never automatic.
+      // Proposed L1 create when nothing resolved: review-gated, never automatic.
       payloads.push({
         op: "addProject",
         params: {
           clientSlug: diff.config.clientSlug,
           name: diff.config.label,
-          notes: `${diff.config.engagementCode} — synced from Sheet ${sheetId}`,
+          notes: `${diff.config.engagementCode}: synced from Sheet ${sheetId}`,
           updatedBy,
         },
         source: { sheetId, rowNumber: 0, taskNo: null },
