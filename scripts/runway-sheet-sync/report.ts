@@ -17,6 +17,28 @@ export interface RenderedReport {
   error: boolean;
 }
 
+/**
+ * L1 resolution line. Named resolvers (_R1#153): when one fires, name it
+ * and its score. When none fires, say so plainly and list every resolver's
+ * best evidence instead of quoting one low score as if it were the answer.
+ */
+function l1ResolutionSummary(l1: DiffResult["l1"]): string {
+  if (l1.resolved) {
+    return `**${l1.projectName}** (method: ${l1.method}, score: ${l1.score})`;
+  }
+  if (l1.reviewCandidate) {
+    const rc = l1.reviewCandidate;
+    return (
+      `**ROUTED TO REVIEW**: week-item-carry candidate "${rc.weekItemTitle}" (score ${rc.score}) ` +
+      `under "${rc.projectName}", no L1 create proposed`
+    );
+  }
+  const evidence = (l1.evidence ?? [])
+    .map((e) => `${e.resolver}: ${e.detail}`)
+    .join("; ");
+  return `**UNRESOLVED: no resolver fired** (${evidence || "no evidence"}), L1 create proposed in payloads`;
+}
+
 export function renderReport(
   diff: DiffResult,
   payloads: SyncPayload[],
@@ -29,16 +51,12 @@ export function renderReport(
   lines.push(`# Runway Sheet Sync — Diff Report`);
   lines.push("");
   lines.push(`- Sheet: \`${diff.config.sheetId}\``);
-  lines.push(`- Engagement: ${diff.config.label} (${diff.config.engagementCode})`);
+  lines.push(
+    `- Engagement: ${diff.config.label} (${diff.config.engagementCode})`
+  );
   lines.push(`- Client: ${diff.config.clientSlug}`);
   lines.push(`- Run: \`${diff.runId}\` at ${diff.generatedAt}`);
-  lines.push(
-    `- L1 resolution: ${
-      diff.l1.resolved
-        ? `**${diff.l1.projectName}** (method: ${diff.l1.method}, score: ${diff.l1.score})`
-        : `**UNRESOLVED** (best fuzzy score: ${diff.l1.score ?? 0}) — L1 create proposed in payloads`
-    }`
-  );
+  lines.push(`- L1 resolution: ${l1ResolutionSummary(diff.l1)}`);
   lines.push("");
 
   lines.push(`## Summary`);
@@ -94,9 +112,17 @@ export function renderReport(
     const dates = `${l.startDate ?? "?"} → ${l.endDate ?? "?"}`;
     const detail =
       rd.deltas && rd.deltas.length > 0
-        ? rd.deltas.map((d) => `${d.field}: ${d.runway ?? "null"}→${d.sheet ?? "null"} [${d.action}]`).join("; ")
+        ? rd.deltas
+            .map(
+              (d) =>
+                `${d.field}: ${d.runway ?? "null"}→${d.sheet ?? "null"} [${d.action}]`
+            )
+            .join("; ")
         : (rd.note ?? "");
-    const title = l.resolvedTitle === l.title ? l.title : `${l.resolvedTitle} (disambiguated)`;
+    const title =
+      l.resolvedTitle === l.title
+        ? l.title
+        : `${l.resolvedTitle} (disambiguated)`;
     lines.push(
       `| ${l.rowNumber} | ${l.taskNo ?? "—"} | ${title} | ${dates} | ${l.derivedStatus}/${l.category} | ${rd.disposition}${rd.collision ? " ⚠️" : ""} | ${detail} |`
     );
@@ -109,10 +135,14 @@ export function renderReport(
     lines.push(`| WeekItem | Title | weekOf | Status |`);
     lines.push(`|---|---|---|---|`);
     for (const o of diff.orphans) {
-      lines.push(`| ${o.weekItemId} | ${o.title} | ${o.weekOf ?? "—"} | ${o.status ?? "—"} |`);
+      lines.push(
+        `| ${o.weekItemId} | ${o.title} | ${o.weekOf ?? "-"} | ${o.status ?? "-"} |`
+      );
     }
     lines.push("");
-    lines.push(`> Policy: orphans are FLAGGED only. The sync never deletes Runway items (§2.9).`);
+    lines.push(
+      `> Policy: orphans are FLAGGED only. The sync never deletes Runway items (§2.9).`
+    );
     lines.push("");
   }
 
@@ -139,7 +169,10 @@ export interface ParityCost {
   tokens: number;
 }
 
-export function renderParityReport(result: ParityResult, cost?: ParityCost): string {
+export function renderParityReport(
+  result: ParityResult,
+  cost?: ParityCost
+): string {
   const lines: string[] = [];
   lines.push(`# Runway Sheet Sync, Parity Report`);
   lines.push("");
@@ -175,9 +208,17 @@ export function renderParityReport(result: ParityResult, cost?: ParityCost): str
   lines.push(`| Row | Task | Title | Verdict | Match | Mismatched fields |`);
   lines.push(`|---|---|---|---|---|---|`);
   for (const r of result.rows) {
-    const match = r.match ? `${r.match.method}, score ${r.match.score ?? "n/a"}` : "n/a";
-    const mismatched = r.mismatchedFields.map((f) => `${f.field}: tool=${f.tool ?? "null"} hand=${f.hand ?? "null"}`).join("; ");
-    lines.push(`| ${r.rowNumber ?? "n/a"} | ${r.taskNo ?? "n/a"} | ${r.title} | ${r.verdict} | ${match} | ${mismatched} |`);
+    const match = r.match
+      ? `${r.match.method}, score ${r.match.score ?? "n/a"}`
+      : "n/a";
+    const mismatched = r.mismatchedFields
+      .map(
+        (f) => `${f.field}: tool=${f.tool ?? "null"} hand=${f.hand ?? "null"}`
+      )
+      .join("; ");
+    lines.push(
+      `| ${r.rowNumber ?? "n/a"} | ${r.taskNo ?? "n/a"} | ${r.title} | ${r.verdict} | ${match} | ${mismatched} |`
+    );
   }
   lines.push("");
 

@@ -62,7 +62,13 @@ export interface LeafTask {
   /** §2.4 CREATE-branch derived status. */
   derivedStatus: "completed" | "scheduled";
   /** Q1.12 keyword-derived category. */
-  category: "delivery" | "review" | "kickoff" | "deadline" | "approval" | "launch";
+  category:
+    | "delivery"
+    | "review"
+    | "kickoff"
+    | "deadline"
+    | "approval"
+    | "launch";
   /** Enclosing section header title, if any. */
   section: string | null;
   priority: string | null;
@@ -158,7 +164,11 @@ export interface RowDiff {
 
 /** Self-contained ready-to-apply operation (Q1.14 (a) — no downstream re-encoding). */
 export interface SyncPayload {
-  op: "createWeekItem" | "updateWeekItemField" | "addProject" | "flag-for-review";
+  op:
+    | "createWeekItem"
+    | "updateWeekItemField"
+    | "addProject"
+    | "flag-for-review";
   /** Params shaped EXACTLY for the operations.ts barrel helper named in `op` — consumed as-is. */
   params: Record<string, unknown>;
   source: { sheetId: string; rowNumber: number; taskNo: string | null };
@@ -188,10 +198,35 @@ export interface DiffResult {
     projectId?: string;
     projectName?: string;
     score?: number;
-    method?: "code" | "fuzzy" | "none";
+    method?: "code" | "ledger-identity" | "fuzzy" | "week-item-carry" | "none";
+    /** week-item-carry hits only: the WI whose title carried the engagement identity. */
+    weekItemCarry?: { weekItemId: string; weekItemTitle: string };
+    /**
+     * Set when week-item-carry found a candidate below its match threshold.
+     * Unresolved, but the candidate blocks the auto-create payload: routes
+     * to review naming the WI instead (_R1#153, standing limit: the tool
+     * cannot tell an L1-as-project miss from an L1-as-week-item miss).
+     */
+    reviewCandidate?: {
+      weekItemId: string;
+      weekItemTitle: string;
+      projectId: string;
+      projectName: string;
+      score: number;
+    };
+    /** Each resolver's best evidence, populated only when none fired. */
+    evidence?: { resolver: string; detail: string }[];
   };
   rowDiffs: RowDiff[];
-  orphans: { weekItemId: string; title: string; weekOf: string | null; status: string | null }[];
-  counts: Record<Disposition, number> & { "leaf-tasks": number; collisions: number };
+  orphans: {
+    weekItemId: string;
+    title: string;
+    weekOf: string | null;
+    status: string | null;
+  }[];
+  counts: Record<Disposition, number> & {
+    "leaf-tasks": number;
+    collisions: number;
+  };
   flags: string[];
 }
