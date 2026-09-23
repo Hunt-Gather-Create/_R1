@@ -80,6 +80,24 @@ Full how-to, git-tracked and permanent: `agencyos-operational-efficiency/docs/st
 
 **Send from a script file, never inline.** The secret-echo guard blocks any command line that expands a `*_NSEC` or `*_KEY` variable. Since 2026-09-13 a second guard refuses a hand-typed clock time in a send; route through `~/.claude/buzz-send.sh`, which stamps `{{UTC}}` at send time.
 
+**The gate clone points at upstream, never at the fork.** Every gate dispatch carries this block verbatim, and the reason is that the right answer has to be the default one. A gate seat builds a fresh throwaway clone to review in a clean room. If it clones `jasonburks23/_R1`, the only trunk it can see is the fork's `runway`, which no merge ever updates, because our PRs land on `Hunt-Gather-Create/_R1:runway`. The fork's copy was 17 merges stale on 2026-09-23. Nothing about that is visible from inside such a clone: there is no `upstream` remote to compare against, so a careful seat reading the only branch in front of it still reports the wrong base.
+
+That single cause produced four findings in one week: QA-Scout-1's false 23-dash count on #153, a false base-ancestry refusal on #184, a gate-2 block on #160 claiming sixteen ungated tickets were stacked on the branch when all sixteen were already on trunk, and a withdrawn alarm that a merged branch had been deleted without merging. Three of those were caught only because someone re-derived the number own-hands. Naming `upstream/runway` by hand in each dispatch was the earlier fix and it failed three times, because it asks a seat to remember a thing that costs effort while the wrong answer costs none.
+
+Clone upstream, then pull only the branch under review off the fork:
+
+```sh
+git clone --single-branch --branch runway https://github.com/Hunt-Gather-Create/_R1.git <dir>
+cd <dir>
+git remote add fork https://github.com/jasonburks23/_R1.git
+git fetch fork <branch-under-review>
+git checkout -b <branch-under-review> fork/<branch-under-review>
+```
+
+Now `origin/runway` IS trunk, so the default is correct and `git merge-base origin/runway HEAD` returns the real base. The stale copy is still reachable as `fork/runway`, labelled in a way no one mistakes for trunk. Measured 2026-09-23: the clone takes 1.4 seconds and 5.6 MB, so cost is not a reason to skip it. `--single-branch` leaves no `origin/HEAD`, which is harmless because the checkout already sits on `runway`.
+
+Two things this does NOT fix, so do not let it read as a full cure. A clone of upstream sees upstream's default branch `main`, not `runway`, unless `--branch runway` is passed, and a gate that omits it lands on the wrong trunk with no warning at all. And the fork's own `runway` stays stale until someone fast-forwards it; nothing here depends on that any more, which is the point, but a PR diff read in the GitHub web UI still does.
+
 **Fire QA in-thread the moment a build lands**, so building and checking overlap. Verify the branch on origin yourself first; never take a done-report on its face. Never give QA-Scout-1 a build; a seat that writes the code cannot be the independent check on it, and it is right to refuse.
 
 **Envelope headers.** PROTOCOL Rule 23, Overwatch ruling 2026-09-05, opeff#920. Nine legal states: `CLAIMED`, `BUILDING`, `G1_QUEUED`, `G1_BOUNCE`, `G2_QUEUED`, `G2_BOUNCE`, `MERGE_OWED`, `MERGED`, `CLOSED`. Asserting a state: `@Name [_R1#N | G1_BOUNCE]`. Asserting none: `@Name [_R1#N]`, no pipe and no word; a bracket with a pipe reads as a state claim, which is how 87 of one seat's headers and 19 of this seat's parsed as malformed while looking fine. Do not map free text onto the nearest legal word: `PASS` is not `MERGED`, `DONE` is not `CLOSED`. `MERGED` and `CLOSED` never occur in this room because merge is the operator's and close is Holdout's; do not manufacture a closing envelope to feed a parser. Going forward only; do not retrofit old headers.
