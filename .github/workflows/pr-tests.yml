@@ -67,6 +67,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - run: locale -a; echo "LANG=$LANG LC_ALL=$LC_ALL"
+
       - run: pnpm test:run
 
   # _R1#125. proxy.reachability.test.ts drives the real proxy export with
