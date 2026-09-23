@@ -3727,6 +3727,36 @@ describe("hygiene-guard.sh, hold-list reader locale pin (_R1#169): the leading-w
     expect(mutantC.status).toBe(1); // this arm does not catch it: the invoking locale already matched C
   });
 
+  it("_R1#187 diag probe, throwaway, deleted before merge", () => {
+    const dump = (label: string, cmd: string, args: string[], env: NodeJS.ProcessEnv) => {
+      try {
+        const out = execFileSync(cmd, args, { encoding: "utf8", env });
+        console.error(`--- ${label} ---\n${out}`);
+      } catch (err) {
+        const e = err as { status?: number; stdout?: string; stderr?: string };
+        console.error(`--- ${label} (exit ${e.status}) ---\nstdout: ${e.stdout}\nstderr: ${e.stderr}`);
+      }
+    };
+    dump("locale, under UTF8_ENV", "locale", [], { ...ISOLATED_GIT_ENV, ...UTF8_ENV });
+    dump("locale charmap, under UTF8_ENV", "locale", ["charmap"], { ...ISOLATED_GIT_ENV, ...UTF8_ENV });
+    dump("sed --version", "sed", ["--version"], ISOLATED_GIT_ENV);
+    dump("awk --version", "sh", ["-c", "awk --version 2>&1 || awk -W version 2>&1"], ISOLATED_GIT_ENV);
+    dump("resolved awk", "sh", ["-c", "readlink -f $(which awk)"], ISOLATED_GIT_ENV);
+    dump("resolved sed", "sh", ["-c", "readlink -f $(which sed)"], ISOLATED_GIT_ENV);
+
+    const holdFile = " # a comment, not real data\n";
+    const { workDir } = buildRepo(root, "runway", true, false);
+    writeHoldFile(workDir, "runway", holdFile);
+    const preFixSource = revert585Pin(readFileSync(SCRIPT_PATH, "utf8"));
+    const preFixPath = writeMutant("diag-pre-fix-585.sh", preFixSource);
+    const preFixUtf8 = runGuard(workDir, "origin", preFixPath, UTF8_ENV);
+    const preFixC = runGuard(workDir, "origin", preFixPath, C_ENV);
+    console.error(`--- pre-fix mutant, UTF8_ENV ---\nstatus: ${preFixUtf8.status}\nstdout: ${preFixUtf8.stdout}\nstderr: ${preFixUtf8.stderr}`);
+    console.error(`--- pre-fix mutant, C_ENV ---\nstatus: ${preFixC.status}\nstdout: ${preFixC.stdout}\nstderr: ${preFixC.stderr}`);
+
+    expect(true).toBe(true);
+  });
+
   it("mutation on :597 alone: no fixture in this suite can make its pin observable, because the field-consuming half of the same sed call already normalizes away anything the leading-whitespace half would have stripped differently", () => {
     // Verified by construction, not asserted on faith: any raw line whose
     // leading run mixes an NBSP with real ASCII whitespace also corrupts
