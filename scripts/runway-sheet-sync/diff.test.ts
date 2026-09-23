@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { diffSheet, resolveL1, statusDelta } from "./diff";
+import {
+  categoryDelta,
+  diffSheet,
+  resolveL1,
+  statusDelta,
+  titleDelta,
+  weekOfDelta,
+} from "./diff";
 import { buildPayloads } from "./payloads";
 import { renderReport } from "./report";
 import type { RunwayClientBundle } from "./runway-read";
@@ -890,5 +897,179 @@ describe("renderReport", () => {
     const { report } = renderReport(diff, []);
     expect(report).toContain("Hand-created legacy item");
     expect(report).toContain("never deletes");
+  });
+});
+
+/**
+ * _R1#160: full-field delta. weekOf and title join the correctable set;
+ * category gains a flag-only policy. owner/resources stay OUT (rule R1,
+ * _R1#159), unchanged by this ticket.
+ */
+describe("weekOfDelta (§2.4-style update policy, _R1#160)", () => {
+  it("writes when the sheet's weekOf differs from Runway's", () => {
+    expect(weekOfDelta("2026-06-08", "2026-06-01")).toMatchObject({
+      field: "weekOf",
+      sheet: "2026-06-08",
+      runway: "2026-06-01",
+      action: "write",
+    });
+  });
+
+  it("writes against a null Runway weekOf", () => {
+    expect(weekOfDelta("2026-06-01", null)?.action).toBe("write");
+  });
+
+  it("returns null when in agreement, or the sheet carries no weekOf", () => {
+    expect(weekOfDelta("2026-06-01", "2026-06-01")).toBeNull();
+    expect(weekOfDelta(null, "2026-06-01")).toBeNull();
+  });
+});
+
+describe("categoryDelta (_R1#160, TP ruling 2026-09-22: flag-only, never a write)", () => {
+  it("flags a non-null Runway category, naming the value; never a write", () => {
+    const d = categoryDelta("kickoff");
+    expect(d).toMatchObject({
+      field: "category",
+      sheet: null,
+      runway: "kickoff",
+      action: "flag-for-review",
+    });
+  });
+
+  it("returns null on a null Runway category, nothing to flag, nothing to write", () => {
+    expect(categoryDelta(null)).toBeNull();
+  });
+});
+
+describe("titleDelta (_R1#160, depends on #153 ledger identity)", () => {
+  it("writes the correction when the match came from ledger identity", () => {
+    const d = titleDelta("New Title", "Old Title", true);
+    expect(d).toMatchObject({
+      field: "title",
+      sheet: "New Title",
+      runway: "Old Title",
+      action: "write",
+    });
+  });
+
+  it("flags, never writes, when the match came from fuzzy title alone", () => {
+    const d = titleDelta("New Title", "Old Title", false);
+    expect(d).toMatchObject({ field: "title", action: "flag-for-review" });
+  });
+
+  it("returns null when titles agree modulo normalization", () => {
+    expect(titleDelta("Kickoff Call", "kickoff  call", true)).toBeNull();
+    expect(titleDelta("Kickoff Call", "kickoff  call", false)).toBeNull();
+  });
+});
+
+describe("_R1#160 acceptance", () => {
+  it("1: ledger-banked row with a drifted title AND weekOf gets both corrections", () => {
+    const tasks = [
+      leaf({
+        title: "Kickoff Call Revised",
+        resolvedTitle: "Kickoff Call Revised",
+        weekOf: "2026-06-08",
+      }),
+    ];
+    const ledger = emptyLedger();
+    ledger.entries["1.1"] = {
+      key: "1.1",
+      taskNo: "1.1",
+      title: "Kickoff call",
+      rowNumber: 12,
+      weekItemId: "wi_kick",
+      state: "matched",
+      lastSeenRunId: "run-0",
+      lastSeenContentHash: null,
+    };
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, ledger, "run-1");
+    const rd = diff.rowDiffs.find((r) => r.leaf)!;
+    expect(rd.disposition).toBe("mismatched-field");
+    const fields = rd.deltas!.map((d) => d.field);
+    expect(fields).toContain("title");
+    expect(fields).toContain("weekOf");
+    const titleD = rd.deltas!.find((d) => d.field === "title")!;
+    expect(titleD).toMatchObject({
+      action: "write",
+      sheet: "Kickoff Call Revised",
+      runway: "Kickoff call",
+    });
+    const weekOfD = rd.deltas!.find((d) => d.field === "weekOf")!;
+    expect(weekOfD).toMatchObject({
+      action: "write",
+      sheet: "2026-06-08",
+      runway: "2026-06-01",
+    });
+  });
+
+  it("2a: matched row with prod category kickoff is flagged, never a write; a second run is identical", () => {
+    const tasks = [leaf({})]; // matches wi_kick, whose category is "kickoff"
+    const diff1 = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const rd1 = diff1.rowDiffs.find((r) => r.leaf)!;
+    const catDeltas1 = (rd1.deltas ?? []).filter((d) => d.field === "category");
+    expect(catDeltas1).toHaveLength(1);
+    expect(catDeltas1[0]).toMatchObject({ action: "flag-for-review", runway: "kickoff" });
+    expect(
+      (rd1.deltas ?? []).some((d) => d.field === "category" && d.action === "write")
+    ).toBe(false);
+
+    const payloads1 = buildPayloads(diff1, "run-1");
+    const catFlag = payloads1.find(
+      (p) => p.op === "flag-for-review" && p.params.field === "category"
+    )!;
+    expect(catFlag).toBeDefined();
+    expect(catFlag.params.runwayValue).toBe("kickoff");
+    expect(catFlag.params.weekItemId).toBe("wi_kick");
+    expect(catFlag.reason).toContain("category");
+
+    // Same inputs, second run: identical, because nothing was written.
+    const diff2 = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const rd2 = diff2.rowDiffs.find((r) => r.leaf)!;
+    expect((rd2.deltas ?? []).filter((d) => d.field === "category")).toEqual(catDeltas1);
+  });
+
+  it("2b: createWeekItem payload always carries category null, never a derived value", () => {
+    const tasks = [
+      leaf({
+        title: "Brand new task",
+        resolvedTitle: "Brand new task",
+        taskNo: "9.1",
+        category: "launch",
+      }),
+    ];
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const create = buildPayloads(diff, "run-1").find((p) => p.op === "createWeekItem")!;
+    expect(create.params.category).toBeNull();
+  });
+
+  it("3: fuzzy-only match with a drifted title is flagged, never corrected", () => {
+    const tasks = [
+      leaf({
+        title: "Compps", // scores ~0.89 vs "Comps": above match floor, below identical
+        resolvedTitle: "Compps",
+        taskNo: "2.1",
+        startDate: "2026-06-02",
+        endDate: "2026-06-04",
+        weekOf: "2026-06-01",
+      }),
+    ];
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const rd = diff.rowDiffs.find((r) => r.leaf)!;
+    expect(rd.weekItemId).toBe("wi_comps"); // confirms fuzzy match fired, not ledger
+    const titleD = rd.deltas!.find((d) => d.field === "title")!;
+    expect(titleD.action).toBe("flag-for-review");
+    expect(
+      (rd.deltas ?? []).some((d) => d.field === "title" && d.action === "write")
+    ).toBe(false);
+  });
+
+  it("4: report shows compared-and-equal vs not-compared, per field", () => {
+    const tasks = [leaf({})]; // matches wi_kick exactly on dates and weekOf
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const { report } = renderReport(diff, buildPayloads(diff, "run-1"));
+    expect(report).toMatch(/weekOf: compared, equal/);
+    expect(report).toMatch(/owner: not compared/);
+    expect(report).toMatch(/resources: not compared/);
   });
 });

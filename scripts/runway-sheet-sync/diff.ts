@@ -354,6 +354,65 @@ export function statusDelta(
   };
 }
 
+/**
+ * §2.4-style UPDATE policy for weekOf (_R1#160). No protected states here:
+ * a card in the wrong week bucket is corrected to the Monday the sheet row
+ * derives, the same way a date correction is a plain write.
+ */
+export function weekOfDelta(
+  sheetWeekOf: string | null,
+  runwayWeekOf: string | null
+): FieldDelta | null {
+  if (!sheetWeekOf) return null;
+  if (sheetWeekOf === (runwayWeekOf ?? null)) return null;
+  return {
+    field: "weekOf",
+    sheet: sheetWeekOf,
+    runway: runwayWeekOf ?? null,
+    action: "write",
+  };
+}
+
+/**
+ * _R1#160, TP ruling 2026-09-22: the schedule sheet has no category column,
+ * so it never authorizes a category value (same logic as rule R1). The tool
+ * never plans a category on an update, ever. A non-null Runway category on
+ * a matched row was put there by a person or an earlier tool run; null is
+ * not a correction of it, it is a deletion on no authority. So a non-null
+ * value is a flag naming the row and the value, never a write; a null
+ * value has nothing to flag and nothing to write.
+ */
+export function categoryDelta(runwayCategory: string | null): FieldDelta | null {
+  if (runwayCategory === null) return null;
+  return {
+    field: "category",
+    sheet: null,
+    runway: runwayCategory,
+    action: "flag-for-review",
+  };
+}
+
+/**
+ * _R1#160, depends on #153: title is correctable only once identity, not
+ * fuzzy title similarity, established the match. On a ledger-identity match
+ * the sheet title is authoritative and gets written. On a fuzzy-only match,
+ * title IS the key that produced the match. Writing over it fights the
+ * matcher (the wrinkle the ticket names), so a drift is flagged, not fixed.
+ */
+export function titleDelta(
+  sheetTitle: string,
+  runwayTitle: string,
+  matchedViaLedgerIdentity: boolean
+): FieldDelta | null {
+  if (normalizeTitle(sheetTitle) === normalizeTitle(runwayTitle)) return null;
+  return {
+    field: "title",
+    sheet: sheetTitle,
+    runway: runwayTitle,
+    action: matchedViaLedgerIdentity ? "write" : "flag-for-review",
+  };
+}
+
 function dateDeltas(
   leaf: LeafTask,
   wi: RunwayClientBundle["weekItems"][number]
@@ -425,6 +484,12 @@ export function diffSheet(
         const deltas = [...dateDeltas(leaf, wi)];
         const sd = statusDelta(leaf.derivedStatus, wi.status);
         if (sd) deltas.push(sd);
+        const wd = weekOfDelta(leaf.weekOf, wi.weekOf ?? null);
+        if (wd) deltas.push(wd);
+        const td = titleDelta(leaf.title, wi.title, true);
+        if (td) deltas.push(td);
+        const cd = categoryDelta(wi.category ?? null);
+        if (cd) deltas.push(cd);
         rowDiffs.push({
           disposition: deltas.length > 0 ? "mismatched-field" : "matched",
           leaf,
@@ -470,6 +535,12 @@ export function diffSheet(
       const deltas = [...dateDeltas(leaf, best.wi)];
       const sd = statusDelta(leaf.derivedStatus, best.wi.status);
       if (sd) deltas.push(sd);
+      const wd = weekOfDelta(leaf.weekOf, best.wi.weekOf ?? null);
+      if (wd) deltas.push(wd);
+      const td = titleDelta(leaf.title, best.wi.title, false);
+      if (td) deltas.push(td);
+      const cd = categoryDelta(best.wi.category ?? null);
+      if (cd) deltas.push(cd);
       rowDiffs.push({
         disposition: deltas.length > 0 ? "mismatched-field" : "matched",
         leaf,

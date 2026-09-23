@@ -141,7 +141,7 @@ export type Disposition =
   | "skipped-spacer";
 
 export interface FieldDelta {
-  field: string;
+  field: "status" | "startDate" | "endDate" | "weekOf" | "category" | "title";
   sheet: string | null;
   runway: string | null;
   /** §2.4 update policy applied to this delta. */

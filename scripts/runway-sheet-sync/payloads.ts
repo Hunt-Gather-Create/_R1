@@ -5,7 +5,6 @@
  *
  * Phase 1a emits payloads. It never executes them.
  */
-import { WEEK_ITEM_CATEGORIES } from "../../src/lib/runway/week-item-categories";
 import { WEEK_ITEM_STATUSES } from "../../src/lib/runway/week-item-statuses";
 import type { DiffResult, SyncPayload } from "./types";
 
@@ -65,9 +64,11 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
       const statusValid = (WEEK_ITEM_STATUSES as readonly string[]).includes(
         leaf.derivedStatus
       );
-      const categoryValid = (
-        WEEK_ITEM_CATEGORIES as readonly string[]
-      ).includes(leaf.category);
+      // category is always null on create (_R1#160, TP ruling 2026-09-22):
+      // null is always a valid category, so this is not a WEEK_ITEM_CATEGORIES
+      // membership check on leaf.category, the tool never writes that
+      // derived value.
+      const categoryValid = true;
       // createWeekItem rejects when no weekOf is derivable — unparseable
       // sheet dates make this payload unapplyable as-is, so review-gate it.
       const datesMissing = leaf.weekOf === null;
@@ -81,7 +82,11 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
           endDate: leaf.endDate ?? undefined,
           weekOf: leaf.weekOf ?? undefined,
           status: leaf.derivedStatus,
-          category: leaf.category,
+          // Always null (_R1#160, TP ruling 2026-09-22): matches what every
+          // hand-created card in prod holds. leaf.category is Q1.12's
+          // keyword-derived value; the sheet has no category column and
+          // never authorizes a create-time value.
+          category: null,
           notes: leaf.notes,
           updatedBy,
         },
@@ -148,10 +153,14 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
             preflight: { statusValid: true, categoryValid: true },
             reason:
               delta.action === "protected-no-write"
-                ? `Runway status "${delta.runway}" is human-set (§2.4) — sync never overwrites`
-                : delta.runway === "canceled"
-                  ? `Runway status "canceled" vs sheet "${delta.sheet}" — terminal-state divergence, editorial call for AM (§2.4)`
-                  : `completed↔unchecked divergence — editorial call for AM (§2.4)`,
+                ? `Runway status "${delta.runway}" is human-set (§2.4), sync never overwrites`
+                : delta.field === "category"
+                  ? `Runway category "${delta.runway}" already set, the sheet has no category column and never authorizes a value (_R1#160)`
+                  : delta.field === "title"
+                    ? `title drift "${delta.runway}" → "${delta.sheet}", matched by fuzzy title alone, correcting the match key would fight the matcher (_R1#160)`
+                    : delta.runway === "canceled"
+                      ? `Runway status "canceled" vs sheet "${delta.sheet}", terminal-state divergence, editorial call for AM (§2.4)`
+                      : `completed↔unchecked divergence, editorial call for AM (§2.4)`,
           });
         }
       }

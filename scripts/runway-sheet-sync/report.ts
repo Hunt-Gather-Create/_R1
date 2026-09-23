@@ -2,8 +2,44 @@
  * Human-readable diff report (markdown) — per-row disposition, summary
  * counts, shape-variance flags, orphans, and the first-run expectation note.
  */
-import type { DiffResult, SyncPayload } from "./types";
+import type { DiffResult, FieldDelta, RowDiff, SyncPayload } from "./types";
 import type { ParityResult } from "./parity/types";
+
+/**
+ * _R1#160 item 4: the report must distinguish "compared and equal" from
+ * "not compared" for every field the tool can write. Today both print
+ * blank. status/startDate/endDate/weekOf/title all run a real sheet-vs-
+ * Runway comparison on a matched row, so absent a delta they read "compared,
+ * equal". category never runs that comparison on an update, TP ruling
+ * 2026-09-22: the sheet has no category column to compare against. Its
+ * own flag, when one exists, is visible in the Detail column instead.
+ * owner/resources have no comparator at all (rule R1, _R1#159).
+ */
+const COMPARED_FIELDS: FieldDelta["field"][] = [
+  "status",
+  "startDate",
+  "endDate",
+  "weekOf",
+  "title",
+];
+const NEVER_COMPARED_FIELDS = ["category", "owner", "resources"] as const;
+
+function fieldComparisonLines(rd: RowDiff): string[] {
+  const deltaByField = new Map((rd.deltas ?? []).map((d) => [d.field, d]));
+  const lines: string[] = [];
+  for (const f of COMPARED_FIELDS) {
+    const d = deltaByField.get(f);
+    lines.push(
+      d
+        ? `- ${f}: sheet=${d.sheet ?? "null"} runway=${d.runway ?? "null"} [${d.action}]`
+        : `- ${f}: compared, equal`
+    );
+  }
+  for (const f of NEVER_COMPARED_FIELDS) {
+    lines.push(`- ${f}: not compared`);
+  }
+  return lines;
+}
 
 export interface RenderedReport {
   report: string;
@@ -128,6 +164,23 @@ export function renderReport(
     );
   }
   lines.push("");
+
+  const comparedRows = diff.rowDiffs.filter(
+    (rd) =>
+      rd.leaf &&
+      (rd.disposition === "matched" || rd.disposition === "mismatched-field")
+  );
+  if (comparedRows.length > 0) {
+    lines.push(`## Field comparison`);
+    lines.push("");
+    for (const rd of comparedRows) {
+      const l = rd.leaf!;
+      lines.push(`### Row ${l.rowNumber} (${l.taskNo ?? "n/a"}): ${l.title}`);
+      lines.push("");
+      for (const line of fieldComparisonLines(rd)) lines.push(line);
+      lines.push("");
+    }
+  }
 
   if (diff.orphans.length > 0) {
     lines.push(`## Runway-only items under this L1 (no sheet counterpart)`);
