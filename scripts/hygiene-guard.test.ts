@@ -3686,6 +3686,16 @@ describe("hygiene-guard.sh, hold-list reader locale pin (_R1#169): the leading-w
   function redArmTitle(title: string): string {
     return NBSP_STRIP_CAPABLE ? title : `${title} -- SKIPPED: ${NBSP_SKIP_REASON}`;
   }
+  // A bare it.skip only moves the count; the default CI reporter never
+  // prints an individual skipped test's name or title for a passing run,
+  // so the reason above would exist only in source comments nobody
+  // reading CI sees. Printed once at collection time, not inside a test
+  // body, so it survives whichever reporter runs it: this is the same
+  // failure shape the ticket itself is about, a check that stops meaning
+  // anything without anyone noticing (_R1#187).
+  if (!NBSP_STRIP_CAPABLE) {
+    console.error(`hygiene-guard #169 RED arms skipped: ${NBSP_SKIP_REASON}`);
+  }
 
   /**
    * Reverts only the :585 pin (the comment-vs-data decision) on the
