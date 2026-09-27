@@ -1,4 +1,4 @@
-# QA Report — Chunk 3 Code Review
+# QA Report: Chunk 3 Code Review
 
 **Branch:** `feature/runway-pr86-chunk-3`
 **Base:** `feature/runway-pr86-base`
@@ -17,26 +17,26 @@
 
 ---
 
-## Step 1 — DRY
+## Step 1: DRY
 
 ### PASS-level observations
 
 - `toISOString().slice(0,10)` is repeated in `plate-summary.ts`, `in-flight-section.tsx`, `plate-summary.tsx`, `day-item-card.tsx` (via `nowHelpers()`). Each repetition is ≤1 line. `plate-summary.ts` already exports `toISODate(d: Date)` but nothing consumes it. **NON-CRITICAL DRY:** components should use `toISODate(new Date())` from `@/lib/runway/plate-summary` instead of inlining `.toISOString().slice(0,10)` in 3 places.
 
-- Default-preferences clone (`{ ...DEFAULT_PREFERENCES }`) is returned in 4 branches of `view-preferences.ts`. Fine — keeps the contract explicit. PASS.
+- Default-preferences clone (`{ ...DEFAULT_PREFERENCES }`) is returned in 4 branches of `view-preferences.ts`. Fine, keeps the contract explicit. PASS.
 
-- `buildUnifiedAccounts` grouping pattern mirrors `groupBy` from `@/lib/runway/operations`. PASS — slightly different shape (iterates on a flattened list, skips null projectId) so the inline Map is justified.
+- `buildUnifiedAccounts` grouping pattern mirrors `groupBy` from `@/lib/runway/operations`. PASS: slightly different shape (iterates on a flattened list, skips null projectId) so the inline Map is justified.
 
 ### `src/lib/runway/plate-summary.ts`
 - [PASS] DRY: pure helpers, no repeated blocks.
-- [NON-CRITICAL] `toISODate()` exported but not consumed in callers — see above.
+- [NON-CRITICAL] `toISODate()` exported but not consumed in callers; see above.
 
 ### `src/app/runway/unified-view.ts`
 - [PASS] 50 LoC, single grouping function. No DRY issue.
 
 ---
 
-## Step 2 — Prop Drilling
+## Step 2: Prop Drilling
 
 ### `runway-board.tsx`
 - [PASS] `initialInFlightEnabled` is a scalar consumed one level down (RunwayBoard only). Not prop drilling.
@@ -50,15 +50,15 @@
 
 ---
 
-## Step 3 — Hooks & Context
+## Step 3: Hooks & Context
 
 ### `runway-board.tsx`
 - [PASS] `useState` for `view` and `inFlightEnabled`, `useTransition` for background persistence, `useEffect` for polling interval. All standard.
-- [PASS] `handleToggleInFlight` correctly uses optimistic-then-persist pattern. `startTransition` wraps only the async action, not the setState — which is the correct React 19 pattern.
-- [NON-CRITICAL] `allWeekItems` is memoized (`useMemo([...thisWeek, ...upcoming])`) but `InFlightSection` then calls `.flatMap((day) => day.items)` on every render inside its own `useMemo`. A single `useMemo([...thisWeek.flatMap, ...upcoming.flatMap], ...)` at the board level would avoid one level of work — but this is minor and `useMemo` inside `InFlightSection` already keys on `[enabled, weekItems, today]` so the computation is correctly memoized. Marginal.
+- [PASS] `handleToggleInFlight` correctly uses optimistic-then-persist pattern. `startTransition` wraps only the async action, not the setState, which is the correct React 19 pattern.
+- [NON-CRITICAL] `allWeekItems` is memoized (`useMemo([...thisWeek, ...upcoming])`) but `InFlightSection` then calls `.flatMap((day) => day.items)` on every render inside its own `useMemo`. A single `useMemo([...thisWeek.flatMap, ...upcoming.flatMap], ...)` at the board level would avoid one level of work, but this is minor and `useMemo` inside `InFlightSection` already keys on `[enabled, weekItems, today]` so the computation is correctly memoized. Marginal.
 
 ### `in-flight-section.tsx`
-- [NON-CRITICAL] `const today = nowISO ?? new Date().toISOString().slice(0, 10)` is recomputed every render. Doesn't affect the `useMemo` identity in most cases because it changes only at midnight, but `new Date()` mutates the memo key every render when `nowISO` is absent — meaning `useMemo` will recompute every render. Fix: compute `today` inside the memo, or wrap with `useMemo` keyed on a mount-time day bucket. Low impact (cheap filter), still worth noting.
+- [NON-CRITICAL] `const today = nowISO ?? new Date().toISOString().slice(0, 10)` is recomputed every render. Doesn't affect the `useMemo` identity in most cases because it changes only at midnight, but `new Date()` mutates the memo key every render when `nowISO` is absent: meaning `useMemo` will recompute every render. Fix: compute `today` inside the memo, or wrap with `useMemo` keyed on a mount-time day bucket. Low impact (cheap filter), still worth noting.
 
 ### `view-preferences.ts`
 - [PASS] Pure server action, no hooks.
@@ -68,7 +68,7 @@
 
 ---
 
-## Step 4 — Test Coverage
+## Step 4: Test Coverage
 
 Every new source file has an adjacent test file. Coverage is strong.
 
@@ -78,23 +78,23 @@ Every new source file has an adjacent test file. Coverage is strong.
 | `src/lib/runway/view-preferences.ts` | `view-preferences.test.ts` | 87 LoC. Covers defaults, parsed JSON, malformed JSON, partial merge. **MISSING:** no test for the `no such table` graceful-fallback branch in `getViewPreferences` (lines 65-72). Same branch in `setViewPreferences` also untested. |
 | `src/lib/runway/operations-writes-week.ts` (owner inheritance) | `operations-writes-week.test.ts` | 4 tests cover all L2 owner inheritance branches. Strong. |
 | `src/app/runway/unified-view.ts` | `unified-view.test.ts` | 4 tests: grouping, empty milestones, drops null projectId, preserves account fields. PASS. |
-| `src/app/runway/queries.ts` | `queries.test.ts` | 2 new tests for blockedBy resolution. **GAP:** no test that unresolved (out-of-view) blocker ids are silently dropped — actual behavior is tested implicitly via `"wi-missing"` in one test, but the assertion could be more explicit. NON-CRITICAL. |
+| `src/app/runway/queries.ts` | `queries.test.ts` | 2 new tests for blockedBy resolution. **GAP:** no test that unresolved (out-of-view) blocker ids are silently dropped; actual behavior is tested implicitly via `"wi-missing"` in one test, but the assertion could be more explicit. NON-CRITICAL. |
 | `src/app/runway/components/day-item-card.tsx` | `day-item-card.test.tsx` | Past-end note + blocked_by cue covered. PASS. |
 | `src/app/runway/components/plate-summary.tsx` | `plate-summary.test.tsx` | Both pill types + null-state + outside-window covered. PASS. |
 | `src/app/runway/components/in-flight-section.tsx` | `in-flight-section.test.tsx` | Enabled/disabled, filter + count. **MISSING:** no test for fallback `nowISO` default path (the `new Date().toISOString().slice(0,10)` branch). NON-CRITICAL. |
 | `src/app/runway/components/account-section.tsx` | `account-section.test.tsx` | Milestones rendered inline + absent case covered. PASS. |
 | `src/app/runway/runway-board.tsx` | `runway-board.test.tsx` | Default-on, off, flip + server-action invocation covered. PASS. |
 | `src/app/runway/page.tsx` | `page.test.tsx` | `view_preferences` mocked; no test asserting that `unifiedAccounts` is passed to RunwayBoard. NON-CRITICAL: the unification helper has its own test and the contract is exercised indirectly. |
-| `src/app/runway/actions.ts` | — | **MISSING test file.** `toggleInFlightAction` is a 4-line wrapper but its behavior (revalidatePath + return prefs) is untested. NON-CRITICAL (trivial wrapper) but the pattern elsewhere in `src/lib/actions/*` ships with tests. |
-| `src/lib/db/runway-schema.ts` | — | Schema file, not test-targeted. PASS. |
+| `src/app/runway/actions.ts` | none | **MISSING test file.** `toggleInFlightAction` is a 4-line wrapper but its behavior (revalidatePath + return prefs) is untested. NON-CRITICAL (trivial wrapper) but the pattern elsewhere in `src/lib/actions/*` ships with tests. |
+| `src/lib/db/runway-schema.ts` | none | Schema file, not test-targeted. PASS. |
 
 ---
 
-## Step 5 — Security & Edge Cases
+## Step 5: Security & Edge Cases
 
 ### `src/lib/runway/view-preferences.ts`
-- [PASS] `"use server"` — Runway is single-tenant behind WorkOS middleware (proxy.ts); no workspace scoping exists in the Runway DB. Using `requireWorkspaceAccess` (as the CC prompt suggested) would be a no-op here because no `workspaceId` exists in the Runway schema. Aligns with existing Runway pattern (see `operations-writes-*.ts` — also no `requireWorkspaceAccess`).
-- [PASS] Malformed JSON does not crash the page — silent fallback to defaults.
+- [PASS] `"use server"`: Runway is single-tenant behind WorkOS middleware (proxy.ts); no workspace scoping exists in the Runway DB. Using `requireWorkspaceAccess` (as the CC prompt suggested) would be a no-op here because no `workspaceId` exists in the Runway schema. Aligns with existing Runway pattern (see `operations-writes-*.ts`, also no `requireWorkspaceAccess`).
+- [PASS] Malformed JSON does not crash the page; silent fallback to defaults.
 - [NON-CRITICAL] Graceful-fallback branch (`/no such table|SQLITE_ERROR/i.test(message)`) is string-matching; LibSQL error messages could change and silently start re-throwing. Better guard: check for a specific error code if available. Given this code is designed to be deleted after `runway:push`, acceptable risk.
 
 ### `src/app/runway/actions.ts`
@@ -107,11 +107,11 @@ Every new source file has an adjacent test file. Coverage is strong.
 
 ### `view_preferences` table design
 - **Agent designed `view_preferences` as a singleton table** instead of a column on `workspaces` (the CC prompt's suggestion). This is the right call because:
-  - The Runway DB has NO `workspaces` table — it is single-tenant.
+  - The Runway DB has NO `workspaces` table; it is single-tenant.
   - The agent's schema doc-comment explicitly acknowledges this ("Runway is currently single-tenant; `scope` keys the row; future per-user keys can coexist without a migration").
-  - The `scope` primary key is extensible — future per-user toggles key off `slack_user_id` or equivalent with no migration.
+  - The `scope` primary key is extensible; future per-user toggles key off `slack_user_id` or equivalent with no migration.
   - The graceful-fallback branch means the UI doesn't break before `pnpm runway:push` is coordinated by TP.
-- **PASS** — this design matches Runway's real data model, not the CC prompt's assumed model. Prompt was slightly wrong about the storage target.
+- **PASS**: this design matches Runway's real data model, not the CC prompt's assumed model. Prompt was slightly wrong about the storage target.
 
 ### `operations-writes-week.ts` L2 owner inheritance
 - [PASS] `resolvedOwner = owner ?? resolvedProjectOwner ?? null` is the exact pattern the v4 convention spec (line 96) requires: "on L2 create, auto-populate owner from parent L1.owner. Stored as an explicit value (not computed)."
@@ -138,7 +138,7 @@ None.
 5. **Silent drop of unresolved `blocked_by` refs in `queries.ts:resolveBlockedByRefs`.** Not a bug today (board fetches all weeks), but a latent footgun if `getWeekItems(weekOf)` is ever called from a caller that expects visible blockers. Either log a dev-warn, render a placeholder, or document the invariant in `queries.ts` with a comment.
 
 ### PASS (20+ files)
-All other diff files — runway-schema additions, plate-summary pure helpers, unified-view helper, AccountSection milestones, DayItemCard past-end/blocked_by cues, RunwayBoard toggle wiring, page.tsx parallel fetches, operations-writes-week owner inheritance, plus all tests — apply the 5-step review cleanly with no findings.
+All other diff files apply the 5-step review cleanly with no findings: runway-schema additions, plate-summary pure helpers, unified-view helper, AccountSection milestones, DayItemCard past-end/blocked_by cues, RunwayBoard toggle wiring, page.tsx parallel fetches, operations-writes-week owner inheritance, plus all tests.
 
 ---
 
@@ -156,7 +156,7 @@ No rework needed. TP should coordinate `pnpm runway:push` at integration (flagge
 **Verdict: GENUINE unification.** Evidence:
 - `page.tsx:93` builds `unifiedAccounts = buildUnifiedAccounts(accounts, [...thisWeek, ...upcoming])` from the **same** week-items fetch already used by the triage view (not a second DB call).
 - `AccountSection` consumes `Account | UnifiedAccount` via a type union; when `milestones` are absent (legacy shape) it renders as before. When present (unified shape), milestones render inline.
-- There is no pre-existing `ProjectView.tsx` — the CC prompt said "or closest equivalent" — so `AccountSection` (the "By Account" tab) is the right surface.
+- There is no pre-existing `ProjectView.tsx`, the CC prompt said "or closest equivalent", so `AccountSection` (the "By Account" tab) is the right surface.
 - Single source of truth confirmed.
 
 ### 3. Graceful table-missing fallback safety
@@ -174,7 +174,7 @@ Risk is that LibSQL's error message text could change in a future version and th
 
 ## Overall recommendation
 
-**MERGE** — with optional non-critical fixups deferred to Chunk 5 polish.
+**MERGE**: with optional non-critical fixups deferred to Chunk 5 polish.
 
 All findings are non-critical. The commits are coherent, tests are strong, the `view_preferences` design correction is the right call, and the L2 owner inheritance exactly matches the v4 convention spec. No security, data-loss, or contract-break issues found.
 

@@ -10,7 +10,7 @@
 
 Build Civilization's Monday-morning status view + ship the highest-leverage card UX wins (checkbox + pencil) on the dashboard surfaces.
 
-Single shared PR. Operator wants no follow-up cleanup PR — everything lands together or gets explicitly deferred.
+Single shared PR. Operator wants no follow-up cleanup PR; everything lands together or gets explicitly deferred.
 
 ---
 
@@ -18,28 +18,28 @@ Single shared PR. Operator wants no follow-up cleanup PR — everything lands to
 
 | Commit | Subject | GH closure |
 |---|---|---|
-| 1 | `docs: plan for status view + card UX bundle` | — |
+| 1 | `docs: plan for status view + card UX bundle` | None |
 | 2 | `fix(runway): gantt renders retainer direct work items alongside L2 children (#65)` | Fixes #65 |
 | 3 | `fix(runway): wrapper with only orphan weekItems hides instead of rendering dead zone (#42)` | Fixes #42 |
 | 4 | `feat(runway): audit pill expands on click to show contributing issues (#66)` | Fixes #66 |
 | 5 | `feat(runway): card complete checkbox with undo toast (closes #9, partial #67)` | Closes #9, partial #67 |
-| 6 | `feat(runway): card pencil icon opens edit modal (UX discoverability)` | — |
+| 6 | `feat(runway): card pencil icon opens edit modal (UX discoverability)` | None |
 | 7 | `feat(runway): Status View tab — Account → Project → Date + bucket banners (closes #64)` | Fixes #64 |
 
 ---
 
 ## Out of scope (explicit)
 
-- Rest of #67 — wrapper layer + subtasks. The checkbox half ships here. Operator will edit #67 to drop the checkbox from its remaining scope.
-- Read-only Status View — operator confirmed interactive (reuses existing modal).
-- 4-bucket precedence — confirmed mutually exclusive in production, so each card inherits its dashboard section's color directly.
-- Mobile-first treatment — desktop standup-projection use case primary; mobile should not break but is not the design driver.
+- Rest of #67: wrapper layer + subtasks. The checkbox half ships here. Operator will edit #67 to drop the checkbox from its remaining scope.
+- Read-only Status View: operator confirmed interactive (reuses existing modal).
+- 4-bucket precedence: confirmed mutually exclusive in production, so each card inherits its dashboard section's color directly.
+- Mobile-first treatment: desktop standup-projection use case primary; mobile should not break but is not the design driver.
 
 ---
 
-## Commit 2 — #65 Gantt retainer-direct work items
+## Commit 2: #65 Gantt retainer-direct work items
 
-**Problem:** in `src/lib/runway/gantt/resolve-helpers.ts:19-30`, a top-level retainer L1 is classified as a "wrapper" the moment it gains any L2 sub-project. Once classified, `build-raw-data.ts:27-34` collapses its direct work items into `orphanWeekItems` and the row transformer never emits them. Hopdoddy's Digital Retainer was the production bite — 19 direct WIs invisible after one L2 was added.
+**Problem:** in `src/lib/runway/gantt/resolve-helpers.ts:19-30`, a top-level retainer L1 is classified as a "wrapper" the moment it gains any L2 sub-project. Once classified, `build-raw-data.ts:27-34` collapses its direct work items into `orphanWeekItems` and the row transformer never emits them. Hopdoddy's Digital Retainer was the production bite: 19 direct WIs invisible after one L2 was added.
 
 **Fix:** wrappers render BOTH L2 children AND direct work items as Gantt rows. Two options:
 - **A.** Include direct WIs in `children` alongside sub-projects with a discriminator
@@ -51,7 +51,7 @@ Single shared PR. Operator wants no follow-up cleanup PR — everything lands to
 
 ---
 
-## Commit 3 — #42 Wrapper orphan-only dead zone
+## Commit 3: #42 Wrapper orphan-only dead zone
 
 **Problem:** `filterActiveRundown` keeps any wrapper with `raw.orphanWeekItems.length > 0` regardless of whether AccountTier knows how to render orphans. AccountTier never iterates orphans → empty wrapper header, no content.
 
@@ -61,7 +61,7 @@ Single shared PR. Operator wants no follow-up cleanup PR — everything lands to
 
 ---
 
-## Commit 4 — #66 Audit pill expand on click
+## Commit 4: #66 Audit pill expand on click
 
 **Problem:** "N critical, M warnings" pill on each rundown section header is informational only. Click does nothing. Operator has to scroll to the DataIntegrityPanel below the chart to see the actual issues.
 
@@ -73,7 +73,7 @@ Single shared PR. Operator wants no follow-up cleanup PR — everything lands to
 
 ---
 
-## Commit 5 — Card complete checkbox + undo toast
+## Commit 5: Card complete checkbox + undo toast
 
 **What ships:** every L2 card in This Week, By Account, and Status View gets a styled checkbox in a fixed position (recco: top-right corner). Click → flip status to `completed`, fire undo toast.
 
@@ -97,9 +97,9 @@ Single shared PR. Operator wants no follow-up cleanup PR — everything lands to
 
 ---
 
-## Commit 6 — Card pencil icon for edit modal
+## Commit 6: Card pencil icon for edit modal
 
-**What ships:** small pencil glyph in card corner (recco: top-left or beside the title) that opens the existing edit modal. Body-click to open the modal stays — pencil is for discoverability ("where do I click to edit?").
+**What ships:** small pencil glyph in card corner (recco: top-left or beside the title) that opens the existing edit modal. Body-click to open the modal stays: pencil is for discoverability ("where do I click to edit?").
 
 **Trade-off:** the whole card is already clickable. Pencil is redundant for power users but reduces ambiguity for AMs/CDs unsure if clicking the title vs the date vs the body has different effects. Operator flagged it as highly-requested.
 
@@ -107,7 +107,7 @@ Single shared PR. Operator wants no follow-up cleanup PR — everything lands to
 
 ---
 
-## Commit 7 — Status View tab
+## Commit 7: Status View tab
 
 ### Tab placement
 
@@ -120,10 +120,10 @@ Tab key: `"status"`, label: `"Status View"`.
 ### Data shape
 
 Source set = union of three predicates from existing dashboard:
-- **Needs Update** — `endDate < today AND status ∉ {completed, canceled}` (from `getStaleWeekItems` / Needs Update section)
-- **Today** — `startDate <= today <= endDate AND today-anchored` (from Today section logic)
-- **In Flight** — `filterInFlight` from `plate-summary.ts:157` (status in {in-progress, scheduled} + start < today <= end)
-- **Blocked items roll into Needs Update bucket** — render with red banner, card body shows "BLOCKED — [reason]" if blocked-with-no-endDate
+- **Needs Update**: `endDate < today AND status ∉ {completed, canceled}` (from `getStaleWeekItems` / Needs Update section)
+- **Today**: `startDate <= today <= endDate AND today-anchored` (from Today section logic)
+- **In Flight**: `filterInFlight` from `plate-summary.ts:157` (status in {in-progress, scheduled} + start < today <= end)
+- **Blocked items roll into Needs Update bucket**: render with red banner, card body shows "BLOCKED: [reason]" if blocked-with-no-endDate
 
 Each item belongs to exactly one bucket (dashboard's existing routing already mutually-exclusive via `filterSpanningFromDayCells`). No new precedence logic needed.
 
@@ -140,9 +140,9 @@ Blocked-no-endDate items sort to TOP of project's card list within Needs Update 
 ### Card visual treatment
 
 Bottom-of-card banner (full width, ~6px height) with:
-- **Red** (same as Needs Update) — bucket = Needs Update OR blocked
-- **White** — bucket = Today
-- **Blue** — bucket = In Flight
+- **Red** (same as Needs Update): bucket = Needs Update OR blocked
+- **White**: bucket = Today
+- **Blue**: bucket = In Flight
 
 Banner is the indicator. Card body stays clean.
 
@@ -153,7 +153,7 @@ Same card component as This Week / By Account (reuse). Inherits pencil + checkbo
 ### Empty states
 
 - Account with zero items in any bucket: hide the account entirely (don't render empty section header)
-- Account with items in only one bucket: render normally (no empty bucket header — buckets aren't sub-headers in this layout; they're per-card banner colors)
+- Account with items in only one bucket: render normally (no empty bucket header: buckets aren't sub-headers in this layout; they're per-card banner colors)
 
 ---
 
@@ -173,7 +173,7 @@ Same card component as This Week / By Account (reuse). Inherits pencil + checkbo
 ## Test plan
 
 Per commit (run in CI):
-- `pnpm test:run` — unit + component
+- `pnpm test:run`: unit + component
 - `pnpm lint`
 - Vercel preview deploy
 
@@ -201,18 +201,18 @@ Pre-merge:
 
 ## Signal cadence
 
-1. `plan ready for TP review at docs/plans/status-view-card-ux.md` — after writing this doc
+1. `plan ready for TP review at docs/plans/status-view-card-ux.md`: after writing this doc
 2. (await TP green-light + answers on open questions, if any)
 3. `commit N pushed` for each milestone commit; bundled final signal `7 commits pushed, ready for PR open`
 4. (await TP green-light to push + open PR)
-5. `PR opened at <url>` — armed bot cycle
-6. `PR thread-state clean, ready for TP holistic QA` — after 2 empty cycles post-last-push
+5. `PR opened at <url>`: armed bot cycle
+6. `PR thread-state clean, ready for TP holistic QA`: after 2 empty cycles post-last-push
 
 ---
 
 ## Open questions for CC to raise if blocked
 
-- Pencil icon position: top-left, top-right, or beside title? (operator deferred — pick the cleanest in existing card layout)
+- Pencil icon position: top-left, top-right, or beside title? (operator deferred, pick the cleanest in existing card layout)
 - Checkbox position: top-right corner of card, or in the card body row? (recco: top-right corner)
 - Toast lib already in repo? Check `package.json` + grep for existing toast usage before importing new
-- Status View card MIGHT need to differ from This Week card (smaller? denser?) — reuse first, restyle if it feels wrong in QA
+- Status View card MIGHT need to differ from This Week card (smaller? denser?): reuse first, restyle if it feels wrong in QA

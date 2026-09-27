@@ -11,7 +11,7 @@ _Research date: 2026-08-13. Target use case: Civilization Agency Runway dashboar
 - **Turso supports instant DB branching** (`turso db create staging --from-db prod`): use this for a staging DB that mirrors prod schema + seed data.
 - **Wrap every write in a typed "safe update" function** that accepts a dry-run flag, validates input with Zod, runs inside a transaction, and appends to an `audit_log` table.
 - **SQLite triggers are the cleanest audit-trail primitive** for Turso; application-level audit inserts inside transactions are the safer cross-platform fallback for Drizzle.
-- **The one big SQLite footgun:** all writes serialize through a single primary — Turso is not a fit for high-concurrency write workloads. Runway's write volume is fine; know this before the next project.
+- **The one big SQLite footgun:** all writes serialize through a single primary; Turso is not a fit for high-concurrency write workloads. Runway's write volume is fine; know this before the next project.
 
 ---
 
@@ -24,7 +24,7 @@ Drizzle has no built-in "dry-run" mode for application writes. You implement it 
 3. If `DRY_RUN=true`, log the proposed SQL (via `db.run().toSQL()`) and exit without committing.
 4. Apply inside a transaction and roll back on any error.
 
-`db.run().toSQL()` returns `{ sql, params }` without executing — use this to log the exact statement before committing. ([Drizzle migrations docs](https://orm.drizzle.team/docs/migrations))
+`db.run().toSQL()` returns `{ sql, params }` without executing: use this to log the exact statement before committing. ([Drizzle migrations docs](https://orm.drizzle.team/docs/migrations))
 
 ### Transactional guards
 ```typescript
@@ -39,7 +39,7 @@ SQLite transactions are serialized; the insert and the audit entry either both l
 Add a `version` integer column to mutable records. Every update increments it and filters on the expected version. Zero rows affected = stale write, reject and retry. This prevents lost-update races. ([Paul Serban, Drizzle Best Practices](https://blog.paulserban.eu/post/drizzle-orm-best-practices-principles-patterns-and-real-world-case-studies/))
 
 ### Audit trail
-Two options — pick one and stay consistent:
+Two options; pick one and stay consistent:
 
 **Option A: Application-level audit table (recommended for Drizzle)**
 ```typescript
@@ -59,7 +59,7 @@ Insert inside every write transaction. Drizzle gives you full type safety here.
 **Option B: SQLite triggers (Turso-native)**
 Turso CDC (`PRAGMA cdc = 1`) automatically logs every insert/update/delete to a CDC table with before/after values. Marked "unstable" in mid-2026; good for debugging, not a compliance store yet. ([Turso CDC announcement](https://turso.tech/blog/introducing-change-data-capture-in-turso-sqlite-rewrite))
 
-For Runway: use Option A — it travels with Drizzle schema and survives driver changes.
+For Runway: use Option A; it travels with Drizzle schema and survives driver changes.
 
 ### Expand-contract for structural changes
 Never rename or drop a column in one migration. Pattern:
@@ -107,7 +107,7 @@ class SafeWriter<T> {
 
 Key design rules for a shared library:
 - Accept an `opts.validate` callback so each project injects its own business rules.
-- Keep the Drizzle `db` instance as a constructor param — swap it for a staging or test DB without touching the writer code.
+- Keep the Drizzle `db` instance as a constructor param; swap it for a staging or test DB without touching the writer code.
 - Export a typed `createSafeWriter(db, tableName)` factory function so projects don't import the class directly.
 - Never put project-specific column names inside the shared code. ([repository pattern reference](https://dev.to/fyapy/repository-pattern-with-typescript-and-nodejs-25da))
 
@@ -121,7 +121,7 @@ OPEN QUESTION: Whether to publish this as a private npm workspace package (`@civ
 ```bash
 turso db create runway-staging --from-db runway-prod
 ```
-This is a metadata-only copy operation — instant. Both databases are fully independent after branching. ([Codebrand Turso guide 2026](https://www.codebrand.us/blog/turso-database-complete-guide-2026/))
+This is a metadata-only copy operation. Instant. Both databases are fully independent after branching. ([Codebrand Turso guide 2026](https://www.codebrand.us/blog/turso-database-complete-guide-2026/))
 
 ### Three-env setup
 ```
@@ -129,7 +129,7 @@ TURSO_DATABASE_URL=libsql://runway-prod-...turso.io   # .env.production
 TURSO_DATABASE_URL=libsql://runway-staging-...turso.io # .env.staging
 TURSO_DATABASE_URL=file:local.db                       # .env.local
 ```
-In `drizzle.config.ts`, read the env var — the same config file serves all three environments. Vercel environment variables control which URL each deploy uses.
+In `drizzle.config.ts`, read the env var; the same config file serves all three environments. Vercel environment variables control which URL each deploy uses.
 
 ### Promoting schema staging → prod
 ```bash
@@ -140,7 +140,7 @@ TURSO_DATABASE_URL=$STAGING_URL npx drizzle-kit migrate
 # 3. Apply the same checked-in migration file to prod
 TURSO_DATABASE_URL=$PROD_URL npx drizzle-kit migrate
 ```
-The migration file is the promotion artifact — same file, different URL. Never run `push` against prod.
+The migration file is the promotion artifact: same file, different URL. Never run `push` against prod.
 
 ### Replication lag warning
 Turso propagates writes from the primary to edge replicas asynchronously. If you write and immediately read from an edge replica, you may see stale data. For Runway (low write volume, admin-driven mutations): not a practical issue. For future high-frequency workloads: route writes and immediate post-write reads to the primary URL explicitly.
@@ -151,27 +151,27 @@ Turso propagates writes from the primary to edge replicas asynchronously. If you
 
 | Command | Use case | Production-safe? |
 |---|---|---|
-| `drizzle-kit generate` | Creates SQL migration files | Yes — review before applying |
-| `drizzle-kit migrate` | Applies checked-in SQL files | Yes — files are version-controlled |
-| `drizzle-kit push` | Directly mutates DB schema | No — destructive, no file trail |
+| `drizzle-kit generate` | Creates SQL migration files | Yes: review before applying |
+| `drizzle-kit migrate` | Applies checked-in SQL files | Yes: files are version-controlled |
+| `drizzle-kit push` | Directly mutates DB schema | No: destructive, no file trail |
 | `drizzle-kit studio` | Read-only browser UI | Yes |
 
 ### Destructive migration guard
-Drizzle does NOT block `DROP COLUMN` or `DROP TABLE` by default. It will warn during `push` but will proceed on confirmation. With `generate`, you see the SQL before it runs — the human review step is the guard.
+Drizzle does NOT block `DROP COLUMN` or `DROP TABLE` by default. It will warn during `push` but will proceed on confirmation. With `generate`, you see the SQL before it runs; the human review step is the guard.
 
 **Add this CI check:** after `generate`, grep the output SQL for `DROP` statements and fail the CI job if any appear without a matching `[SAFE-DROP]` comment added by the engineer.
 
 ```bash
 # In CI
 if grep -i "^DROP" drizzle/*.sql | grep -v "SAFE-DROP"; then
-  echo "Destructive migration detected — manual review required"; exit 1
+  echo "Destructive migration detected: manual review required"; exit 1
 fi
 ```
 
 ### Pre-flight schema parity
 Before applying to prod, run `drizzle-kit check` (verifies no drift between schema file and DB state) then `drizzle-kit migrate` with the staging URL first. If staging apply succeeds, apply the identical file to prod.
 
-Drizzle tracks applied migrations in a `__drizzle_migrations` table by content hash. Never edit a migration file after it has been applied — the hash will no longer match and future runs will skip or fail. ([Drizzle docs](https://orm.drizzle.team/docs/migrations); [Dev Encyclopedia](https://devencyclopedia.com/blog/drizzle-orm-migrations-drizzle-kit))
+Drizzle tracks applied migrations in a `__drizzle_migrations` table by content hash. Never edit a migration file after it has been applied; the hash will no longer match and future runs will skip or fail. ([Drizzle docs](https://orm.drizzle.team/docs/migrations); [Dev Encyclopedia](https://devencyclopedia.com/blog/drizzle-orm-migrations-drizzle-kit))
 
 ---
 
@@ -196,7 +196,7 @@ Drizzle tracks applied migrations in a `__drizzle_migrations` table by content h
 This is an interface sketch, not production code. CC builds the actual implementation.
 
 ```typescript
-// Shared interface — lives in shared/lib/db-safe-writer.ts
+// Shared interface: lives in shared/lib/db-safe-writer.ts
 export interface SafeWriteOptions {
   dryRun: boolean;
   actor: string;

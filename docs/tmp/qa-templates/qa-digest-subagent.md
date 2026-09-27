@@ -18,17 +18,17 @@ Given 3 QA reports + original diff, produce a 10-line digest that TP can act on 
 - `docs/tmp/qa-reports/chunk-{N}-qa-code-review.md`
 - `docs/tmp/qa-reports/chunk-{N}-qa-atomic-commits.md`
 - `docs/tmp/qa-reports/chunk-{N}-qa-data-integrity.md` (migration chunks only)
-- `git diff {BASE_BRANCH}..{BRANCH}` — for cross-reference
+- `git diff {BASE_BRANCH}..{BRANCH}`: for cross-reference
 
 ---
 
-## Step 0 — Verify inputs
+## Step 0: Verify inputs
 
 All 3 report paths must exist and be readable. If any missing (except data integrity for non-migration chunks), HALT.
 
 ---
 
-## Step 1 — Extract and rank findings
+## Step 1: Extract and rank findings
 
 From each report:
 - Pull the "Summary" section counts
@@ -44,12 +44,12 @@ Rank all critical findings by impact:
 
 ---
 
-## Step 2 — Build digest
+## Step 2: Build digest
 
 Format (10 lines max, including headers):
 
 ```
-# QA Digest — Chunk {N}
+# QA Digest: Chunk {N}
 
 Branch: {BRANCH}
 Critical: {count} (review={A}, commits={B}, data={C})
@@ -63,7 +63,7 @@ Full reports: {list of paths}
 
 ---
 
-## Step 3 — Output
+## Step 3: Output
 
 Write digest to `docs/tmp/qa-reports/chunk-{N}-digest.md`.
 Return path + the digest text inline for TP immediate read.

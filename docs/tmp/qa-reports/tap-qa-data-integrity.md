@@ -1,4 +1,4 @@
-# QA Report — TAP Data Integrity
+# QA Report: TAP Data Integrity
 
 **Migration:** `tap-v4-realign-2026-04-21` (batchId `tap-v4-realign-2026-04-21`)
 **Pre-snapshot:** `/Users/jasonburks/Documents/_AI_/_R1/.claude/worktrees/agent-aaa64c46/docs/tmp/tap-v4-pre-snapshot-2026-04-21.json`
@@ -57,21 +57,21 @@
 
 ## Observed delta (pre → post + prod + audit log)
 
-### Expected AND observed — all 13 PASS
+### Expected AND observed: all 13 PASS
 
 **Client row**
-- `tap.team` `"Owner: Jason, Dev: Tim"` → `"PM: Jason, Dev: Tim"` — matches post-snapshot and prod `get_clients`. Audit row present (`client-field-change`, 23:53:51).
+- `tap.team` `"Owner: Jason, Dev: Tim"` → `"PM: Jason, Dev: Tim"`: matches post-snapshot and prod `get_clients`. Audit row present (`client-field-change`, 23:53:51).
 
 **L1**
-- `projects[0].name` `"TAP ERP Rebuild"` → `"ERP Rebuild"` — matches post + prod. Audit row present (`field-change`, 23:53:52).
-- `projects[0].resources` `"Dev: Tim"` → `"PM: Jason, Dev: Tim"` — matches post + prod (name field). Audit row present (`field-change`, 23:53:52).
-- `projects[0].engagementType` `null` → `"project"` — matches post-snapshot. Audit row present (`project-field-change`, 23:53:53).
+- `projects[0].name` `"TAP ERP Rebuild"` → `"ERP Rebuild"`: matches post + prod. Audit row present (`field-change`, 23:53:52).
+- `projects[0].resources` `"Dev: Tim"` → `"PM: Jason, Dev: Tim"`: matches post + prod (name field). Audit row present (`field-change`, 23:53:52).
+- `projects[0].engagementType` `null` → `"project"`: matches post-snapshot. Audit row present (`project-field-change`, 23:53:53).
 
-**L2 titles — all 5 PASS**
+**L2 titles: all 5 PASS**
 - All new titles confirmed against prod `get_week_items` for weeks 2026-04-20, 08-17, 08-31, 10-12, 10-26.
 - 5 matching `week-field-change` audit rows between 23:53:53 and 23:53:54.
 
-**L2 blocked_by — all 4 PASS**
+**L2 blocked_by: all 4 PASS**
 - All 4 downstream L2s have correct blocked_by JSON in post-snapshot.
 - 4 matching `week-field-change` audit rows between 23:53:55 and 23:53:56.
 - Development L2 (chain head) correctly remains `blockedBy: null`.
@@ -85,10 +85,10 @@
 - None.
 
 #### INCIDENTAL (NON-CRITICAL)
-- `client.updatedAt` bumped: `2026-04-20T06:36:28` → `2026-04-20T23:53:51` — expected audit-trail side effect of `updateClientField`.
-- `projects[0].updatedAt` bumped: `23:06:58` → `23:53:52` — expected, fires on every field write.
-- Each L2 `updatedAt` bumped by ~20s at the time of its title / blocked_by write — expected.
-- 13 audit rows inserted with batchId `tap-v4-realign-2026-04-21` — expected (this IS the audit trail).
+- `client.updatedAt` bumped: `2026-04-20T06:36:28` → `2026-04-20T23:53:51`: expected audit-trail side effect of `updateClientField`.
+- `projects[0].updatedAt` bumped: `23:06:58` → `23:53:52`: expected, fires on every field write.
+- Each L2 `updatedAt` bumped by ~20s at the time of its title / blocked_by write: expected.
+- 13 audit rows inserted with batchId `tap-v4-realign-2026-04-21`: expected (this IS the audit trail).
 
 No silent field drift. Every field in the post-snapshot that differs from pre-snapshot is explained by one of the 13 expected writes or an incidental `updatedAt` touch.
 
@@ -99,11 +99,11 @@ No silent field drift. Every field in the post-snapshot that differs from pre-sn
 **Chain:** Development → Data Migration → Testing & QA → Deployment & Go-Live → Training & Handoff
 
 **Checks performed:**
-1. JSON array format — all 4 values are valid JSON arrays of strings (e.g., `"[\"95f9ce76acfd47e19b4cc05f2\"]"`) — PASS
-2. Referenced IDs resolve to real TAP L2s under the TAP L1 (verified in pre-snapshot `weekItems[]` and in prod via `get_week_items`) — PASS
-3. Chain head (Development) has `blockedBy: null` — PASS
-4. No cycles — linear chain, each downstream points only to one upstream with a strictly earlier `weekOf` — PASS
-5. Each link matches the narrative dependency described in `projects[0].notes` ("Sequential phases: … Dev (current) → Data Migration → Testing → Deployment → Training. Each phase blocked by predecessor.") — PASS
+1. JSON array format: all 4 values are valid JSON arrays of strings (e.g., `"[\"95f9ce76acfd47e19b4cc05f2\"]"`), PASS
+2. Referenced IDs resolve to real TAP L2s under the TAP L1 (verified in pre-snapshot `weekItems[]` and in prod via `get_week_items`), PASS
+3. Chain head (Development) has `blockedBy: null`, PASS
+4. No cycles: linear chain, each downstream points only to one upstream with a strictly earlier `weekOf`, PASS
+5. Each link matches the narrative dependency described in `projects[0].notes` ("Sequential phases: … Dev (current) → Data Migration → Testing → Deployment → Training. Each phase blocked by predecessor."), PASS
 
 **Verdict:** blocked_by chain is valid, acyclic, and consistent with the L1 narrative.
 
@@ -119,7 +119,7 @@ The spec line for TAP in `overnight-clients-v4-realign.md` is narrow:
 The agent applied the *generic* v4 rules on top (title reformatting for all L2s, blocked_by chain across 5 L2s, client-name stripping from L1, `Owner:` → `PM:` normalization). This is broader than the TAP-specific bullet list but matches the "generic spec pattern" header of the same doc, which states *every* L1/L2 gets title-format + role-prefix + blocked_by treatment.
 
 Internal consistency checks against `runway-v4-convention.md`:
-- Role abbreviations: `PM`, `Dev` both appear in the locked list (`AM / CD / Dev / CW / PM / CM / Strat`). `Owner:` is **not** in the list — the agent's fix to `PM:` is correct. PASS.
+- Role abbreviations: `PM`, `Dev` both appear in the locked list (`AM / CD / Dev / CW / PM / CM / Strat`). `Owner:` is **not** in the list; the agent's fix to `PM:` is correct. PASS.
 - Card title format `[Project Name] — [Specific Milestone]` with em-dash: all 5 new titles follow this exactly. Client-name prefix `TAP` not present. Category word (`Kickoff`) dropped from the 4 kickoff titles. PASS.
 - `engagement_type='project'` is a valid enum value. PASS.
 - L1.resources = union of owner role + L2 doers matches v4 convention (engagement team). PASS.
@@ -144,7 +144,7 @@ One minor note worth flagging to TP (not blocking): the spec bullet "Verify team
 Triangulated against three sources:
 1. Post-snapshot file (written at 23:54:20)
 2. Prod MCP queries (`get_clients`, `get_projects tap`, `get_week_items` × 5 weeks) at QA time
-3. Audit log (`get_updates tap` — exactly 13 rows returned, all with `updatedBy: "migration"`, timestamps clustered 23:53:51–23:53:56)
+3. Audit log (`get_updates tap`: exactly 13 rows returned, all with `updatedBy: "migration"`, timestamps clustered between 23:53:51 and 23:53:56)
 
 All three agree. No contradictions. Forward script's own `verify()` step also runs in-migration and would have thrown if any field drifted. Reverse script exists and reads from the pre-snapshot for clean rollback path.
 

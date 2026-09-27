@@ -374,7 +374,7 @@ return transport.handleRequest(request, { parsedBody: body });
 
 ### Authentication
 
-Bearer token via `RUNWAY_MCP_API_KEY` environment variable. No workspace-scoped auth — this is a single shared endpoint.
+Bearer token via `RUNWAY_MCP_API_KEY` environment variable. No workspace-scoped auth: this is a single shared endpoint.
 
 ### Tool Registration
 

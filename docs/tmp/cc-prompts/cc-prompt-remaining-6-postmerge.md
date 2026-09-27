@@ -1,4 +1,4 @@
-# CC Prompt — Remaining-6 Post-Merge Cleanup
+# CC Prompt: Remaining-6 Post-Merge Cleanup
 
 ## Mission
 
@@ -12,7 +12,7 @@ Work in focused, atomic steps. Stay in scope.
 
 ---
 
-## STEP 0 — State check
+## STEP 0: State check
 
 ```bash
 git branch --show-current
@@ -23,15 +23,15 @@ ls scripts/runway-migrations/   # should see all v4 migrations from PR #86
 grep -l "engagement_type\|start_date\|blocked_by" src/lib/db/runway-schema.ts   # schema should have v4 columns
 ```
 
-HALT if PR #86 not yet merged to runway — this agent is post-merge only.
+HALT if PR #86 not yet merged to runway: this agent is post-merge only.
 
 ## Locked TP decisions (consistent with Wave 1/2)
 
-- Team roster: engaged-roles-per-L1 interpretation (union of L2 roles + L1 owner role; if L1 has no L2s, fall back to full `clients.team`). Soundly used full-team-on-each; others used engaged-roles — stay with engaged-roles for consistency with majority pattern
+- Team roster: engaged-roles-per-L1 interpretation (union of L2 roles + L1 owner role; if L1 has no L2s, fall back to full `clients.team`). Soundly used full-team-on-each; others used engaged-roles: stay with engaged-roles for consistency with majority pattern
 - `engagement_type='project'` default on most clients unless evidence of retainer
 - Null L2 resources OK if single-person work (v4 rule)
 - Client-led L2s: resources = plain client name (e.g., `"HDL"`), no role prefix, per v4 convention
-- PROJECT_FIELDS whitelist — by the time you run (post-Chunk-5-merge), the whitelist SHOULD include `engagementType`, `contractStart`, `contractEnd`. Use `updateProjectField` helper. If still missing, fall back to raw `ctx.db.update()` + `insertAuditRecord()` pattern (matches bonterra-cleanup-2026-04-19.ts)
+- PROJECT_FIELDS whitelist: by the time you run (post-Chunk-5-merge), the whitelist SHOULD include `engagementType`, `contractStart`, `contractEnd`. Use `updateProjectField` helper. If still missing, fall back to raw `ctx.db.update()` + `insertAuditRecord()` pattern (matches bonterra-cleanup-2026-04-19.ts)
 - Title format: `[Project Name] — [Milestone]`, em-dash, no client prefix, no category word
 - Dormant L1s with no historical evidence of engaged team: leave resources null
 - Client `team` field must be in v4 role-prefix format (e.g., `AM: Jill, CD: Lane, Dev: Leslie, PM: Jason`); normalize if legacy format found
@@ -41,7 +41,7 @@ HALT if PR #86 not yet merged to runway — this agent is post-merge only.
 
 - **batchId tagging**: ensure your forward script passes a batch id to audit record writes (pattern from convergix/bonterra/tap/lppc scripts). If using `updateProjectField`, it auto-tags via `deriveMigrationBatchId()`. If using raw `ctx.db.update()`, pass `batchId` explicitly via `insertAuditRecord()`.
 - **Co-locate tests with feature commits**: if you add any tests (unlikely for this cleanup), bundle them with the subject code, not as an omnibus end-of-branch test commit.
-- **Reverse script fidelity**: reverse script reads pre-snapshot and restores every field captured. Even fields that weren't intended to change — this catches drift.
+- **Reverse script fidelity**: reverse script reads pre-snapshot and restores every field captured. Even fields that weren't intended to change: this catches drift.
 - **Dry-run halt discipline**: if dry-run surfaces any op you didn't plan, HALT. Don't proceed to apply on "close enough" assumptions.
 - **linkWeekItemToProject for FK changes**: if a migration reparents a week_item, use the helper (already on base branch).
 
@@ -50,7 +50,7 @@ HALT if PR #86 not yet merged to runway — this agent is post-merge only.
 **Read operator decisions first:** `docs/brain/remaining-6-client-state-questions.md` has 4 open questions. If operator has answered them in the doc, apply those answers. If not, use the defaults below and flag each in a post-run note.
 
 ### Hopdoddy
-- Light — reconcile L1 with existing week items
+- Light: reconcile L1 with existing week items
 - Apply v4 convention (team roster, owner inheritance, engagement_type)
 - `engagement_type='project'` default
 
@@ -76,7 +76,7 @@ HALT if PR #86 not yet merged to runway — this agent is post-merge only.
 - `engagement_type='project'`
 
 ### Wilsonart
-- Light — graphics tweak
+- Light: graphics tweak
 - `engagement_type='project'`
 
 ## Workflow (for each of the 6)

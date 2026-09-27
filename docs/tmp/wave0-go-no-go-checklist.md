@@ -82,7 +82,7 @@ _Worktrees created at wave start, not Wave 0 end, so base branch has latest comm
 
 ## Items remaining before Wave 1 fire button
 
-1. `pnpm build` on base branch — run and confirm green
+1. `pnpm build` on base branch: run and confirm green
 2. Create 3 worktrees (chunk-4, chunk-1, data)
 3. Final pre-Wave-1 snapshot to plan doc
 4. Spawn Chunk 4 schema agent (Wave 1 Step 1)

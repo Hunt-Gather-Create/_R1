@@ -1,4 +1,4 @@
-# QA Report — Soundly Data Integrity
+# QA Report: Soundly Data Integrity
 
 **Migration:** `soundly-v4-realign-2026-04-21` (PR #86, Wave 1 Batch A)
 **Pre-snapshot:** `/Users/jasonburks/Documents/_AI_/_R1/.claude/worktrees/agent-a437840c/docs/tmp/soundly-v4-pre-snapshot-2026-04-21.json` (captured 2026-04-20T23:40:38.662Z, mode=apply)
@@ -23,13 +23,13 @@
 
 From migration script `L1_PLANS` / `L2_PLANS` and the task brief:
 
-1. L1 `cf4d6575` iFrame Provider Search — resources: `Dev: Leslie` → `AM: Jill, Dev: Leslie, Dev: Josefina, PM: Jason`
-2. L1 `cf4d6575` iFrame Provider Search — engagementType: `null` → `project`
-3. L1 `8279d9eb` Payment Gateway Page — resources: `Dev: Leslie` → `AM: Jill, Dev: Leslie, Dev: Josefina, PM: Jason`
-4. L1 `8279d9eb` Payment Gateway Page — engagementType: `null` → `retainer`
-5. L1 `8279d9eb` Payment Gateway Page — contractEnd: `null` → `2026-05-31`
-6. L1 `54d65143` AARP Member Login + Landing Page — resources: `Dev: Josefina` → `AM: Jill, Dev: Leslie, Dev: Josefina, PM: Jason`
-7. L1 `54d65143` AARP Member Login + Landing Page — engagementType: `null` → `project`
+1. L1 `cf4d6575` iFrame Provider Search, resources: `Dev: Leslie` → `AM: Jill, Dev: Leslie, Dev: Josefina, PM: Jason`
+2. L1 `cf4d6575` iFrame Provider Search, engagementType: `null` → `project`
+3. L1 `8279d9eb` Payment Gateway Page, resources: `Dev: Leslie` → `AM: Jill, Dev: Leslie, Dev: Josefina, PM: Jason`
+4. L1 `8279d9eb` Payment Gateway Page, engagementType: `null` → `retainer`
+5. L1 `8279d9eb` Payment Gateway Page, contractEnd: `null` → `2026-05-31`
+6. L1 `54d65143` AARP Member Login + Landing Page, resources: `Dev: Josefina` → `AM: Jill, Dev: Leslie, Dev: Josefina, PM: Jason`
+7. L1 `54d65143` AARP Member Login + Landing Page, engagementType: `null` → `project`
 8. L2 `9c3fc2bb` title: `iFrame launch (evening)` → `iFrame Provider Search — Evening Launch`
 9. L2 `8ef611c4` title: NO CHANGE (spec notes it is already v4-compliant)
 
@@ -40,7 +40,7 @@ Total expected field mutations: **8**. Total rows expected to be touched: **4** 
 ## Observed delta (field-by-field diff of pre → post snapshot)
 
 ### Client `c68d8a44...` (Soundly)
-No field changes. `updatedAt` held at `2026-04-20T06:37:43.000Z` (untouched — correct, spec did not target client row).
+No field changes. `updatedAt` held at `2026-04-20T06:37:43.000Z` (untouched: correct, spec did not target client row).
 
 ### L1 `cf4d65755...` iFrame Provider Search
 - resources: `Dev: Leslie` → `AM: Jill, Dev: Leslie, Dev: Josefina, PM: Jason` **[EXPECTED, OBSERVED]**
@@ -59,7 +59,7 @@ No field changes. `updatedAt` held at `2026-04-20T06:37:43.000Z` (untouched — 
 - resources: `Dev: Josefina` → `AM: Jill, Dev: Leslie, Dev: Josefina, PM: Jason` **[EXPECTED, OBSERVED]**
 - engagementType: `null` → `project` **[EXPECTED, OBSERVED]**
 - updatedAt: `2026-04-20T06:37:37` → `2026-04-20T23:40:40` **[INCIDENTAL]**
-- All other fields identical. (Notes field still references `Launch target 7/15` — unchanged, out of scope.)
+- All other fields identical. (Notes field still references `Launch target 7/15`: unchanged, out of scope.)
 
 ### L2 `9c3fc2bb4...` (iFrame launch (evening) → iFrame Provider Search — Evening Launch)
 - title: `iFrame launch (evening)` → `iFrame Provider Search — Evening Launch` **[EXPECTED, OBSERVED]**
@@ -92,7 +92,7 @@ All 8 expected field mutations observed in the post-snapshot and confirmed on li
 Audit trail (8 rows) observed via MCP `get_updates(soundly)`:
 - Field-change rows for each of the 3 resources updates, 3 engagement_type updates, 1 contract_end update.
 - Week-field-change row for the title rename.
-All 8 tagged `updatedBy = "migration"` and timestamped 2026-04-20T23:40:38–41Z. Matches the expected count.
+All 8 tagged `updatedBy = "migration"` and timestamped between 2026-04-20T23:40:38Z and 2026-04-20T23:40:41Z. Matches the expected count.
 
 ### Expected but NOT observed (CRITICAL)
 
@@ -106,10 +106,10 @@ None.
 
 #### INCIDENTAL (NON-CRITICAL)
 
-- L1 `cf4d6575` updatedAt bump (23:06:55 → 23:40:39) — consequence of 2 writes to this row.
-- L1 `8279d9eb` updatedAt bump (23:06:55 → 23:40:40) — consequence of 3 writes to this row.
-- L1 `54d65143` updatedAt bump (06:37:37 → 23:40:40) — consequence of 2 writes to this row.
-- L2 `9c3fc2bb` updatedAt bump (23:06:25 → 23:40:41) — consequence of 1 write to this row.
+- L1 `cf4d6575` updatedAt bump (23:06:55 → 23:40:39): consequence of 2 writes to this row.
+- L1 `8279d9eb` updatedAt bump (23:06:55 → 23:40:40): consequence of 3 writes to this row.
+- L1 `54d65143` updatedAt bump (06:37:37 → 23:40:40): consequence of 2 writes to this row.
+- L2 `9c3fc2bb` updatedAt bump (23:06:25 → 23:40:41): consequence of 1 write to this row.
 
 All four incidentals are expected noise from the migration's own writes. No untargeted rows were mutated.
 
@@ -117,9 +117,9 @@ All four incidentals are expected noise from the migration's own writes. No unta
 
 ## Locked-decision compliance
 
-1. **`contract_end = '2026-05-31'` on Payment Gateway Page** — **COMPLIANT.** Post-snapshot shows `contractEnd: "2026-05-31"` on project `8279d9eb...`.
-2. **Full `clients.team` copied verbatim to all 3 L1 `resources` (option a, full-team-on-each)** — **COMPLIANT.** All 3 L1s now have `resources = "AM: Jill, Dev: Leslie, Dev: Josefina, PM: Jason"`, which is byte-for-byte `clients.team` for Soundly (confirmed via MCP `get_clients`).
-3. **engagement_type assignment (project×2, retainer×1)** — **COMPLIANT.** iFrame Provider Search = project, AARP = project, Payment Gateway = retainer.
+1. **`contract_end = '2026-05-31'` on Payment Gateway Page**: **COMPLIANT.** Post-snapshot shows `contractEnd: "2026-05-31"` on project `8279d9eb...`.
+2. **Full `clients.team` copied verbatim to all 3 L1 `resources` (option a, full-team-on-each)**: **COMPLIANT.** All 3 L1s now have `resources = "AM: Jill, Dev: Leslie, Dev: Josefina, PM: Jason"`, which is byte-for-byte `clients.team` for Soundly (confirmed via MCP `get_clients`).
+3. **engagement_type assignment (project×2, retainer×1)**: **COMPLIANT.** iFrame Provider Search = project, AARP = project, Payment Gateway = retainer.
 
 ---
 
@@ -127,7 +127,7 @@ All four incidentals are expected noise from the migration's own writes. No unta
 
 - Soundly client row: unchanged (updatedAt static). No scope leak.
 - The 2nd L2 (Payment Gateway Page — In Dev, `8ef611c4...`): untouched (updatedAt static). No scope leak; correctly skipped per spec.
-- Soundly has `projectCount: 3` per `get_clients()` — matches pre-snapshot; no L1 creations/deletions.
+- Soundly has `projectCount: 3` per `get_clients()`: matches pre-snapshot; no L1 creations/deletions.
 - No new L2s under Soundly for week-of 2026-04-20 beyond the two in the snapshots (confirmed via MCP `get_week_items(2026-04-20)`).
 - No other clients had updates in the migration's time window per `get_updates(soundly)`-scoped view; cross-client side effects were not in scope for this snapshot pair but the 8 audit rows match the expected 8 mutations exactly, implying no collateral writes under the `migration` updatedBy tag at that timestamp.
 
@@ -136,7 +136,7 @@ All four incidentals are expected noise from the migration's own writes. No unta
 ## Observations (non-critical)
 
 1. **Team-roster convention split between clients (by TP design).** Soundly uses the full-team-on-each interpretation (option a, locked decision #3 in `docs/brain/pr86-tp-autonomous-decisions.md`). Convergix uses engaged-roles-per-L1. This is an intentional TP-logged divergence, not a data-integrity issue. Flagged here only as an observation so future readers of Soundly L1s don't expect per-engagement splits.
-2. **Audit rows do not carry a `batchId` tag.** The task brief states the migration uses `batchId: soundly-v4-realign-2026-04-21`, but the migration script at `scripts/runway-migrations/soundly-v4-realign-2026-04-21.ts` does not pass a `batchId` when calling `updateProjectField` / `updateWeekItemField` / `insertAuditRecord`; the audit `metadata` JSON contains only `{field: <name>}`. Searching audit records by batchId will not find these 8 rows. If TP wants batchId tagging before `scripts/runway-publish-updates.ts` group-posts, the script needs a follow-up edit. Not a data-integrity failure — the mutations themselves are correct — but a discrepancy between the brief and the implementation. **Flagged for TP review; not blocking.**
+2. **Audit rows do not carry a `batchId` tag.** The task brief states the migration uses `batchId: soundly-v4-realign-2026-04-21`, but the migration script at `scripts/runway-migrations/soundly-v4-realign-2026-04-21.ts` does not pass a `batchId` when calling `updateProjectField` / `updateWeekItemField` / `insertAuditRecord`; the audit `metadata` JSON contains only `{field: <name>}`. Searching audit records by batchId will not find these 8 rows. If TP wants batchId tagging before `scripts/runway-publish-updates.ts` group-posts, the script needs a follow-up edit. Not a data-integrity failure, the mutations themselves are correct, but a discrepancy between the brief and the implementation. **Flagged for TP review; not blocking.**
 
 ---
 

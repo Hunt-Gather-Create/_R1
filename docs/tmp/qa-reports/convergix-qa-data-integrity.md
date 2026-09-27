@@ -1,17 +1,17 @@
-# QA Report — Convergix v4 Realign Data Integrity
+# QA Report: Convergix v4 Realign Data Integrity
 
 **Migration:** `convergix-v4-realign-2026-04-21`
 **Migration script (subject worktree):** `/Users/jasonburks/Documents/_AI_/_R1/.claude/worktrees/agent-a69d203b/scripts/runway-migrations/convergix-v4-realign-2026-04-21.ts`
 **Pre-snapshot:** `/Users/jasonburks/Documents/_AI_/_R1/.claude/worktrees/agent-a69d203b/docs/tmp/convergix-v4-pre-snapshot-2026-04-21.json` (captured 2026-04-20T23:33:02Z)
 **Post-snapshot:** `/Users/jasonburks/Documents/_AI_/_R1/.claude/worktrees/agent-a69d203b/docs/tmp/convergix-v4-post-snapshot-2026-04-21.json` (captured 2026-04-20T23:39:07Z)
-**Apply window observed in audit trail:** 2026-04-20T23:38:31Z – 2026-04-20T23:38:43Z (12 seconds)
+**Apply window observed in audit trail:** 2026-04-20T23:38:31Z to 2026-04-20T23:38:43Z (12 seconds)
 **Records touched (L1 projects):** 15
 **Audit rows produced:** 30 (matches expected)
 
 ## Summary
 - CRITICAL unexplained: 0
 - CRITICAL missing expected: 0
-- INCIDENTAL: 1 (updatedAt timestamp bumps on all 15 L1s — expected derived-field noise)
+- INCIDENTAL: 1 (updatedAt timestamp bumps on all 15 L1s: expected derived-field noise)
 - PASS: all expected changes observed; no unexpected mutations in scope
 
 ## Overall recommendation
@@ -70,7 +70,7 @@
 - status: `awaiting-client` → `in-production` ✓ (audit summary: "v4 realign: L2 in-progress drives L1 status flip")
 - category: `awaiting-client` → `active` ✓
 
-### 3 completed L1s — engagement_type only, no other fields touched (3/3 ✓)
+### 3 completed L1s: engagement_type only, no other fields touched (3/3 ✓)
 Verified Life Sciences Brochure, Social Media Templates, Organic Social Playbook all retain: owner=null, resources=null, status=completed, category=completed, notes=null. Only `engagement_type` changed and `updatedAt` bumped.
 
 ### Audit count (30/30 ✓)
@@ -82,7 +82,7 @@ Breakdown observed in audit trail:
 - 1 status-change row (Industry Vertical Campaigns)
 - Total: **30** ✓
 
-All 30 rows: `updatedBy='migration'`, within window 2026-04-20T23:38:31Z – 23:38:43Z.
+All 30 rows: `updatedBy='migration'`, within window 2026-04-20T23:38:31Z to 23:38:43Z.
 
 ## Expected but NOT observed
 **None.** Every expected change from the task prompt was observed.
@@ -94,20 +94,20 @@ All 30 rows: `updatedBy='migration'`, within window 2026-04-20T23:38:31Z – 23:
 
 ### INCIDENTAL (NON-CRITICAL)
 - All 15 Convergix L1s have `updatedAt` bumped from `2026-04-20T23:06:5x.000Z` (pre) to `2026-04-20T23:38:3x-4x.000Z` (post). This is expected derived-field noise from the UPDATE statements. No semantic change.
-- `completed` L1s (Life Sciences, Social Media Templates, Organic Social Playbook) also got `updatedAt` bumps — expected because engagement_type was set on them too.
+- `completed` L1s (Life Sciences, Social Media Templates, Organic Social Playbook) also got `updatedAt` bumps: expected because engagement_type was set on them too.
 
-## Scope check — no out-of-scope mutations
+## Scope check: no out-of-scope mutations
 
 Audit trail query (unfiltered, last 100 records):
-- The 12-second Convergix apply window (23:38:31Z – 23:38:43Z) contains exactly 30 records, all with `client: "Convergix"`.
-- Immediately before (23:34:39Z): Bonterra migration (4 records) — separate, pre-Convergix.
-- Immediately after (23:40:38Z – 23:40:41Z): Soundly migration (7+ records) — separate, post-Convergix.
+- The 12-second Convergix apply window (23:38:31Z to 23:38:43Z) contains exactly 30 records, all with `client: "Convergix"`.
+- Immediately before (23:34:39Z): Bonterra migration (4 records): separate, pre-Convergix.
+- Immediately after (23:40:38Z to 23:40:41Z): Soundly migration (7+ records): separate, post-Convergix.
 - **No non-Convergix records were mutated during the Convergix apply window.**
 
-### L2 (week items) scope check — all 26 L2s untouched (✓)
-Spot-checked all 26 L2 week items: `updatedAt` values are identical between pre-snapshot and post-snapshot (all stamped `2026-04-20T23:06:2x–3x.000Z`, predating the migration). Confirms the migration's "non-goals" claim that no L2 was touched.
+### L2 (week items) scope check: all 26 L2s untouched (✓)
+Spot-checked all 26 L2 week items: `updatedAt` values are identical between pre-snapshot and post-snapshot (all stamped `2026-04-20T23:06:2x` to `3x.000Z`, predating the migration). Confirms the migration's "non-goals" claim that no L2 was touched.
 
-### Client row scope check — Convergix client row untouched (✓)
+### Client row scope check: Convergix client row untouched (✓)
 Pre-snapshot and post-snapshot client rows are byte-identical (same `updatedAt: 2026-04-20T06:35:04.000Z`).
 
 ## Resources interpretation consistency (verdict: **CONSISTENT**)
@@ -127,14 +127,14 @@ I cross-checked every L1's post-resources value against (a) the set of roles app
 | Brand Guide v2 | CD: Lane | CW: Kathy | CW: Kathy, CD: Lane | CW: Kathy, CD: Lane | ✓ |
 | Certifications Page | CW: Kathy | CW: Kathy | CW: Kathy | CW: Kathy | ✓ |
 | Industry Vertical | CW: Kathy, CD: Lane, Dev: Leslie | CW: Kathy | CW: Kathy, CD: Lane, Dev: Leslie | CW: Kathy, CD: Lane, Dev: Leslie | ✓ |
-| Life Sciences (completed, untouched resources) | — | — | — | null | ✓ |
-| Social Media Templates (completed, untouched) | — | — | — | null | ✓ |
-| Organic Social Playbook (completed, untouched) | — | — | — | null | ✓ |
+| Life Sciences (completed, untouched resources) | null | null | null | null | ✓ |
+| Social Media Templates (completed, untouched) | null | null | null | null | ✓ |
+| Organic Social Playbook (completed, untouched) | null | null | null | null | ✓ |
 | Corporate Collateral | CD: Lane | CW: Kathy | CW: Kathy, CD: Lane | CW: Kathy, CD: Lane | ✓ |
 | Big Win Template | CD: Lane | CW: Kathy | CW: Kathy, CD: Lane | CW: Kathy, CD: Lane | ✓ |
 | Rockwell Auto Co-Marketing (unchanged by migration) | CW: Kathy | CW: Kathy | CW: Kathy | CW: Kathy | ✓ |
 
-**Note on Social Content (f391dff5):** Post-resources is `CW: Kathy, CD: Lane`, but none of the L1's L2 week items have `CD: Lane` in their resources (April Social and May Content Calendar Draft are both `CW: Kathy`). The `CD: Lane` token was *preserved* from the pre-state resources value (pre was `CD: Lane`); the migration only *added* `CW: Kathy`. The L1 notes explicitly mention Lane (`"Lane to oversight Sami learning Figma templates"`), so Lane's involvement is captured at the L1 level even though no current L2 is directly assigned to her. This is an acceptable preservation of pre-existing L1 truth (the stated interpretation is union of L2 roles + owner's role, but the migration applied a superset that preserves already-captured L1 engagement). **Not a data-integrity defect** — the value is truthful per the L1's notes and pre-migration resources. Flagging here for transparency, not as an anomaly.
+**Note on Social Content (f391dff5):** Post-resources is `CW: Kathy, CD: Lane`, but none of the L1's L2 week items have `CD: Lane` in their resources (April Social and May Content Calendar Draft are both `CW: Kathy`). The `CD: Lane` token was *preserved* from the pre-state resources value (pre was `CD: Lane`); the migration only *added* `CW: Kathy`. The L1 notes explicitly mention Lane (`"Lane to oversight Sami learning Figma templates"`), so Lane's involvement is captured at the L1 level even though no current L2 is directly assigned to her. This is an acceptable preservation of pre-existing L1 truth (the stated interpretation is union of L2 roles + owner's role, but the migration applied a superset that preserves already-captured L1 engagement). **Not a data-integrity defect**; the value is truthful per the L1's notes and pre-migration resources. Flagging here for transparency, not as an anomaly.
 
 Overall verdict: **INTERNALLY CONSISTENT**. Every post-resources value is either (a) the exact union of L2 roles + owner's role, or (b) a superset that preserves pre-existing L1-level engagement. No L1 has a role in its resources that lacks justification from either an L2 assignment, L1 notes, or pre-existing resources.
 
@@ -150,7 +150,7 @@ Sources of confidence:
 - Exactly 30 audit rows observed, matching the expected 30 ops, all `updatedBy='migration'` within a 12-second window.
 - No out-of-scope mutations visible in the unfiltered audit trail around the apply window.
 - Resources interpretation verified L1-by-L1 against L2 snapshot data.
-- Migration script was reviewed — the pre-checks are strict (abort on any drift from expected pre-state), so the migration itself would have halted if the pre-state had been anything other than what the snapshot captured.
+- Migration script was reviewed; the pre-checks are strict (abort on any drift from expected pre-state), so the migration itself would have halted if the pre-state had been anything other than what the snapshot captured.
 
 Sources of uncertainty (5%):
-- I did not directly query the `updates` table by `batchId='convergix-v4-realign-2026-04-21'`. The migration harness (`scripts/runway-migrate.ts`) auto-derives batchId from the filename via `deriveMigrationBatchId()` and calls `setBatchId()` before `up()` runs, and `insertAuditRecord` reads from the global `_currentBatchId`. This pattern *should* tag all 30 rows with `batchId='convergix-v4-realign-2026-04-21'`, but the MCP `get_updates` tool does not expose `batchId` in its output and I did not run a raw query to confirm. If TP wants 100% confidence on the batch tag, a direct SQL query on the `updates` table filtered by `batchId` would close that gap — but based on code inspection of the harness and audit utilities, batch tagging is automatic and there is no code path in this migration that would bypass it.
+- I did not directly query the `updates` table by `batchId='convergix-v4-realign-2026-04-21'`. The migration harness (`scripts/runway-migrate.ts`) auto-derives batchId from the filename via `deriveMigrationBatchId()` and calls `setBatchId()` before `up()` runs, and `insertAuditRecord` reads from the global `_currentBatchId`. This pattern *should* tag all 30 rows with `batchId='convergix-v4-realign-2026-04-21'`, but the MCP `get_updates` tool does not expose `batchId` in its output and I did not run a raw query to confirm. If TP wants 100% confidence on the batch tag, a direct SQL query on the `updates` table filtered by `batchId` would close that gap; but based on code inspection of the harness and audit utilities, batch tagging is automatic and there is no code path in this migration that would bypass it.

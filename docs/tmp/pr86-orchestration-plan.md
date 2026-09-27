@@ -12,59 +12,59 @@
 
 Ship PR #86 with code changes that make the Runway board + Slack bot enforce the v4 convention, cleanly display engagement + workstream data, and give users (Kathy, Jill, Leslie, Sami, etc.) a smart, actionable "what's on my plate" experience. In parallel, apply v4 data migrations to all 13 clients so the board is in great shape the moment PR #86 merges.
 
-## Scope — what's IN
+## Scope: what's IN
 
 ### Code (5 chunks)
 
-#### Chunk 1 — Query layer foundation
+#### Chunk 1: Query layer foundation
 1. `getStaleWeekItems` skip `status=completed` (RC-5)
 2. `detectStaleItems` skip `status=completed,on-hold` (RC-4)
 3. Audit `detectResourceConflicts` + `detectBottlenecks` for status-ignore pattern (RC-6)
 4. `detectBottlenecks` refinement: count only active L2s (exclude completed, blocked, stubs where parent L1 is awaiting-client)
-5. `getPersonWorkload` — filter by status (default exclude completed)
-6. `getPersonWorkload` — date-bucket into `overdue / thisWeek / nextWeek / later`
-7. `getPersonWorkload` — L1 match only on `owner` (not resources); separate projects from week_items in response shape
-8. `getPersonWorkload` — stub filter: exclude L2s where parent L1.status = awaiting-client from active buckets
+5. `getPersonWorkload`: filter by status (default exclude completed)
+6. `getPersonWorkload`: date-bucket into `overdue / thisWeek / nextWeek / later`
+7. `getPersonWorkload`: L1 match only on `owner` (not resources); separate projects from week_items in response shape
+8. `getPersonWorkload`: stub filter: exclude L2s where parent L1.status = awaiting-client from active buckets
 9. Commit pre-existing `category` whitelist extension (on `backup/pr86-work`)
 10. Restore `linkWeekItemToProject` helper (on `backup/pr86-work`)
 11. Restore `weekOf` whitelist addition (on `backup/pr86-work`)
 12. Restore `publish-updates dedup` fix (on `backup/pr86-work`)
 13. Tests for all above
 
-#### Chunk 2 — Bot tool / response layer
-14. `get_week_items` — match on resources too, not owner-only
+#### Chunk 2: Bot tool / response layer
+14. `get_week_items`: match on resources too, not owner-only
 15. New MCP tool `get_week_items_by_project` (enables drill-down; prevents agent direct-DB workarounds)
-16. New MCP tool / bot tool `get_project_status(clientSlug, projectName)` — drill-down response
+16. New MCP tool / bot tool `get_project_status(clientSlug, projectName)`: drill-down response
 17. Parser: resources field splits on `,` and `->`; canonicalize arrow variants to `->`
-18. Bot prompt context updates — v4 convention + smart plate framing (L2s first, owned L1s rollup, offer drill-down, category-derived tone)
+18. Bot prompt context updates: v4 convention + smart plate framing (L2s first, owned L1s rollup, offer drill-down, category-derived tone)
 19. Cascade on all categories when L1 status flips to terminal (not just deadline)
 20. `triggeredByUpdateId` propagated through cascade audit rows
 21. Tests
 
-#### Chunk 3 — UI board
-22. Unified Project View — render from same source as Week Of view; Project View becomes grouping, not duplicate data
-23. L2 owner inheritance on create — auto-populate from parent L1.owner
-24. Past-end L2 red section inline note ("status unchanged past end_date — needs review, last touched N days ago")
+#### Chunk 3: UI board
+22. Unified Project View: render from same source as Week Of view; Project View becomes grouping, not duplicate data
+23. L2 owner inheritance on create: auto-populate from parent L1.owner
+24. Past-end L2 red section inline note ("status unchanged past end_date: needs review, last touched N days ago")
 25. Retainer renewal soft surface on plate (30 days before contract_end)
 26. Contract-expired soft surface on plate (when clients.contract_status = expired and L1 active)
 27. In Flight toggle on Week Of view (section between Red and Today)
 28. blocked_by dependency visualization (indent or arrow between linked L2s)
 29. Visual QA + tests
 
-#### Chunk 4 — Schema additions
+#### Chunk 4: Schema additions
 30. Add `start_date`, `end_date` columns on `projects` (nullable; derived by default)
 31. Add `start_date`, `end_date` columns on `week_items` (start required, end nullable)
 32. Add `contract_start`, `contract_end` on `projects` (nullable; manual override)
 33. Add `engagement_type` enum on `projects` (`project` / `retainer` / `break-fix`)
 34. Add `blocked_by` array/JSON column on `week_items`
 35. Add `triggered_by_update_id` FK on `updates` table
-36. Derivation logic — recompute project.start/end from children on L2 write
+36. Derivation logic: recompute project.start/end from children on L2 write
 37. Data backfill: populate start/end on existing L2s from current `date` field; populate project start/end by derivation
 38. Tests for schema migration + derivation
 
-#### Chunk 5 — Notifications, polish, PR prep
+#### Chunk 5: Notifications, polish, PR prep
 39. Past-end L2 detector (new flag for flags rail)
-40. Batch-update skill audit — verify filter, multi-field, dry-run, batchId tagging, bulk L2-owner backfill capability; light fixes if gaps
+40. Batch-update skill audit: verify filter, multi-field, dry-run, batchId tagging, bulk L2-owner backfill capability; light fixes if gaps
 41. `/code-review` + `/preflight` + `/pr-ready` + `/atomic-commits` across all chunks
 42. TP pre-Llama review against the 20-pattern checklist
 43. PR message write-up (why, deployment notes, root causes, verification steps per operator preference)
@@ -72,16 +72,16 @@ Ship PR #86 with code changes that make the Runway board + Slack bot enforce the
 
 ### Deferred (not in PR #86 scope)
 
-- `matchesSubstring` whole-word hardening (RC-7) — theoretical, defer until real false-match surfaces
-- MCP schema exposure to bot — luxury polish
-- MCP Tier 3 observability tools (`get_data_health`, `get_batch_contents`, `get_cascade_log`) — luxury
-- L2-slip notification fallback — unneeded in v4 (L2 inherits owner)
-- Pipeline enhancements — works today, out of scope
-- Handoff visual marker UI — `blocked_by` + arrow-syntax in resources covers it
-- Tags / labels cross-cutting — defer; category field sufficient
-- Priority field on L2 — defer; derive from category for tone
-- Stub-project pattern drop/hide decision — resolved: hide when parent awaiting-client (Chunk 1 #8)
-- "In Flight" as separate tab — resolved as Week Of toggle instead
+- `matchesSubstring` whole-word hardening (RC-7): theoretical, defer until real false-match surfaces
+- MCP schema exposure to bot: luxury polish
+- MCP Tier 3 observability tools (`get_data_health`, `get_batch_contents`, `get_cascade_log`): luxury
+- L2-slip notification fallback: unneeded in v4 (L2 inherits owner)
+- Pipeline enhancements: works today, out of scope
+- Handoff visual marker UI: `blocked_by` + arrow-syntax in resources covers it
+- Tags / labels cross-cutting: defer; category field sufficient
+- Priority field on L2: defer; derive from category for tone
+- Stub-project pattern drop/hide decision; resolved: hide when parent awaiting-client (Chunk 1 #8)
+- "In Flight" as separate tab: resolved as Week Of toggle instead
 
 ### Data (parallel migrations)
 
@@ -108,7 +108,7 @@ Applied during waves via background agents running from `backup/pr86-work` workt
 
 ## Chunk acceptance criteria
 
-### Chunk 1 — Query layer foundation
+### Chunk 1: Query layer foundation
 - [ ] All 8 query-layer fixes land with tests
 - [ ] 4 helper commits restored from `backup/pr86-work`
 - [ ] `/preflight` green across repo
@@ -116,7 +116,7 @@ Applied during waves via background agents running from `backup/pr86-work` workt
 - [ ] New query return shape matches interface contract (see below)
 - [ ] `batch-update` skill audit done (fold into Chunk 1 or 5)
 
-### Chunk 2 — Bot tool / response layer
+### Chunk 2: Bot tool / response layer
 - [ ] `get_week_items_by_project` returns projectId-scoped L2s cleanly
 - [ ] `get_project_status` returns structured drill-down (see interface contract)
 - [ ] Resources parser handles comma + arrow variants
@@ -125,7 +125,7 @@ Applied during waves via background agents running from `backup/pr86-work` workt
 - [ ] `triggeredByUpdateId` populated on cascade-generated audit rows
 - [ ] Tests co-located
 
-### Chunk 3 — UI board
+### Chunk 3: UI board
 - [ ] Project View renders from unified source (no duplicate data plumbing)
 - [ ] L2 owner inheritance works on new L2 create
 - [ ] Past-end L2 red-section note renders correctly
@@ -134,14 +134,14 @@ Applied during waves via background agents running from `backup/pr86-work` workt
 - [ ] blocked_by renders with visual cue
 - [ ] Visual QA: Kathy, Jill, Leslie, Sami, Allison, Jason each get correct plate
 
-### Chunk 4 — Schema additions
+### Chunk 4: Schema additions
 - [ ] Migration applied to `runway-schema.ts` + `.sql`
 - [ ] Drizzle schema matches SQL migration exactly
 - [ ] start/end derivation logic on project recomputes on L2 write
 - [ ] Backfill populates existing data cleanly
 - [ ] Rollback path tested
 
-### Chunk 5 — PR prep
+### Chunk 5: PR prep
 - [ ] Past-end detector live on flags rail
 - [ ] batch-update skill audited
 - [ ] `/code-review` + `/preflight` + `/pr-ready` + `/atomic-commits` all green
@@ -151,12 +151,12 @@ Applied during waves via background agents running from `backup/pr86-work` workt
 
 ---
 
-## Wave structure — parallelism + timing
+## Wave structure: parallelism + timing
 
-### Wave 0 — Upfront prep (TP-only, ~1-2h)
+### Wave 0: Upfront prep (TP-only, ~1-2h)
 
 **Deliverables:**
-- v4 convention doc (done — `runway-v4-convention.md`)
+- v4 convention doc (done, `runway-v4-convention.md`)
 - Orchestration plan (this file)
 - Interface contracts (below)
 - Pre-Llama checklist (below)
@@ -164,12 +164,12 @@ Applied during waves via background agents running from `backup/pr86-work` workt
 - Data migration templates (1 per client, stored per-client)
 - Compaction boundary marker
 
-### Wave 1 — Foundation + overnight data touchups (~5h wall clock)
+### Wave 1: Foundation + overnight data touchups (~5h wall clock)
 
 **Code (3 parallel worktrees, feature branches off `feature/runway-pr86-base`):**
 - Worktree A: Chunk 1 (query layer + helper restoration)
 - Worktree B: Chunk 4 (schema + derivation)
-- Worktree C: Chunk 3 groundwork (UI unified table, Project View refactor) — against mocked Chunk 1 shape
+- Worktree C: Chunk 3 groundwork (UI unified table, Project View refactor): against mocked Chunk 1 shape
 
 **Data (6 parallel background agents, running from `backup/pr86-work` worktree):**
 - Bonterra v4 touchup
@@ -189,7 +189,7 @@ Applied during waves via background agents running from `backup/pr86-work` workt
 - Runs `/preflight` on merged branch
 - Updates plan doc with Wave 1 results
 
-### Wave 2 — Integration + smart bot + Asprey + 3 remaining clients (~4h)
+### Wave 2: Integration + smart bot + Asprey + 3 remaining clients (~4h)
 
 **Code (2 parallel worktrees, off `feature/runway-pr86-wave1`):**
 - Worktree D: Chunk 2 (bot tool / response layer)
@@ -197,13 +197,13 @@ Applied during waves via background agents running from `backup/pr86-work` workt
 
 **Data (3-4 parallel background agents):**
 - Asprey v4 touchup
-- Hopdoddy cleanup (remaining-6 — light, no transcript depth needed)
-- AG1 cleanup (remaining-6 — light)
-- Wilsonart cleanup (remaining-6 — light)
+- Hopdoddy cleanup (remaining-6, light, no transcript depth needed)
+- AG1 cleanup (remaining-6, light)
+- Wilsonart cleanup (remaining-6, light)
 
 **TP reviews + integrates into Wave 2 branch.**
 
-### Wave 3 — Polish + complex clients + PR open (~3h)
+### Wave 3: Polish + complex clients + PR open (~3h)
 
 **Code (1 worktree):**
 - Chunk 5 (notifications + polish + PR prep)
@@ -334,10 +334,10 @@ Apply during code work AND in TP pre-review before PR open.
 
 Each chunk CC session runs, in order:
 1. Implementation + tests
-2. `/code-review` — catches DRY, prop drilling, missing tests
-3. `/preflight` — build + test:run + lint all green
-4. `/pr-ready` — debug cleanup, unused imports, dead code
-5. `/atomic-commits` — logical commit structure, conventional commit format
+2. `/code-review`: catches DRY, prop drilling, missing tests
+3. `/preflight`: build + test:run + lint all green
+4. `/pr-ready`: debug cleanup, unused imports, dead code
+5. `/atomic-commits`: logical commit structure, conventional commit format
 
 **Staging strategy:** before `/atomic-commits`, explicitly `git add` only touched files. Never `git add -A`. Run with `--staged` flag to exclude untracked PR #86-adjacent work from commits.
 
@@ -357,7 +357,7 @@ Each chunk CC session runs, in order:
 - After each chunk merges, TP writes a "wave snapshot" appendix to this doc.
 - Commit all uncommitted decisions to doc before expected compact boundaries.
 
-**Checkpoint signals — write snapshot when:**
+**Checkpoint signals: write snapshot when:**
 - TP context passes 65% (proactive)
 - Wave completes (milestone)
 - About to spawn > 3 parallel agents (orchestration-heavy)

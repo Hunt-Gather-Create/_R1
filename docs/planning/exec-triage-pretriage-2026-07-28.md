@@ -1,4 +1,4 @@
-# Runway Exec-Triage Pre-Triage — 2026-07-28
+# Runway Exec-Triage Pre-Triage: 2026-07-28
 
 **Author:** Runway-TP
 **Dispatch:** Overwatch envelope `ow-dispatch-runway-tp-step4-pretriage` (2026-07-28T02:17Z)
@@ -7,12 +7,12 @@
 **Cross-reference:** Overwatch codebase brief `agencyos-overwatch/docs/briefs/runway-codebase-exec-brief-2026-07-28.md` §8 roadmap (B1 shipped, B2/B3 queued, B4 partial)
 
 Priority key:
-- **P0** — blocker for a currently-active milestone (none active this arc; B2 queued, not started)
-- **P1** — near-term important (security, critical data-integrity, integration-blocking)
-- **P2** — backlog (needs-design, medium-impact, non-urgent)
-- **P3** — nice-to-have or stale
+- **P0**: blocker for a currently-active milestone (none active this arc; B2 queued, not started)
+- **P1**: near-term important (security, critical data-integrity, integration-blocking)
+- **P2**: backlog (needs-design, medium-impact, non-urgent)
+- **P3**: nice-to-have or stale
 
-Close-candidate key: `yes` (strong — superseded / obsolete), `no` (still valid), `needs-check` (may be shipped or superseded, verify).
+Close-candidate key: `yes` (strong, superseded / obsolete), `no` (still valid), `needs-check` (may be shipped or superseded, verify).
 
 Hook-status key: `needs-hook` (not on Fleet board yet; default assumption for all 66 pending exec-triage step 4 hookup), `hooked` (verified on board), `skip` (chore-only, no need).
 
@@ -55,7 +55,7 @@ Note: age-based close rule ("> 4 months no-motion") does not fire on any ticket.
 | 47 | Rename Inngest app: auto-kanban → runway | Infra chore | P3 | no | needs-hook | Cosmetic-plus rename. |
 | 46 | 11 pre-existing lint warnings (TanStack Table + dead mock) | Dashboard chore | P3 | no | needs-hook | Debt trim. |
 | 45 | Missing FK indexes on hot-path columns (perf latent at current scale) | Perf | P2 | no | needs-hook | Latent perf; upgrade priority when scale increases. |
-| 44 | _cachedClients module-level TTL: 5-second cache leaks stale data across users | Bug / infra | **P1** | no | needs-hook | Cross-user cache leak — data-freshness + light isolation concern. |
+| 44 | _cachedClients module-level TTL: 5-second cache leaks stale data across users | Bug / infra | **P1** | no | needs-hook | Cross-user cache leak: data-freshness + light isolation concern. |
 | 43 | Runway UI: three competing timezone models cause day-bucketing drift | Bug / UI | **P1** | no | needs-hook | Day-bucketing drift = wrong-day cards. User-visible. Brief mentions cascade hardening in B2. |
 | 40 | Google Sheet integration: tie a sheet to a project or account (PM-tool capability) | Sheets integration (PM-tool capability) | P2 | no | needs-hook | Design-first track (per brief §9). Overlap with Phase 1b #91 scope. |
 | 39 | Add L3 hierarchy level + flexible top-level wrapper assignment | Data / hierarchy | P2 | **YES** | needs-hook | **SUPERSEDED by PR #118** (v4 shipped sections table as L3 + retainer wrapper). Close with cross-ref to #118 squash SHA b093012. |
@@ -119,9 +119,9 @@ Note: age-based close rule ("> 4 months no-motion") does not fire on any ticket.
    
    Four of these (#16, #20, #22, #86) fit brief §8 B2/B3 milestone hardening scope. Two (#52, #88) are security. All P1 items should get triage attention this cycle.
 
-3. **Six needs-check items** (#31, #58, #67, #24, #25, #38) may already be shipped or superseded by v4 / PR #119. Verify in step 4 before assigning triage effort. #67 especially — v4 retainer + sections may have addressed most of it.
+3. **Six needs-check items** (#31, #58, #67, #24, #25, #38) may already be shipped or superseded by v4 / PR #119. Verify in step 4 before assigning triage effort. #67 especially: v4 retainer + sections may have addressed most of it.
 
-4. **Design-first track** (per brief §9 Next Steps): #12, #38, #39, #51 — of these, #39 supersedes, #38 needs re-scope post-v4, #12 + #51 still stand as design-first. Overlap with #96 + #95 (both new this arc).
+4. **Design-first track** (per brief §9 Next Steps): #12, #38, #39, #51: of these, #39 supersedes, #38 needs re-scope post-v4, #12 + #51 still stand as design-first. Overlap with #96 + #95 (both new this arc).
 
 5. **Fleet-board hook status = needs-hook for all 66** (my knowledge; verify against Fleet board `github.com/users/jasonburks23/projects/1/views/1`). Exec-triage step 4 owns the hookup execution.
 
@@ -143,4 +143,4 @@ Per-lane parallel between Overwatch + Ops + Holdout. Suggested lane assignment b
 - **Holdout:** Slack (13 items, blind-verification fits bug-verify class) + Auth/security (4 items, adversarial-read strength)
 - **Runway-TP (me):** Sheets integration (3 items, active workstream) + UI polish + Perf/infra
 
-**Sub-recco:** run needs-check items (6) in parallel batch first — result set may prune total triage load by 30-40% before per-lane work starts.
+**Sub-recco:** run needs-check items (6) in parallel batch first; result set may prune total triage load by 30-40% before per-lane work starts.

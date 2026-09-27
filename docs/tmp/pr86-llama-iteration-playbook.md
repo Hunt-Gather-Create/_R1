@@ -1,4 +1,4 @@
-# PR #86 — Llama Iteration Playbook
+# PR #86: Llama Iteration Playbook
 
 **For TP use after PR opens.** Handle Llama's findings autonomously, fire CC sub-agents for fixes, re-trigger review.
 
@@ -41,13 +41,13 @@ Re-review triggers: push new commits OR comment `@llamapreview review`.
 
 ## Common Llama patterns (from prior PRs)
 
-Prior PRs surfaced these — anticipate:
+Prior PRs surfaced these; anticipate:
 
-1. **Regex hyphen in char class** — `[0-9\-]` not `[0-9-]`. Usually in sanitizers.
-2. **`console.error(err.message)` not full stack** — preserve stack trace.
-3. **Missing transaction wrap** — multi-step DB mutations without `db.transaction()`.
-4. **Centralize FK pattern** — any DB FK deletion pattern should live in a shared doc.
-5. **Switch-case handler drift** — new enum value without matching case somewhere else.
+1. **Regex hyphen in char class**: `[0-9\-]` not `[0-9-]`. Usually in sanitizers.
+2. **`console.error(err.message)` not full stack**: preserve stack trace.
+3. **Missing transaction wrap**: multi-step DB mutations without `db.transaction()`.
+4. **Centralize FK pattern**: any DB FK deletion pattern should live in a shared doc.
+5. **Switch-case handler drift**: new enum value without matching case somewhere else.
 
 ---
 
@@ -58,7 +58,7 @@ You are a Llama Fix Agent for PR #86.
 
 **SAFETY + EFFICIENCY PREAMBLES** (full text)
 
-## STEP 0 — base correction
+## STEP 0: base correction
 [standard STEP 0 block]
 Branch: `feature/runway-pr86-llama-fix-<N>`
 
@@ -67,7 +67,7 @@ Llama flagged [P1/P2] at `<file>:<line>`:
 > <exact quote>
 
 ## Fix
-<exact fix description — what to do, not how>
+<exact fix description, what to do, not how>
 
 ## Test
 Co-locate test in same commit. Assert against the behavior Llama flagged.
@@ -89,7 +89,7 @@ Commit SHA, files touched, test count, preflight result.
 
 After fix commits merged to base and pushed:
 ```bash
-gh pr comment <PR_NUMBER> --body "@llamapreview review — addresses findings F1, F2, F3 in commits <sha1>, <sha2>"
+gh pr comment <PR_NUMBER> --body "@llamapreview review: addresses findings F1, F2, F3 in commits <sha1>, <sha2>"
 ```
 
 ---

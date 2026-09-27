@@ -1,4 +1,4 @@
-# PR #111 round-3 fixes — plan
+# PR #111 round-3 fixes: plan
 
 **Target:** new fix PR bundling 6 items caught by DI-TP's round-2 QA against prod + Llama's late finding on PR #111.
 **Branch:** `fix/pr-111-round-3-bugs` off `upstream/runway` (HEAD `3186a00`, PR #111 squash merge).
@@ -16,20 +16,20 @@ Fix the 6 prod bugs surfaced by DI-TP's round 2 QA + the dropped Llama F1 findin
 
 | Commit | GH | Sev | Subject |
 |---|---|---|---|
-| 1 | — | — | `docs(runway): plan for PR #111 round-3 fixes` |
+| 1 | none | none | `docs(runway): plan for PR #111 round-3 fixes` |
 | 2 | #80 | P0 | `fix(runway): dashboard checkbox + Undo idem-key per-operator (mirror modal editorName)` |
-| 3 | #84 | P1 | `feat(runway): edit modal — WI category editable (card chip enum)` |
-| 4 | #81 | P2 | `fix(runway): edit modal — project category cascade display populated` |
-| 5 | #83 | P2 | `fix(runway): edit modal — Undo re-opens with unsaved edits applied` |
+| 3 | #84 | P1 | `feat(runway): edit modal, WI category editable (card chip enum)` |
+| 4 | #81 | P2 | `fix(runway): edit modal, project category cascade display populated` |
+| 5 | #83 | P2 | `fix(runway): edit modal, Undo re-opens with unsaved edits applied` |
 | 6 | #82 | P3 | `fix(runway): pencil icon gutter to clear account label` |
-| 7 | (DI-TP) | P3 | `feat(runway): audit pill copy icon — cleaner stacked-squares glyph (DI-TP round-2 polish)` |
+| 7 | (DI-TP) | P3 | `feat(runway): audit pill copy icon, cleaner stacked-squares glyph (DI-TP round-2 polish)` |
 | 8 | (#111-llama) | P2 | `fix(runway): drop duplicate router.refresh in fireSave (Llama PR #111 follow-up)` |
 
 8 commits total. Tim's upstream squash collapses on land.
 
 ---
 
-## Commit 2 — #80 P0 idem-key
+## Commit 2: #80 P0 idem-key
 
 ### Problem (CONFIRMED via DI-TP round 2)
 
@@ -57,20 +57,20 @@ Mirror the modal's pattern in `setWeekItemStatusAction`:
 
 ### Why not bypass idem entirely
 
-Idempotency is the right default for Slack / MCP / batch callers that may legitimately retry. Dashboard click + Undo are different — they're user UI gestures. Mirroring the modal's editorName pattern keeps idempotency + provides correct audit attribution (we know WHO clicked).
+Idempotency is the right default for Slack / MCP / batch callers that may legitimately retry. Dashboard click + Undo are different; they're user UI gestures. Mirroring the modal's editorName pattern keeps idempotency + provides correct audit attribution (we know WHO clicked).
 
 ### Tests
 
-- `actions.test.ts`: 2 new cases — second-click flips again (no dedup) when editorName differs, second-click DOES dedup when same editorName + same value combo (sanity)
+- `actions.test.ts`: 2 new cases: second-click flips again (no dedup) when editorName differs, second-click DOES dedup when same editorName + same value combo (sanity)
 - `complete-checkbox.test.tsx`: name prompt fires on first click when cookie empty, persists cookie, subsequent clicks reuse
 
 ---
 
-## Commit 3 — #84 P1 WI category editable
+## Commit 3: #84 P1 WI category editable
 
 ### Problem
 
-The week_item's `category` field (drives the card chip — DELIVERY / KICKOFF / REVIEW / etc.) is not surfaced in the edit modal. Operators can't change the chip from the dashboard.
+The week_item's `category` field (drives the card chip: DELIVERY / KICKOFF / REVIEW / etc.) is not surfaced in the edit modal. Operators can't change the chip from the dashboard.
 
 ### Fix
 
@@ -80,26 +80,26 @@ Add new editable `Category` field to `dashboard-edit-pencil.tsx` modal:
 - Values: `delivery | review | kickoff | deadline | approval | launch`
 - "(clear)" option writes empty string
 
-Server path: `updateWeekItemFieldsAction` already supports `category` via `updateWeekItemField` — just plumb the new field through `EditPencilItem` + `EditState` + `WeekItemEditPatch` + diff/save.
+Server path: `updateWeekItemFieldsAction` already supports `category` via `updateWeekItemField`; just plumb the new field through `EditPencilItem` + `EditState` + `WeekItemEditPatch` + diff/save.
 
 ### Layout
 
-Per operator suggestion — two fields distinguished:
+Per operator suggestion: two fields distinguished:
 
 ```
-CATEGORY  (editable — this WI's chip)
-PROJECT CATEGORY  (read-only context — separate visual row)
+CATEGORY  (editable, this WI's chip)
+PROJECT CATEGORY  (read-only context, separate visual row)
 ```
 
 OR drop the project-category row entirely if not load-bearing. Operator's call during build; default to keeping it if simple, dropping if it adds noise. Surface via signal if ambiguous.
 
 ### Validation
 
-Server validator already exists — `validateWeekItemCategory` at `operations-utils.ts:1036`. No new validation logic needed.
+Server validator already exists: `validateWeekItemCategory` at `operations-utils.ts:1036`. No new validation logic needed.
 
 ### L1-status-category compat (not a concern here)
 
-`validateStatusCategoryCompatibility` operates on L1 project values, not WI values, so it doesn't fire on this field. Per `gotcha_l1_close_category_first.md` — L1-only.
+`validateStatusCategoryCompatibility` operates on L1 project values, not WI values, so it doesn't fire on this field. Per `gotcha_l1_close_category_first.md`: L1-only.
 
 ### Tests
 
@@ -108,11 +108,11 @@ Server validator already exists — `validateWeekItemCategory` at `operations-ut
 
 ---
 
-## Commit 4 — #81 P2 cascade display
+## Commit 4: #81 P2 cascade display
 
 ### Problem
 
-"CATEGORY (CASCADES FROM PROJECT)" field in the modal renders empty even when the parent project has `category` set. Read-only field — display gap, not data integrity.
+"CATEGORY (CASCADES FROM PROJECT)" field in the modal renders empty even when the parent project has `category` set. Read-only field: display gap, not data integrity.
 
 ### Fix
 
@@ -132,7 +132,7 @@ This is the same pattern as commit 7b's `parentProjectName + notes` threading.
 
 ---
 
-## Commit 5 — #83 P2 Undo re-opens modal
+## Commit 5: #83 P2 Undo re-opens modal
 
 ### Problem
 
@@ -143,7 +143,7 @@ On modal-save Undo, DB reverts correctly but modal stays closed. User's edits ar
 In `dashboard-edit-pencil.tsx` `fireUndo` (or equivalent):
 
 1. Capture the pre-Undo edit payload (the field values the user actually changed)
-2. Fire the revert action server-side (DB matches pre-save state — existing behavior)
+2. Fire the revert action server-side (DB matches pre-save state, existing behavior)
 3. Re-open the modal pre-populated with the captured edits
 4. Save button enabled
 
@@ -156,7 +156,7 @@ State management: the modal already has a captured-edit state (passed to the sav
 
 ---
 
-## Commit 6 — #82 P3 pencil overlap
+## Commit 6: #82 P3 pencil overlap
 
 ### Problem
 
@@ -168,7 +168,7 @@ Recco: move pencil to top-right with a gutter from the checkbox (matches checkbo
 
 Alternative: keep top-left but add padding above the account label.
 
-CC's call during build — pick the one that looks cleanest in `pnpm runway:smoke` screenshot comparison.
+CC's call during build: pick the one that looks cleanest in `pnpm runway:smoke` screenshot comparison.
 
 ### Tests
 
@@ -177,15 +177,15 @@ CC's call during build — pick the one that looks cleanest in `pnpm runway:smok
 
 ---
 
-## Commit 7 — Audit pill copy icon swap (DI-TP round-2 polish)
+## Commit 7: Audit pill copy icon swap (DI-TP round-2 polish)
 
 ### Problem
 
-DI-TP round 2 QA at 15:30Z flagged the existing audit-pill copy icon glyph as too dense visually. Operator's reference is a cleaner stacked-squares glyph (two overlapping outline squares — Lucide `Copy` or `ClipboardCopy` style).
+DI-TP round 2 QA at 15:30Z flagged the existing audit-pill copy icon glyph as too dense visually. Operator's reference is a cleaner stacked-squares glyph (two overlapping outline squares, Lucide `Copy` or `ClipboardCopy` style).
 
 ### Fix
 
-In `src/app/runway/components/audit-pill.tsx` (or wherever `CopyToClipboardButton` lives), replace the current copy glyph with a cleaner stacked-squares icon. Likely a Lucide icon swap — `<Copy />` instead of whatever's currently rendered.
+In `src/app/runway/components/audit-pill.tsx` (or wherever `CopyToClipboardButton` lives), replace the current copy glyph with a cleaner stacked-squares icon. Likely a Lucide icon swap: `<Copy />` instead of whatever's currently rendered.
 
 ### Tests
 
@@ -198,7 +198,7 @@ Very low. Pure visual swap, no behavior change.
 
 ---
 
-## Commit 8 — Llama PR #111 F1 dup-router-refresh
+## Commit 8: Llama PR #111 F1 dup-router-refresh
 
 ### Problem (deferred from PR #111 bot cycle)
 
@@ -212,7 +212,7 @@ The orphan commit at `ef862f0` on `jasonburks23/_R1` already has this exact fix.
 
 ### Tests
 
-- Existing `complete-checkbox.test.tsx` (router.refresh on auto-close-without-undo) still passes — that's a different code path. The modal-save `fireSave` test should NOT assert two refreshes.
+- Existing `complete-checkbox.test.tsx` (router.refresh on auto-close-without-undo) still passes; that's a different code path. The modal-save `fireSave` test should NOT assert two refreshes.
 
 ---
 
@@ -221,7 +221,7 @@ The orphan commit at `ef862f0` on `jasonburks23/_R1` already has this exact fix.
 **CC pre-PR-open:**
 1. `/code-review` on the full diff
 2. QA fresh-eyes subagent
-3. `/preflight` — `pnpm build` (NON-NEGOTIABLE) + lint + tests + grep gate
+3. `/preflight`: `pnpm build` (NON-NEGOTIABLE) + lint + tests + grep gate
 4. `/pr-ready` cleanup
 
 Any findings get fix commits BEFORE signaling ready.
@@ -242,7 +242,7 @@ Standard per `docs/plans/status-view-followups.md` §"Signal cadence":
 
 1. `post-handoff CC online, scope acknowledged` after CC reads handoff
 2. `no gaps, ready to start commit 1 on TP green-light` or DECISION Q
-3. Per-commit `commit N pushed: <sha> — <summary>`
+3. Per-commit `commit N pushed: <sha>, <summary>`
 4. After all commits: `gate clean, opening PR`
 5. `PR opened at <url>` → arms 5-min bot-pushback monitor cycle 1
 6. Per cycle: `cycle N closed`, findings folded if any

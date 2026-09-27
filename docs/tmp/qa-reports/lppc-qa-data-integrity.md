@@ -1,4 +1,4 @@
-# QA Report — LPPC Data Integrity
+# QA Report: LPPC Data Integrity
 
 **Migration:** `lppc-v4-realign-2026-04-21` (PR #86 Wave 1 Batch B)
 **Subject worktree:** `/Users/jasonburks/Documents/_AI_/_R1/.claude/worktrees/agent-a580d737`
@@ -8,7 +8,7 @@
 **Forward script:** `scripts/runway-migrations/lppc-v4-realign-2026-04-21.ts`
 **Reverse script:** `scripts/runway-migrations/lppc-v4-realign-2026-04-21-REVERT.ts`
 **Records in scope:** 1 client, 7 L1 projects, 11 L2 week items
-**Apply window:** 2026-04-20T23:53:42Z – 23:53:46Z (~4 seconds)
+**Apply window:** 2026-04-20T23:53:42Z to 23:53:46Z (~4 seconds)
 
 ---
 
@@ -65,9 +65,9 @@ All expected changes observed. No unexplained modifications. No concurrent-write
 - **9 audit rows** present in `auditRowsForBatch` (post-snapshot), **all** with `batchId=lppc-v4-realign-2026-04-21`
 - Distribution: 7 engagement_type field-changes + 2 resources field-changes = **9**, matches spec exactly
 - `updatedBy="migration"` on every row (no bot or user contamination)
-- Timestamps tightly clustered 23:53:42Z – 23:53:44Z (2-second spread, consistent with sequential script execution)
+- Timestamps tightly clustered 23:53:42Z to 23:53:44Z (2-second spread, consistent with sequential script execution)
 - `triggeredByUpdateId` null on all rows (no cascade contamination)
-- `slackMessageTs` null on all rows (batch mode suppressed Slack — expected per operator memory)
+- `slackMessageTs` null on all rows (batch mode suppressed Slack: expected per operator memory)
 
 #### E. No L2 writes
 
@@ -86,16 +86,16 @@ All 11 L2 `weekItems` rows are byte-identical pre vs. post, including `updatedAt
 
 ### Observed but NOT expected
 
-#### INCIDENTAL — project `updatedAt` bumps (NON-CRITICAL)
+#### INCIDENTAL: project `updatedAt` bumps (NON-CRITICAL)
 
-Every L1 has a new `updatedAt` in the 23:53:45Z–23:53:46Z window. This is the expected side effect of:
-- The raw `ctx.db.update(projects).set({ engagementType, updatedAt: new Date() })` call in `applyEngagementType` — applies to all 7.
-- `updateProjectField(..."resources"...)` on the 2 active L1s — also bumps `updatedAt`.
-- `recomputeProjectDates` (Step 4 of the migration) — this function writes to `projects.startDate/endDate` unconditionally and thus bumps `updatedAt` on all 7.
+Every L1 has a new `updatedAt` in the 23:53:45Z to 23:53:46Z window. This is the expected side effect of:
+- The raw `ctx.db.update(projects).set({ engagementType, updatedAt: new Date() })` call in `applyEngagementType`: applies to all 7.
+- `updateProjectField(..."resources"...)` on the 2 active L1s: also bumps `updatedAt`.
+- `recomputeProjectDates` (Step 4 of the migration): this function writes to `projects.startDate/endDate` unconditionally and thus bumps `updatedAt` on all 7.
 
 Classification: **INCIDENTAL**. `updatedAt` is an audit-side field, not a content field.
 
-#### INCIDENTAL — `recomputeProjectDates` called but no visible date drift (NON-CRITICAL)
+#### INCIDENTAL: `recomputeProjectDates` called but no visible date drift (NON-CRITICAL)
 
 Spec: "recompute L1 start/end dates from children for all 7 L1s". Observed: **zero** L1 start/end date values changed pre -> post.
 
@@ -125,17 +125,17 @@ Spec: "other batches (TAP, HDL, Convergix, Soundly, Bonterra) may have written a
 
 - **LPPC scope records** = 1 client, 7 projects, 11 week items (all clientId=`d27916a0809747f99fe9a8157`).
 - **Client `updatedAt`**: unchanged at 2026-04-20T06:52:53Z. If any non-LPPC batch had touched the client row, its `updatedAt` would have shifted. PASS.
-- **Project `updatedAt`**: all 7 land within the LPPC migration's own 4-second window (23:53:42Z – 23:53:46Z). No stray timestamps indicating a foreign writer. The uniformity of the cluster (`23:53:45` or `23:53:46`) is itself evidence of a single script run.
+- **Project `updatedAt`**: all 7 land within the LPPC migration's own 4-second window (23:53:42Z to 23:53:46Z). No stray timestamps indicating a foreign writer. The uniformity of the cluster (`23:53:45` or `23:53:46`) is itself evidence of a single script run.
 - **WeekItems `updatedAt`**: all 11 pre-date the migration window. No foreign batch touched LPPC L2s during Wave 1 Batch B execution. PASS.
 - **`auditRowsForBatch`**: filtered to `batchId=lppc-v4-realign-2026-04-21` by snapshot generator; returned count 9, exact match to plan. No over- or under-count.
 
 **Conclusion:** No LPPC records were touched by non-LPPC batches during the apply window. Concurrent writes (if any) to Bonterra / Convergix / TAP / HDL / Soundly did not contaminate LPPC scope.
 
-*Caveat:* This QA run cannot independently verify the inverse (that LPPC's migration didn't touch non-LPPC records), since the post-snapshot is LPPC-filtered. The script's queries are `WHERE clientId = lppc.id` throughout; trust is structural, not empirical, for cross-client isolation. Low concern — snapshot + code review of the forward script both show the writes strictly scoped by client ID.
+*Caveat:* This QA run cannot independently verify the inverse (that LPPC's migration didn't touch non-LPPC records), since the post-snapshot is LPPC-filtered. The script's queries are `WHERE clientId = lppc.id` throughout; trust is structural, not empirical, for cross-client isolation. Low concern: snapshot + code review of the forward script both show the writes strictly scoped by client ID.
 
 ---
 
-## TP decision ratification — dormant L1 conservative call
+## TP decision ratification: dormant L1 conservative call
 
 **Question:** Agent left 5 dormant L1s' resources as null rather than setting them to the full team (`CD: Lane, CW: Kathy, Dev: Leslie, PM: Jason`). Ratify?
 
@@ -168,7 +168,7 @@ Recommend TP log this ratification in the pre-plan so future overnight agents ap
 
 **Caveats:**
 - Cross-client write isolation is structural (code-level, `WHERE clientId=...`) not empirical (snapshot-level), because snapshots are LPPC-scoped. Acceptable given the forward script is small, reviewed, and uses the established operations layer.
-- `recomputeProjectDates` does not emit audit rows, so its execution is inferred from the script log and the `updatedAt` bump on all 7 projects. No direct evidence the function was called for, e.g., the null-dates dormant projects — but their `updatedAt` shifted, which is the expected signature.
+- `recomputeProjectDates` does not emit audit rows, so its execution is inferred from the script log and the `updatedAt` bump on all 7 projects. No direct evidence the function was called for, e.g., the null-dates dormant projects; but their `updatedAt` shifted, which is the expected signature.
 
 ---
 

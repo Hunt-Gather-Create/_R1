@@ -16,7 +16,7 @@ Three small additions that polish what shipped in PR #110. Bundle into a single 
 
 | Commit | Subject | GH closure |
 |---|---|---|
-| 1 | `docs: plan for status view follow-ups` | — |
+| 1 | `docs: plan for status view follow-ups` | None |
 | 2 | `fix(runway): checkbox undo triggers router.refresh so visual state matches server (#79)` | Fixes #79 |
 | 3 | `feat(runway): Status View adds 'Kicks Off This Week' yellow bucket (#71)` | Fixes #71 |
 | 4 | `fix(runway): audit pill renders on By Account header (#78)` | Fixes #78 |
@@ -29,15 +29,15 @@ Three small additions that polish what shipped in PR #110. Bundle into a single 
 
 ## Out of scope (explicit defer)
 
-- #72 Gantt CLI parity — needs its own investigation pass
-- #73 Cross-tab optimistic propagation — `BroadcastChannel` is small but its own concern
-- #74 Toast dedup — needs UX design call on stacking vs rolling
-- #75 polish nits — batch with future cleanup
-- #77 docs/tmp sweep — separate chore window
+- #72 Gantt CLI parity: needs its own investigation pass
+- #73 Cross-tab optimistic propagation: `BroadcastChannel` is small but its own concern
+- #74 Toast dedup: needs UX design call on stacking vs rolling
+- #75 polish nits: batch with future cleanup
+- #77 docs/tmp sweep: separate chore window
 
 ---
 
-## Commit 2 — #79 Checkbox undo visual sync
+## Commit 2: #79 Checkbox undo visual sync
 
 ### Problem
 
@@ -49,7 +49,7 @@ In `src/app/runway/components/complete-checkbox.tsx`:
 - Import `useRouter` from `next/navigation`
 - Call `router.refresh()` after successful undo (inside `revertTo`)
 - Call `router.refresh()` on toast `onAutoClose` (when 8s window expires without undo)
-- Do NOT refresh on initial click (would flicker card out of view during the undo window — exactly what we don't want)
+- Do NOT refresh on initial click (would flicker card out of view during the undo window, exactly what we don't want)
 
 Total diff: ~6 lines. No server-side changes.
 
@@ -66,7 +66,7 @@ Very low. Additive client hook call, no behavior change to existing happy path.
 
 ---
 
-## Commit 3 — #71 Kicks Off This Week bucket
+## Commit 3: #71 Kicks Off This Week bucket
 
 ### Predicate
 
@@ -82,7 +82,7 @@ const isKicksOffThisWeek = (item, todayISO, endOfWeekISO) =>
 
 ### Banner color
 
-**Yellow.** Reuse the existing Tailwind palette — recco: `bg-yellow-400` for the banner stripe (verify against existing red/white/blue token in `complete-checkbox.tsx` / `day-item-card.tsx` styling).
+**Yellow.** Reuse the existing Tailwind palette, recco: `bg-yellow-400` for the banner stripe (verify against existing red/white/blue token in `complete-checkbox.tsx` / `day-item-card.tsx` styling).
 
 ### Precedence (locked)
 
@@ -92,7 +92,7 @@ Update `computeStatusItems` in `status-view.tsx` to assign the new bucket. Mutua
 
 ### Data source
 
-Items that match Kicks Off predicate but aren't currently in any Status View bucket. Most will live in `upcomingItems` or similar source on `page.tsx` — confirm the right slice during build.
+Items that match Kicks Off predicate but aren't currently in any Status View bucket. Most will live in `upcomingItems` or similar source on `page.tsx`; confirm the right slice during build.
 
 ### Sort
 
@@ -107,7 +107,7 @@ Within Project: date ASC. Same as the existing 3 buckets.
 
 ---
 
-## Commit 4 — #78 Audit pill on By Account header
+## Commit 4: #78 Audit pill on By Account header
 
 ### Problem
 
@@ -115,7 +115,7 @@ PR #110 #66 added the clickable+expandable audit pill on Gantt headers. The orig
 
 ### Fix
 
-`account-section.tsx` (or the By Account header component — verify path) needs the same `AuditBadge` wire-up as `gantt-charts-section.tsx`. Pass the per-section `summary` shape so the pill receives the same issue list.
+`account-section.tsx` (or the By Account header component, verify path) needs the same `AuditBadge` wire-up as `gantt-charts-section.tsx`. Pass the per-section `summary` shape so the pill receives the same issue list.
 
 ### Tests
 
@@ -126,11 +126,11 @@ PR #110 #66 added the clickable+expandable audit pill on Gantt headers. The orig
 
 ### Risk
 
-Low. Additive — same component as the Gantt path, just rendered in a second location.
+Low. Additive: same component as the Gantt path, just rendered in a second location.
 
 ---
 
-## Commit 5 — #76 Audit pill copy-to-clipboard
+## Commit 5: #76 Audit pill copy-to-clipboard
 
 ### What ships
 
@@ -168,7 +168,7 @@ If `navigator.clipboard.writeText` rejects (rare — usually permission), show a
 
 ---
 
-## Commit 6 — #70 Dashboard edit modal + pencil icon
+## Commit 6: #70 Dashboard edit modal + pencil icon
 
 **Full spec locked in GH #70 issue body (2026-06-01).** CC reads #70 directly; summary below.
 
@@ -237,17 +237,17 @@ Medium. Largest single-commit surface in this PR. Mitigations: extensive compone
 |---|---|
 | Kicks Off bucket double-counts items also in upcomingItems source | Add explicit test for the new bucket NOT overlapping the existing 3 (extend `seen` set tests) |
 | Yellow Tailwind token clashes with existing dashboard chrome | Verify in `pnpm runway:smoke` + visual check before merge |
-| Clipboard API requires HTTPS context | `runway.startround1.com` is HTTPS — fine in prod; verify in `pnpm dev` (localhost is also clipboard-allowed) |
-| Multi-tab clipboard race (rare) | n/a — single-tab copy |
+| Clipboard API requires HTTPS context | `runway.startround1.com` is HTTPS: fine in prod; verify in `pnpm dev` (localhost is also clipboard-allowed) |
+| Multi-tab clipboard race (rare) | n/a: single-tab copy |
 
 ---
 
 ## Test plan
 
 Per commit (run in CI):
-- `pnpm test:run` — unit + component
+- `pnpm test:run`: unit + component
 - `pnpm lint`
-- `pnpm build` — non-negotiable per `feedback_full_qa_gate_no_shortcuts.md`
+- `pnpm build`: non-negotiable per `feedback_full_qa_gate_no_shortcuts.md`
 
 Pre-merge:
 - `pnpm runway:smoke` against preview
@@ -274,18 +274,18 @@ If #70 lands in scope: `... + dashboard edit modal`.
 
 ## Signal cadence
 
-1. `plan ready for TP review at docs/plans/status-view-followups.md` — after CC reads/acks
+1. `plan ready for TP review at docs/plans/status-view-followups.md`: after CC reads/acks
 2. (await TP green-light + #70-conditional)
 3. Per-commit `commit N pushed`
 4. Final `commits pushed, ready for PR open` after all commits land
 5. (await TP green-light to push + open PR)
-6. `PR opened at <url>` — bot cycle armed
-7. `PR thread-state clean, ready for TP gate` — after 2 empty cycles post-last-push
+6. `PR opened at <url>`: bot cycle armed
+7. `PR thread-state clean, ready for TP gate`: after 2 empty cycles post-last-push
 
 ---
 
 ## Open questions for CC
 
-- Tailwind yellow shade for the banner — pick the closest existing token to the red/white/blue used; if no clean match, propose one and surface to TP
-- Clipboard icon glyph — Lucide `ClipboardCopy` or `Copy`? Pick whichever matches existing dashboard icons
-- Test mocking strategy for `navigator.clipboard.writeText` — vitest's standard approach is fine
+- Tailwind yellow shade for the banner: pick the closest existing token to the red/white/blue used; if no clean match, propose one and surface to TP
+- Clipboard icon glyph: Lucide `ClipboardCopy` or `Copy`? Pick whichever matches existing dashboard icons
+- Test mocking strategy for `navigator.clipboard.writeText`: vitest's standard approach is fine

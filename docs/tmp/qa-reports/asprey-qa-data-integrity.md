@@ -1,4 +1,4 @@
-# QA Report — Asprey Data Integrity
+# QA Report: Asprey Data Integrity
 
 **Migration:** `asprey-v4-touchup-2026-04-21` (batchId `asprey-v4-touchup-2026-04-21`)
 **Subject branch:** `feature/runway-pr86-data-asprey`
@@ -31,9 +31,9 @@ Read-only. Pre/post compared field-by-field across the 3 snapshot files in the s
 
 ---
 
-## Step 1 — Expected delta (from spec + forward script)
+## Step 1: Expected delta (from spec + forward script)
 
-From `asprey-v4-touchup-2026-04-21.ts` (lines 7–12, 62–68) cross-referenced with `overnight-clients-v4-realign.md` (Asprey section lines 167–180):
+From `asprey-v4-touchup-2026-04-21.ts` (lines 7 through 12, 62 through 68) cross-referenced with `overnight-clients-v4-realign.md` (Asprey section lines 167 through 180):
 
 | Target | Field | Before | After |
 |---|---|---|---|
@@ -42,13 +42,13 @@ From `asprey-v4-touchup-2026-04-21.ts` (lines 7–12, 62–68) cross-referenced 
 | `projects` (id `00a4e855…`) | `contractEnd` | `null` | `"2026-04-30"` |
 | `projects` (id `00a4e855…`) | `startDate` | `"2026-04-20"` | `"2026-04-20"` (recompute no-op, TP decision #4) |
 | `projects` (id `00a4e855…`) | `endDate` | `"2026-04-30"` | `"2026-04-30"` (recompute no-op, TP decision #4) |
-| L2 week_items (3 records) | — | — | No writes (explicit spec: "No L2 writes in this migration") |
+| L2 week_items (3 records) | none | none | No writes (explicit spec: "No L2 writes in this migration") |
 
 Expected incidental side effects: `projects.updatedAt` and `clients.updatedAt` bump from write execution; 3 audit rows inserted (2 raw-UPDATE audit inserts for `engagementType` and `contractEnd`; 1 audit via `updateClientField` for `team`) all tagged `batchId=asprey-v4-touchup-2026-04-21`. Audit table not included in snapshots; batch-id tagging is verified upstream via the publish pipeline, out of scope for this integrity check.
 
 ---
 
-## Step 2 — Observed delta (pre-apply → post)
+## Step 2: Observed delta (pre-apply → post)
 
 ### Client row (`7d22f3b6…`, slug `dave-asprey`)
 
@@ -75,7 +75,7 @@ All 22 fields × 3 rows compared. **All identical pre-apply vs post.** `updatedA
 
 ---
 
-## Step 3 — Expected-vs-observed matrix
+## Step 3: Expected-vs-observed matrix
 
 ### Expected and observed (green, 3)
 
@@ -112,7 +112,7 @@ _None. No records outside the migration scope were mutated._
 
 - `engagement_type = "retainer"`: consistent with L1 name ("Social Retainer") and spec directive.
 - `contract_end = "2026-04-30"`: consistent with `contractTerm` ("Through Apr 30, 2026"), L1 `endDate` (2026-04-30), final L2 `date` (2026-04-30), and notes ("Account closes EOM April").
-- `contract_start = null` (untouched): acceptable — spec did not require backfill, and Asprey is a wind-down, not a new engagement.
+- `contract_start = null` (untouched): acceptable: spec did not require backfill, and Asprey is a wind-down, not a new engagement.
 
 **Retainer fields: VALID.**
 
@@ -120,8 +120,8 @@ _None. No records outside the migration scope were mutated._
 
 ## Team normalization format
 
-- Pre: `"Allison (lead)"` — v1 parenthetical-role format.
-- Post: `"AM: Allison, CM: Sami, PM: Jason"` — v4 role-prefix format.
+- Pre: `"Allison (lead)"`: v1 parenthetical-role format.
+- Post: `"AM: Allison, CM: Sami, PM: Jason"`: v4 role-prefix format.
 - Role abbreviations match the canonical set per `feedback_naming_and_field_conventions` memory (AM/CM/PM are valid). Format mirrors the established L1 `resources` value byte-for-byte.
 
 **Format: VALID. v4-compliant.**
@@ -133,7 +133,7 @@ _None. No records outside the migration scope were mutated._
 - 3 L2s (`46ef1edc`, `f88098fe`, `0c665655`): field-by-field identical pre→post. **No L2 mutations. Scope boundary held.**
 - No new records created (snapshot structure identical, same record counts).
 - No records deleted.
-- No records outside Asprey client namespace visible in snapshots (correct — scripts scope by `clientId`).
+- No records outside Asprey client namespace visible in snapshots (correct, scripts scope by `clientId`).
 
 ---
 
@@ -145,7 +145,7 @@ _None. No records outside the migration scope were mutated._
 
 ## Confidence
 
-**High.** The pre-apply snapshot (apply-mode, `capturedAt=2026-04-21T00:10:31.383Z`) was written by the migration script itself immediately before the writes, and the post-snapshot was captured ~22 seconds later (`capturedAt=2026-04-21T00:10:53.970Z`). The window is tight, the diff is 3 fields exactly matching the spec plus 2 incidental `updatedAt` bumps, and the forward script contains an in-band `verify()` pass (lines 320–363) that would have thrown on any of the target fields missing. L2 scope integrity verified by field-by-field comparison.
+**High.** The pre-apply snapshot (apply-mode, `capturedAt=2026-04-21T00:10:31.383Z`) was written by the migration script itself immediately before the writes, and the post-snapshot was captured ~22 seconds later (`capturedAt=2026-04-21T00:10:53.970Z`). The window is tight, the diff is 3 fields exactly matching the spec plus 2 incidental `updatedAt` bumps, and the forward script contains an in-band `verify()` pass (lines 320 through 363) that would have thrown on any of the target fields missing. L2 scope integrity verified by field-by-field comparison.
 
 Consider the field-write audit-row batch-id tagging verification as a separate concern (publish pipeline); outside the data-integrity scope of this report.
 

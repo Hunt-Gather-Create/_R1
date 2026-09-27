@@ -27,7 +27,7 @@ FK references explicitly so that:
    entity keep their `summary`, `previousValue`, `updatedBy`, and sibling
    FK (e.g., `clientId` stays on audit rows after the project is deleted).
 2. Deletes are safe even when rows in sibling tables point to the target.
-3. The intent is explicit in code — readers see exactly which tables hold
+3. The intent is explicit in code: readers see exactly which tables hold
    references.
 
 Doing the unlink + delete inside a single transaction keeps the operation
@@ -56,7 +56,7 @@ await db.transaction(async (tx) => {
 
 Audit record for the delete itself should be inserted **before** the
 transaction (see `deleteProject` in `src/lib/runway/operations-writes-project.ts`),
-so the audit row survives even if the transaction rolls back — it records
+so the audit row survives even if the transaction rolls back; it records
 the attempt.
 
 ## Files currently applying this pattern
@@ -67,10 +67,10 @@ the attempt.
 
 Apply the same shape to any new delete operation. Likely candidates:
 
-- `deleteClient` — will need to null/delete related `projects`, `pipeline_items`,
+- `deleteClient`: will need to null/delete related `projects`, `pipeline_items`,
   and audit references in `updates`
-- `deleteTeamMember` — will need to null out any owner/resource string
+- `deleteTeamMember`: will need to null out any owner/resource string
   references (currently stored as free text, but check for FK refs if the
   schema changes)
-- `deletePipelineItem` — check which audit/sibling tables reference
+- `deletePipelineItem`: check which audit/sibling tables reference
   `pipeline_items.id` at implementation time and null those first

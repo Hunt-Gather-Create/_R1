@@ -6,7 +6,7 @@ For a higher-level overview of the Runway system (DB schema, operations layer, b
 
 ## Purpose
 
-Consumers (Slack bot, Claude Code, Open Brain, ad-hoc LLM clients) call these tools to read from and mutate the Runway Turso database without talking to the schema directly. The MCP layer is a thin formatting wrapper over `src/lib/runway/operations.ts` — the barrel that every DB write must pass through for audit trail, idempotency, fuzzy matching, and cascade handling.
+Consumers (Slack bot, Claude Code, Open Brain, ad-hoc LLM clients) call these tools to read from and mutate the Runway Turso database without talking to the schema directly. The MCP layer is a thin formatting wrapper over `src/lib/runway/operations.ts`: the barrel that every DB write must pass through for audit trail, idempotency, fuzzy matching, and cascade handling.
 
 ## Auth
 
@@ -88,7 +88,7 @@ The endpoint speaks the MCP JSON-RPC wire format via `WebStandardStreamableHTTPS
 ]
 ```
 
-**Notes:** Use `includeProjects=false` (the default) for list views — keeps the payload small. Use `true` when the caller is about to drill into multiple clients and wants to avoid N round-trips.
+**Notes:** Use `includeProjects=false` (the default) for list views: it keeps the payload small. Use `true` when the caller is about to drill into multiple clients and wants to avoid N round-trips.
 
 ---
 
@@ -104,7 +104,7 @@ The endpoint speaks the MCP JSON-RPC wire format via `WebStandardStreamableHTTPS
 
 **Returns:** `ClientDetail | errorMessage`. When the slug is unknown, returns a plain text message (`Client '<slug>' not found.`). On success: `{ id, name, slug, nicknames, contractValue, contractTerm, contractStatus, team, clientContacts, createdAt, updatedAt, projects: ClientDetailProject[], pipelineItems: ClientDetailPipelineItem[], recentUpdates: ClientDetailUpdate[] }`.
 
-Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summary, previousValue, newValue, batchId, createdAt }` — use the `id` as input to [`get_update_chain`](#get_update_chain).
+Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summary, previousValue, newValue, batchId, createdAt }`: use the `id` as input to [`get_update_chain`](#get_update_chain).
 
 **Example response:**
 
@@ -196,7 +196,7 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
 | `waitingOn` | string | no | Case-insensitive substring match on `waitingOn`. |
 | `parentProjectId` | string | no | Filter to children of a specific retainer wrapper (pass parent project id). Pass `"__null__"` to match top-level (unparented) projects. |
 
-**Returns:** `ProjectRow[]` — `{ id, name, client, status, category, owner, resources, waitingOn, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }`. `client` is resolved to the display name; all date fields are ISO `YYYY-MM-DD`.
+**Returns:** `ProjectRow[]`: `{ id, name, client, status, category, owner, resources, waitingOn, notes, staleDays, dueDate, startDate, endDate, engagementType, contractStart, contractEnd, updatedAt }`. `client` is resolved to the display name; all date fields are ISO `YYYY-MM-DD`.
 
 **Example response:**
 
@@ -230,7 +230,7 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
 
 ### `get_project_status`
 
-**Description:** Drill down on a single engagement — returns owner, status, engagement type, contract range, blockers, in-flight and upcoming L2s, team, recent updates, and suggested actions.
+**Description:** Drill down on a single engagement: returns owner, status, engagement type, contract range, blockers, in-flight and upcoming L2s, team, recent updates, and suggested actions.
 
 **Params:**
 | Name | Type | Required | Description |
@@ -256,7 +256,7 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
   "inFlight": [
     {
       "id": "wi_101",
-      "title": "Design review — homepage",
+      "title": "Design review: homepage",
       "status": "in-progress",
       "category": "review",
       "startDate": "2026-04-20",
@@ -292,7 +292,7 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
 
 ### `get_week_items`
 
-**Description:** Get L2 week items for a specific week (or all weeks). Filter by `owner`, `resource`, or `person` (owner OR resource — preferred for plate queries).
+**Description:** Get L2 week items for a specific week (or all weeks). Filter by `owner`, `resource`, or `person` (owner OR resource: preferred for plate queries).
 
 **Params:**
 | Name | Type | Required | Description |
@@ -300,9 +300,9 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
 | `weekOf` | string | no | ISO Monday date (e.g. `2026-04-06`). Omit to return all weeks. |
 | `owner` | string | no | Case-insensitive substring match on `owner` only. |
 | `resource` | string | no | Case-insensitive substring match on `resources` only. |
-| `person` | string | no | Substring match against owner OR resources — use for plate queries. |
+| `person` | string | no | Substring match against owner OR resources: use for plate queries. |
 
-**Returns:** `WeekItem[]` — `{ id, projectId, clientId, date, dayOfWeek, title, account, category, status, owner, resources, notes, startDate, endDate, blockedBy, updatedAt }`. `account` is the resolved client name (nullable for unlinked L2s).
+**Returns:** `WeekItem[]`: `{ id, projectId, clientId, date, dayOfWeek, title, account, category, status, owner, resources, notes, startDate, endDate, blockedBy, updatedAt }`. `account` is the resolved client name (nullable for unlinked L2s).
 
 **Example response:**
 
@@ -314,7 +314,7 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
     "clientId": "cli_convergix",
     "date": "2026-04-20",
     "dayOfWeek": "monday",
-    "title": "Design review — homepage",
+    "title": "Design review: homepage",
     "account": "Convergix",
     "category": "review",
     "status": "in-progress",
@@ -329,7 +329,7 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
 ]
 ```
 
-**Notes:** When combining `person` with `owner`/`resource`, all filters apply (AND). `person` is the correct filter for "what's on Kathy's plate" — owner alone misses work she's resourced on.
+**Notes:** When combining `person` with `owner`/`resource`, all filters apply (AND). `person` is the correct filter for "what's on Kathy's plate"; owner alone misses work she's resourced on.
 
 ---
 
@@ -342,7 +342,7 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
 |---|---|---|---|
 | `projectId` | string | yes | L1 project id. |
 
-**Returns:** `WeekItemRow[]` — raw rows from the `week_items` table, sorted by start date (fallback `date`) then `sortOrder`. Completed L2s are filtered out.
+**Returns:** `WeekItemRow[]`: raw rows from the `week_items` table, sorted by start date (fallback `date`) then `sortOrder`. Completed L2s are filtered out.
 
 **Example response:**
 
@@ -352,7 +352,7 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
     "id": "wi_101",
     "projectId": "prj_cds_refresh",
     "clientId": "cli_convergix",
-    "title": "Design review — homepage",
+    "title": "Design review: homepage",
     "status": "in-progress",
     "category": "review",
     "owner": "Roz",
@@ -367,7 +367,7 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
 ]
 ```
 
-**Notes:** Pair with [`get_project_status`](#get_project_status) — `get_project_status` gives the narrative view, this tool gives the raw list of everything that's still open.
+**Notes:** Pair with [`get_project_status`](#get_project_status): `get_project_status` gives the narrative view, this tool gives the raw list of everything that's still open.
 
 ---
 
@@ -382,9 +382,9 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
 | `toDate` | string | yes | Inclusive upper bound, ISO `YYYY-MM-DD`. |
 | `clientSlug` | string | no | Narrow to one client. |
 | `owner` | string | no | Case-insensitive substring match on owner. |
-| `category` | string | no | Exact category match — one of `delivery`, `review`, `kickoff`, `deadline`, `approval`, `launch`. |
+| `category` | string | no | Exact category match: one of `delivery`, `review`, `kickoff`, `deadline`, `approval`, `launch`. |
 
-**Returns:** `WeekItemRow[]` — raw rows ordered by `date` asc then `sortOrder`.
+**Returns:** `WeekItemRow[]`: raw rows ordered by `date` asc then `sortOrder`.
 
 **Example response:**
 
@@ -410,14 +410,14 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
 
 ### `get_orphan_week_items`
 
-**Description:** List week items whose `projectId` is null — L2s that drifted off their parent L1 (often during imports or cascades).
+**Description:** List week items whose `projectId` is null: L2s that drifted off their parent L1 (often during imports or cascades).
 
 **Params:**
 | Name | Type | Required | Description |
 |---|---|---|---|
 | `clientSlug` | string | no | Narrow to orphans belonging to a single client. |
 
-**Returns:** `WeekItemRow[]` — raw `week_items` rows with `projectId === null`.
+**Returns:** `WeekItemRow[]`: raw `week_items` rows with `projectId === null`.
 
 **Example response:**
 
@@ -427,7 +427,7 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
     "id": "wi_555",
     "projectId": null,
     "clientId": "cli_bonterra",
-    "title": "Stub — pending client confirmation",
+    "title": "Stub: pending client confirmation",
     "status": "not-started",
     "owner": "Kathy"
   }
@@ -440,7 +440,7 @@ Each `ClientDetailUpdate` carries `{ id, projectId, updatedBy, updateType, summa
 
 ### `get_person_workload`
 
-**Description:** Get a person's workload bucketed per the v4 convention. The most-used tool for "what's on X's plate" queries — see [Appendix B](#b-bucketing--flags-in-get_person_workload) for the full bucketing semantics.
+**Description:** Get a person's workload bucketed per the v4 convention. The most-used tool for "what's on X's plate" queries: see [Appendix B](#b-bucketing--flags-in-get_person_workload) for the full bucketing semantics.
 
 **Params:**
 | Name | Type | Required | Description |
@@ -490,7 +490,7 @@ L1 `ownedProjects` surfaces only projects where this person is the owner. L2 `we
   },
   "weekItems": {
     "overdue": [],
-    "thisWeek": [{ "id": "wi_101", "title": "Design review — homepage" }],
+    "thisWeek": [{ "id": "wi_101", "title": "Design review: homepage" }],
     "nextWeek": [],
     "later": []
   },
@@ -503,7 +503,7 @@ L1 `ownedProjects` surfaces only projects where this person is the owner. L2 `we
 }
 ```
 
-**Notes:** Date buckets are anchored to America/Chicago. Present the L2 buckets first in the response, roll up the L1 count at the end, and surface `flags` prominently — they're soft blockers the human needs to see.
+**Notes:** Date buckets are anchored to America/Chicago. Present the L2 buckets first in the response, roll up the L1 count at the end, and surface `flags` prominently; they're soft blockers the human needs to see.
 
 ---
 
@@ -515,7 +515,7 @@ L1 `ownedProjects` surfaces only projects where this person is the owner. L2 `we
 
 **Params:** None.
 
-**Returns:** `PipelineItem[]` — `{ account, name, status, estimatedValue, waitingOn, notes }`. `account` is the resolved client name (nullable).
+**Returns:** `PipelineItem[]`: `{ account, name, status, estimatedValue, waitingOn, notes }`. `account` is the resolved client name (nullable).
 
 **Example response:**
 
@@ -542,7 +542,7 @@ L1 `ownedProjects` surfaces only projects where this person is the owner. L2 `we
 
 **Params:** None.
 
-**Returns:** `TeamMember[]` — `{ name, firstName, title, roleCategory, accountsLed: string[], channelPurpose }`. `accountsLed` is parsed from the stored JSON array.
+**Returns:** `TeamMember[]`: `{ name, firstName, title, roleCategory, accountsLed: string[], channelPurpose }`. `accountsLed` is parsed from the stored JSON array.
 
 **Example response:**
 
@@ -567,7 +567,7 @@ L1 `ownedProjects` surfaces only projects where this person is the owner. L2 `we
 
 ### `get_updates`
 
-**Description:** Recent update history, tuned for bot-style activity feeds. Returns a minimal row shape — use [`find_updates`](#find_updates) when you need audit ids or `triggeredByUpdateId`.
+**Description:** Recent update history, tuned for bot-style activity feeds. Returns a minimal row shape: use [`find_updates`](#find_updates) when you need audit ids or `triggeredByUpdateId`.
 
 **Params:**
 | Name | Type | Required | Description |
@@ -577,10 +577,10 @@ L1 `ownedProjects` surfaces only projects where this person is the owner. L2 `we
 | `since` | string | no | ISO lower bound on `createdAt` (inclusive). |
 | `until` | string | no | ISO upper bound on `createdAt` (inclusive). |
 | `batchId` | string | no | Exact match on `updates.batch_id`. |
-| `updateType` | string | no | Exact match — e.g. `status-change`, `field-change`, `cascade-status-change`, `cascade-date-change`. |
+| `updateType` | string | no | Exact match: e.g. `status-change`, `field-change`, `cascade-status-change`, `cascade-date-change`. |
 | `projectName` | string | no | Case-insensitive substring match against the linked project's name. |
 
-**Returns:** `RecentUpdate[]` — `{ clientName, projectName, updatedBy, updateType, summary, previousValue, newValue, createdAt }`. Rows ordered newest-first.
+**Returns:** `RecentUpdate[]`: `{ clientName, projectName, updatedBy, updateType, summary, previousValue, newValue, createdAt }`. Rows ordered newest-first.
 
 **Example response:**
 
@@ -599,7 +599,7 @@ L1 `ownedProjects` surfaces only projects where this person is the owner. L2 `we
 ]
 ```
 
-**Notes:** Defaults to the last 7 days when `since` is not provided. The result omits `id`, `batchId`, and `triggeredByUpdateId` — reach for [`find_updates`](#find_updates) if you need any of those.
+**Notes:** Defaults to the last 7 days when `since` is not provided. The result omits `id`, `batchId`, and `triggeredByUpdateId`: reach for [`find_updates`](#find_updates) if you need any of those.
 
 ---
 
@@ -619,7 +619,7 @@ L1 `ownedProjects` surfaces only projects where this person is the owner. L2 `we
 | `projectName` | string | no | Case-insensitive substring match against the linked project's name. |
 | `limit` | number | no | Hard cap. Default `100`. |
 
-**Returns:** `AuditUpdate[]` — `{ id, clientName, projectName, updatedBy, updateType, summary, previousValue, newValue, batchId, triggeredByUpdateId, createdAt }`. Rows ordered newest-first.
+**Returns:** `AuditUpdate[]`: `{ id, clientName, projectName, updatedBy, updateType, summary, previousValue, newValue, batchId, triggeredByUpdateId, createdAt }`. Rows ordered newest-first.
 
 **Example response:**
 
@@ -631,7 +631,7 @@ L1 `ownedProjects` surfaces only projects where this person is the owner. L2 `we
     "projectName": "CDS Refresh",
     "updatedBy": "mcp",
     "updateType": "cascade-status-change",
-    "summary": "Cascaded status=completed to 'Design review — homepage'",
+    "summary": "Cascaded status=completed to 'Design review: homepage'",
     "previousValue": "in-progress",
     "newValue": "completed",
     "batchId": null,
@@ -641,7 +641,7 @@ L1 `ownedProjects` surfaces only projects where this person is the owner. L2 `we
 ]
 ```
 
-**Notes:** Use this — not [`get_updates`](#get_updates) — when you plan to call [`get_update_chain`](#get_update_chain) next. The `id` and `triggeredByUpdateId` fields are only on `AuditUpdate`.
+**Notes:** Use this, not [`get_updates`](#get_updates), when you plan to call [`get_update_chain`](#get_update_chain) next. The `id` and `triggeredByUpdateId` fields are only on `AuditUpdate`.
 
 ---
 
@@ -683,17 +683,17 @@ L1 `ownedProjects` surfaces only projects where this person is the owner. L2 `we
 
 ## Gantt rendering
 
-These tools generate hosted-URL share links for Gantt views. Both call `generateGanttShare()` (`src/lib/runway/gantt/share-orchestrator.ts`), which renders HTML, uploads it to R2 at `gantt-share/{nonce}/render.html`, and returns a signed URL served by `/api/runway/gantt-share/<token>`. URLs have a 7-day TTL and are unauthenticated — anyone with the URL can fetch.
+These tools generate hosted-URL share links for Gantt views. Both call `generateGanttShare()` (`src/lib/runway/gantt/share-orchestrator.ts`), which renders HTML, uploads it to R2 at `gantt-share/{nonce}/render.html`, and returns a signed URL served by `/api/runway/gantt-share/<token>`. URLs have a 7-day TTL and are unauthenticated; anyone with the URL can fetch.
 
 ### `render_client_gantt`
 
-**Description:** Generate a hosted-URL share link for a client's full project rundown — all top-level projects, retainer wrappers + their L1 children, sorted with content-bearing sections first. Returns a signed 7-day-TTL URL with a summary rollup.
+**Description:** Generate a hosted-URL share link for a client's full project rundown: all top-level projects, retainer wrappers + their L1 children, sorted with content-bearing sections first. Returns a signed 7-day-TTL URL with a summary rollup.
 
 **Params:**
 | Name | Type | Required | Description |
 |---|---|---|---|
 | `clientSlugOrId` | string | yes | Client slug, name, or id (fuzzy-matched against the clients table). |
-| `theme` | enum (`light-internal` \| `light-branded`) | no | Render theme. Default `light-branded` (client-facing, brand palette + logo, no internal alerts). `light-internal` mints a CLI-equivalent rundown with the data-integrity panel included. `dark-account-view` is rejected — that theme is RSC-only. |
+| `theme` | enum (`light-internal` \| `light-branded`) | no | Render theme. Default `light-branded` (client-facing, brand palette + logo, no internal alerts). `light-internal` mints a CLI-equivalent rundown with the data-integrity panel included. `dark-account-view` is rejected; that theme is RSC-only. |
 
 **Returns:** `{ shareUrl: string, expiresAt: string (ISO), summary: { kind: "client", clientName: string, sectionCount: number, rowCount: number, severity: { critical: number, warn: number, info: number } } }`
 
@@ -714,9 +714,9 @@ These tools generate hosted-URL share links for Gantt views. Both call `generate
 ```
 
 **Notes:**
-- The URL is unauthenticated — anyone with it can fetch. Do NOT share with untrusted parties.
+- The URL is unauthenticated; anyone with it can fetch. Do NOT share with untrusted parties.
 - Default theme is `light-branded` (client-facing). Use `light-internal` for an internal CLI-equivalent rundown including the data-integrity panel.
-- `dark-account-view` is rejected at this tool — that theme is RSC-only inside the Runway Account View tab.
+- `dark-account-view` is rejected at this tool; that theme is RSC-only inside the Runway Account View tab.
 - Origin resolution: `NEXT_PUBLIC_APP_URL` env var, falling back to `https://runway.startround1.com`.
 - Throws if R2 is not configured, `RUNWAY_SHARE_SECRET` is missing, or DB resolution fails (error message includes available client slugs).
 
@@ -724,14 +724,14 @@ These tools generate hosted-URL share links for Gantt views. Both call `generate
 
 ### `render_project_gantt`
 
-**Description:** Generate a hosted-URL share link for a single-project triage Gantt — one L1 project, or a retainer wrapper rendered as a wrapper-shape with its child L1s. Returns a signed 7-day-TTL URL with a summary rollup. Caller must supply both the client and the project; the resolver verifies the project belongs to that client.
+**Description:** Generate a hosted-URL share link for a single-project triage Gantt: one L1 project, or a retainer wrapper rendered as a wrapper-shape with its child L1s. Returns a signed 7-day-TTL URL with a summary rollup. Caller must supply both the client and the project; the resolver verifies the project belongs to that client.
 
 **Params:**
 | Name | Type | Required | Description |
 |---|---|---|---|
 | `clientSlugOrId` | string | yes | Client slug, name, or id that owns the project (fuzzy-matched). |
 | `projectSlugOrId` | string | yes | Project name or id (fuzzy-matched against `projects.name` within the client; can also be a retainer wrapper). |
-| `theme` | enum (`light-internal` \| `light-branded`) | no | Render theme. Default `light-branded`. `light-internal` mints the internal CLI variant. `dark-account-view` is rejected — that theme is RSC-only. |
+| `theme` | enum (`light-internal` \| `light-branded`) | no | Render theme. Default `light-branded`. `light-internal` mints the internal CLI variant. `dark-account-view` is rejected; that theme is RSC-only. |
 
 **Returns:** `{ shareUrl: string, expiresAt: string (ISO), summary: { kind: "project", clientName: string, projectName: string, rowCount: number, severity: { critical: number, warn: number, info: number } } }`
 
@@ -744,7 +744,7 @@ These tools generate hosted-URL share links for Gantt views. Both call `generate
   "summary": {
     "kind": "project",
     "clientName": "Convergix",
-    "projectName": "Brand Refresh — Phase 2",
+    "projectName": "Brand Refresh: Phase 2",
     "rowCount": 8,
     "severity": { "critical": 1, "warn": 3, "info": 0 }
   }
@@ -752,9 +752,9 @@ These tools generate hosted-URL share links for Gantt views. Both call `generate
 ```
 
 **Notes:**
-- The URL is unauthenticated — anyone with it can fetch. Do NOT share with untrusted parties.
+- The URL is unauthenticated; anyone with it can fetch. Do NOT share with untrusted parties.
 - For wrapper projects, the rendered view is the wrapper-shape (child L1s as rows); for a leaf L1, it's the single-project triage view (week items as rows).
-- The resolver verifies the project belongs to the supplied client — supplying a mismatched pair errors out.
+- The resolver verifies the project belongs to the supplied client; supplying a mismatched pair errors out.
 - `sectionCount` is omitted from the summary (single-project views aren't multi-section); `projectName` is set instead.
 - Same origin / R2 / secret / fuzzy-match error semantics as [`render_client_gantt`](#render_client_gantt).
 
@@ -764,7 +764,7 @@ These tools generate hosted-URL share links for Gantt views. Both call `generate
 
 ### `get_flags`
 
-**Description:** Aggregate surface for every soft flag the board and bot raise — past-end L2s, stale L1s, `waitingOn` bottlenecks, today/tomorrow deadlines, resource conflicts, retainer renewals, expired contracts.
+**Description:** Aggregate surface for every soft flag the board and bot raise: past-end L2s, stale L1s, `waitingOn` bottlenecks, today/tomorrow deadlines, resource conflicts, retainer renewals, expired contracts.
 
 **Params:**
 | Name | Type | Required | Description |
@@ -790,7 +790,7 @@ These tools generate hosted-URL share links for Gantt views. Both call `generate
       "type": "past-end-l2",
       "severity": "warning",
       "title": "Past end date",
-      "detail": "Design review — homepage is still in-progress past its end date (2026-04-24)",
+      "detail": "Design review: homepage is still in-progress past its end date (2026-04-24)",
       "relatedClient": "Convergix",
       "relatedPerson": "Roz"
     }
@@ -802,13 +802,13 @@ These tools generate hosted-URL share links for Gantt views. Both call `generate
 }
 ```
 
-**Notes:** Mirrors the UI board's `analyzeFlags()` output — same severity ordering (critical → warning → info).
+**Notes:** Mirrors the UI board's `analyzeFlags()` output: same severity ordering (critical → warning → info).
 
 ---
 
 ### `get_data_health`
 
-**Description:** DB health snapshot — totals, orphan counts, staleness signals, batch state, most-recent update timestamp.
+**Description:** DB health snapshot: totals, orphan counts, staleness signals, batch state, most-recent update timestamp.
 
 **Params:** None.
 
@@ -852,11 +852,11 @@ These tools generate hosted-URL share links for Gantt views. Both call `generate
 
 ### `get_current_batch`
 
-**Description:** Return the currently-active batch for the calling process. Batch state is module-memory, not DB-persisted — so this reflects the current request's scope.
+**Description:** Return the currently-active batch for the calling process. Batch state is module-memory, not DB-persisted, so this reflects the current request's scope.
 
 **Params:** None.
 
-**Returns:** `CurrentBatch` — `{ active: false }` or `{ active: true, batchId, itemCount, startedAt, startedBy, mostRecentAt }`. `itemCount` is the number of audit rows already tagged; `startedBy` is the `updatedBy` of the earliest row.
+**Returns:** `CurrentBatch`: `{ active: false }` or `{ active: true, batchId, itemCount, startedAt, startedBy, mostRecentAt }`. `itemCount` is the number of audit rows already tagged; `startedBy` is the `updatedBy` of the earliest row.
 
 **Example response:**
 
@@ -980,7 +980,7 @@ Groups are ordered by most-recent child `createdAt` descending. Children are fil
         {
           "id": "upd_cas_02",
           "updateType": "cascade-status-change",
-          "summary": "Cascaded status=completed to 'Design review — homepage'",
+          "summary": "Cascaded status=completed to 'Design review: homepage'",
           "clientName": "Convergix",
           "projectName": "CDS Refresh",
           "createdAt": "2026-04-19T17:22:12.000Z"
@@ -995,9 +995,9 @@ Groups are ordered by most-recent child `createdAt` descending. Children are fil
 
 ---
 
-## Writes — projects
+## Writes: projects
 
-All write tools follow the v4 `MutationResponse<D>` shape — see [Appendix A](#a-v4-response-conventions). Successful mutations with a `data` payload return a JSON-wrapped `{ message, data }` text response; successful mutations without structured data return a plain text message; failures always return the raw error text.
+All write tools follow the v4 `MutationResponse<D>` shape: see [Appendix A](#a-v4-response-conventions). Successful mutations with a `data` payload return a JSON-wrapped `{ message, data }` text response; successful mutations without structured data return a plain text message; failures always return the raw error text.
 
 ### `add_project`
 
@@ -1074,11 +1074,11 @@ Deleted project 'Phase 2 discovery' from Convergix.
     "projectName": "CDS Refresh",
     "previousStatus": "in-production",
     "newStatus": "completed",
-    "cascadedItems": ["Design review — homepage", "Final copy sign-off"],
+    "cascadedItems": ["Design review: homepage", "Final copy sign-off"],
     "cascadeDetail": [
       {
         "itemId": "wi_101",
-        "itemTitle": "Design review — homepage",
+        "itemTitle": "Design review: homepage",
         "field": "status",
         "previousValue": "in-progress",
         "newValue": "completed",
@@ -1150,7 +1150,7 @@ Deleted project 'Phase 2 discovery' from Convergix.
 
 ---
 
-## Writes — week items
+## Writes: week items
 
 ### `create_week_item`
 
@@ -1261,7 +1261,7 @@ Deleted week item 'Homepage launch'.
 
 ---
 
-## Writes — clients
+## Writes: clients
 
 ### `update_client_field`
 
@@ -1283,11 +1283,11 @@ Deleted week item 'Homepage launch'.
 Updated Convergix team: AM: Kathy → AM: Kathy / CD: Roz.
 ```
 
-**Notes:** There is no `create_client` MCP tool — adding clients is not surfaced through MCP today. Use a migration script if you need to create one.
+**Notes:** There is no `create_client` MCP tool: adding clients is not surfaced through MCP today. Use a migration script if you need to create one.
 
 ---
 
-## Writes — pipeline
+## Writes: pipeline
 
 ### `create_pipeline_item`
 
@@ -1359,7 +1359,7 @@ Removed pipeline item 'Phase 2 retainer' from Convergix.
 
 ---
 
-## Writes — team
+## Writes: team
 
 ### `create_team_member`
 
@@ -1405,15 +1405,15 @@ Added team member 'Lane'.
 Updated Lane roleCategory: creative → dev.
 ```
 
-**Notes:** `accountsLed` accepts a JSON-encoded array string — e.g. `["convergix","bonterra"]`.
+**Notes:** `accountsLed` accepts a JSON-encoded array string: e.g. `["convergix","bonterra"]`.
 
 ---
 
-## Writes — misc
+## Writes: misc
 
 ### `add_update`
 
-**Description:** Log a free-form update for a client or project (no structured change — just narrative).
+**Description:** Log a free-form update for a client or project (no structured change, just narrative).
 
 **Params:**
 | Name | Type | Required | Description |
@@ -1452,7 +1452,7 @@ Logged update for Convergix CDS Refresh.
 Reverted last change: Convergix CDS Refresh status → in-production.
 ```
 
-**Notes:** Undo scope is narrow — see `operations-writes-undo.ts` for which fields are reversible.
+**Notes:** Undo scope is narrow: see `operations-writes-undo.ts` for which fields are reversible.
 
 ---
 
@@ -1460,7 +1460,7 @@ Reverted last change: Convergix CDS Refresh status → in-production.
 
 **Status:** Deprecated under issue #17. Returns an error message pointing callers to `batch_apply`.
 
-**Why deprecated:** The standalone "set the flag, fire separate MCP calls, clear the flag" model cannot survive per-request batch scoping. After #17, the batch id lives in an AsyncLocalStorage scope owned by the request that creates it — separate MCP HTTP requests run in separate async contexts by design, so a flag set in one request is invisible to the next. To scope multiple ops under one batch, use [`batch_apply`](#batch_apply).
+**Why deprecated:** The standalone "set the flag, fire separate MCP calls, clear the flag" model cannot survive per-request batch scoping. After #17, the batch id lives in an AsyncLocalStorage scope owned by the request that creates it; separate MCP HTTP requests run in separate async contexts by design, so a flag set in one request is invisible to the next. To scope multiple ops under one batch, use [`batch_apply`](#batch_apply).
 
 **Params:**
 | Name | Type | Required | Description |
@@ -1473,7 +1473,7 @@ Reverted last change: Convergix CDS Refresh status → in-production.
 
 ---
 
-## Writes — overrides + batch dispatch
+## Writes: overrides + batch dispatch
 
 ### `override_project_date`
 
@@ -1491,7 +1491,7 @@ Reverted last change: Convergix CDS Refresh status → in-production.
 
 **Returns:** `MutationResponse<{ clientName, projectName, field, previousValue, newValue, auditId }>`. Failure cases: project not found, retainer wrapper without bypass, shape-invalid date.
 
-**Notes:** Use this when an L1 needs a non-derived start/end date — typically retainer wrappers (with `bypassGuard`) or one-off rollups where the derived MIN/MAX isn't right. Recompute (`recomputeProjectDatesWith`) does not run; the value persists exactly as written.
+**Notes:** Use this when an L1 needs a non-derived start/end date: typically retainer wrappers (with `bypassGuard`) or one-off rollups where the derived MIN/MAX isn't right. Recompute (`recomputeProjectDatesWith`) does not run; the value persists exactly as written.
 
 ---
 
@@ -1507,9 +1507,9 @@ Reverted last change: Convergix CDS Refresh status → in-production.
 | `parentProjectName` | string \| null | yes | Wrapper project name in the same client; `null` clears the link. |
 | `updatedBy` | string | no (default `mcp`) | Person making the change. |
 
-**Returns:** `MutationResponse<UpdateProjectFieldData>` — same shape as `update_project_field`.
+**Returns:** `MutationResponse<UpdateProjectFieldData>`: same shape as `update_project_field`.
 
-**Notes:** Defense-in-depth — both the tool resolves + validates, and `update_project_field` revalidates via the shared validator module. A direct `update_project_field({ field: 'parentProjectId' })` call goes through the same checks.
+**Notes:** Defense-in-depth: both the tool resolves + validates, and `update_project_field` revalidates via the shared validator module. A direct `update_project_field({ field: 'parentProjectId' })` call goes through the same checks.
 
 ---
 
@@ -1529,7 +1529,7 @@ Reverted last change: Convergix CDS Refresh status → in-production.
 
 **Returns:** Always returns the structured payload `{ ok, message, data: { results } }`. Each `results[i]` carries `{ tool, ok, message?, error?, data? }`. `ok` at the top level is `true` only when every op succeeded.
 
-**Notes:** Under issue #17 the batch id is scoped via `withBatchId(batchId, ...)` (AsyncLocalStorage) — the dispatch loop runs inside that scope so `getBatchId()` returns the active id for every helper call without any module-level state. The scope unwinds automatically after the loop resolves or throws, so no manual `finally` cleanup is required. Exceptions inside an op handler are caught and recorded as `{ ok: false, error: <message> }` for that op. Tool-boundary format validation (the engagement/ISO checks at MCP entry) does NOT run for batch-dispatched ops; helpers enforce semantic invariants (parentProjectId validators, contract-date invariant, recompute guard, in-batch override guard).
+**Notes:** Under issue #17 the batch id is scoped via `withBatchId(batchId, ...)` (AsyncLocalStorage): the dispatch loop runs inside that scope so `getBatchId()` returns the active id for every helper call without any module-level state. The scope unwinds automatically after the loop resolves or throws, so no manual `finally` cleanup is required. Exceptions inside an op handler are caught and recorded as `{ ok: false, error: <message> }` for that op. Tool-boundary format validation (the engagement/ISO checks at MCP entry) does NOT run for batch-dispatched ops; helpers enforce semantic invariants (parentProjectId validators, contract-date invariant, recompute guard, in-batch override guard).
 
 ---
 
@@ -1552,7 +1552,7 @@ Every Runway mutation function returns a typed `MutationResponse<D>` (see `src/l
 }
 ```
 
-**Failure:** Plain text error body — `result.error`. No JSON wrapping.
+**Failure:** Plain text error body: `result.error`. No JSON wrapping.
 
 Callers should attempt `JSON.parse` on the response body when they expect a `data` payload. If parsing fails, fall back to treating the body as a plain message.
 
@@ -1570,11 +1570,11 @@ All other mutations (`add_project`, `delete_project`, `create_week_item`, `delet
 
 ## B. Bucketing + flags in `get_person_workload`
 
-`get_person_workload` is the most-called tool — worth reading once so responses are interpreted correctly.
+`get_person_workload` is the most-called tool: worth reading once so responses are interpreted correctly.
 
 **Match rules:**
 
-- **L1 (owned projects):** person appears in `projects.owner` (substring match). Resources do not surface L1s — "owned" means accountable.
+- **L1 (owned projects):** person appears in `projects.owner` (substring match). Resources do not surface L1s; "owned" means accountable.
 - **L2 (week items):** person appears in `owner` OR `resources`.
 
 **Project buckets (`ownedProjects`):** keyed on `projects.status`:
@@ -1582,23 +1582,23 @@ All other mutations (`add_project`, `delete_project`, `create_week_item`, `delet
 - `awaiting-client` → `awaitingClient`
 - `blocked` → `blocked`
 - `on-hold` → `onHold`
-- `completed` → `completed` (empty unless the internal `includeCompleted` flag is set — not exposed through MCP)
+- `completed` → `completed` (empty unless the internal `includeCompleted` flag is set, not exposed through MCP)
 - everything else (including `in-production`, `not-started`, `null`) → `inProgress`
 
 **Week item buckets (`weekItems`):** anchored to America/Chicago today:
 
-- `overdue` — `(endDate ?? startDate) < today` AND `status !== 'completed'`
-- `thisWeek` — `startDate` in `[thisMonday, thisSunday]`, or item spans into this week
-- `nextWeek` — `startDate` in `[nextMonday, nextSunday]`
-- `later` — `startDate` beyond next Sunday
+- `overdue`: `(endDate ?? startDate) < today` AND `status !== 'completed'`
+- `thisWeek`: `startDate` in `[thisMonday, thisSunday]`, or item spans into this week
+- `nextWeek`: `startDate` in `[nextMonday, nextSunday]`
+- `later`: `startDate` beyond next Sunday
 - Completed L2s are excluded from all forward buckets to prevent future-dated completions from inflating counts.
 
-**Stub filter:** L2s whose parent L1 has `status='awaiting-client'` are filtered out of all buckets — they're "stubs" that shouldn't surface as active work.
+**Stub filter:** L2s whose parent L1 has `status='awaiting-client'` are filtered out of all buckets; they're "stubs" that shouldn't surface as active work.
 
 **Flags:** two soft flags ride alongside the buckets:
 
-- `flags.contractExpired: ClientRow[]` — clients with `contractStatus='expired'` where this person owns at least one active L1 (`in-production` or `not-started`).
-- `flags.retainerRenewalDue: ProjectRow[]` — owned L1s with `engagementType='retainer'` whose `contractEnd` falls in `[today, today + 30 days]`.
+- `flags.contractExpired: ClientRow[]`; clients with `contractStatus='expired'` where this person owns at least one active L1 (`in-production` or `not-started`).
+- `flags.retainerRenewalDue: ProjectRow[]`; owned L1s with `engagementType='retainer'` whose `contractEnd` falls in `[today, today + 30 days]`.
 
 **Totals:**
 
@@ -1609,7 +1609,7 @@ All other mutations (`add_project`, `delete_project`, `create_week_item`, `delet
 
 Batch mode tags a run of mutations with a `batchId` and suppresses per-mutation Slack notifications so a cleanup run doesn't spam the updates channel.
 
-**Post-#17: batch id is request-scoped.** Before issue #17 the batch id lived in module-level memory (`setBatchId` / `getBatchId`), which leaked across concurrent requests on Fluid Compute. The batch id now lives in an `AsyncLocalStorage` store entered via `withBatchId(id, fn)`. The standalone `set_batch_mode` tool is deprecated as a result — the "set, fire separate calls, clear" pattern cannot survive per-request scoping. The supported entry points are:
+**Post-#17: batch id is request-scoped.** Before issue #17 the batch id lived in module-level memory (`setBatchId` / `getBatchId`), which leaked across concurrent requests on Fluid Compute. The batch id now lives in an `AsyncLocalStorage` store entered via `withBatchId(id, fn)`. The standalone `set_batch_mode` tool is deprecated as a result: the "set, fire separate calls, clear" pattern cannot survive per-request scoping. The supported entry points are:
 
 - **MCP callers:** use [`batch_apply`](#batch_apply). The dispatcher wraps the entire op loop in a single `withBatchId(batchId, …)` scope, so every helper called from the loop sees the active id and Slack posting is suppressed.
 - **Migration scripts:** `pnpm runway:migrate <file> --apply` wraps `migration.up(ctx)` in `withBatchId(<filename-derived-id>, …)` automatically. Dry-runs skip the scope (no audit writes).
@@ -1618,33 +1618,33 @@ Batch mode tags a run of mutations with a `batchId` and suppresses per-mutation 
 
 1. Call [`batch_apply`](#batch_apply) with a `batchId` (e.g. `cleanup-2026-04-19`) and an `ops[]` sequence.
 2. Each op runs sequentially under the scope. Every audit row carries `updates.batch_id = <batchId>`, and Slack posting is skipped.
-3. After the call returns, inspect with [`get_current_batch`](#get_current_batch) (only meaningful while the scope is active — i.e. mid-call from another caller in the same async chain, which is rare) or [`get_batch_contents`](#get_batch_contents) (any batch, active or past — queries by `updates.batch_id`).
+3. After the call returns, inspect with [`get_current_batch`](#get_current_batch) (only meaningful while the scope is active, i.e. mid-call from another caller in the same async chain, which is rare) or [`get_batch_contents`](#get_batch_contents) (any batch, active or past: queries by `updates.batch_id`).
 4. When satisfied, run `scripts/runway-publish-updates.ts` to group and post the batch to Slack in a single message.
 
 **Caveats:**
 
 - Batch state is async-scoped, not DB-persisted. A second MCP process / script cannot see another scope's active id; you must invoke its own `batch_apply` or `withBatchId` to participate.
-- Batch mode does not suppress cascade logic — cascades still fire and still write audit rows (they inherit the batch tag).
+- Batch mode does not suppress cascade logic; cascades still fire and still write audit rows (they inherit the batch tag).
 - `undo_last_change` ignores batch mode.
 
 ## D. Cascade model
 
-Runway audit rows chain via `updates.triggered_by_update_id` — a nullable self-reference. The `updateType` column distinguishes parents (`status-change`, `field-change`) from cascade children (`cascade-status-change`, `cascade-date-change`).
+Runway audit rows chain via `updates.triggered_by_update_id`: a nullable self-reference. The `updateType` column distinguishes parents (`status-change`, `field-change`) from cascade children (`cascade-status-change`, `cascade-date-change`).
 
-**Forward cascade** — triggered by a project mutation:
+**Forward cascade**, triggered by a project mutation:
 
 - `update_project_status` with `newStatus` in the cascade set (`completed`, `canceled`, `on-hold`) → propagates to all linked L2 week items, writing one `cascade-status-change` row per item. See `CASCADE_STATUSES` in `operations-utils.ts`.
 - `update_project_field` with `field='dueDate'` → propagates the new date to all linked L2 week items' `date` column, writing one `cascade-date-change` row per item.
 
 Each cascade row gets `triggered_by_update_id = <parent auditId>`, and the parent mutation's `data.cascadeDetail[]` lists every cascade row's `auditId` for traceability.
 
-**Reverse cascade** — triggered by a week item mutation:
+**Reverse cascade**, triggered by a week item mutation:
 
 - `update_week_item` with `field='date'` on a `deadline`-category L2 that has a parent `projectId` → back-propagates the date to the parent project's `dueDate`. The mutation's `data.reverseCascadeDetail` carries the parent info and audit id.
 - No separate audit row is written for the parent project update in this case; the `week-field-change` row owns the trail, and `reverseCascadeDetail.auditId` references it.
 
 **Walking a chain:**
 
-1. Start from any `auditId` you already have — a mutation response's `data.auditId`, a row from [`find_updates`](#find_updates), or a `triggeredByUpdateId` you pulled off another row.
+1. Start from any `auditId` you already have: a mutation response's `data.auditId`, a row from [`find_updates`](#find_updates), or a `triggeredByUpdateId` you pulled off another row.
 2. Call [`get_update_chain`](#get_update_chain) with that id. It walks up to the root and then fans out to every descendant, ordered by `createdAt` ascending.
-3. For a time-windowed overview (not a single chain), use [`get_cascade_log`](#get_cascade_log) — it groups cascade rows by parent id within the last N minutes.
+3. For a time-windowed overview (not a single chain), use [`get_cascade_log`](#get_cascade_log): it groups cascade rows by parent id within the last N minutes.

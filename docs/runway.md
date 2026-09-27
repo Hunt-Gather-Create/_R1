@@ -47,20 +47,20 @@ Runway uses a **separate Turso database** (`RUNWAY_DATABASE_URL`), not the main 
 
 L1 wrapper (`projects`) → L2 sub-project (`projects.parentProjectId`, max depth 2, validator-enforced) → L3 section (`sections`) → L4 task (`week_items.sectionId`).
 
-Nesting rules (Delta A, schema plan v4-delta-a §4): an L2's parent may be typed `retainer` or `project` (NULL tolerated as default-project until the G2 backfill); `one-off` parents are rejected (childless-card contract). `engagementType='retainer'` is L1-only — a nested project can never be typed or toggled to retainer (L2-never-retainer; retainer context inherits from the L1 parent). Enforced in `validateParentProjectIdAssignment` + the `updateProjectField` toggle guard.
+Nesting rules (Delta A, schema plan v4-delta-a §4): an L2's parent may be typed `retainer` or `project` (NULL tolerated as default-project until the G2 backfill); `one-off` parents are rejected (childless-card contract). `engagementType='retainer'` is L1-only: a nested project can never be typed or toggled to retainer (L2-never-retainer; retainer context inherits from the L1 parent). Enforced in `validateParentProjectIdAssignment` + the `updateProjectField` toggle guard.
 
-Design principle (schema plan §3.4): every level is potentially actionable AND potentially a container, data-driven not schema-driven. A section with all 5 actionable fields (`status`, `owner`, `resources`, `startDate`, `endDate`) null is a pure grouping band; setting any promotes it to actionable. Section status REUSES the week-item status enum (no third vocabulary) and is never auto-derived from children. Section dates are manual-only; when null the UI shows the derived child range grayed, computed at read time — no stored rollups.
+Design principle (schema plan §3.4): every level is potentially actionable AND potentially a container, data-driven not schema-driven. A section with all 5 actionable fields (`status`, `owner`, `resources`, `startDate`, `endDate`) null is a pure grouping band; setting any promotes it to actionable. Section status REUSES the week-item status enum (no third vocabulary) and is never auto-derived from children. Section dates are manual-only; when null the UI shows the derived child range grayed, computed at read time: no stored rollups.
 
 Key invariants (enforced in `operations-writes-section.ts` + `operations-utils.ts`):
 
-1. `weekItem.sectionId != null` implies `weekItem.projectId == section.projectId` — reparenting rewrites both atomically (`reparentWeekItemToSection`).
-2. Deleting a section demotes its children to loose tasks in the same transaction — never deletes them.
+1. `weekItem.sectionId != null` implies `weekItem.projectId == section.projectId`: reparenting rewrites both atomically (`reparentWeekItemToSection`).
+2. Deleting a section demotes its children to loose tasks in the same transaction: never deletes them.
 3. `status='canceled'` on a section is a status flip, not a delete; the audit row carries `openChildCount` for the future digest prompt.
-4. Sync-respect (D7): the sheet-sync engine's only section write surface is `reconcileSectionFromSheet` (title + sortOrder only) — operator-promoted sections survive every reconcile.
-5. `taskNo` auto-append: Runway-born tasks under a sheet-sourced numbered section mint max+1 (numeric parse of the trailing component — `task-no.ts`) and register in `sheet_sync_ledger` with `state='runway-born'` inside the create transaction. Runway-born sections yield null `taskNo` until sheet reconciliation. Deletion is gap-preserving.
+4. Sync-respect (D7): the sheet-sync engine's only section write surface is `reconcileSectionFromSheet` (title + sortOrder only); operator-promoted sections survive every reconcile.
+5. `taskNo` auto-append: Runway-born tasks under a sheet-sourced numbered section mint max+1 (numeric parse of the trailing component, `task-no.ts`) and register in `sheet_sync_ledger` with `state='runway-born'` inside the create transaction. Runway-born sections yield null `taskNo` until sheet reconciliation. Deletion is gap-preserving.
 6. Owner inheritance chain: `owner ?? section.owner ?? project.owner` on task create.
 
-Ledger access goes through the repository adapter `sheet-sync-ledger-repo.ts` (`getSheetSyncLedger()`), never direct table access from business logic — the v2 backend swap (Memory Substrate via MCP) is a one-file change.
+Ledger access goes through the repository adapter `sheet-sync-ledger-repo.ts` (`getSheetSyncLedger()`), never direct table access from business logic; the v2 backend swap (Memory Substrate via MCP) is a one-file change.
 
 ### Separate Drizzle Config
 
@@ -104,29 +104,29 @@ All database reads and writes go through `src/lib/runway/operations*.ts`. No con
 
 `operations.ts` exports helpers used across modules:
 
-- `getClientOrFail(slug)` — looks up client, returns `{ ok, client }` or standard error result (used by writes + add operations)
-- `matchesSubstring(value, search)` — case-insensitive substring match (used by read operations for owner/waitingOn filters)
-- `groupBy(items, keyFn)` — generic array grouping (used by reads and board queries)
-- `clientNotFoundError(slug)` — standard error result for missing clients
-- `resolveProjectOrFail(clientId, clientName, projectName)` — fuzzy-match project with full disambiguation error handling (ambiguous, not-found with available list)
-- `resolveWeekItemOrFail(weekOf, weekItemTitle)` — fuzzy-match week item with disambiguation, mirrors `resolveProjectOrFail`
-- `validateField(field, allowedFields)` — validate a field name against an allowed list, return error result or null
-- `insertAuditRecord(params)` — insert an audit record into the `updates` table (used by all write operations for change tracking)
-- `checkDuplicate(idemKey, duplicateResult)` — check idempotency key; returns `duplicateResult` if key exists, `null` otherwise (replaces inline `checkIdempotency` + if-block pattern)
-- `fuzzyMatch(items, searchTerm, getText)` — generic ranked fuzzy match (exact > starts-with > substring), returns `match`, `ambiguous`, or `none`
-- `fuzzyMatchProject` / `fuzzyMatchWeekItem` — convenience wrappers for `.name` and `.title` fields
-- `CASCADE_STATUSES` — statuses that cascade from projects to linked week items: `completed`, `blocked`, `on-hold`
-- `TERMINAL_ITEM_STATUSES` — week item statuses that block cascade: `completed`, `canceled`
+- `getClientOrFail(slug)`: looks up client, returns `{ ok, client }` or standard error result (used by writes + add operations)
+- `matchesSubstring(value, search)`: case-insensitive substring match (used by read operations for owner/waitingOn filters)
+- `groupBy(items, keyFn)`: generic array grouping (used by reads and board queries)
+- `clientNotFoundError(slug)`: standard error result for missing clients
+- `resolveProjectOrFail(clientId, clientName, projectName)`: fuzzy-match project with full disambiguation error handling (ambiguous, not-found with available list)
+- `resolveWeekItemOrFail(weekOf, weekItemTitle)`: fuzzy-match week item with disambiguation, mirrors `resolveProjectOrFail`
+- `validateField(field, allowedFields)`: validate a field name against an allowed list, return error result or null
+- `insertAuditRecord(params)`: insert an audit record into the `updates` table (used by all write operations for change tracking)
+- `checkDuplicate(idemKey, duplicateResult)`: check idempotency key; returns `duplicateResult` if key exists, `null` otherwise (replaces inline `checkIdempotency` + if-block pattern)
+- `fuzzyMatch(items, searchTerm, getText)`: generic ranked fuzzy match (exact > starts-with > substring), returns `match`, `ambiguous`, or `none`
+- `fuzzyMatchProject` / `fuzzyMatchWeekItem`: convenience wrappers for `.name` and `.title` fields
+- `CASCADE_STATUSES`: statuses that cascade from projects to linked week items: `completed`, `blocked`, `on-hold`
+- `TERMINAL_ITEM_STATUSES`: week item statuses that block cascade: `completed`, `canceled`
 
 ### Field Constants
 
 Centralized in `operations-utils.ts` so field allowlists are defined once and shared across write, undo, and validation code:
 
-- `PROJECT_FIELDS` — editable project fields: `name`, `dueDate`, `owner`, `resources`, `waitingOn`, `notes`, `category`, `engagementType`, `contractStart`, `contractEnd`, `parentProjectId`
-- `PROJECT_FIELD_TO_COLUMN` — maps each `ProjectField` to its Drizzle column key
-- `WEEK_ITEM_FIELDS` — editable week item fields: `title`, `status`, `date`, `dayOfWeek`, `weekOf`, `owner`, `resources`, `notes`, `category`, `startDate`, `endDate`, `blockedBy`
-- `WEEK_ITEM_FIELD_TO_COLUMN` — maps each `WeekItemField` to its Drizzle column key
-- `UNDO_FIELDS` — derived from `[...PROJECT_FIELDS, "status", "category"]` so new project fields automatically become undoable
+- `PROJECT_FIELDS`: editable project fields: `name`, `dueDate`, `owner`, `resources`, `waitingOn`, `notes`, `category`, `engagementType`, `contractStart`, `contractEnd`, `parentProjectId`
+- `PROJECT_FIELD_TO_COLUMN`: maps each `ProjectField` to its Drizzle column key
+- `WEEK_ITEM_FIELDS`: editable week item fields: `title`, `status`, `date`, `dayOfWeek`, `weekOf`, `owner`, `resources`, `notes`, `category`, `startDate`, `endDate`, `blockedBy`
+- `WEEK_ITEM_FIELD_TO_COLUMN`: maps each `WeekItemField` to its Drizzle column key
+- `UNDO_FIELDS`: derived from `[...PROJECT_FIELDS, "status", "category"]` so new project fields automatically become undoable
 
 ### Status Cascade
 
@@ -140,7 +140,7 @@ When a project's `dueDate` is changed via `updateProjectField`, all linked week 
 
 The reverse also applies: when a deadline week item's `date` is changed via `updateWeekItemField`, the linked project's `dueDate` syncs back automatically (**reverse cascade**). This only fires when all three conditions are met: `field === "date"`, `item.category === "deadline"`, and `item.projectId` is not null.
 
-Both forward and reverse cascades are wrapped in `db.transaction()` for atomicity — if any write fails mid-cascade, all changes roll back.
+Both forward and reverse cascades are wrapped in `db.transaction()` for atomicity; if any write fails mid-cascade, all changes roll back.
 
 **No circular cascade risk:** Forward cascade writes directly to `weekItems` table via `tx.update()`. Reverse cascade writes directly to `projects` table via `tx.update()`. Neither function calls the other -- they use raw DB writes, not the operation functions.
 
@@ -158,7 +158,7 @@ All write operations generate a deterministic idempotency key (SHA-256 hash of o
 
 Field-change audit records store `metadata: JSON.stringify({ field })` so `undoLastChange` can read the field name from structured data instead of parsing it from the summary string. For records created before the migration (no `metadata` column), the regex fallback (`/: (\w+) changed from/`) is used.
 
-Undo handles null/empty `previousValue` gracefully: status reverts to `"not-started"`, fields revert to `null`. Sequential undos work correctly — the scan loop skips records that already have an undo audit entry (checked via idempotency key), always reverting the most recent un-undone change first. The query uses `orderBy(desc(createdAt), desc(id))` for stable ordering when timestamps collide. The scan is bounded to `MAX_UNDO_SCAN` (50) most recent records to prevent unbounded DB queries.
+Undo handles null/empty `previousValue` gracefully: status reverts to `"not-started"`, fields revert to `null`. Sequential undos work correctly; the scan loop skips records that already have an undo audit entry (checked via idempotency key), always reverting the most recent un-undone change first. The query uses `orderBy(desc(createdAt), desc(id))` for stable ordering when timestamps collide. The scan is bounded to `MAX_UNDO_SCAN` (50) most recent records to prevent unbounded DB queries.
 
 ### Fuzzy Matching with Disambiguation
 
@@ -256,8 +256,8 @@ Key behaviors:
 
 - **Native `<details>` collapse**: each level (Client / Wrapper / Project) wraps in `CollapsibleSection`, which uses native `<details>` + scoped CSS for chevron rotation. No React state. Default expanded; collapse state does NOT persist across tab switches.
 - **Active-status filter**: `filterActiveRundown()` from `src/lib/runway/gantt/filter-active.ts` removes Projects with status ∈ {completed, canceled}, removes empty Wrappers, removes Clients with zero surviving sections. Applied in `page.tsx` before the rundown reaches the tier.
-- **L2 task hide**: completed/canceled tasks (week items) are also filtered out of the L2-card row in `AccountTier` (per Wave 4.6 operator feedback — they're not faded, they're gone).
-- **L2 mini-card**: `L2MiniCard` mirrors the By Week task card (`DayItemCard`) — account name (uppercase), category indicator, title, `Dates: M/D`, `Resources:`, `Owner:`. Width ~260px above `sm` breakpoint, full-width below. No notes (intentional — notes only appear on the By Week view).
+- **L2 task hide**: completed/canceled tasks (week items) are also filtered out of the L2-card row in `AccountTier` (per Wave 4.6 operator feedback: they're not faded, they're gone).
+- **L2 mini-card**: `L2MiniCard` mirrors the By Week task card (`DayItemCard`): account name (uppercase), category indicator, title, `Dates: M/D`, `Resources:`, `Owner:`. Width ~260px above `sm` breakpoint, full-width below. No notes (intentional: notes only appear on the By Week view).
 - **Ready-to-close chip**: `computeReadyToCloseIds()` precomputes `Set<string>` of L1 ids where every child week item is `completed` but the L1 itself is not yet `completed`/`canceled`. The chip surfaces inline near the L1 title in both the By Account tier AND the Gantt Charts dark embed.
 - **Header data**: client header shows team line, severity badge (derived from `ganttSeverity` rollup), SOW chip (when `contractStatus === "signed"`), contract date range (sourced from the retainer wrapper L1's `contractStart`/`contractEnd`).
 
@@ -265,16 +265,16 @@ Empty-state handling:
 
 - Account with no rundown → "No active rundowns." card
 - Project with all tasks completed/canceled (post-filter) → header renders alone with `No Scheduled Tasks` chip
-- `null – null` date ranges → date span hidden entirely
+- Date ranges where both start and end are `null` → date span hidden entirely
 
 ### Gantt Charts View
 
 Track 3 added a 4th tab between By Account and Pipeline. Renders one dark-themed Gantt embed per active client. Implementation pattern:
 
-- `extractClientRundown()` runs server-side in `page.tsx` (RSC) — produces `ClientRundownData` per client (sections, weekitems, severity)
+- `extractClientRundown()` runs server-side in `page.tsx` (RSC): produces `ClientRundownData` per client (sections, weekitems, severity)
 - `filterActiveRundown()` strips completed/canceled before rendering (same filter the By Account tier consumes)
 - `RundownContentRSC` is a Server Component that renders the Gantt sections using the dark theme. The output JSX is passed as `ganttContent: ReactNode` (RSC slot pattern) to `GanttChartsSection`, a client component
-- The slot pattern bypasses Next.js 16 Turbopack's ban on `react-dom/server` in App Router entrypoints — the SSR happens at the Server Component layer, not via the banned `renderToStaticMarkup` API
+- The slot pattern bypasses Next.js 16 Turbopack's ban on `react-dom/server` in App Router entrypoints; the SSR happens at the Server Component layer, not via the banned `renderToStaticMarkup` API
 - Each section uses native `<details>` with the same chevron-rotation CSS as the By Account tier (Wave 4.4 polish for visual parity)
 - Default expanded; collapse state independent per tab
 - FlagsPanel hidden on this tab (and on By Account); visible only on This Week + Pipeline
@@ -292,10 +292,10 @@ Track 3 added a 4th tab between By Account and Pipeline. Renders one dark-themed
 
 `status-badge.tsx` exports reusable badge and label components:
 
-- `StatusBadge` — project status (in-production, blocked, etc.)
-- `ContractBadge` — contract state (expired, unsigned)
-- `StaleBadge` — stale-days indicator
-- `MetadataLabel` — "Label: Value" pattern with configurable color (used by AccountSection, PipelineRow, and DayItemCard)
+- `StatusBadge`: project status (in-production, blocked, etc.)
+- `ContractBadge`: contract state (expired, unsigned)
+- `StaleBadge`: stale-days indicator
+- `MetadataLabel`: "Label: Value" pattern with configurable color (used by AccountSection, PipelineRow, and DayItemCard)
 
 ### Blocked Override
 
@@ -423,7 +423,7 @@ Cascade operations emit their own structured logs from the operations layer:
 
 ### Token Usage Tracking
 
-After each bot response, `recordTokenUsage()` persists token counts to the main app's `tokenUsage` table using `"runway-bot"` as the sentinel workspace ID. This is non-critical — failures are silently caught to avoid breaking bot responses.
+After each bot response, `recordTokenUsage()` persists token counts to the main app's `tokenUsage` table using `"runway-bot"` as the sentinel workspace ID. This is non-critical; failures are silently caught to avoid breaking bot responses.
 
 ### Updates Channel
 

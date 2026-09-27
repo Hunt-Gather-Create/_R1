@@ -1,4 +1,4 @@
-# QA Report — HDL Data Integrity
+# QA Report: HDL Data Integrity
 
 **Migration:** `hdl-v4-realign-2026-04-21` (PR #86 Wave 1 Batch B)
 **Batch ID:** `hdl-v4-realign-2026-04-21`
@@ -28,13 +28,13 @@ All 3 client-led L2s (`Full Site Design Approval`, `Ad Words`, `Production Shoot
 
 **Single-L1 roster expansion:** PASS
 
-HDL has exactly 1 L1 project (`Website Build`, id `f9af3445…`). Client team field is `AM: Jill, CD: Lane, Dev: Leslie, PM: Jason`. L1 resources were expanded from `CD: Lane, Dev: Leslie` to exactly the full client team roster. This is consistent with engaged-roles-per-L1: when a client has one L1, engaged roles on that L1 = full team. The interpretation is self-consistent with the v4 spec (overnight-clients-v4-realign.md § "Every L1 (project)" — "resources = full team roster for this engagement").
+HDL has exactly 1 L1 project (`Website Build`, id `f9af3445…`). Client team field is `AM: Jill, CD: Lane, Dev: Leslie, PM: Jason`. L1 resources were expanded from `CD: Lane, Dev: Leslie` to exactly the full client team roster. This is consistent with engaged-roles-per-L1: when a client has one L1, engaged roles on that L1 = full team. The interpretation is self-consistent with the v4 spec (overnight-clients-v4-realign.md § "Every L1 (project)": "resources = full team roster for this engagement").
 
 **contract_status preservation:** PASS
 
 Client `contract_status='expired'` is preserved on the client row (pre + post + prod all show `expired`). Client row itself has zero field diffs between pre and post; client.updatedAt also unchanged (2026-04-20T06:45:39.000Z). No audit rows targeting the client row. Chunk 1's read-time surfacing of the expiry flag has no data-side prerequisite beyond this preservation, which holds.
 
-**L1 rename — title format:** PASS
+**L1 rename, title format:** PASS
 
 `HDL Website Build` → `Website Build`. Drops client prefix per v4 title rule. Client column still carries the HDL association.
 
@@ -42,16 +42,16 @@ Client `contract_status='expired'` is preserved on the client row (pre + post + 
 
 L1 `engagementType`: null → `"project"`. Matches spec "`engagement_type='project'` on all HDL L1s".
 
-## Findings — expected and observed
+## Findings: expected and observed
 
 All 6 planned field writes (per forward script) verified against post-snapshot and prod:
 
-1. PASS — L1 `f9af3445…` `name`: `"HDL Website Build"` → `"Website Build"`
-2. PASS — L1 `f9af3445…` `resources`: `"CD: Lane, Dev: Leslie"` → `"AM: Jill, CD: Lane, Dev: Leslie, PM: Jason"`
-3. PASS — L1 `f9af3445…` `engagementType`: `null` → `"project"`
-4. PASS — L2 `2c0f97a7…` (`Full Site Design Approval`, weekOf 2026-04-27) `resources`: `null` → `"HDL"`
-5. PASS — L2 `b3eb2aea…` (`Ad Words`, weekOf 2026-05-11) `resources`: `null` → `"HDL"`
-6. PASS — L2 `5f1e1687…` (`Production Shoot`, weekOf 2026-06-15) `resources`: `null` → `"HDL"`
+1. PASS: L1 `f9af3445…` `name`: `"HDL Website Build"` → `"Website Build"`
+2. PASS: L1 `f9af3445…` `resources`: `"CD: Lane, Dev: Leslie"` → `"AM: Jill, CD: Lane, Dev: Leslie, PM: Jason"`
+3. PASS: L1 `f9af3445…` `engagementType`: `null` → `"project"`
+4. PASS: L2 `2c0f97a7…` (`Full Site Design Approval`, weekOf 2026-04-27) `resources`: `null` → `"HDL"`
+5. PASS: L2 `b3eb2aea…` (`Ad Words`, weekOf 2026-05-11) `resources`: `null` → `"HDL"`
+6. PASS: L2 `5f1e1687…` (`Production Shoot`, weekOf 2026-06-15) `resources`: `null` → `"HDL"`
 
 **Audit trail:** 6 audit rows tagged with batch are present via `get_updates(clientSlug='hdl')`. Audit rows are in reverse chronological order:
 - `Ad Words` resources → HDL  (2026-04-20T23:55:06)
@@ -63,11 +63,11 @@ All 6 planned field writes (per forward script) verified against post-snapshot a
 
 All `updatedBy='migration'`. Summaries reference expected values. No unexplained extra audit rows for this client in this batch window.
 
-## Findings — expected but NOT observed (CRITICAL)
+## Findings: expected but NOT observed (CRITICAL)
 
 None.
 
-## Findings — observed but NOT expected
+## Findings: observed but NOT expected
 
 ### UNEXPLAINED (CRITICAL)
 
@@ -91,7 +91,7 @@ None.
 
 1. **Single-L1 interpretation:** RATIFIED. Single-L1 expansion to full client team is consistent with engaged-roles-per-L1. If a second HDL L1 appeared later with its own narrower engaged roles, this L1's full-roster value still holds because the full team is engaged on the single current project.
 2. **Client-led resources = plain `"HDL"`:** RATIFIED. No role prefix, matches v4 convention. Applied uniformly to all 3 client-led L2s.
-3. **Other 8 L2s left alone:** RATIFIED. Verified via prod — all 8 already have role-prefixed resources (`CD: Lane` or `Dev: Leslie`) and clean titles (no HDL prefix, proper category words separated). Sample: `Start Development` (kickoff, `Dev: Leslie`), `Smokeball Integration` (kickoff, `Dev: Leslie`), `Photo Shoot Prep` (delivery, `CD: Lane`), `Site Live` (launch, `Dev: Leslie`). No v4 drift to correct.
+3. **Other 8 L2s left alone:** RATIFIED. Verified via prod: all 8 already have role-prefixed resources (`CD: Lane` or `Dev: Leslie`) and clean titles (no HDL prefix, proper category words separated). Sample: `Start Development` (kickoff, `Dev: Leslie`), `Smokeball Integration` (kickoff, `Dev: Leslie`), `Photo Shoot Prep` (delivery, `CD: Lane`), `Site Live` (launch, `Dev: Leslie`). No v4 drift to correct.
 
 ## Unexplained records
 

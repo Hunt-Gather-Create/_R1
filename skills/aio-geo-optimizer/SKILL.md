@@ -188,6 +188,6 @@ The restructured article with all transformations applied.
 ## Notes
 
 - Preserve the article's voice and style while restructuring
-- Don't over-optimize—content should read naturally
+- Don't over-optimize: content should read naturally
 - Schema recommendations are suggestions; actual implementation depends on CMS/tech stack
 - For monitoring AI citations, suggest tools like Profound, Otterly, or manual tracking
