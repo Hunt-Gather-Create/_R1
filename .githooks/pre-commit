@@ -1,16 +1,17 @@
 #!/bin/sh
-# Fleet-generic pre-commit gate: voice (em/en dash) + secret hygiene. Issue #33.
-# Check only NEWLY ADDED lines so pre-existing content never blocks a commit.
-_added_md=$(git diff --cached --unified=0 --diff-filter=ACM -- '*.md' 2>/dev/null | grep -E '^\+' | grep -v '^+++' || true)
-if [ -n "$_added_md" ]; then
-  _hits=$(printf '%s\n' "$_added_md" | perl -CS -ne 'print if /[\x{2013}\x{2014}]/')
-  if [ -n "$_hits" ]; then
-    echo "pre-commit BLOCK (fleet voice): em/en dash in newly added markdown. Use hyphen, period, comma, colon, semicolon."
-    printf '%s\n' "$_hits" | head -5
-    echo "Bypass only if certain: git commit --no-verify"
-    exit 1
-  fi
+# Fleet-generic pre-commit gate: voice through the one central core, plus secret hygiene. Issue #33.
+#
+# opeff#1347 M2 / opeff#1361, opeff#1390 step 1: the markdown/config dash arm
+# that used to be written inline here now runs from the ONE canonical voice-
+# lint core at opeff main's read-only mirror, so changing the rule is one
+# edit in opeff, with no per-repo sync. A missing or unreadable core refuses
+# the commit rather than passing it with the gate silently gone.
+_VOICE_LINT_CORE="$HOME/.local/agencyos/main/agencyos-operational-efficiency/hooks/voice-lint-core.sh"
+if [ ! -r "$_VOICE_LINT_CORE" ]; then
+  echo "pre-commit [opeff#1347 voice-lint-core]: the canonical core is missing or unreadable at $_VOICE_LINT_CORE. Refusing to pass a commit with the dash gate absent. The mirror is refreshed by launchd from opeff main; check it with refresh-main-mirror.sh --check." >&2
+  exit 1
 fi
+bash -c '. "$1"' voice-lint-core "$_VOICE_LINT_CORE" || exit 1
 _secrets=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep -E '(^|/)(\.env|.*\.pem|.*_rsa|.*\.p12|id_ed25519)$' || true)
 if [ -n "$_secrets" ]; then
   echo "pre-commit BLOCK: possible secret file(s) staged:"
@@ -19,20 +20,19 @@ if [ -n "$_secrets" ]; then
   exit 1
 fi
 # Fleet block ends above, at fleet blob 14c9b4ec.
-# _R1#184: same fleet voice rule, extended to added lines in staged code
-# files. The markdown-only arm above left 19 dash lines in .ts comments and
-# report strings ungated. Same two code points, same refusal shape, the
-# offending file type named in the message. One glob per loop pass so the
-# message can name exactly which type tripped it, same as the markdown arm.
-for _code_glob in '*.ts' '*.tsx' '*.js' '*.mjs' '*.sh'; do
-  _added_code=$(git diff --cached --unified=0 --diff-filter=ACM -- "$_code_glob" 2>/dev/null | grep -E '^\+' | grep -v '^+++' || true)
-  if [ -n "$_added_code" ]; then
-    _code_hits=$(printf '%s\n' "$_added_code" | perl -CS -ne 'print if /[\x{2013}\x{2014}]/')
-    if [ -n "$_code_hits" ]; then
-      echo "pre-commit BLOCK (fleet voice): em/en dash in newly added $_code_glob. Use hyphen, period, comma, colon, semicolon."
-      printf '%s\n' "$_code_hits" | head -5
-      echo "Bypass only if certain: git commit --no-verify"
-      exit 1
-    fi
-  fi
-done
+# opeff#1390 step 1: the repo-specific _R1#184 code-arm voice gate moved to
+# .githooks/voice-lint-local.sh, verbatim, per Overwatch's ruling that a
+# repo-specific gate lives there, not inline here. REQUIRED, not optional:
+# opeff's own loader (hooks/voice-lint-pre-commit.sh) treats this file as
+# optional and silently skips it when absent, which would have dropped the
+# .ts/.tsx/.sh coverage _R1#184 added with no error at all. Run through sh
+# explicitly, not sourced, so a freshly checked-out 644 copy still runs
+# without needing scripts/install-hooks.sh's chmod first.
+_hookdir="$(cd "$(dirname "$0")" && pwd)"
+_VOICE_LINT_LOCAL="$_hookdir/voice-lint-local.sh"
+if [ ! -r "$_VOICE_LINT_LOCAL" ]; then
+  echo "pre-commit BLOCK: voice-lint-local.sh is missing or unreadable at $_VOICE_LINT_LOCAL. Refusing to pass a commit with the repo-specific voice gate absent." >&2
+  echo "Bypass only if certain: git commit --no-verify" >&2
+  exit 1
+fi
+sh "$_VOICE_LINT_LOCAL" || exit 1
