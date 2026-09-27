@@ -27,6 +27,12 @@ import { getSheetConfig, SHEETS } from "./config";
 import { runSheet } from "../runway-sheet-sync";
 import type { RunwayClientBundle } from "./runway-read";
 import type { LeafTask, Ledger, ParsedSheet, SheetConfig, SheetFixture } from "./types";
+import type { FreshnessDecision } from "./freshness";
+
+// _R1#154, TP's gate-1 ruling: runSheet's freshness decision is required, not
+// optional. This suite is about the matched counter, not freshness, so the
+// explicit skip here is a test-harness choice, never a default.
+const SKIP_FRESHNESS: FreshnessDecision = { checked: false, reason: "_R1#152 matched-counter test, freshness not under test here" };
 
 // ── Unit level: renderReport must read the ledger's row count, not just
 // the current run's match count (report.ts:43 before the fix). ──
@@ -212,7 +218,7 @@ describe("runSheet twice against one frozen snapshot (#152)", () => {
     const fixture = frozenFixture(["Kickoff call", "Design review"]);
     writeFileSync(join(fixturesDir, `${CONFIG.sheetId}.json`), JSON.stringify(fixture));
 
-    const summary1 = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false)) as {
+    const summary1 = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, SKIP_FRESHNESS)) as {
       counts: { matched: number };
     };
 
@@ -223,7 +229,7 @@ describe("runSheet twice against one frozen snapshot (#152)", () => {
     expect(bankedN).toBeGreaterThan(0);
     expect(summary1.counts.matched).toBe(bankedN);
 
-    const summary2 = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false)) as {
+    const summary2 = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, SKIP_FRESHNESS)) as {
       counts: { matched: number };
     };
     expect(summary2.counts.matched).toBe(bankedN);
@@ -237,7 +243,7 @@ describe("runSheet twice against one frozen snapshot (#152)", () => {
     const fixture = frozenFixture(["Nothing like prod A", "Nothing like prod B"]);
     writeFileSync(join(fixturesDir, `${CONFIG.sheetId}.json`), JSON.stringify(fixture));
 
-    const summary1 = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false)) as {
+    const summary1 = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, SKIP_FRESHNESS)) as {
       counts: { matched: number };
     };
     expect(summary1.counts.matched).toBe(0);
@@ -245,7 +251,7 @@ describe("runSheet twice against one frozen snapshot (#152)", () => {
     const ledgerAfterRun1 = loadLedger(join(outDir, `ledger-${CONFIG.sheetId}.json`), CONFIG.sheetId);
     expect(Object.keys(ledgerAfterRun1.entries).length).toBeGreaterThan(0);
 
-    await expect(runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false)).rejects.toThrow(
+    await expect(runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, SKIP_FRESHNESS)).rejects.toThrow(
       /matched 0 sheet tasks against a populated ledger/
     );
   });

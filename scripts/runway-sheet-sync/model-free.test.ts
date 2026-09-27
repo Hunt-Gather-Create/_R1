@@ -137,7 +137,13 @@ describe("_R1#156 model-free proof", () => {
       writeFileSync(join(fixturesDir, `${CONFIG.sheetId}.json`), JSON.stringify(fixture));
 
       const { runSheet } = await import("../runway-sheet-sync");
-      const summary = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false)) as {
+      // _R1#154, TP's gate-1 ruling: runSheet's freshness decision is
+      // required. This suite proves the pipeline is model-free, not
+      // freshness behavior, so the explicit skip is a test-harness choice.
+      const summary = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, {
+        checked: false,
+        reason: "_R1#156 model-free test, freshness not under test here",
+      })) as {
         counts: { "leaf-tasks": number };
       };
 

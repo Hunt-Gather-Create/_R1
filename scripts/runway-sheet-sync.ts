@@ -34,6 +34,7 @@ import type { SheetFixture } from "./runway-sheet-sync/types";
 import { assertTarget } from "./runway-sheet-sync/target-guard";
 import { applyPayloads } from "./runway-sheet-sync/apply";
 import { writePreSnapshot, postVerifyDiff } from "./runway-sheet-sync/snapshot";
+import { checkFreshness, resolveFreshnessDecision, type FreshnessDecision } from "./runway-sheet-sync/freshness";
 
 const DEFAULT_FIXTURES_DIR = "docs/tmp/data/runway-sync/fixtures";
 const DEFAULT_OUT_DIR = "docs/tmp/data/runway-sync";
@@ -62,10 +63,26 @@ export async function runSheet(
   outDir: string,
   live: boolean,
   apply = false,
-  force = false
+  force = false,
+  freshness: FreshnessDecision
 ): Promise<Record<string, unknown>> {
   const config = getSheetConfig(sheetId);
   if (!config) throw new Error(`Sheet ${sheetId} not in registry (scripts/runway-sheet-sync/config.ts)`);
+
+  // _R1#154 item 2, TP's gate-1 ruling on PR 202: the decision is required,
+  // not an optional parameter that quietly defaulted to skipping. A caller
+  // must pass either a checked decision, which refuses here on a stale
+  // sibling, or an explicit skip, which is recorded loudly below rather
+  // than reading like a clean run.
+  let freshnessNote: string | undefined;
+  if (freshness.checked) {
+    const result = checkFreshness(config, freshness.listing);
+    if (!result.fresh) {
+      throw new Error(`Sheet ${sheetId} (${config.label}) is not the latest plan: ${result.reason}`);
+    }
+  } else {
+    freshnessNote = `FRESHNESS NOT CHECKED: ${freshness.reason}`;
+  }
 
   let fixture: SheetFixture;
   if (live) {
@@ -80,6 +97,7 @@ export async function runSheet(
   const runId = computeRunId(sheetId, fixture);
 
   const parsed = parseSheet(fixture, config);
+  if (freshnessNote) parsed.flags.push(freshnessNote);
 
   // Ledger persistence: --live uses the durable DB ledger (sheet_sync_ledger,
   // via the repo) so identity survives ephemeral serverless runs; fixture runs
@@ -165,6 +183,9 @@ export async function runSheet(
     reportPath,
     payloadsPath,
     ledgerPath: ledgerSink,
+    freshness: freshness.checked
+      ? { checked: true, listingPath: freshness.listingPath, listingAgeDays: freshness.listingAgeDays }
+      : { checked: false, note: freshnessNote },
     ...(apply ? { applied: appliedCount, review: reviewCount } : {}),
   };
 }
@@ -177,6 +198,12 @@ async function main(): Promise<void> {
   const doApply = process.argv.includes("--apply") && !process.argv.includes("--dry-run");
   const target = arg("target");
   const force = process.argv.includes("--force");
+
+  // _R1#154 item 2, TP's gate-1 ruling: the decision is required, resolved
+  // and validated BEFORE any DB connection or sheet read, so a missing or
+  // stale --drive-listing refuses immediately, not partway through a run.
+  const skipFreshnessCheck = process.argv.includes("--skip-freshness-check");
+  const freshness = resolveFreshnessDecision({ listingPath: arg("drive-listing"), skip: skipFreshnessCheck });
 
   // E2 (#102): point --live at the runway-staging clone, never prod.
   // E3 (#103): --target staging|prod drives DB resolution when --apply is set.
@@ -202,7 +229,7 @@ async function main(): Promise<void> {
   const summaries: Record<string, unknown>[] = [];
   for (const t of targets) {
     console.error(`── diffing ${t.label} (${t.sheetId.slice(0, 8)}…)`);
-    summaries.push(await runSheet(db, t.sheetId, fixturesDir, outDir, live, doApply, force));
+    summaries.push(await runSheet(db, t.sheetId, fixturesDir, outDir, live, doApply, force, freshness));
   }
   console.log(JSON.stringify(summaries, null, 2));
   process.exit(0);

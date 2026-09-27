@@ -13,6 +13,30 @@ export interface SheetConfig {
   engagementCode: string;
   /** Human label used for L1 matching alongside banner content. */
   label: string;
+  /**
+   * Explicit plan slug for freshness sibling matching (_R1#154). Old-format
+   * Drive titles carry no slug at all, and a sibling's engagement code can
+   * legitimately differ from the registry's own (ITEP's v2 carries
+   * BPC-2604, not the registered BPC-2603-01), so matching on the full
+   * code misses the exact case this check exists for. A person writes the
+   * slug once here; the tool never guesses it from a title.
+   *
+   * Optional on the type, not because it is optional for a real registry
+   * entry (every entry in config.ts's SHEETS has one), but because
+   * SheetConfig is constructed all over this module's other tests, for
+   * diff, parse-sheet, and parity logic that has nothing to do with
+   * freshness. Making this required forced every one of those unrelated
+   * literals to carry a fake slug just to satisfy the type, invisibly:
+   * nothing in this repo runs tsc against scripts/ (tsconfig.json excludes
+   * it), so a missing required field here would never surface as an
+   * error, only as a silent `undefined` at runtime. checkFreshness
+   * (freshness.ts) refuses a sheet with no planSlug, naming the sheet,
+   * rather than guessing a slug or reporting fresh with nothing actually
+   * checked (TP's follow-up on 7243643: absence of the input this check
+   * needs must never read as a pass); that is a real, named limitation of
+   * the entry, not a type-system inconvenience to paper over.
+   */
+  planSlug?: string;
 }
 
 /** Fixture file shape produced by the google-api skill export step. */
