@@ -1,0 +1,298 @@
+[
+  {
+    "path": ".agents/skills/vercel-react-best-practices/AGENTS.md",
+    "sha256": "be5257266331a38b025243e813b6dfe2b50659a9b7990a3556c1110cfc9d5e91"
+  },
+  {
+    "path": ".agents/skills/vercel-react-best-practices/rules/rerender-functional-setstate.md",
+    "sha256": "5e68df6b2ae8058e67f476ff1ac67bde159f5a9d18df439e46eabcdeb7b52e58"
+  },
+  {
+    "path": ".agents/skills/vercel-react-best-practices/rules/server-auth-actions.md",
+    "sha256": "a2ca8aa102839251c7971ec784560fab943c20b36fe6f80365d4110c13260c23"
+  },
+  {
+    "path": ".claude/skills/atomic-commits/SKILL.md",
+    "sha256": "cacc4d9371abca33a4479285f45e0de191264b2bde6290b4df7a78c6019c3c44"
+  },
+  {
+    "path": ".claude/skills/batch-update/SKILL.md",
+    "sha256": "e0643d25d3064c0cc98315744af89238603c517ce9ac4daa4feac906d9191863"
+  },
+  {
+    "path": ".claude/skills/canary/SKILL.md",
+    "sha256": "9ee0ee7551d58a41b925f146b90fca1d896a3b76a738c188f8e0d6369fd3bd62"
+  },
+  {
+    "path": ".claude/skills/data-evaluator-tp/SKILL.md",
+    "sha256": "a955eae613faf19fd1935a1d0cdeca6e83c9710298e4a55d1f05f26ee0374051"
+  },
+  {
+    "path": ".claude/skills/data-evaluator-tp/cross-check-templates.md",
+    "sha256": "c68a371b4ec96d319469aaf8559e35abf53810ba7c5d0da1d4eee00a89214db0"
+  },
+  {
+    "path": ".claude/skills/data-evaluator-tp/escalation-criteria.md",
+    "sha256": "cbea3cb746d3d65505d68d85f067cb878bb70f242d74ad9eef1958c89fbc9df9"
+  },
+  {
+    "path": ".claude/skills/data-evaluator-tp/learnings.md",
+    "sha256": "a1c1ed88da2e2510d1b4222ed635318d1da9f115187d76bfe60e5bf50f0d58e4"
+  },
+  {
+    "path": ".claude/skills/data-integrity-tp/SKILL.md",
+    "sha256": "362ad64a2aa19b063d3df34020eaf7c77aa3ba14755b0ddcd945b40f639dffc3"
+  },
+  {
+    "path": ".claude/skills/data-integrity-tp/data-conventions.md",
+    "sha256": "5d028005f4020cd7d34f37e7e73a344357671d6d5b6e0fb63a783cd42baf541e"
+  },
+  {
+    "path": ".claude/skills/data-integrity-tp/drafter-prompt.md",
+    "sha256": "15730cd062a55e3a7684716c01e311888563eda4c2473633fd68cf33abb599bb"
+  },
+  {
+    "path": ".claude/skills/data-integrity-tp/holdout-panels.md",
+    "sha256": "931954cedd2eae130060f4ceb345ab322fc822e3edc51670e9cea8f6b9ebc30f"
+  },
+  {
+    "path": ".claude/skills/data-integrity-tp/rails-reference.md",
+    "sha256": "1d9904927c2538716523b238dd780d19387d94cf55ce84d369c9001a3e9993e1"
+  },
+  {
+    "path": ".claude/skills/data-integrity-tp/row-by-row.md",
+    "sha256": "1440cb56825c70cfdd1eeae930157bcab85d982888d6cad06125f6fece2e91eb"
+  },
+  {
+    "path": ".claude/skills/preflight/SKILL.md",
+    "sha256": "623d874167c3a6733ec013b03e90fdf4024001d0605ef513fb8f206cf34f833d"
+  },
+  {
+    "path": ".claude/skills/runway-visual-qa/SKILL.md",
+    "sha256": "e1e41075d8ca60092d52f321a3db2778bcdbbe8b0b30589aa473343f03788415"
+  },
+  {
+    "path": "docs/data-tp/cohort-handoff.md",
+    "sha256": "d732b078e3568982dfb0be2ed23c63fe9dc2e97d066255c6ad017bcd74599e4e"
+  },
+  {
+    "path": "docs/data-tp/skill-patches/v4-candidates-2026-05-02.md",
+    "sha256": "2530fb68cb9c23ecc34ba5af188a75dc4b9d8d79bc4f578fdd0c4ff5d99245a0"
+  },
+  {
+    "path": "docs/data-walks/fixtures/ammonia/prod-snapshot.json",
+    "sha256": "b4267e668acfc321e5a043cfe0bd0be098901667401a0bb399ab436d66d3ffd2"
+  },
+  {
+    "path": "docs/planning/exec-triage-pretriage-2026-07-28.md",
+    "sha256": "a09f0fad5add7133470d08d9e73f3211dc032ef04a99755d0e3f6f42388a102b"
+  },
+  {
+    "path": "docs/planning/research/db-safety-tool-research.md",
+    "sha256": "b1bcf87b71235eb0cfbea279164ce58c8c04cd4ae2aa3d2ece2db3b198db0c09"
+  },
+  {
+    "path": "docs/plans/archive/cascade-statuses-fix.md",
+    "sha256": "c113889c56f4994ad2aca726068f0c06a8b5ac8b8a7b81b4014714a40eada684"
+  },
+  {
+    "path": "docs/plans/archive/dashboard-predicate-and-display-cleanup.md",
+    "sha256": "d11a6dc1e6405d4813c292ad9317f260cc19ddbd2b45ea07757cc0421e62fa8a"
+  },
+  {
+    "path": "docs/plans/archive/slackbot-plate-fix.md",
+    "sha256": "7c620a655ac5035303f7defe9148940c8a12982af0611ebc27dedab07e181957"
+  },
+  {
+    "path": "docs/plans/cascade-root-b2.md",
+    "sha256": "9e80a15d5a7abd3fc864cf8711a3327266abbc7c068c384b70e33be2cf32cffd"
+  },
+  {
+    "path": "docs/plans/pr-111-round-3-fixes.md",
+    "sha256": "5f082c8cabce55fd1d85184b4283d925403ee1dd5af978616686903655b22874"
+  },
+  {
+    "path": "docs/plans/status-view-card-ux.md",
+    "sha256": "5979f28b4cec067d053620c51f20d22f6d8b22c167c31b426c19f7fcc9caa735"
+  },
+  {
+    "path": "docs/plans/status-view-followups.md",
+    "sha256": "75637c4a118270119498660d786e045bcda01d8176433825d5a302b8f8599999"
+  },
+  {
+    "path": "docs/tmp/asprey-v4-post-snapshot-2026-04-21.json",
+    "sha256": "dd7b6128ebf6847f5294ce4b339e38d5a01597adfbe1f59f2bd8333206cfd267"
+  },
+  {
+    "path": "docs/tmp/asprey-v4-pre-apply-snapshot-2026-04-21-dryrun.json",
+    "sha256": "ed636cebaa71e98e0a7ddeaf9da96d0167ef6e3365422af1d20fc279da78f04f"
+  },
+  {
+    "path": "docs/tmp/asprey-v4-pre-apply-snapshot-2026-04-21.json",
+    "sha256": "38c70bb7369bdf881f7a69291cd1d71ce4d8bfa33b0c044981316245cae9abf4"
+  },
+  {
+    "path": "docs/tmp/asprey-v4-pre-snapshot-2026-04-21.json",
+    "sha256": "6043dc6a47587ce3575f6908a74aacfc8cab97addbc727c8534801de67f1be29"
+  },
+  {
+    "path": "docs/tmp/bonterra-v4-post-snapshot-2026-04-21.json",
+    "sha256": "7fd70147fe2befa83cbafa46ca22eb676846b32a5ad7c8d857f2fc8400afec83"
+  },
+  {
+    "path": "docs/tmp/bonterra-v4-pre-snapshot-2026-04-21-dryrun.json",
+    "sha256": "de3fca33c8f25451960a172426f1067e6c0260033440239dcb37f89d51d128aa"
+  },
+  {
+    "path": "docs/tmp/bonterra-v4-pre-snapshot-2026-04-21.json",
+    "sha256": "8621b18a3b625320d98d91c617a05e1c493a11299448dcceb4976aaef3475a49"
+  },
+  {
+    "path": "docs/tmp/cc-prompts/cc-prompt-remaining-6-postmerge.md",
+    "sha256": "804f530cc17e495077386e7ccf91111294f43918e1c1055ccddbb0d28a0fa1cf"
+  },
+  {
+    "path": "docs/tmp/convergix-v4-post-snapshot-2026-04-21.json",
+    "sha256": "a54be2d5765e301c4b2a65dcb208724a04dc6bf4183efb42993a3ee8bfcc2771"
+  },
+  {
+    "path": "docs/tmp/convergix-v4-pre-snapshot-2026-04-21.json",
+    "sha256": "cbdccf8e89eeb88dcbe6eec96f38de98d540b9b795174cd1e17de95c575f9f6c"
+  },
+  {
+    "path": "docs/tmp/dashboard-cleanup-handoff-2026-05-07.md",
+    "sha256": "7c65a8c8aa566e7e57ede9d4720f83e31c4c8c86cebfd22f7d2e8d90f3812105"
+  },
+  {
+    "path": "docs/tmp/hdl-v4-post-snapshot-2026-04-21.json",
+    "sha256": "2847de091d0efe55ba328e59131817fa36a81be8ad473bd64a4d93c614eff64f"
+  },
+  {
+    "path": "docs/tmp/hdl-v4-pre-apply-snapshot-2026-04-21-dryrun.json",
+    "sha256": "b5235f0cc22e3984b4aca068d9f141ec576a7eefc66e110e8a7d87917f4a79db"
+  },
+  {
+    "path": "docs/tmp/hdl-v4-pre-apply-snapshot-2026-04-21.json",
+    "sha256": "340ebeff8343ab450c55e3ea1ebad1a028bb80b08a1c492efa40be436460a1f6"
+  },
+  {
+    "path": "docs/tmp/hdl-v4-pre-snapshot-2026-04-21.json",
+    "sha256": "76c976e15a551a2ed752d4ef636dc24f904c6da4ba201a8a86ceb2d8b51c3f50"
+  },
+  {
+    "path": "docs/tmp/lppc-v4-post-snapshot-2026-04-21.json",
+    "sha256": "cdae8f3349efd97ab02c3d3768469f22906a67b50088b5c974861300da2f4bd3"
+  },
+  {
+    "path": "docs/tmp/lppc-v4-pre-apply-snapshot-dryrun.json",
+    "sha256": "267655244d1e52d745460c148b2b96b816a9f5c3d9fa40f96ebb43736e4b715b"
+  },
+  {
+    "path": "docs/tmp/lppc-v4-pre-apply-snapshot.json",
+    "sha256": "1dce264b3d32bcddac2ef18d430a043f396a6969cca04d358cdba333a297d76d"
+  },
+  {
+    "path": "docs/tmp/lppc-v4-pre-snapshot-2026-04-21.json",
+    "sha256": "d498e5231f40fa81a197f827b0824d609839fab3ab3de3b62a8ba8afb756fd05"
+  },
+  {
+    "path": "docs/tmp/migration-specs/overnight-clients-v4-realign.md",
+    "sha256": "19ea99f5d8326368a2eea7bec7c91aea33dd48b78893ce56c0db14fd8b12f12b"
+  },
+  {
+    "path": "docs/tmp/preplan-runway-v3.md",
+    "sha256": "165e278aa0920bb992614589a4e4f227bb9b38789d3e0742b0b3065c03cb9f30"
+  },
+  {
+    "path": "docs/tmp/qa-reports/asprey-qa-data-integrity.md",
+    "sha256": "3bb141bab93deaa17951608dafc1b76989eda80931cc05a9897b223ea402ad74"
+  },
+  {
+    "path": "docs/tmp/qa-reports/bonterra-qa-data-integrity.md",
+    "sha256": "b18d765681b158f71f5d726ae0b34bb49615a56e76ce7fe042250e371c46d82c"
+  },
+  {
+    "path": "docs/tmp/qa-reports/chunk-1-qa-atomic-commits.md",
+    "sha256": "21a2b7fd5063f39cd5180031a9c3bda51cf7bcd64ffdb159a2b6b250265570b3"
+  },
+  {
+    "path": "docs/tmp/qa-reports/chunk-2-qa-atomic-commits.md",
+    "sha256": "4f6caf2917412f30e93e47ef5db6bcced651fa264fb6e089ce84c06145fdc924"
+  },
+  {
+    "path": "docs/tmp/qa-reports/chunk-2-qa-code-review.md",
+    "sha256": "9bc6013fb941da4c5c3129de9be49a67363089e933756fb1a1dc3bda903eb3f2"
+  },
+  {
+    "path": "docs/tmp/qa-reports/chunk-5-qa-atomic-commits.md",
+    "sha256": "662d31496c956c3f90583abdbad5f0b569b2fb339824d40831d8e656fb4be0a1"
+  },
+  {
+    "path": "docs/tmp/qa-reports/hdl-qa-data-integrity.md",
+    "sha256": "6937f9aedb432cb6c7d1bb16d11d3195e09d8873ae19ec69aae2650c501b5c6e"
+  },
+  {
+    "path": "docs/tmp/qa-reports/lppc-qa-data-integrity.md",
+    "sha256": "c7a35bfefb49f450746147a28cff8d9fba585516e71140993afa076b72e9d3ec"
+  },
+  {
+    "path": "docs/tmp/qa-reports/soundly-qa-data-integrity.md",
+    "sha256": "3858cc2ac20ed19645dc3365bfde27af724026bbb04f556db987f2eab9104e40"
+  },
+  {
+    "path": "docs/tmp/qa-reports/tap-qa-data-integrity.md",
+    "sha256": "9d923a21323e1873b7bd5c719b78278d06a994123e5be2341b900ea9c76a9c6b"
+  },
+  {
+    "path": "docs/tmp/runway-v4-convention.md",
+    "sha256": "b0a8c5317a34fba2572a1efd6aed42a6d2933b9f3d9b3acfcde6012dfa9b1419"
+  },
+  {
+    "path": "docs/tmp/soundly-v4-post-snapshot-2026-04-21.json",
+    "sha256": "4b41200aa5d283acc931bb3febe580b71da3ed4fa9bf26bc598048cbdef635d8"
+  },
+  {
+    "path": "docs/tmp/soundly-v4-pre-snapshot-2026-04-21.json",
+    "sha256": "700c21a40792c6901febd6d20436bc40fa1ada860e4f6be4eb3547ca9a7ed8a0"
+  },
+  {
+    "path": "docs/tmp/tap-v4-post-snapshot-2026-04-21.json",
+    "sha256": "b00c8b9d2593671a9e34cbe22f3fa5f5f84b24d8fea8b9797d5650e9f2759834"
+  },
+  {
+    "path": "docs/tmp/tap-v4-pre-snapshot-2026-04-21-dryrun.json",
+    "sha256": "aec0a49bd3d866a83ba2c406bdb9955272ad3f3141110240012a05db9a01dae1"
+  },
+  {
+    "path": "docs/tmp/tap-v4-pre-snapshot-2026-04-21-preapply.json",
+    "sha256": "6dca52619b9fc4df6ac37180f3d68c69d191952daf5212065b018c926865839c"
+  },
+  {
+    "path": "docs/tmp/tap-v4-pre-snapshot-2026-04-21.json",
+    "sha256": "5e84fabf4e55f175ea9c6896bd5fa215fce60cbe9c7479f8e80a81bea298dd5e"
+  },
+  {
+    "path": "scripts/runway-migrations/backups/target-backup-2026-04-21.json",
+    "sha256": "2071926c1ab06a70d9a6301fd922da99adc9952b43d9ddac3fd0409befd9bf93"
+  },
+  {
+    "path": "src/lib/runway/__fixtures__/gantt-embed-pre-112.route.txt",
+    "sha256": "08a5f2b77f1a178a47df9d661631899dcde0abbd620f0524947fe266e3a36b6c"
+  },
+  {
+    "path": "src/skills/internal/brand-guidelines-short/SKILL.md",
+    "sha256": "3fb5cd37b02ba784089a9ef9440d09fbfe622d23426223e7fdbbf6044f7ef684"
+  },
+  {
+    "path": "tests/fixtures/slack/block-actions-multi-detect-chain.json",
+    "sha256": "5b3b65ad50751aabdb426403b4c6b6e20b858b100ce029088133cef7c4595d9a"
+  },
+  {
+    "path": "tests/fixtures/slack/slash-command-create.json",
+    "sha256": "7d21bd4dde97f11afc64514d00cecc01100478033a08a82cdea96e71fefdf258"
+  },
+  {
+    "path": "tests/fixtures/slack/slash-command-edit-multimatch.json",
+    "sha256": "34d6b52f48e782f94d8463be2c777c39c5c92e6239c736c0354bfb59d12af859"
+  }
+]
