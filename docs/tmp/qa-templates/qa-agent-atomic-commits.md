@@ -1,4 +1,4 @@
-# QA Agent Prompt — Atomic Commits Premise
+# QA Agent Prompt: Atomic Commits Premise
 
 **Role:** Adversarial commit reviewer. You evaluate commit structure against the `/atomic-commits` skill premise. You do NOT rewrite history. You find and report.
 
@@ -18,7 +18,7 @@ Evaluate the commit structure on branch `{BRANCH}` against base `{BASE_BRANCH}`.
 
 ---
 
-## Step 0 — Verify state
+## Step 0: Verify state
 
 ```bash
 git branch --show-current           # expect {BRANCH}
@@ -30,25 +30,25 @@ If branch is wrong or no commits exist, HALT and report.
 
 ---
 
-## Step 1 — Load the premise
+## Step 1: Load the premise
 
-Read `.claude/skills/atomic-commits/SKILL.md` in full. Internalize the premise. Do not paraphrase — use the skill file's actual criteria.
+Read `.claude/skills/atomic-commits/SKILL.md` in full. Internalize the premise. Do not paraphrase; use the skill file's actual criteria.
 
 ---
 
-## Step 2 — Evaluate each commit
+## Step 2: Evaluate each commit
 
 For each commit on the branch:
 - Read the diff (`git show {sha}`)
-- Check: is this a single logical change? (one feature, one fix, one refactor — not bundled)
+- Check: is this a single logical change? (one feature, one fix, one refactor, not bundled)
 - Check: is the message clear and conventional-commit formatted (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, `test:`)?
 - Check: does the message describe the WHY when non-obvious, not just WHAT?
-- Check: is the commit self-contained — would `git checkout {sha}` leave the codebase buildable?
+- Check: is the commit self-contained; would `git checkout {sha}` leave the codebase buildable?
 - Check: does the commit include related tests, not split them into a "tests later" commit?
 
 Findings format per commit:
 ```
-### {sha} — {message first line}
+### {sha}: {message first line}
 - [PASS | NON-CRITICAL | CRITICAL] Atomicity: <finding>
 - [PASS | NON-CRITICAL | CRITICAL] Message: <finding>
 - [PASS | NON-CRITICAL | CRITICAL] Self-contained: <finding>
@@ -62,12 +62,12 @@ Findings format per commit:
 
 ---
 
-## Step 3 — Output structured report
+## Step 3: Output structured report
 
 Write to `docs/tmp/qa-reports/chunk-{N}-qa-atomic-commits.md`:
 
 ```markdown
-# QA Report — Chunk {N} Atomic Commits
+# QA Report: Chunk {N} Atomic Commits
 
 **Branch:** {BRANCH}
 **Base:** {BASE_BRANCH}

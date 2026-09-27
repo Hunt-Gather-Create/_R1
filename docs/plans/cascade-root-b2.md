@@ -1,10 +1,10 @@
-# B2 — Cascade root hardening (#17 + #16)
+# B2: Cascade root hardening (#17 + #16)
 
 Bundled PR closing two cross-dependent cascade bugs. Targets `Hunt-Gather-Create:runway`.
 
 ## 1. Problem
 
-**#17 — Fluid Compute concurrency bleed.** Batch state lives in module-level
+**#17: Fluid Compute concurrency bleed.** Batch state lives in module-level
 `let _currentBatchId: string | null = null` at `src/lib/runway/operations-utils.ts:445`,
 mutated by `setBatchId()` / read by `getBatchId()` / referenced directly at line 490
 inside `insertAuditRecord`. On Fluid Compute a single Node instance serves many
@@ -15,20 +15,20 @@ issue if any other request runs while it is inside its `try { … } finally { se
 window. Fix is mechanical: replace the module variable with `AsyncLocalStorage` so the
 batch id is request-scoped.
 
-**#16 — Parent date override clobber.** `overrideProjectDate`
+**#16: Parent date override clobber.** `overrideProjectDate`
 (`src/lib/runway/operations-writes-project.ts:434`) writes `projects.start_date` or
 `projects.end_date` directly and emits an audit row with
 `update_type = "date-override"`. Any subsequent child write in the same batch reaches
 `recomputeProjectDatesWith` (`src/lib/runway/operations-writes-week.ts:91`), which
 derives MIN/MAX from `weekItems` and unconditionally UPDATEs `projects` if the derived
-value differs from current. Existing protection at lines 95–117 only covers retainer
+value differs from current. Existing protection at lines 95 to 117 only covers retainer
 L1s that have L1 children; non-retainer L1s and retainer-L1s with only L2 children are
 exposed, so the operator's override gets silently overwritten by the next child write.
 Operator-reccoed approach (per issue body) is Option B: helper-level guard, no schema
 change. Same-batch detection requires #17's reliable per-request batch id, hence the
 bundle.
 
-## 2. Approach — #17 AsyncLocalStorage migration
+## 2. Approach: #17 AsyncLocalStorage migration
 
 **New module `src/lib/runway/runway-als.ts`** (≈25 lines). Exports:
 
@@ -51,13 +51,13 @@ follow-up issue removes the shim. Direct read at line 490 swaps to
 
 **Entry-point wrappers** (every place that today calls `setBatchId(id)` … `setBatchId(null)`):
 
-1. `src/lib/mcp/runway-tools.ts:1032` — `batch_apply` body wraps its entire `for (const op of ops)` loop in `withBatchId(batchId, async () => { … })`. Drop the `finally { setBatchId(null) }`. **This is the only batch entry point that today actually pairs set/clear correctly.**
-2. `src/lib/mcp/runway-tools.ts:824` — `set_batch_mode` becomes a **no-op tool that returns an error message**: "set_batch_mode is deprecated under per-request batch scoping. Use batch_apply with a batchId for multi-op batches." The standalone "set the flag, fire a sequence of unrelated MCP calls, clear the flag" model cannot survive ALS — separate HTTP requests have separate async contexts by design, which is the bug being fixed.
-3. `scripts/runway-migrate.ts:167` — wrap `migration.up(ctx)` in `withBatchId(migrationBatchId, async () => migration.up(ctx))`. Drop the `setBatchId(null)` cleanup.
+1. `src/lib/mcp/runway-tools.ts:1032`: `batch_apply` body wraps its entire `for (const op of ops)` loop in `withBatchId(batchId, async () => { … })`. Drop the `finally { setBatchId(null) }`. **This is the only batch entry point that today actually pairs set/clear correctly.**
+2. `src/lib/mcp/runway-tools.ts:824`: `set_batch_mode` becomes a **no-op tool that returns an error message**: "set_batch_mode is deprecated under per-request batch scoping. Use batch_apply with a batchId for multi-op batches." The standalone "set the flag, fire a sequence of unrelated MCP calls, clear the flag" model cannot survive ALS; separate HTTP requests have separate async contexts by design, which is the bug being fixed.
+3. `scripts/runway-migrate.ts:167`: wrap `migration.up(ctx)` in `withBatchId(migrationBatchId, async () => migration.up(ctx))`. Drop the `setBatchId(null)` cleanup.
 
 **No-batch behavior.** `getCurrentBatchId()` returns `null` outside any `withBatchId`
 scope. Single-request MCP calls and Inngest writes (`slack-modal-submit.ts`) keep
-working unchanged — they were already null-batch before. The Slack-suppression checks
+working unchanged; they were already null-batch before. The Slack-suppression checks
 (`if (!getBatchId()) postMutationUpdate(...)`) keep posting Slack updates because the
 batch id is null, which is correct: those calls were never part of a batch.
 
@@ -67,12 +67,12 @@ real callers and ~10 test sites. Keeping `setBatchId` as a deprecated noisy shim
 limits the blast radius of the migration commit and keeps the diff readable; the test
 rewrites can be a follow-up that doesn't touch production code.
 
-## 3. Approach — #16 audit-table guard inside `recomputeProjectDatesWith`
+## 3. Approach: #16 audit-table guard inside `recomputeProjectDatesWith`
 
 **Insertion point.** Inside `recomputeProjectDatesWith` (operations-writes-week.ts:91),
 after the retainer-wrapper short-circuit (line 117) and after the no-op skip check
 (line 152), before the `executor.update(projects)` call (line 156). The guard runs
-only when derived values actually differ from current — the cheapest case stays
+only when derived values actually differ from current; the cheapest case stays
 zero-query.
 
 **Schema reality check.** The `updates` table (`src/lib/db/runway-schema.ts:114`) has
@@ -136,7 +136,7 @@ fixture project + fixture child weekItems):
 
 **#16 cross-batch SHOULD clobber.** Override `startDate` inside batch A, exit batch A,
 enter batch B, write a child with a different date range. Assert `startDate` is the
-recomputed (clobbered) value. This is the intended behavior — protects against
+recomputed (clobbered) value. This is the intended behavior: it protects against
 forever-pinned dates from old overrides.
 
 **#16 no-batch behavior.** Outside any `withBatchId`, override + child write +
@@ -157,13 +157,13 @@ warnings; a TODO comment in the test file flags them for follow-up rewrite to
 direct read swaps cleanly to `getCurrentBatchId()`.
 
 **`set_batch_mode` deprecation breaks any tool consumer that depended on it.** Grep
-across the repo finds no real caller — only the tool definition in
+across the repo finds no real caller: only the tool definition in
 `runway-tools.ts:824` and tests at `runway-tools.test.ts:787` and
 `runway-server.test.ts:124`. External MCP clients (Claude Desktop sessions, Open
 Brain) may have learned to call it; the deprecation message names the replacement.
 **Action: confirm with TP before shipping that operator is willing to deprecate the
 standalone tool**. Alternative: keep `set_batch_mode` as a no-op that returns
-"batch mode is per-request; use batch_apply" — this is the proposed behavior.
+"batch mode is per-request; use batch_apply". This is the proposed behavior.
 
 **Slack-suppression continuity.** The 15 `if (!getBatchId()) postMutationUpdate(...)`
 checks in `runway-tools.ts` keep working because `getBatchId()` returns the ALS
@@ -180,7 +180,7 @@ mutates a discarded variable. Follow-up issue tracks the rewrite to `withBatchId
 no concurrency. Wrapping `migration.up(ctx)` in `withBatchId` is purely additive.
 **Out-of-scope risk:** the 4 untracked migration scripts in
 `scripts/runway-migrations/` (hopdoddy / hdl 2026-05-28 align scripts) are not part of
-this PR per the brief — they stay untracked and untouched.
+this PR per the brief; they stay untracked and untouched.
 
 **JSON1 availability.** Turso (libSQL) supports JSON1 functions including
 `json_extract`. Confirmed via Drizzle docs for the libSQL driver. If it turns out
@@ -191,19 +191,19 @@ Drizzle Studio against prod.
 **Audit-table read inside a write helper.** `recomputeProjectDatesWith` already does 3
 SELECTs before the UPDATE; one more is negligible. The new SELECT runs only when the
 derived values differ from current (no-op skip dodges it in the common case). No
-index added — the query filters on `project_id` (indexed by FK) and `batch_id`
+index added: the query filters on `project_id` (indexed by FK) and `batch_id`
 (unindexed, but per-batch row counts are small).
 
 ## 6. Files touched
 
-- `src/lib/runway/runway-als.ts` — NEW. ALS instance + `withBatchId` + `getCurrentBatchId`.
-- `src/lib/runway/operations-utils.ts` — delete `_currentBatchId`; rewrite `getBatchId`/`setBatchId` (shim with deprecation warn); swap direct read at line 490.
-- `src/lib/mcp/runway-tools.ts` — wrap `batch_apply` body in `withBatchId`; rewrite `set_batch_mode` tool body to return deprecation message.
-- `scripts/runway-migrate.ts` — wrap `migration.up(ctx)` in `withBatchId`.
-- `src/lib/runway/runway-als.test.ts` — NEW. Concurrency isolation tests.
-- `src/lib/runway/operations-writes-week.ts` — add audit-query guard inside `recomputeProjectDatesWith` before the UPDATE.
-- `src/lib/runway/operations-writes-week.test.ts` — extend with #16 in-batch + per-field + cross-batch tests.
-- (Touch-not-rewrite) `operations-utils.test.ts`, `operations-reads-health.test.ts`, `runway-tools.test.ts`, `runway-server.test.ts`, `batch-apply-validators.test.ts` — keep compiling via shim, leave a `TODO(post-B2)` comment near each `setBatchId` site for the rewrite follow-up.
+- `src/lib/runway/runway-als.ts`: NEW. ALS instance + `withBatchId` + `getCurrentBatchId`.
+- `src/lib/runway/operations-utils.ts`: delete `_currentBatchId`; rewrite `getBatchId`/`setBatchId` (shim with deprecation warn); swap direct read at line 490.
+- `src/lib/mcp/runway-tools.ts`: wrap `batch_apply` body in `withBatchId`; rewrite `set_batch_mode` tool body to return deprecation message.
+- `scripts/runway-migrate.ts`: wrap `migration.up(ctx)` in `withBatchId`.
+- `src/lib/runway/runway-als.test.ts`: NEW. Concurrency isolation tests.
+- `src/lib/runway/operations-writes-week.ts`: add audit-query guard inside `recomputeProjectDatesWith` before the UPDATE.
+- `src/lib/runway/operations-writes-week.test.ts`: extend with #16 in-batch + per-field + cross-batch tests.
+- (Touch-not-rewrite) `operations-utils.test.ts`, `operations-reads-health.test.ts`, `runway-tools.test.ts`, `runway-server.test.ts`, `batch-apply-validators.test.ts`: keep compiling via shim, leave a `TODO(post-B2)` comment near each `setBatchId` site for the rewrite follow-up.
 
 ## 7. Open questions for TP
 
@@ -213,7 +213,7 @@ index added — the query filters on `project_id` (indexed by FK) and `batch_id`
 4. **TP brief mentioned ~15 consumers.** Counted 15 `getBatchId()` calls + 2 `setBatchId()` calls in `src/lib/mcp/runway-tools.ts`. Match.
 5. **ROADMAP B2 lists #15, #16, #17.** Brief is clear that this PR is #17 + #16 only and #15 ships separately within B2. Confirming.
 6. **JSON1 vs `LIKE` fallback for `metadata` field extraction.** Will verify Turso's libSQL build supports `json_extract` during implementation. Fallback documented in §5. Acceptable to leave that determination to implementation?
-7. **D-10 (DI-TP for prod writes).** PR is code-only — no data writes. The #16 guard would, if hypothetically backfilled across historical overrides, need to route through DI-TP. This PR doesn't backfill; it only changes future behavior. Confirming this is in line with D-10.
+7. **D-10 (DI-TP for prod writes).** PR is code-only: no data writes. The #16 guard would, if hypothetically backfilled across historical overrides, need to route through DI-TP. This PR doesn't backfill; it only changes future behavior. Confirming this is in line with D-10.
 
 ---
 

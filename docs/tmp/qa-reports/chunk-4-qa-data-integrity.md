@@ -1,7 +1,7 @@
-# QA Report — PR #86 Chunk 4 Data Integrity
+# QA Report: PR #86 Chunk 4 Data Integrity
 
 **Migration:** `schema-backfill-v4-2026-04-21` (applied to Turso prod)
-**Schema push:** `pnpm runway:push` — 9 new columns added
+**Schema push:** `pnpm runway:push`: 9 new columns added
 **Backfill applied:** 2026-04-20 ~23:06:23 UTC (per `updatedAt` on affected rows)
 **Pre-snapshot:** `docs/tmp/schema-backfill-v4-2026-04-21-snapshot.json` (reconstructed; note: test teardown deleted original)
 **Post-snapshot:** `data/runway-snapshot.json` (fresh pull at 2026-04-20T23:18:20Z, prod target)
@@ -10,7 +10,7 @@
 ## Summary
 - CRITICAL unexplained: **0**
 - CRITICAL missing expected: **0**
-- INCIDENTAL: 86 `updatedAt` timestamps (expected — backfill writes bump them)
+- INCIDENTAL: 86 `updatedAt` timestamps (expected: backfill writes bump them)
 - PASS: all 86 expected changes observed
 
 **Confidence in schema push + backfill: HIGH.**
@@ -20,10 +20,10 @@
 1. Read backfill snapshot (63 week_items + 23 projects planned ops).
 2. Ran `pnpm runway:pull --target prod` to capture current prod state.
 3. For every op in snapshot, verified prod row matches expected post-state.
-4. Re-derived MIN(start) / MAX(end) independently across all 44 projects from live week_items and compared to prod — zero mismatches.
+4. Re-derived MIN(start) / MAX(end) independently across all 44 projects from live week_items and compared to prod: zero mismatches.
 5. Verified 21 childless projects have NULL start/end.
 6. Verified all 9 new schema columns are present and untouched-scope columns are fully NULL.
-7. Scanned all 6 tables for `updatedAt >= 2026-04-20T23:00` outside the expected scope — zero unexpected touches.
+7. Scanned all 6 tables for `updatedAt >= 2026-04-20T23:00` outside the expected scope: zero unexpected touches.
 
 ## Findings
 
@@ -39,15 +39,15 @@
 - 21 projects not in backfill scope are childless and correctly NULL (per v4 rule).
 
 **Schema push (9 new columns):**
-- `projects.start_date`: PRESENT — populated for 23, NULL for 21 childless
-- `projects.end_date`: PRESENT — populated for 23, NULL for 21 childless
-- `projects.contract_start`: PRESENT — 0 non-null (expected; Wave 1 client data work)
-- `projects.contract_end`: PRESENT — 0 non-null (expected)
-- `projects.engagement_type`: PRESENT — 0 non-null (expected)
-- `week_items.start_date`: PRESENT — 63/63 populated
-- `week_items.end_date`: PRESENT — 0 non-null (expected; single-date week_items)
-- `week_items.blocked_by`: PRESENT — 0 non-null (expected; Wave 1)
-- `updates.triggered_by_update_id`: PRESENT — 0 non-null (expected; new trigger feature)
+- `projects.start_date`: PRESENT: populated for 23, NULL for 21 childless
+- `projects.end_date`: PRESENT: populated for 23, NULL for 21 childless
+- `projects.contract_start`: PRESENT: 0 non-null (expected; Wave 1 client data work)
+- `projects.contract_end`: PRESENT: 0 non-null (expected)
+- `projects.engagement_type`: PRESENT: 0 non-null (expected)
+- `week_items.start_date`: PRESENT: 63/63 populated
+- `week_items.end_date`: PRESENT: 0 non-null (expected; single-date week_items)
+- `week_items.blocked_by`: PRESENT: 0 non-null (expected; Wave 1)
+- `updates.triggered_by_update_id`: PRESENT: 0 non-null (expected; new trigger feature)
 
 ### Expected but NOT observed (CRITICAL)
 
@@ -61,7 +61,7 @@
 
 #### INCIDENTAL (NON-CRITICAL)
 
-- **`updatedAt` bumped on 63 week_items + 23 projects.** Expected noise — migration script sets `updatedAt: new Date()` in the UPDATE. Timestamps cluster tightly: week_items 23:06:23–23:06:49, projects 23:06:50–23:06:58, confirming single-run, no stragglers, no retries.
+- **`updatedAt` bumped on 63 week_items + 23 projects.** Expected noise: migration script sets `updatedAt: new Date()` in the UPDATE. Timestamps cluster tightly: week_items 23:06:23 to 23:06:49, projects 23:06:50 to 23:06:58, confirming single-run, no stragglers, no retries.
 
 ## Scope discipline check
 
@@ -72,9 +72,9 @@ No records outside backfill scope have `updatedAt` ≥ 2026-04-20T23:00 in any o
 The pre-snapshot file carries this header:
 > "Reconstructed from prod state after test teardown deleted original snapshot. All pre-values were null pre-backfill (columns added in same PR)."
 
-This is structurally sound — the columns were added in the same PR as the backfill, so pre-backfill values are definitionally NULL for every target row. The reconstructed snapshot's `previousStartDate: null` / `previousEndDate: null` entries are provably correct by construction.
+This is structurally sound: the columns were added in the same PR as the backfill, so pre-backfill values are definitionally NULL for every target row. The reconstructed snapshot's `previousStartDate: null` / `previousEndDate: null` entries are provably correct by construction.
 
-**Minor caveat:** because the original snapshot was destroyed, the REVERT script cannot be used to un-do the backfill unless the reconstructed snapshot is trusted. Since all pre-values were NULL, the REVERT is effectively "set these columns back to NULL for these IDs" — which is safe and correct. No action needed; noted for awareness.
+**Minor caveat:** because the original snapshot was destroyed, the REVERT script cannot be used to un-do the backfill unless the reconstructed snapshot is trusted. Since all pre-values were NULL, the REVERT is effectively "set these columns back to NULL for these IDs", which is safe and correct. No action needed; noted for awareness.
 
 ## Overall recommendation
 

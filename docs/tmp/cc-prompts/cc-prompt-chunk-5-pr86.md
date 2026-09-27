@@ -1,4 +1,4 @@
-# CC Prompt — PR #86 Chunk 5: Notifications, Polish, PR Prep
+# CC Prompt: PR #86 Chunk 5: Notifications, Polish, PR Prep
 
 ## Mission
 
@@ -16,9 +16,9 @@ Final chunk. Add past-end L2 detector to flags rail. Audit batch-update skill fo
 
 **Working directory:** isolated worktree via Agent tool
 **Branch:** `feature/runway-pr86-chunk-5` (rename auto-created branch)
-**Base:** `origin/feature/runway-pr86-base` — unified integration line (all Chunks 1, 4 and 7 data migrations already merged here)
+**Base:** `origin/feature/runway-pr86-base`: unified integration line (all Chunks 1, 4 and 7 data migrations already merged here)
 
-## STEP 0 — MANDATORY base correction
+## STEP 0: MANDATORY base correction
 
 ```bash
 git branch --show-current
@@ -33,7 +33,7 @@ Convention reference: `docs/tmp/runway-v4-convention.md` §"Convention-driven be
 
 ---
 
-## Step 0 — Verify state
+## Step 0: Verify state
 
 ```bash
 git branch --show-current
@@ -45,34 +45,34 @@ If any fail, STOP.
 
 ---
 
-## Scope — strict
+## Scope: strict
 
 **IN (primary items):**
 
-1. **Past-end L2 detector** — add to `src/lib/runway/flags-detectors.ts`. Criteria: `end_date < today AND status='in-progress'`. Returns a flag object compatible with existing flags rail format. Wire into flags page and bot's plate response. See v4 convention doc §"Convention-driven behaviors §4."
+1. **Past-end L2 detector**: add to `src/lib/runway/flags-detectors.ts`. Criteria: `end_date < today AND status='in-progress'`. Returns a flag object compatible with existing flags rail format. Wire into flags page and bot's plate response. See v4 convention doc §"Convention-driven behaviors §4."
 
-2. **Batch-update skill audit** — read `.claude/skills/batch-update/SKILL.md`. Evaluate: filter + multi-field update support, dry-run with diff, batchId tagging on audit, bulk L2-owner backfill. Lightweight additions (≤30 LoC) allowed if gaps.
+2. **Batch-update skill audit**: read `.claude/skills/batch-update/SKILL.md`. Evaluate: filter + multi-field update support, dry-run with diff, batchId tagging on audit, bulk L2-owner backfill. Lightweight additions (≤30 LoC) allowed if gaps.
 
 3. **Tests** for the detector and batch-update additions.
 
-## IN (known debt from Wave 1/2 — see `docs/brain/pr86-chunk4-known-debt.md`)
+## IN (known debt from Wave 1/2, see `docs/brain/pr86-chunk4-known-debt.md`)
 
-4. **Extend `PROJECT_FIELDS` whitelist** to include `engagementType`, `contractStart`, `contractEnd`. Also verify `WEEK_ITEM_FIELDS` includes `startDate`, `endDate`, `blockedBy` (Chunk 4 should have added these — verify). Update `PROJECT_FIELD_TO_COLUMN` and `WEEK_ITEM_FIELD_TO_COLUMN` accordingly.
+4. **Extend `PROJECT_FIELDS` whitelist** to include `engagementType`, `contractStart`, `contractEnd`. Also verify `WEEK_ITEM_FIELDS` includes `startDate`, `endDate`, `blockedBy` (Chunk 4 should have added these, verify). Update `PROJECT_FIELD_TO_COLUMN` and `WEEK_ITEM_FIELD_TO_COLUMN` accordingly.
 
-5. **`bucketWeekItem` in `getPersonWorkload` (Chunk 1)** — add `status !== 'completed'` filter to `thisWeek / nextWeek / later` bucketing. Future-dated completed L2s should not inflate counts. Add test covering this case.
+5. **`bucketWeekItem` in `getPersonWorkload` (Chunk 1)**: add `status !== 'completed'` filter to `thisWeek / nextWeek / later` bucketing. Future-dated completed L2s should not inflate counts. Add test covering this case.
 
-6. **`recomputeProjectDates` transaction safety** — move recompute INSIDE the write transaction in all 4 call sites: `createWeekItem`, `updateWeekItemField`, `deleteWeekItem`, `linkWeekItemToProject`. Mirror the pattern `updateWeekItemField` already uses for `dueDate` reverse-cascade. Add test for concurrent-crash-between-write-and-recompute if feasible; otherwise document the invariant with a comment.
+6. **`recomputeProjectDates` transaction safety**: move recompute INSIDE the write transaction in all 4 call sites: `createWeekItem`, `updateWeekItemField`, `deleteWeekItem`, `linkWeekItemToProject`. Mirror the pattern `updateWeekItemField` already uses for `dueDate` reverse-cascade. Add test for concurrent-crash-between-write-and-recompute if feasible; otherwise document the invariant with a comment.
 
-7. **Drizzle snapshot/SQL drift** — `drizzle-runway/0001_melted_weapon_omega.sql` was trimmed to only Chunk 4 columns, but `meta/0001_snapshot.json` still contains 4 pre-existing columns (`clients.nicknames`, `clients.updated_at`, `team_members.full_name`, `team_members.nicknames`, `team_members.updated_at`, `updates.batch_id`) from prior unpushed-as-sql migrations. Either regenerate snapshot to match SQL, or expand SQL to match snapshot. Goal: fresh-DB replay via drizzle-kit migrate works cleanly.
+7. **Drizzle snapshot/SQL drift**: `drizzle-runway/0001_melted_weapon_omega.sql` was trimmed to only Chunk 4 columns, but `meta/0001_snapshot.json` still contains 4 pre-existing columns (`clients.nicknames`, `clients.updated_at`, `team_members.full_name`, `team_members.nicknames`, `team_members.updated_at`, `updates.batch_id`) from prior unpushed-as-sql migrations. Either regenerate snapshot to match SQL, or expand SQL to match snapshot. Goal: fresh-DB replay via drizzle-kit migrate works cleanly.
 
-8. **Unconditional `updated_at` bump on no-op recompute** — `recomputeProjectDates` writes `UPDATE ... SET updated_at = ...` even when computed dates equal current. Skip the update when no change. Small perf + audit noise improvement.
+8. **Unconditional `updated_at` bump on no-op recompute**: `recomputeProjectDates` writes `UPDATE ... SET updated_at = ...` even when computed dates equal current. Skip the update when no change. Small perf + audit noise improvement.
 
 ## Defer (do NOT fix in Chunk 5, document only in PR message)
 
 - Missing Bonterra Design L2s (pre-existing, investigation needed post-merge)
 - Soundly audit rows missing batchId tag (minor, affects publish-updates filtering)
 - Chunk 1 commit `23d56eb` not bisect-safe in isolation (squash-merge eliminates if operator prefers)
-- Team roster interpretation inconsistency (Soundly full-team vs others engaged-roles) — flag for operator post-merge normalization
+- Team roster interpretation inconsistency (Soundly full-team vs others engaged-roles): flag for operator post-merge normalization
 
 ## Minor polish
 
@@ -83,11 +83,11 @@ Check `docs/brain/pr86-chunk4-known-debt.md` for any remaining items. Scan Wave 
 - Data migrations (already run)
 - Schema changes (Chunk 4 complete)
 
-**Never:** push, pr, destructive git (until PR open step at end — see below).
+**Never:** push, pr, destructive git (until PR open step at end, see below).
 
 ---
 
-## Post-CC TP steps (do NOT execute in this prompt — TP does these)
+## Post-CC TP steps (do NOT execute in this prompt, TP does these)
 
 After CC's commits land:
 - TP invokes `/code-review` on the full integration branch
@@ -114,7 +114,7 @@ pnpm build
 pnpm lint
 ```
 
-NO `/code-review`, `/atomic-commits`, `/pr-ready` — TP runs these after CC.
+NO `/code-review`, `/atomic-commits`, `/pr-ready`: TP runs these after CC.
 
 ---
 

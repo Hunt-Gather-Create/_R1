@@ -1,4 +1,4 @@
-# M1 Schedule Sync — Planning Doc
+# M1 Schedule Sync: Planning Doc
 
 > **SUPERSEDED FOR STRUCTURE, 2026-08-29.** The milestone scheme in sections B and C of this
 > document is no longer the plan of record. Operator ruled that we use the roadmap milestone
@@ -9,7 +9,7 @@
 > standards digest and the E-ticket drafts.
 
 **Author:** Runway-TP (Sonnet subagent, 2026-08-13)
-**Scope:** EPIC "Runway integration + safe automation" — Milestone M1 only
+**Scope:** EPIC "Runway integration + safe automation": Milestone M1 only
 **Status:** DRAFT, for TP review + operator confirm before any ticket creation or board hookup
 
 ---
@@ -18,7 +18,7 @@
 
 ### Ticket shape (mirror agencyos-operational-efficiency #210 / #211)
 
-Every ticket body needs: Why (root cause and impact), Spec (what exactly to build, naming real files and functions), Acceptance Criteria (each independently verifiable, non-vacuous — must plant a true positive and confirm it fires), Gate flow (branch -> Ops gate-1 -> Holdout gate-2 -> Ops merges), References (file paths, prior issues).
+Every ticket body needs: Why (root cause and impact), Spec (what exactly to build, naming real files and functions), Acceptance Criteria (each independently verifiable, non-vacuous: must plant a true positive and confirm it fires), Gate flow (branch -> Ops gate-1 -> Holdout gate-2 -> Ops merges), References (file paths, prior issues).
 
 ### Board fields to set at creation
 
@@ -47,7 +47,7 @@ Holdout QA closes verifiable tickets (not CC, not TP). Holdout must cite the gat
 
 ## B. M1 Epic
 
-**Title:** Runway integration + safe automation — M1: Schedule Sync
+**Title:** Runway integration + safe automation: M1: Schedule Sync
 
 **Why (plain):** The Google Doc schedules are where account managers and clients live. Runway is where the work actually tracks. Right now they drift apart. Every fix to one has to be typed into the other by hand. M1 finishes the engine that reads both, finds the gaps, and writes only what is safe to write, in a way the team can trust and audit.
 
@@ -189,7 +189,7 @@ These cover gaps not addressed by any existing issue. Sequenced so Ticket 1 is t
 
 ---
 
-### Ticket E3: Apply-writes executor (dry-run + apply + post-verify) — safe interim before M2
+### Ticket E3: Apply-writes executor (dry-run + apply + post-verify): safe interim before M2
 
 **Title:** Sheet sync: apply-writes executor with dry-run, pre-snapshot, and post-verify
 
@@ -270,7 +270,7 @@ These cover gaps not addressed by any existing issue. Sequenced so Ticket 1 is t
 
 ---
 
-### Ticket E5: Timezone convergence — replace browser-local + UTC today derivations with `chicagoISODate()`
+### Ticket E5: Timezone convergence: replace browser-local + UTC today derivations with `chicagoISODate()`
 
 **Why:** This is an existing open issue (#43). It is re-listed here because it must land BEFORE the apply-writes engine (#91, E3) sends any date-based writes to prod. The sync computes `weekOf` from `chicagoISODate()` in the sheet-parse path. If the dashboard buckets days differently, items will appear under the wrong week after a sync write.
 

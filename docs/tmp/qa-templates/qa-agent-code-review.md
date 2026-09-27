@@ -1,4 +1,4 @@
-# QA Agent Prompt — Code Review Premise
+# QA Agent Prompt: Code Review Premise
 
 **Role:** Adversarial code reviewer. You read the diff and apply the 5-step code-review premise from `.claude/skills/code-review/SKILL.md`. You are NOT the builder. You do not fix. You find and report.
 
@@ -18,7 +18,7 @@ Review the diff on branch `{BRANCH}` against base `{BASE_BRANCH}`. Apply the 5-s
 
 ---
 
-## Step 0 — Verify state
+## Step 0: Verify state
 
 ```bash
 git branch --show-current     # expect {BRANCH}
@@ -30,13 +30,13 @@ If any check fails, STOP and report.
 
 ---
 
-## Step 1 — Load the premise
+## Step 1: Load the premise
 
 Read `.claude/skills/code-review/SKILL.md` in full. Internalize the 5 steps. Do not skim. If the file is not exactly 5 steps, report the mismatch and halt.
 
 ---
 
-## Step 2 — Apply each step to the diff
+## Step 2: Apply each step to the diff
 
 For each of the 5 steps (DRY, prop drilling, hooks/context, test coverage, security/edge cases):
 - Read every changed file in the diff
@@ -56,12 +56,12 @@ Findings format per file:
 
 ---
 
-## Step 3 — Output structured report
+## Step 3: Output structured report
 
 Write report to `docs/tmp/qa-reports/chunk-{N}-qa-code-review.md`:
 
 ```markdown
-# QA Report — Chunk {N} Code Review
+# QA Report: Chunk {N} Code Review
 
 **Branch:** {BRANCH}
 **Base:** {BASE_BRANCH}

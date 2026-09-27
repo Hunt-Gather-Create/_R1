@@ -1,4 +1,4 @@
-# Infra Bundle B — resilience + auth hardening
+# Infra Bundle B: resilience + auth hardening
 
 Four infra fixes shipped together: they touch adjacent boundaries (Inngest
 retry semantics, request-scoped state on Fluid Compute, unauthenticated
@@ -17,13 +17,13 @@ Fixes: jasonburks23/_R1#2, jasonburks23/_R1#35, jasonburks23/_R1#44, jasonburks2
 - `AsyncLocalStorage` is the established pattern for request-scoped state
   in this codebase (`src/lib/runway/runway-als.ts`, retired the
   module-level `_currentBatchId` in issue #17). This shapes #44's approach.
-- Node 24 LTS + Fluid Compute — a single Node process serves many
+- Node 24 LTS + Fluid Compute: a single Node process serves many
   concurrent requests. Module-level `let` variables bleed across requests.
   Both #44 and (historically) #17 exist because of this.
 
 ---
 
-## #2 — Inngest job tracker must not cascade its own failures
+## #2: Inngest job tracker must not cascade its own failures
 
 **File:** `src/lib/inngest/functions/job-tracker.ts`
 
@@ -44,11 +44,11 @@ logged and the returned shape includes the skipped reason.
 
 ---
 
-## #52 — `/api/runway/version` requires auth
+## #52: `/api/runway/version` requires auth
 
 **Files:**
-- `src/app/api/runway/version/route.ts` — add `getCurrentUser()` gate
-- `src/app/api/runway/version/route.test.ts` — new file
+- `src/app/api/runway/version/route.ts`: add `getCurrentUser()` gate
+- `src/app/api/runway/version/route.test.ts`: new file
 
 ### Current state (verified 2026-07-16)
 
@@ -56,7 +56,7 @@ Prod curl `/api/runway/version` unauthenticated: `HTTP/2 200`. The route
 sits in the `/((?!_next/static|_next/image|favicon.ico|public/).*)`
 matcher and is NOT in `unauthenticatedPaths`, so `proxy.ts` SHOULD gate
 it. In practice the WorkOS authkit middleware appears to let JSON
-`/api/*` routes through — redirecting only on `Accept: text/html`. The
+`/api/*` routes through, redirecting only on `Accept: text/html`. The
 route's header comment claims auth is enforced by `proxy.ts`; that comment
 is aspirational and wrong.
 
@@ -68,12 +68,12 @@ already on the wire. Zero client change needed.
 
 | Option | Verdict |
 |---|---|
-| A: `X-Runway-Token` header check | Rejected — client JS cannot carry a server secret. |
-| B: Bearer token in the polling fetch | Rejected — same client-secret problem. |
-| C: Delete the route | Rejected — breaks the deploy-detection refresh. |
+| A: `X-Runway-Token` header check | Rejected: client JS cannot carry a server secret. |
+| B: Bearer token in the polling fetch | Rejected: same client-secret problem. |
+| C: Delete the route | Rejected: breaks the deploy-detection refresh. |
 | **D: server-side `getCurrentUser()` check in the route** | **Chosen.** |
-| D2: also broaden `proxy.ts` to gate JSON `/api/*` uniformly | Deferred — separate GH issue, out of bundle B scope. |
-| E: close #52 as materially reduced | Rejected — remaining endpoint-existence leak still warrants a fix. |
+| D2: also broaden `proxy.ts` to gate JSON `/api/*` uniformly | Deferred: separate GH issue, out of bundle B scope. |
+| E: close #52 as materially reduced | Rejected: remaining endpoint-existence leak still warrants a fix. |
 
 ### Change
 
@@ -94,34 +94,34 @@ enforcement path (route-local `getCurrentUser()`, not `proxy.ts`).
 ### Stale leak framing (for PR body)
 
 The issue as originally filed described a `{sha, builtAt}` leak. The
-route currently returns only `{ version: <ISO timestamp> }` — the
+route currently returns only `{ version: <ISO timestamp> }`; the
 deploy-metadata portion of the leak was defanged in an earlier change.
 What remains is endpoint-existence + auth-bypass, still worth closing.
 
 ### Systemic follow-up (out of scope)
 
-The larger question — why does `authkitMiddleware` let JSON `/api/*`
-routes through despite the matcher configuration — is a separate concern
+The larger question, why does `authkitMiddleware` let JSON `/api/*`
+routes through despite the matcher configuration, is a separate concern
 touching the auth boundary itself. Filing as a NEW GH issue at PR-open
 time so option D2 has a home.
 
 ### Test
 
-`src/app/api/runway/version/route.test.ts` — mock `getCurrentUser`:
+`src/app/api/runway/version/route.test.ts`: mock `getCurrentUser`:
 - returns `null` → route returns 401
 - returns a user → route returns 200 with `{ version }`
 
 ---
 
-## #44 — `_cachedClients` request-scoping via sibling-file ALS
+## #44: `_cachedClients` request-scoping via sibling-file ALS
 
 **Files:**
-- `src/lib/runway/clients-cache-als.ts` — new file, sibling to `runway-als.ts`
-- `src/lib/runway/operations-utils.ts` — remove module-level `_cachedClients`, read/write ALS instead
+- `src/lib/runway/clients-cache-als.ts`: new file, sibling to `runway-als.ts`
+- `src/lib/runway/operations-utils.ts`: remove module-level `_cachedClients`, read/write ALS instead
 - Callers wrapped: `src/app/runway/queries.ts`, `src/lib/inngest/functions/slack-modal-submit.ts`,
   `src/app/api/slack/options/route.ts`, `src/app/api/slack/interactivity/route.ts`,
   `src/lib/runway/operations-reads-week.ts` (internal hot path)
-- Test: `src/lib/runway/clients-cache-als.test.ts` — new file, mirrors `runway-als.test.ts`
+- Test: `src/lib/runway/clients-cache-als.test.ts`: new file, mirrors `runway-als.test.ts`
   load-bearing test ("concurrent scopes do not bleed").
 
 ### Problem
@@ -168,7 +168,7 @@ async function getCachedClients(): Promise<ClientRow[]> {
 If a caller is INSIDE `withClientsCache(fn)`, the cache is per-request-chain
 (no bleed). If a caller is OUTSIDE any scope, `getRequestClientsCache()`
 returns `null` and every call round-trips the DB. That's the correct
-behavior for the callers we're not wrapping — the "cache hit" they were
+behavior for the callers we're not wrapping; the "cache hit" they were
 getting under module-level state was the bug, not the feature.
 
 `invalidateClientCache()` (public helper, called from tests + after
@@ -179,11 +179,11 @@ any scope it becomes a safe no-op.
 
 High-fanout entry points get wrapped in `withClientsCache(async () => ...)`:
 
-- `src/app/runway/queries.ts` — 3 `getClientNameMap` calls across page queries
-- `src/lib/inngest/functions/slack-modal-submit.ts` — 2 `getAllClients` calls in the handler body
-- `src/app/api/slack/options/route.ts` — hot autocomplete path
-- `src/app/api/slack/interactivity/route.ts` — POST handler wraps its body
-- `src/lib/runway/operations-reads-week.ts` — the multi-`getClientBySlug` functions
+- `src/app/runway/queries.ts`: 3 `getClientNameMap` calls across page queries
+- `src/lib/inngest/functions/slack-modal-submit.ts`: 2 `getAllClients` calls in the handler body
+- `src/app/api/slack/options/route.ts`: hot autocomplete path
+- `src/app/api/slack/interactivity/route.ts`: POST handler wraps its body
+- `src/lib/runway/operations-reads-week.ts`: the multi-`getClientBySlug` functions
 
 Single-shot callers (one `getClientBySlug` inside a helper that already runs
 inside a wrapped scope) get the benefit for free through async context.
@@ -192,13 +192,13 @@ inside a wrapped scope) get the benefit for free through async context.
 
 - Not extending `runway-als.ts` with a second store. Batch id and client
   cache are unrelated concerns; sibling files keep them separable.
-- Not wrapping every single call site — the point of ALS is that async
+- Not wrapping every single call site: the point of ALS is that async
   context carries down. Wrap the top of the call tree; leaves get it
   automatically.
 
 ---
 
-## #35 — Runway Slack message: idempotency at the function boundary
+## #35: Runway Slack message: idempotency at the function boundary
 
 **File:** `src/lib/inngest/functions/runway-slack-message.ts` + test.
 
@@ -207,7 +207,7 @@ inside a wrapped scope) get the benefit for free through async context.
 Today the function has `retries: 2` and no idempotency key. If the same
 Slack event is dispatched twice (webhook retry, transient network) or the
 function is retried after a partial success, the AI pipeline runs again
-and `handleDirectMessage` posts a second `chat.postMessage` — the user
+and `handleDirectMessage` posts a second `chat.postMessage`; the user
 sees a duplicate reply.
 
 ### Change
@@ -242,7 +242,7 @@ value. Full retry-dedup behavior is enforced by Inngest infra and not
 practical to simulate in-test; the config assertion + the `messageTs`
 threading are what we can verify.
 
-### Scope note — "split Slack send into own step"
+### Scope note: "split Slack send into own step"
 
 The original issue suggested also splitting the AI-processing step from
 the Slack-send step so a Slack-post retry doesn't re-run the AI turn.
@@ -254,7 +254,7 @@ is a substantially larger change with its own review surface.
 Function-level idempotency prevents the observed failure mode
 (duplicate replies from retries) at the queue layer, which is the
 higher-order fix. The step-split is a distinct optimization worth its
-own issue — deferred, not silently dropped.
+own issue, deferred, not silently dropped.
 
 ---
 
@@ -263,10 +263,10 @@ own issue — deferred, not silently dropped.
 Commits land in dependency order (each is independently safe to revert):
 
 1. This plan doc.
-2. #2 — smallest, no runtime coupling.
-3. #52 — auth boundary tightening; independent test file.
-4. #44 — largest surface (new file + 5 wrap sites + call-site refactor in `operations-utils.ts`).
-5. #35 — one config-line change + test.
+2. #2: smallest, no runtime coupling.
+3. #52: auth boundary tightening; independent test file.
+4. #44: largest surface (new file + 5 wrap sites + call-site refactor in `operations-utils.ts`).
+5. #35: one config-line change + test.
 
 Full QA chain (`/code-review` + QA subagent + `/preflight` build + tests + lint + `/pr-ready`)
 runs after commit 5 on the full diff, then `BUILD READY FOR TP GATE`.

@@ -1,4 +1,4 @@
-# What Changed While Runway Was Down (re-grounding) — 2026-08-13
+# What Changed While Runway Was Down (re-grounding): 2026-08-13
 
 Context: AgencyOS token inefficiency brought the whole system down ~2 weeks ago. It is coming
 back on now, programmatic-first, so we can run continuously. This file is the Runway seat's

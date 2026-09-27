@@ -1,4 +1,4 @@
-# Bug X2 — retainer edit silently demotes engagement_type (DEFERRED)
+# Bug X2: retainer edit silently demotes engagement_type (DEFERRED)
 
 **Tracked as Batch K** (R1 TP). K1 = this fix. K2 = Bug X3 (retainer toggle wipes state in edit mode, separate root cause, do not conflate). K3 = prod backfill of already-demoted retainers (data-tp dispatch, runs after K1/K2 PR merges). Shape: 1 PR (K1+K2 atomic commits, same edit modal correctness area) + 1 data-tp dispatch (K3 backfill).
 
@@ -16,7 +16,7 @@ Verified live on 2026-05-05 PM with two retainer rows (`TEST Retainer Standard`,
 
 ## Why this matters
 
-Every existing retainer in prod that any user touches via `/runway-edit-project` will be silently demoted. Not just QA test data — Convergix, Source, Hop, TAP retainer wrappers are all vulnerable.
+Every existing retainer in prod that any user touches via `/runway-edit-project` will be silently demoted. Not just QA test data: Convergix, Source, Hop, TAP retainer wrappers are all vulnerable.
 
 ## What was tried
 
@@ -40,7 +40,7 @@ Added `console.log("[diag-retainer]", { mode, engagementType, cvKeys, retainerMo
 
 ## Lead hypothesis: same Slack input-element caching pattern that broke Bug X1
 
-Bug X1 (Range-shape edit modal rendering Single-day) had structurally identical symptoms — JSON payload was correct, Slack ignored it. Root cause turned out to be a documented Slack quirk:
+Bug X1 (Range-shape edit modal rendering Single-day) had structurally identical symptoms: JSON payload was correct, Slack ignored it. Root cause turned out to be a documented Slack quirk:
 
 > **Slack input elements (radio_buttons, checkboxes, etc. inside an input block) cache their `initial_option` / `initial_options` / `initial_value` from the FIRST render and silently ignore subsequent `views.update` payloads that try to change the initial state.** Once a block with a given `block_id` has been rendered to the user, Slack treats it as carrying user state and refuses to overwrite that state from server-side initial-value changes. The element only honors `initial_*` on FIRST APPEARANCE of that `block_id` in the view's lifetime.
 
@@ -60,7 +60,7 @@ Project edit-modal flow:
 
 Pre-fix: step 1 sent `initial_options: []` (unchecked). Post-fix: step 1 sends `initial_options: [option]` (checked) only if `engagementType === "retainer"`. If the post-fix code is actually running, step 1 SHOULD render checked.
 
-If step 1 still renders unchecked despite the fix, X1's caching mechanism doesn't apply — the bug is upstream of the render. If step 1 renders checked but step 2 overrides to unchecked... then it does apply, and the same fix pattern (suppress block on initial render, let it appear fresh on update) is the path forward.
+If step 1 still renders unchecked despite the fix, X1's caching mechanism doesn't apply; the bug is upstream of the render. If step 1 renders checked but step 2 overrides to unchecked... then it does apply, and the same fix pattern (suppress block on initial render, let it appear fresh on update) is the path forward.
 
 ### Fix-pattern candidates (do NOT pre-implement, need diag data first)
 
@@ -80,7 +80,7 @@ The dev server (PID 67377 at 2026-05-05 PM) has been running through several edi
 
 ### H2: `loadFuzzyEntitiesByKind` returns a different row shape than `loadEntityById`
 
-The fuzzy candidates fetcher might project a thinner column set than `loadEntityById`. The single-match path then re-fetches via `loadEntityById(spec.kind, single.id)` (`route.ts:464`) — this should restore the full projection. But verify the fetched row actually has `engagementType`.
+The fuzzy candidates fetcher might project a thinner column set than `loadEntityById`. The single-match path then re-fetches via `loadEntityById(spec.kind, single.id)` (`route.ts:464`): this should restore the full projection. But verify the fetched row actually has `engagementType`.
 
 **Test:** Add a log inside `openEditModalSingleMatch` BEFORE the `buildModalView` call: `console.log("[diag-row-shape]", JSON.stringify(row))`. The output will show whether `engagementType` is on the row at the time of the call.
 
@@ -100,22 +100,22 @@ There may be a `views.update` firing immediately after `views.open` (e.g. cascad
 
 This is the lead hypothesis (see top section). Bug X1's caching mechanism applies if and only if the modal experiences a `views.open` → `views.update` sequence within the user's first interaction window, AND the FIRST render had `initial_options: []` (or absent) for the checkbox.
 
-The single-match slash flow (`openEditModalSingleMatch`) opens the modal directly with row data — no disambiguation phase, no implicit second render. So strictly speaking X5 should NOT apply unless an external rebuild (cascade, retainer toggle handler from prior session memory, etc.) fires unbidden.
+The single-match slash flow (`openEditModalSingleMatch`) opens the modal directly with row data: no disambiguation phase, no implicit second render. So strictly speaking X5 should NOT apply unless an external rebuild (cascade, retainer toggle handler from prior session memory, etc.) fires unbidden.
 
 **Test:** If H1 (HMR) and H2 (row shape) confirm the post-fix server code is correct AND the row DOES carry `engagementType: "retainer"`, then X5 is the explanation. Move directly to fix candidates A or B above.
 
 ## Out-of-scope from this deferral
 
-- **Bug X3** (separate task): toggling the retainer wrapper in EDIT mode wipes all currentValues and renders the modal as "New retainer" create-mode. Tracked as task #16. Not the same root cause as X2 — X3 is the in-modal toggle handler losing state; X2 is the initial render not honoring the row's stored value.
+- **Bug X3** (separate task): toggling the retainer wrapper in EDIT mode wipes all currentValues and renders the modal as "New retainer" create-mode. Tracked as task #16. Not the same root cause as X2: X3 is the in-modal toggle handler losing state; X2 is the initial render not honoring the row's stored value.
 
 ## Existing prod corruption to backfill (when X2 lands)
 
-When this fix lands, audit prod for retainers that may have been silently demoted to `engagement_type: "project"` by prior edits. Cross-reference `parent_project_id` references — any project that has children pointing at it via `parent_project_id` is functionally a retainer wrapper, regardless of its current `engagement_type` value. Backfill via the data-integrity TP cohort migration pattern.
+When this fix lands, audit prod for retainers that may have been silently demoted to `engagement_type: "project"` by prior edits. Cross-reference `parent_project_id` references: any project that has children pointing at it via `parent_project_id` is functionally a retainer wrapper, regardless of its current `engagement_type` value. Backfill via the data-integrity TP cohort migration pattern.
 
 ## Files touched in the failed fix attempt (kept in PR)
 
-- `src/app/api/slack/commands/route.ts:157-178` — `retainerMode` derivation in `buildModalView` (commit `80daa7a`). Logically correct, fails live.
-- `src/app/api/slack/commands/route.test.ts:39-44, 413-446` — fixture row + 2 tests asserting retainerMode plumbing for non-retainer and retainer rows. Tests pass.
+- `src/app/api/slack/commands/route.ts:157-178`: `retainerMode` derivation in `buildModalView` (commit `80daa7a`). Logically correct, fails live.
+- `src/app/api/slack/commands/route.test.ts:39-44, 413-446`: fixture row + 2 tests asserting retainerMode plumbing for non-retainer and retainer rows. Tests pass.
 
 The fix is shipped as-is in the PR even though it doesn't fully resolve X2 in production, because:
 

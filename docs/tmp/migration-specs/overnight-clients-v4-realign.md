@@ -1,4 +1,4 @@
-# Overnight Client v4 Realigns — Migration Specs
+# Overnight Client v4 Realigns: Migration Specs
 
 **Scope:** 6 clients touched overnight with v1/v2 convention. Realign each to v4.
 **Clients:** Bonterra, Convergix, Soundly, TAP, HDL, LPPC.
@@ -60,7 +60,7 @@ See `docs/tmp/qa-templates/qa-agent-data-integrity.md`.
 - `owner` = single accountable person (no role prefix)
 - `resources` = full team roster for this engagement (not just primary helper). Role-prefix format.
 - `engagement_type` populated (`project` / `retainer` / `break-fix`)
-- `status` accurate (not stale — e.g., if L2s are in-flight but L1 shows `not-started`, flip to `in-production`)
+- `status` accurate (not stale, e.g., if L2s are in-flight but L1 shows `not-started`, flip to `in-production`)
 - `category` matches status (`active` / `awaiting-client` / `pipeline` / `on-hold` / `completed`)
 - `contract_end` set ONLY if retainer (manual override for retainer span); otherwise leave null (derived)
 - Title format: drop client name prefix, drop category word (client + category fields carry that info). Use em-dash `—` not hyphen. Example: rename `Bonterra Impact Report — deadline handoff` → `Impact Report — Dev Handoff`.
@@ -84,7 +84,7 @@ See `docs/tmp/qa-templates/qa-agent-data-integrity.md`.
 
 ## Per-client specs
 
-### Bonterra — restart halted touchup
+### Bonterra: restart halted touchup
 
 **Context:** overnight agent halted on status drift (`Dev K/O 4/15` L2 was `in-progress`, not null as expected).
 
@@ -97,7 +97,7 @@ See `docs/tmp/qa-templates/qa-agent-data-integrity.md`.
 **Script:** `scripts/runway-migrations/bonterra-v4-touchup-2026-04-21.ts`
 **Reverse ready:** yes
 
-### Convergix — full v4 realign
+### Convergix: full v4 realign
 
 **Context:** 33% L1 drift from v1 found in earlier audit. Multiple null-resources L1s, partial rosters, inconsistent status.
 
@@ -110,7 +110,7 @@ See `docs/tmp/qa-templates/qa-agent-data-integrity.md`.
 **Script:** `scripts/runway-migrations/convergix-v4-realign-2026-04-21.ts`
 **Reverse ready:** yes
 
-### Soundly — full v4 realign
+### Soundly: full v4 realign
 
 **Target-state rules (additions to generic):**
 - 3 L1s need full team roster expansion
@@ -120,7 +120,7 @@ See `docs/tmp/qa-templates/qa-agent-data-integrity.md`.
 **Script:** `scripts/runway-migrations/soundly-v4-realign-2026-04-21.ts`
 **Reverse ready:** yes
 
-### TAP — v4 realign
+### TAP: v4 realign
 
 **Target-state rules (additions to generic):**
 - `engagement_type='project'` on all TAP L1s
@@ -130,17 +130,17 @@ See `docs/tmp/qa-templates/qa-agent-data-integrity.md`.
 **Script:** `scripts/runway-migrations/tap-v4-realign-2026-04-21.ts`
 **Reverse ready:** yes
 
-### HDL — v4 realign + contract-expiry
+### HDL: v4 realign + contract-expiry
 
 **Target-state rules (additions to generic):**
 - Full team roster on L1s
 - `engagement_type='project'` on all HDL L1s
-- If HDL client has `contract_status='expired'`, verify expiry surfaces on owner's plate (Chunk 1 does this at read time — no data-side work needed, just verify data sets up the signal)
+- If HDL client has `contract_status='expired'`, verify expiry surfaces on owner's plate (Chunk 1 does this at read time, no data-side work needed, just verify data sets up the signal)
 
 **Script:** `scripts/runway-migrations/hdl-v4-realign-2026-04-21.ts`
 **Reverse ready:** yes
 
-### LPPC — v4 realign
+### LPPC: v4 realign
 
 **Target-state rules (additions to generic):**
 - Full team roster on L1s

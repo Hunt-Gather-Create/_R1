@@ -1,4 +1,4 @@
-# Milestone 02 — Auth and secret guards: one-shot execution plan
+# Milestone 02: Auth and secret guards, one-shot execution plan
 
 **Status:** DRAFT. Awaiting Overwatch's one-shot practice input and the operator walk.
 **Author:** Runway (TP), 2026-08-29.
@@ -70,7 +70,7 @@ the concept word for `authkitMiddleware`. `#88` stays independent of everything 
 
 ## Dispatch waves
 
-### Wave 1 — three threads, fired together
+### Wave 1: three threads, fired together
 
 | Ticket | Scope | Acceptance |
 |---|---|---|
@@ -103,14 +103,14 @@ timestamps: interleaved means concurrent, start-to-finish in order means serial.
 the claim for the cost of watching a clock. The result goes to the operator, since correcting
 `CLAUDE.md` is his call and not a peer's.
 
-### Wave 2 — two threads, each gated on its wave-1 predecessor
+### Wave 2: two threads, each gated on its wave-1 predecessor
 
 | Ticket | Waits on | Scope |
 |---|---|---|
 | #109 | #112 landed | Delete `KNOWN_AUTH_ROUTES`. Discover routes by "reads a secret-shaped env var". Measured on today's tree: 3 true positives, 0 false positives, 0 false negatives. It would have caught #112. |
 | #107 | #111 landed | Make red, green, and never-ran render distinctly in the PR gate. |
 
-### Wave 3 — one thread
+### Wave 3: one thread
 
 | Ticket | Waits on | Scope |
 |---|---|---|

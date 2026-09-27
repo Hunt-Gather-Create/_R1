@@ -36,7 +36,7 @@ _R1#107 has two halves:
 1. **The check must exist and produce a signal.** That is this PR. Still unproven until a real check-run with a real conclusion appears on a real pull request.
 2. **The signal must block.** That is branch protection. Not built, operator's call.
 
-Right now neither is true. Getting the first without the second is still a large win — a visible red is worth a great deal even when it is only advisory — but they are different claims and should never be reported as one.
+Right now neither is true. Getting the first without the second is still a large win: a visible red is worth a great deal even when it is only advisory. But they are different claims and should never be reported as one.
 
 ## The local hook is not a gate
 
@@ -67,7 +67,7 @@ Both escape hatches are on purpose. A control you cannot bypass gets ripped out;
 
 `.github/workflows/pr-tests.yml`. One job, one command, on every pull request.
 
-It **reports**. It does not block — see the section above.
+It **reports**. It does not block: see the section above.
 
 ### Why it exists (_R1#107)
 
@@ -95,9 +95,9 @@ The fleet burned 3,000 GitHub Actions minutes in one day on over-engineered pipe
 
 Specifically excluded, with reasons:
 
-- **`pnpm build`** — its first step connects to a **live Turso database**, and its second connects to a different one. It is safe only behind `SKIP_DB_MIGRATIONS=1`, which turns it into a compile check rather than a build check. That belongs in a deliberate step, not an automatic one. See `scripts/runway-schema-push.mjs`.
-- **`tsc --noEmit`** — reports roughly 210 errors today, all in test files, which `next build` never reaches. Gating on an unmeasured backlog just gets the gate switched off. Tracked as _R1#107 task 2, behind establishing a baseline.
-- **lint** — warnings only today. Noise without signal.
+- **`pnpm build`**: its first step connects to a **live Turso database**, and its second connects to a different one. It is safe only behind `SKIP_DB_MIGRATIONS=1`, which turns it into a compile check rather than a build check. That belongs in a deliberate step, not an automatic one. See `scripts/runway-schema-push.mjs`.
+- **`tsc --noEmit`**: reports roughly 210 errors today, all in test files, which `next build` never reaches. Gating on an unmeasured backlog just gets the gate switched off. Tracked as _R1#107 task 2, behind establishing a baseline.
+- **lint**: warnings only today. Noise without signal.
 
 ### Why `pull_request` and not `pull_request_target`
 

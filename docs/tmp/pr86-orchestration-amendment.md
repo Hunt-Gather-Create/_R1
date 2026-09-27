@@ -1,4 +1,4 @@
-# PR #86 Orchestration Plan — Amendment v2.1
+# PR #86 Orchestration Plan: Amendment v2.1
 
 **Status:** Locked. Supersedes `pr86-orchestration-plan.md` v1 where conflicts exist.
 **Purpose:** Autonomous execution design, adversarial review, data integrity, rollback, compaction prediction, Max Max pacing.
@@ -31,7 +31,7 @@
 
 ## Revised wave structure
 
-### Wave 0 — TP prep (2-3h, TP solo)
+### Wave 0: TP prep (2-3h, TP solo)
 - `feature/runway-pr86-base` branch, cherry-picks from `backup/pr86-work` + uncommitted `category` whitelist
 - 5 chunk CC prompts
 - 3 QA agent prompt templates (code-review premise, atomic-commits premise, data-integrity)
@@ -40,7 +40,7 @@
 - 6 matching reverse-migration script skeletons
 - Compaction prediction ruleset
 
-### Wave 1 — Schema first, then parallel (~6-7h)
+### Wave 1: Schema first, then parallel (~6-7h)
 
 **Step 1 (sequential, 1 agent, ~45m):** Chunk 4 schema push.
 - Schema + `.sql` + `pnpm runway:push`
@@ -55,17 +55,17 @@
 - Each produces forward + reverse script committed to `scripts/runway-migrations/<client>-v4-<date>.ts`
 - Adversarial review fires sequentially per chunk; digest subagent consolidates
 
-**Integration 1 (TP, 30-60m):** merge to `feature/runway-pr86-wave1`, reconcile, `/preflight`. Fold agent details into `docs/tmp/pr86-wave-1-details.md`; plan doc gets compact "Wave 1 — DONE" block.
+**Integration 1 (TP, 30-60m):** merge to `feature/runway-pr86-wave1`, reconcile, `/preflight`. Fold agent details into `docs/tmp/pr86-wave-1-details.md`; plan doc gets compact "Wave 1: DONE" block.
 
-### Wave 2 — UI + bot (~4h)
+### Wave 2: UI + bot (~4h)
 Parallel (2 agents): Chunk 2 (bot layer) + Chunk 3 (UI, against real schema).
 Asprey v4 touchup as background data agent if not already caught.
 Integration 2: merge to `feature/runway-pr86-wave2`, prune details.
 
-### Wave 3 — Polish + PR (~4h)
+### Wave 3: Polish + PR (~4h)
 Chunk 5 polish, TP pre-Llama review, PR message, open PR, Llama iteration (1-2 cycles buffer).
 
-### Post-merge — Remaining-6 batch (~1-2h, 1 agent)
+### Post-merge: Remaining-6 batch (~1-2h, 1 agent)
 Hopdoddy, Beyond Petro, AG1, ABM, EDF, Wilsonart. See `docs/brain/remaining-6-client-state-questions.md`.
 
 ---
@@ -105,13 +105,13 @@ Every data agent follows:
 
 Every data migration produces 2 separate script files:
 - Forward: `scripts/runway-migrations/<client>-v4-<date>.ts`
-- Reverse: `scripts/runway-migrations/<client>-v4-<date>-REVERT.ts` — reads pre-snapshot JSON, applies inverse ops
+- Reverse: `scripts/runway-migrations/<client>-v4-<date>-REVERT.ts`: reads pre-snapshot JSON, applies inverse ops
 
 **If verification halts or operator vetoes at morning review:**
 - Primary: `pnpm runway:migrate scripts/runway-migrations/<client>-v4-<date>-REVERT.ts --apply --target prod --yes`
 - Secondary: `undo_last_change` with batchId scope (cascades across audit trail)
 
-**Note on harness:** `pnpm runway:migrate <script>` defaults to dry-run. Add `--apply --target prod --yes` to actually write. No `--revert` flag exists — reverse is a separate file invoked the same way.
+**Note on harness:** `pnpm runway:migrate <script>` defaults to dry-run. Add `--apply --target prod --yes` to actually write. No `--revert` flag exists; reverse is a separate file invoked the same way.
 
 Post-revert: re-verify against pre-snapshot. If divergent, pause for operator.
 
@@ -123,13 +123,13 @@ Post-revert: re-verify against pre-snapshot. If divergent, pause for operator.
 - **70%:** no new parallel agents, finish in-flight only
 - **75%:** MEMORY.md update, full wave snapshot, signal ready to compact
 - **Per-agent-complete:** 5-line append to plan doc
-- **Per-wave-complete:** fold detail into `docs/tmp/pr86-wave-N-details.md`; plan doc gets 5-10-line "Wave N — DONE" block
+- **Per-wave-complete:** fold detail into `docs/tmp/pr86-wave-N-details.md`; plan doc gets 5-10-line "Wave N: DONE" block
 - **Target:** plan doc stays under 400 lines through all waves
 - **Post-operator-response:** confirm understanding in plan doc before acting
 
 ---
 
-## Escalation — no mid-flight pauses
+## Escalation: no mid-flight pauses
 
 All failure modes resolve in-lane. Agent halts its own work, logs full context, TP continues other work. Operator reviews at wave boundary or end of run.
 
@@ -148,7 +148,7 @@ All failure modes resolve in-lane. Agent halts its own work, logs full context, 
 
 **Log format:**
 ```
-HALT [wave.step.agent] — [what] — [full context snippet] — decision: [continue others | await operator]
+HALT [wave.step.agent]; [what]; [full context snippet]; decision: [continue others | await operator]
 ```
 
 ---
@@ -206,7 +206,7 @@ pnpm lint
 | Max Max window cap | 4 concurrent cap; sequential QA; 20% reserve |
 | No rollback path | Reverse scripts per migration + batchId undo fallback |
 | Worktree schema skew | Schema merged to base before Batch A fires |
-| Vercel auth stall | Not a stall — post-merge deploy only, click when convenient |
+| Vercel auth stall | Not a stall, post-merge deploy only, click when convenient |
 | Concurrent DB writes | Explicit no-mutation rule during data waves |
 | Plan doc ballooning | Wave-boundary fold-out to details file |
 | TP context burn on QA | Digest subagent consolidates 3 QA reports |

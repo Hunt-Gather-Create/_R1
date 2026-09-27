@@ -1,4 +1,4 @@
-# Runway Data-Integrity TP — Protocol
+# Runway Data-Integrity TP: Protocol
 
 Project-specific adaptation of the TP↔CC two-session brief, scoped to Runway data work. Read this before any session that handles Runway prod data.
 
@@ -32,7 +32,7 @@ On launch:
 4. Read `.claude/MEMORY.md` for project knowledge layer.
 5. If the prompt mentions a current data ask, hydrate fresh prod state first.
 
-If `TP_ROLE` is unset or invalid, fix it before continuing — do not run prod writes from an `(unknown)` session.
+If `TP_ROLE` is unset or invalid, fix it before continuing; do not run prod writes from an `(unknown)` session.
 
 ---
 
@@ -49,10 +49,10 @@ If `TP_ROLE` is unset or invalid, fix it before continuing — do not run prod w
 ## What data-integrity TP does NOT do
 
 - No code changes outside `scripts/runway-migrations/` (migration scripts) and tracked operator-facing reports.
-- No engineering features, refactors, or fixes — those go to engineering TP.
+- No engineering features, refactors, or fixes; those go to engineering TP.
 - No prod writes without operator approval on the change spec.
 - No batched migrations skipping dry-run.
-- No silent guessing when context is shaky — park with a tracked task.
+- No silent guessing when context is shaky; park with a tracked task.
 
 ---
 
@@ -71,19 +71,19 @@ If `TP_ROLE` is unset or invalid, fix it before continuing — do not run prod w
 
 ---
 
-## Conventions (defaults — bake these in, don't ask)
+## Conventions (defaults: bake these in, don't ask)
 
 - `weekOf` = Monday of `endDate`'s week (lowercase ISO date).
 - `dayOfWeek` lowercase (`monday`, `tuesday`, ...).
 - `resources` role-tagged: `"AM: Kathy"`, `"Dev: Leslie"`, `"CD: Lane"`, `"Client: Bill"`, `"Director: Jay Blakesberg"`.
-- `title` is the WI lookup key — write LAST in a multi-field update.
-- `name` is the project lookup key — rename LAST in a multi-field update.
+- `title` is the WI lookup key: write LAST in a multi-field update.
+- `name` is the project lookup key: rename LAST in a multi-field update.
 - L2 date-write ordering: FORWARD move = `endDate` first; BACKWARD move = `startDate` first.
 - WI notes ≤ 280 chars. Project notes ≤ 500 chars.
 - Never leave nulls in prod (per `feedback_no_nulls_in_prod_db.md`).
 - Audit row + `updatedBy` tag on every write (`<slug>-<YYYY-MM-DD>` pattern).
 - `dayOfWeek` derives from `endDate`, not `startDate`.
-- End users say "Project" / "Task" — internal helpers keep L1 / L2 / WI.
+- End users say "Project" / "Task"; internal helpers keep L1 / L2 / WI.
 
 ---
 
@@ -104,9 +104,9 @@ Signal line format:
 Common data-integrity vocab:
 - `migration drafted at <path>, ready for evaluator review`
 - `evaluator GREEN on <slug>, proceed to apply`
-- `evaluator RED on <slug>, hold — see <path>`
+- `evaluator RED on <slug>, hold; see <path>`
 - `applied <slug> at <timestamp>, post-snapshot at <path>`
-- `BLOCKED — need operator: <one-line>`
+- `BLOCKED, need operator: <one-line>`
 
 ---
 
@@ -132,20 +132,20 @@ No `-sound`, no `-activate`. Routine status traffic does not page operator.
 | Artifact | Path |
 |---|---|
 | Migration scripts | `scripts/runway-migrations/<slug>-<YYYY-MM-DD>.ts` (tracked) |
-| Pre/post snapshots, apply logs | `docs/tmp/` (gitignored — ephemeral) |
+| Pre/post snapshots, apply logs | `docs/tmp/` (gitignored, ephemeral) |
 | State reports (stale sweep, active clients, morning state) | `docs/tmp/` (gitignored unless they're recurring artifacts; recurring → `docs/runway-data-reports/`) |
 | TP-state long-form | `.tp/TP-STATE.md` (tracked) |
 | TP-handoff pointer | `.tp/TP-HANDOFF.json` (auto-managed by PreCompact hook) |
 | Engineering handoffs | `docs/tmp/runway-tp-handoff-<date>.md` (tracked when it carries durable engineering context, otherwise tmp) |
 
-**Anything load-bearing for future sessions must NOT live only in `docs/tmp/`** — that directory is gitignored and dies with branch cleanup.
+**Anything load-bearing for future sessions must NOT live only in `docs/tmp/`**; that directory is gitignored and dies with branch cleanup.
 
 ---
 
 ## Compaction + resume
 
-1. `pwd` — confirm main repo path, not a worktree.
-2. `TaskList` — if a Monitor is already running, do not relaunch.
+1. `pwd`: confirm main repo path, not a worktree.
+2. `TaskList`: if a Monitor is already running, do not relaunch.
 3. Read `.tp/TP-HANDOFF.json` for resume pointer.
 4. Read this protocol if any rule feels uncertain.
 5. Read the latest `morning-state-report-*.md` or `runway-tp-handoff-*.md` if in flight.
@@ -163,7 +163,7 @@ No `-sound`, no `-activate`. Routine status traffic does not page operator.
 
 For all of the above, draft the migration, signal `migration drafted at <path>, ready for evaluator review`, and wait for `evaluator GREEN` before applying.
 
-For single-WI flips, single renames, or single field updates, evaluator pass is optional — operator approval is sufficient.
+For single-WI flips, single renames, or single field updates, evaluator pass is optional; operator approval is sufficient.
 
 ---
 
@@ -173,7 +173,7 @@ For single-WI flips, single renames, or single field updates, evaluator pass is 
 - **Two touchpoints per batch:** operator decides what to change, data-TP applies; never per-edit approvals.
 - **Snapshot before every apply:** revert path always exists.
 - **No nulls in prod.**
-- **Sheet authority cuts both ways:** Status Doc M column is the sole authority — annotation IS NOT a prod status flip.
+- **Sheet authority cuts both ways:** Status Doc M column is the sole authority; annotation IS NOT a prod status flip.
 - **Never bulk-overwrite operator-styled sheet cells.**
 
 ---

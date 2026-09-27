@@ -1,14 +1,14 @@
-# PR #86 Wave 1 + Wave 2 — Integration Details
+# PR #86 Wave 1 + Wave 2: Integration Details
 
 **Status:** Wave 1 COMPLETE. Wave 2 in flight (Chunks 2, 3 code; Asprey data merged).
 
 ---
 
-## Wave 1 — COMPLETE (merged to `feature/runway-pr86-base`)
+## Wave 1: COMPLETE (merged to `feature/runway-pr86-base`)
 
 ### Code
-- **Chunk 4 schema** (4 atomic commits + merge) — 9 new columns across `projects` / `week_items` / `updates`; `recomputeProjectDates` helper; backfill + reverse scripts
-- **Chunk 1 query layer** (5 atomic commits + merge) — PersonWorkload v4 contract, bucketing, status filters, stub filter, Chicago TZ helper
+- **Chunk 4 schema** (4 atomic commits + merge): 9 new columns across `projects` / `week_items` / `updates`; `recomputeProjectDates` helper; backfill + reverse scripts
+- **Chunk 1 query layer** (5 atomic commits + merge): PersonWorkload v4 contract, bucketing, status filters, stub filter, Chicago TZ helper
 
 ### Data (all applied to prod Turso + audit tagged)
 
@@ -20,7 +20,7 @@
 | LPPC | 9 writes | 7 L1s | lppc-v4-realign-2026-04-21 |
 | TAP | 13 writes | 1 client + 1 L1 + 5 L2s | tap-v4-realign-2026-04-21 |
 | HDL | 6 writes | 1 L1 + 3 L2s | hdl-v4-realign-2026-04-21 |
-| Schema backfill | — | 63 week_items + 23 projects | — |
+| Schema backfill | none | 63 week_items + 23 projects | none |
 
 **Wave 1 QA results:** all chunks and data migrations passed QA (MERGE for code, ACCEPT for data). 11 debt items logged to `docs/brain/pr86-chunk4-known-debt.md` for Chunk 5 polish.
 
@@ -28,16 +28,16 @@
 
 ---
 
-## Wave 2 — IN FLIGHT / PARTIAL
+## Wave 2: IN FLIGHT / PARTIAL
 
 ### Completed & merged
 
-- **Asprey v4 touchup** — 3 writes (client.team normalized, engagement_type=retainer, contract_end=2026-04-30). Merged.
+- **Asprey v4 touchup**: 3 writes (client.team normalized, engagement_type=retainer, contract_end=2026-04-30). Merged.
 
 ### In flight
 
-- **Chunk 2 bot layer** — in isolated worktree
-- **Chunk 3 UI board** — in isolated worktree
+- **Chunk 2 bot layer**: in isolated worktree
+- **Chunk 3 UI board**: in isolated worktree
 
 ### Waiting
 
@@ -49,7 +49,7 @@
 ## Post-Wave-2
 
 - Wave 3: Chunk 5 polish + PR prep (debt items from `pr86-chunk4-known-debt.md`) + Llama iteration
-- Post-merge: remaining-6 cleanup (Hopdoddy, Beyond Petro, AG1, ABM, EDF, Wilsonart) — prompt at `docs/tmp/cc-prompts/cc-prompt-remaining-6-postmerge.md`
+- Post-merge: remaining-6 cleanup (Hopdoddy, Beyond Petro, AG1, ABM, EDF, Wilsonart): prompt at `docs/tmp/cc-prompts/cc-prompt-remaining-6-postmerge.md`
 
 ---
 

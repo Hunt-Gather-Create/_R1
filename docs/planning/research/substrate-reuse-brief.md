@@ -39,11 +39,11 @@ Note: an earlier design used SQLite ATTACH for one DB per role. Turso deprecated
 
 Every memory record moves through these stages in order:
 
-1. `raw_research` — unfiltered source material on intake
-2. `extracted_learnings` — distilled principles, tagged and scored, flagged for operator review
-3. `applied_sessions` — what the role actually used in live work
-4. `canonical` — human-approved trusted rules (requires structured provenance)
-5. `rejected_or_stale` — demoted records. Never deleted; restorable.
+1. `raw_research`: unfiltered source material on intake
+2. `extracted_learnings`: distilled principles, tagged and scored, flagged for operator review
+3. `applied_sessions`: what the role actually used in live work
+4. `canonical`: human-approved trusted rules (requires structured provenance)
+5. `rejected_or_stale`: demoted records. Never deleted; restorable.
 
 ---
 
@@ -74,14 +74,14 @@ Every memory record moves through these stages in order:
 
 | Wave | Content | Count | Status |
 |---|---|---|---|
-| W0-a | Ingestion contract, fleet.db schema | — | DONE |
+| W0-a | Ingestion contract, fleet.db schema | none | DONE |
 | W0-b | Pilot 20 memories end-to-end | 20 rows | DONE |
 | W1-a | Fleet/Overwatch store | 103 files | PENDING |
 | W1-b | Skills-usage corpus | 81 SKILL.md files | PENDING |
 | W1-c | Coding standards | ~7 docs | PENDING |
 | W2 | AM role memories + shared AM docs | 125+ files | PENDING |
 | W3 | Meeting notes, client shards | 448 files, 11 clients | PENDING |
-| W4 | Reconciliation + Holdout adversarial QA | — | PENDING |
+| W4 | Reconciliation + Holdout adversarial QA | none | PENDING |
 
 **Blocker before W1:** fleet pillars are not on the ratification allowlist. All 103 W1-a rows would land `needs_review=1`. Operator or schema owner must extend the allowlist or design a batch-ratify step. Routed to Overwatch.
 
@@ -143,11 +143,11 @@ Before every write, Substrate checks cosine similarity against existing memories
 
 ## 4. Reusable Pieces for Runway's Safe-Write Tool
 
-Runway needs a programmatic safe-write tool (used by TP, not a separate role) to write to Runway's staging + prod DB with logic that decides what actually needs updating — analogous to how not every detail from a meeting needs to change Runway. Below are the Substrate patterns Runway can adopt concretely.
+Runway needs a programmatic safe-write tool (used by TP, not a separate role) to write to Runway's staging + prod DB with logic that decides what actually needs updating, analogous to how not every detail from a meeting needs to change Runway. Below are the Substrate patterns Runway can adopt concretely.
 
 ### 4a. Ratification tier routing
 
-**What it is:** A static config-file allowlist (`config/scoring.json`) that routes writes to auto-land, gated, or blocked — no LLM involved in the routing decision.
+**What it is:** A static config-file allowlist (`config/scoring.json`) that routes writes to auto-land, gated, or blocked; no LLM involved in the routing decision.
 
 **How Runway adopts it:** Runway's safe-write tool should have an equivalent `runway-write-allowlist.json` that classifies field + status combinations. For example: `statusField` + `in-progress` + `meeting-sourced` = gated (needs TP review before landing). `taskNo` + append = auto-land. Anything touching `budget` or `contractEnd` = blocked without explicit override. This makes every write traceable and auditable without burning tokens on routing.
 
@@ -161,13 +161,13 @@ Runway needs a programmatic safe-write tool (used by TP, not a separate role) to
 
 **What it is:** Substrate checks cosine similarity before writing to catch semantic duplicates. Threshold: 0.92.
 
-**How Runway adopts it (adapted):** Runway does not need vector embeddings for its simpler structured data. The equivalent is a **field-level diff check**: before writing any field, compare proposed value to current DB value. If they are equal (or meaningfully equivalent — e.g., date format difference only), skip the write entirely and log it as a no-op. This prevents ghost updates that would pollute the audit trail. The DI-TP already does this manually; the safe-write tool should automate it.
+**How Runway adopts it (adapted):** Runway does not need vector embeddings for its simpler structured data. The equivalent is a **field-level diff check**: before writing any field, compare proposed value to current DB value. If they are equal (or meaningfully equivalent, e.g., date format difference only), skip the write entirely and log it as a no-op. This prevents ghost updates that would pollute the audit trail. The DI-TP already does this manually; the safe-write tool should automate it.
 
 ### 4d. Provenance requirement for high-stakes writes
 
 **What it is:** Substrate requires `provenance_source_id` and `provenance_source_span` for any write into the canonical namespace.
 
-**How Runway adopts it:** High-stakes Runway fields (budget amounts, contract dates, SOW references, status flips to `complete` or `canceled`) should require a `sourceRef` — a pointer back to the meeting transcript ID, sheet row, or operator session that justified the change. This is the "show your work" requirement. It makes the audit trail reconstructible and is the equivalent of Substrate's canonical provenance guard.
+**How Runway adopts it:** High-stakes Runway fields (budget amounts, contract dates, SOW references, status flips to `complete` or `canceled`) should require a `sourceRef`: a pointer back to the meeting transcript ID, sheet row, or operator session that justified the change. This is the "show your work" requirement. It makes the audit trail reconstructible and is the equivalent of Substrate's canonical provenance guard.
 
 ### 4e. Adapter / repository interface pattern
 
@@ -189,9 +189,9 @@ Runway needs a programmatic safe-write tool (used by TP, not a separate role) to
 
 Two places in the _R1 codebase already name the substrate seam:
 
-1. **`docs/runway.md`, line 92** — `sheet-sync-ledger-repo.ts` is annotated as "Turso v1 backend; substrate-swappable." This is the ledger adapter. When Substrate reaches prod, this file is the swap point.
+1. **`docs/runway.md`, line 92**: `sheet-sync-ledger-repo.ts` is annotated as "Turso v1 backend; substrate-swappable." This is the ledger adapter. When Substrate reaches prod, this file is the swap point.
 
-2. **`docs/tmp/signals/tp-to-alpha.txt`, lines 1024-1287** — §9.4 "Substrate Migration Path" establishes: (a) no hardwiring of storage access into business logic; (b) adapter-interface layering so v2 substrate swap is one-file-per-record-type; (c) the specific record types flagged as substrate candidates: `sheet_registry`, `sheet_sync_ledger`, `cascade-decision`, `sheet-version`, `sheet-version-intent`. The constraint is still in effect as of the most recent TP signal (line 1230).
+2. **`docs/tmp/signals/tp-to-alpha.txt`, lines 1024-1287**: §9.4 "Substrate Migration Path" establishes: (a) no hardwiring of storage access into business logic; (b) adapter-interface layering so v2 substrate swap is one-file-per-record-type; (c) the specific record types flagged as substrate candidates: `sheet_registry`, `sheet_sync_ledger`, `cascade-decision`, `sheet-version`, `sheet-version-intent`. The constraint is still in effect as of the most recent TP signal (line 1230).
 
 The Runway safe-write tool does not need to call Substrate today. It needs to be built behind the repository/adapter interface shape so the v2 swap is cheap when Substrate reaches prod.
 
@@ -199,7 +199,7 @@ The Runway safe-write tool does not need to call Substrate today. It needs to be
 
 ## Sources
 
-- `/Users/jasonburks/Documents/_AI_/Civilization-Skill-Suite/civ-substrate/` — project root (README, architecture docs, schema, restart prep plan dated 2026-08-09)
-- `/Users/jasonburks/Documents/_AI_/_R1/docs/runway.md` — `sheet-sync-ledger-repo.ts` substrate annotation (line 92)
-- `/Users/jasonburks/Documents/_AI_/_R1/docs/tmp/signals/tp-to-alpha.txt` — §9.4 substrate adapter constraint (lines 1024-1287)
-- `/Users/jasonburks/Documents/_AI_/_R1/di-tp-exit-debrief.md` — coordination substrate signal-lane gotcha (line 244)
+- `/Users/jasonburks/Documents/_AI_/Civilization-Skill-Suite/civ-substrate/`: project root (README, architecture docs, schema, restart prep plan dated 2026-08-09)
+- `/Users/jasonburks/Documents/_AI_/_R1/docs/runway.md`: `sheet-sync-ledger-repo.ts` substrate annotation (line 92)
+- `/Users/jasonburks/Documents/_AI_/_R1/docs/tmp/signals/tp-to-alpha.txt`: §9.4 substrate adapter constraint (lines 1024-1287)
+- `/Users/jasonburks/Documents/_AI_/_R1/di-tp-exit-debrief.md`: coordination substrate signal-lane gotcha (line 244)

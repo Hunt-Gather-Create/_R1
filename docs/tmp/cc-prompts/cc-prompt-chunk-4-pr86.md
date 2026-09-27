@@ -1,8 +1,8 @@
-# CC Prompt — PR #86 Chunk 4: Schema Additions
+# CC Prompt: PR #86 Chunk 4: Schema Additions
 
 ## Mission
 
-Add v4 convention columns to `projects`, `week_items`, and `updates` tables. Generate Drizzle migration. Push to Turso prod. This chunk fires FIRST in Wave 1 — downstream chunks depend on these columns existing.
+Add v4 convention columns to `projects`, `week_items`, and `updates` tables. Generate Drizzle migration. Push to Turso prod. This chunk fires FIRST in Wave 1; downstream chunks depend on these columns existing.
 
 **Safety preamble:**
 > You are operating as a sub-agent on a production codebase. Before making any destructive change, deleting files, or modifying shared configuration, stop and confirm with the operator. Do not assume. Do not guess at intent. If something is ambiguous, surface it before acting.
@@ -22,28 +22,28 @@ Convention reference: `docs/tmp/runway-v4-convention.md` (locked). Read sections
 
 ---
 
-## Step 0 — Verify state
+## Step 0: Verify state
 
 ```bash
 git branch --show-current            # expect feature/runway-pr86-chunk-4
 git log --oneline feature/runway-pr86-base..HEAD   # expect empty (fresh branch)
 git status                            # expect clean
 cat src/lib/db/runway-schema.ts | grep -E "engagement_type|contract_start|blocked_by|triggered_by_update_id"
-# expect no matches — these are what you're adding
+# expect no matches: these are what you're adding
 ```
 
 If any check fails, STOP and report.
 
 ---
 
-## Scope — strict
+## Scope: strict
 
 **IN:**
-- Modify `src/lib/db/runway-schema.ts` — add columns per spec below
+- Modify `src/lib/db/runway-schema.ts`: add columns per spec below
 - Generate SQL migration via `pnpm runway:generate` (or equivalent; check CLAUDE.md)
 - Run `pnpm runway:push` to apply to prod Turso
 - Derivation logic: in `src/lib/runway/operations-writes-week.ts` (or closest appropriate file), recompute `project.start_date` and `project.end_date` from children on L2 write
-- Backfill script: `scripts/runway-migrations/schema-backfill-v4-2026-04-21.ts` — populate `week_items.start_date` from existing `date` field; populate `project.start_date`/`end_date` via derivation
+- Backfill script: `scripts/runway-migrations/schema-backfill-v4-2026-04-21.ts`: populate `week_items.start_date` from existing `date` field; populate `project.start_date`/`end_date` via derivation
 - Tests for derivation logic + schema
 - Drizzle schema and `.sql` migration files must match exactly
 
@@ -61,7 +61,7 @@ If any check fails, STOP and report.
 
 ## Column spec (v4)
 
-### `projects` table — add columns
+### `projects` table: add columns
 
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
@@ -71,7 +71,7 @@ If any check fails, STOP and report.
 | `contract_end` | text (ISO date) | yes | null | Manual override for retainers |
 | `engagement_type` | text | yes | null | Enum at read layer: `project` / `retainer` / `break-fix` |
 
-### `week_items` table — add columns
+### `week_items` table: add columns
 
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
@@ -79,7 +79,7 @@ If any check fails, STOP and report.
 | `end_date` | text (ISO date) | yes | null | Null for single-day items |
 | `blocked_by` | text (JSON array) | yes | null | JSON-encoded array of week_item ids, e.g., `["abc","def"]` |
 
-### `updates` table — add column
+### `updates` table: add column
 
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
@@ -111,7 +111,7 @@ Script `scripts/runway-migrations/schema-backfill-v4-2026-04-21.ts` runs ONCE af
 2. For each row where `start_date IS NULL AND date IS NOT NULL`, set `start_date = date`
 3. Read all `projects`
 4. For each, compute derivation (per logic above) and set `start_date`, `end_date`
-5. Leave `engagement_type`, `contract_start`, `contract_end`, `blocked_by` all null — migrations populate them per-client in Wave 1 data work
+5. Leave `engagement_type`, `contract_start`, `contract_end`, `blocked_by` all null: migrations populate them per-client in Wave 1 data work
 
 Run with the standard migration harness: `pnpm runway:migrate schema-backfill-v4-2026-04-21 --dry-run --target prod`. Verify diff. Then `--apply --target prod --yes`.
 
@@ -133,7 +133,7 @@ pnpm build
 pnpm lint
 ```
 
-All three must be clean. Do NOT invoke `/code-review`, `/atomic-commits`, or `/pr-ready` — TP's QA agents handle those.
+All three must be clean. Do NOT invoke `/code-review`, `/atomic-commits`, or `/pr-ready`: TP's QA agents handle those.
 
 ---
 

@@ -1,4 +1,4 @@
-# E1 Google Service Account — Setup Runbook (Option B)
+# E1 Google Service Account: Setup Runbook (Option B)
 
 **What this is for:** letting the deployed Runway app read the Google schedule Sheet on its own, with no browser login. E1 (#101) already ships the code that uses this. It just needs the key.
 

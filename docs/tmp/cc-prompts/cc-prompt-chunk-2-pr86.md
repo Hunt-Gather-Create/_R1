@@ -1,4 +1,4 @@
-# CC Prompt — PR #86 Chunk 2: Bot Tool / Response Layer
+# CC Prompt: PR #86 Chunk 2: Bot Tool / Response Layer
 
 ## Mission
 
@@ -22,12 +22,12 @@ Convention reference: `docs/tmp/runway-v4-convention.md` §"Resources field form
 
 ---
 
-## Step 0 — Verify state
+## Step 0: Verify state
 
 ```bash
 git branch --show-current
 git log --oneline feature/runway-pr86-wave1..HEAD   # expect empty
-grep -l "PersonWorkload" src/lib/runway/   # should return — Chunk 1's new type is landed
+grep -l "PersonWorkload" src/lib/runway/   # should return: Chunk 1's new type is landed
 grep -l "engagement_type\|blocked_by" src/lib/db/runway-schema.ts   # Chunk 4 landed
 ```
 
@@ -35,17 +35,17 @@ If any fail, STOP.
 
 ---
 
-## Scope — strict
+## Scope: strict
 
 **IN:**
 
-1. `src/lib/runway/operations-reads-week.ts:get_week_items` (or bot-tool equivalent) — match on `resources` field too, not owner-only. Same substring match semantic as owner.
+1. `src/lib/runway/operations-reads-week.ts:get_week_items` (or bot-tool equivalent): match on `resources` field too, not owner-only. Same substring match semantic as owner.
 
-2. New MCP tool `get_week_items_by_project(projectId)` — returns all non-completed L2s under a given project id. Wired into MCP server + bot tool registry.
+2. New MCP tool `get_week_items_by_project(projectId)`: returns all non-completed L2s under a given project id. Wired into MCP server + bot tool registry.
 
-3. New bot tool `get_project_status(clientSlug, projectName)` — returns structured drill-down per interface contract below.
+3. New bot tool `get_project_status(clientSlug, projectName)`: returns structured drill-down per interface contract below.
 
-4. Resources parser — in `src/lib/runway/operations-utils.ts` or similar, add `parseResources(raw: string): ResourceEntry[]` that:
+4. Resources parser: in `src/lib/runway/operations-utils.ts` or similar, add `parseResources(raw: string): ResourceEntry[]` that:
    - Splits on `,` for collaboration (concurrent peers)
    - Splits on `->` for handoffs (sequential)
    - Mixed: `CD: Lane -> Dev: Leslie, CW: Kathy` reads as "Lane hands to Leslie; Kathy on both"
@@ -57,9 +57,9 @@ If any fail, STOP.
    - Smart plate framing rule: when user asks "what's on my plate," bot presents L2s first (by bucket), owned L1s as a rollup count ("You own 4 active engagements"), offer drill-down ("Ask me about Convergix to see what's next")
    - Category-derived tone rule: `launch/deadline` = urgent tone, `approval` = awaiting-signal tone, `kickoff/review/delivery` = neutral
 
-6. Cascade on all categories — in `src/lib/runway/operations-writes-project.ts` or cascade handler. When L1 status flips to terminal (`completed` or `on-hold`), cascade fires for ALL L2 categories (not just `deadline`). Update cascade tests.
+6. Cascade on all categories: in `src/lib/runway/operations-writes-project.ts` or cascade handler. When L1 status flips to terminal (`completed` or `on-hold`), cascade fires for ALL L2 categories (not just `deadline`). Update cascade tests.
 
-7. `triggeredByUpdateId` propagation — cascade-generated audit rows in `updates` table carry FK to the parent update that triggered them. Column added by Chunk 4; this is wiring.
+7. `triggeredByUpdateId` propagation: cascade-generated audit rows in `updates` table carry FK to the parent update that triggered them. Column added by Chunk 4; this is wiring.
 
 8. Tests for all above.
 
@@ -73,7 +73,7 @@ If any fail, STOP.
 
 ---
 
-## Interface contract — `get_project_status` return shape
+## Interface contract: `get_project_status` return shape
 
 ```ts
 export type ProjectStatus = {
@@ -136,7 +136,7 @@ pnpm build
 pnpm lint
 ```
 
-NO `/code-review`, `/atomic-commits`, `/pr-ready` — TP's QA agents handle those.
+NO `/code-review`, `/atomic-commits`, `/pr-ready`: TP's QA agents handle those.
 
 ---
 
@@ -144,7 +144,7 @@ NO `/code-review`, `/atomic-commits`, `/pr-ready` — TP's QA agents handle thos
 
 - NO push, pr, destructive git.
 - Stage touched files only. No `git add -A`.
-- Bot prompt context file is a touchy one — do NOT restructure unrelated sections. Only add/modify sections called out in IN scope.
+- Bot prompt context file is a touchy one. Do NOT restructure unrelated sections. Only add/modify sections called out in IN scope.
 - Resources parser must be pure function (no DB reads), easily testable.
 - Atomic commits per logical unit.
 
