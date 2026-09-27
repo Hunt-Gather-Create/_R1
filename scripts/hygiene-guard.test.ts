@@ -3611,13 +3611,91 @@ describe("hygiene-guard.sh, hold-list reader locale pin (_R1#169): the leading-w
   });
 
   // A caller environment that puts the pre-fix sed calls into "strip
-  // multi-byte whitespace too" mode. LC_ALL is explicitly cleared (not
-  // omitted) so a real LC_ALL already set on the machine running this
-  // suite can never leak through and mask the divergence.
-  const UTF8_ENV = { LANG: "en_US.UTF-8", LC_ALL: "" };
+  // multi-byte whitespace too" mode. Every LC_* category is cleared
+  // explicitly, not just LC_ALL: under POSIX precedence, an LC_CTYPE
+  // already set in whatever launched vitest overrides LANG whenever
+  // LC_ALL is empty, so clearing LC_ALL alone still let an inherited
+  // LC_CTYPE decide the outcome instead of the LANG this object asks
+  // for (_R1#187 diagnosis: this is what the block's old comment
+  // claimed already happened but did not).
+  const UTF8_ENV = {
+    LANG: "en_US.UTF-8",
+    LC_ALL: "",
+    LC_CTYPE: "",
+    LC_COLLATE: "",
+    LC_MESSAGES: "",
+    LC_MONETARY: "",
+    LC_NUMERIC: "",
+    LC_TIME: "",
+    LANGUAGE: "",
+  };
   // A caller environment that already matches the fix's own pin, so a
-  // correct guard behaves identically in both environments.
-  const C_ENV = { LANG: "C", LC_ALL: "C" };
+  // correct guard behaves identically in both environments. LC_ALL=C
+  // already forces every category to C on its own; the rest are
+  // cleared too so this object controls its locale exactly the same
+  // explicit way UTF8_ENV does, rather than relying on LC_ALL's
+  // override behavior to paper over an inherited category.
+  const C_ENV = {
+    LANG: "C",
+    LC_ALL: "C",
+    LC_CTYPE: "",
+    LC_COLLATE: "",
+    LC_MESSAGES: "",
+    LC_MONETARY: "",
+    LC_NUMERIC: "",
+    LC_TIME: "",
+    LANGUAGE: "",
+  };
+
+  // The literal bytes are C2 A0 (NBSP in UTF-8) directly glued to '#', so
+  // this line is either a harmless comment (NBSP stripped, '#' matches) or
+  // a malformed/poisoned data line (NBSP survives, glued to '#' so it
+  // never matches the comment case), and nothing else. Defined once here
+  // so acceptance 1, the :585 mutation test, and the capability probe
+  // below all share the exact same bytes: a byte-sensitive fixture
+  // retyped by hand in more than one place is exactly how _R1#187's own
+  // instrumented probe first went wrong (an ASCII space stood in for the
+  // NBSP and silently made every arm agree).
+  const NBSP_HASH_COMMENT = " # a comment, not real data\n";
+
+  /**
+   * Runtime capability probe (_R1#187): whether THIS host's sed, invoked
+   * with the exact env runGuard builds for UTF8_ENV, treats the fixture's
+   * leading NBSP as [[:space:]] under a genuinely resolved en_US.UTF-8
+   * locale. Measured behavior, not inferred from the OS name or a sed
+   * version string: both drift out of sync with what the regex engine
+   * actually does, which is the whole reason this ticket exists. Verified
+   * own-hands on two platforms: BSD sed on macOS strips it, GNU sed 4.9 on
+   * Debian bookworm, the CI runner's real toolchain, never does, in
+   * either locale, even though the locale itself resolves cleanly with no
+   * fallback. Computed once, at collection time, not per test.
+   */
+  function nbspStrippedUnderUtf8Locale(): boolean {
+    const out = execFileSync("sh", ["-c", "sed -E 's/^[[:space:]]+//'"], {
+      input: NBSP_HASH_COMMENT,
+      encoding: "utf8",
+      env: { ...ISOLATED_GIT_ENV, ...UTF8_ENV },
+    });
+    return out.startsWith("#");
+  }
+
+  const NBSP_STRIP_CAPABLE = nbspStrippedUnderUtf8Locale();
+  const NBSP_SKIP_REASON =
+    "this platform's sed does not class U+00A0 as [[:space:]] under en_US.UTF-8, so the pre-fix :585 defect cannot occur here and there is nothing to catch";
+  const redArm = NBSP_STRIP_CAPABLE ? it : it.skip;
+  function redArmTitle(title: string): string {
+    return NBSP_STRIP_CAPABLE ? title : `${title} -- SKIPPED: ${NBSP_SKIP_REASON}`;
+  }
+  // A bare it.skip only moves the count; the default CI reporter never
+  // prints an individual skipped test's name or title for a passing run,
+  // so the reason above would exist only in source comments nobody
+  // reading CI sees. Printed once at collection time, not inside a test
+  // body, so it survives whichever reporter runs it: this is the same
+  // failure shape the ticket itself is about, a check that stops meaning
+  // anything without anyone noticing (_R1#187).
+  if (!NBSP_STRIP_CAPABLE) {
+    console.error(`hygiene-guard #169 RED arms skipped: ${NBSP_SKIP_REASON}`);
+  }
 
   /**
    * Reverts only the :585 pin (the comment-vs-data decision) on the
@@ -3646,33 +3724,44 @@ describe("hygiene-guard.sh, hold-list reader locale pin (_R1#169): the leading-w
     return mutantPath;
   }
 
-  it("acceptance 1: a comment line whose ONLY content is a leading NBSP then '#' gives the SAME (refuse) result under both locales on the tip, where the two pre-fix locales disagreed", () => {
-    // The literal bytes are C2 A0 (NBSP in UTF-8) directly glued to '#',
-    // so this line is either a harmless comment (NBSP stripped, '#'
-    // matches) or a malformed/poisoned data line (NBSP survives, glued
-    // to '#' so it never matches the comment case), and nothing else.
-    const holdFile = " # a comment, not real data\n";
+  it("acceptance 1 (green): a comment line whose ONLY content is a leading NBSP then '#' is refused under both locales on the real, fixed guard", () => {
     const { workDir } = buildRepo(root, "runway", true, false);
-    writeHoldFile(workDir, "runway", holdFile);
+    writeHoldFile(workDir, "runway", NBSP_HASH_COMMENT);
 
     // GREEN: the real, fixed guard. Both invoking locales must refuse,
     // because a byte that cannot be proven to be a harmless comment must
-    // fail toward refuse, not toward silently passing it through.
+    // fail toward refuse, not toward silently passing it through. This
+    // arm does not depend on the NBSP_STRIP_CAPABLE probe: the fixed
+    // guard pins LC_ALL=C on its own sed call regardless of what the
+    // caller's env asks for, so both locales refuse on every platform.
     const fixedUtf8 = runGuard(workDir, "origin", SCRIPT_PATH, UTF8_ENV);
     const fixedC = runGuard(workDir, "origin", SCRIPT_PATH, C_ENV);
     expect(fixedUtf8.status).toBe(1);
     expect(fixedC.status).toBe(1);
-
-    // RED: 1525c78's own behavior, reproduced by reverting only the :585
-    // pin on the current source. The two locales must disagree here --
-    // that disagreement is the defect this ticket exists to close.
-    const preFixSource = revert585Pin(readFileSync(SCRIPT_PATH, "utf8"));
-    const preFixPath = writeMutant("pre-fix-585.sh", preFixSource);
-    const preFixUtf8 = runGuard(workDir, "origin", preFixPath, UTF8_ENV);
-    const preFixC = runGuard(workDir, "origin", preFixPath, C_ENV);
-    expect(preFixUtf8.status).toBe(0); // NBSP stripped: reads as a harmless comment
-    expect(preFixC.status).toBe(1); // NBSP survives: reads as poisoned/malformed data
   });
+
+  redArm(
+    redArmTitle(
+      "acceptance 1 (red): 1525c78's pre-fix behavior reproduces a real locale disagreement on the NBSP comment line",
+    ),
+    () => {
+      // RED: 1525c78's own behavior, reproduced by reverting only the
+      // :585 pin on the current source. The two locales must disagree
+      // here -- that disagreement is the defect this ticket exists to
+      // close, and it only exists on a platform whose sed treats NBSP
+      // as [[:space:]] under en_US.UTF-8, which is what NBSP_STRIP_CAPABLE
+      // measures before this test is even allowed to run.
+      const { workDir } = buildRepo(root, "runway", true, false);
+      writeHoldFile(workDir, "runway", NBSP_HASH_COMMENT);
+
+      const preFixSource = revert585Pin(readFileSync(SCRIPT_PATH, "utf8"));
+      const preFixPath = writeMutant("pre-fix-585.sh", preFixSource);
+      const preFixUtf8 = runGuard(workDir, "origin", preFixPath, UTF8_ENV);
+      const preFixC = runGuard(workDir, "origin", preFixPath, C_ENV);
+      expect(preFixUtf8.status).toBe(0); // NBSP stripped: reads as a harmless comment
+      expect(preFixC.status).toBe(1); // NBSP survives: reads as poisoned/malformed data
+    },
+  );
 
   it("acceptance 2 (permit-direction control): a REAL hold entry with a leading NBSP glued to its name still poisons the run under both locales, before and after this fix", () => {
     // TP's control: this fix must never let a genuinely poisoned name
@@ -3711,21 +3800,37 @@ describe("hygiene-guard.sh, hold-list reader locale pin (_R1#169): the leading-w
     expect(fixedC.status).toBe(0);
   });
 
-  it("mutation on :585 alone: removing its pin brings back the UTF-8-locale permit of acceptance 1's comment line (caught), while the LC_ALL=C-locale run stays refuse either way (not caught there)", () => {
-    const holdFile = " # a comment, not real data\n";
+  it("mutation on :585 alone (control): removing its pin still leaves the guard refusing under the fixed guard and under the LC_ALL=C-locale mutant run, on every platform", () => {
     const { workDir } = buildRepo(root, "runway", true, false);
-    writeHoldFile(workDir, "runway", holdFile);
+    writeHoldFile(workDir, "runway", NBSP_HASH_COMMENT);
 
     const fixed = runGuard(workDir, "origin", SCRIPT_PATH, UTF8_ENV);
     expect(fixed.status).toBe(1); // GREEN under the real, fixed script
 
+    // This arm does not depend on NBSP_STRIP_CAPABLE: under C_ENV the
+    // mutant's un-pinned sed call inherits LANG=C/LC_ALL=C from the
+    // caller, and no sed implementation on any platform treats NBSP as
+    // [[:space:]] under C, so this stays refuse everywhere.
     const mutantSource = revert585Pin(readFileSync(SCRIPT_PATH, "utf8"));
     const mutantPath = writeMutant("mutant-585-only.sh", mutantSource);
-    const mutantUtf8 = runGuard(workDir, "origin", mutantPath, UTF8_ENV);
     const mutantC = runGuard(workDir, "origin", mutantPath, C_ENV);
-    expect(mutantUtf8.status).toBe(0); // RED under en_US.UTF-8: this is the arm that catches the :585 mutation
     expect(mutantC.status).toBe(1); // this arm does not catch it: the invoking locale already matched C
   });
+
+  redArm(
+    redArmTitle(
+      "mutation on :585 alone (red): removing its pin brings back the UTF-8-locale permit of acceptance 1's comment line",
+    ),
+    () => {
+      const { workDir } = buildRepo(root, "runway", true, false);
+      writeHoldFile(workDir, "runway", NBSP_HASH_COMMENT);
+
+      const mutantSource = revert585Pin(readFileSync(SCRIPT_PATH, "utf8"));
+      const mutantPath = writeMutant("mutant-585-only.sh", mutantSource);
+      const mutantUtf8 = runGuard(workDir, "origin", mutantPath, UTF8_ENV);
+      expect(mutantUtf8.status).toBe(0); // RED under en_US.UTF-8: this is the arm that catches the :585 mutation
+    },
+  );
 
   it("mutation on :597 alone: no fixture in this suite can make its pin observable, because the field-consuming half of the same sed call already normalizes away anything the leading-whitespace half would have stripped differently", () => {
     // Verified by construction, not asserted on faith: any raw line whose
