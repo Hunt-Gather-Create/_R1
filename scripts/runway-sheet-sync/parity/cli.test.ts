@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -53,8 +53,21 @@ function prodSnapshot(): ProdSnapshot {
 }
 
 describe("runParity, the real CLI call site, not a re-implementation of it", () => {
+  // _R1#185: this file's rmSync calls used to be the last statement of each
+  // it, so a failed assertion above them skipped cleanup and leaked the temp
+  // dir. afterEach removes whatever dir the test registered, so a red test
+  // still cleans up, the same shape matched-counter.test.ts uses.
+  let dir: string | undefined;
+
+  afterEach(() => {
+    if (dir) {
+      rmSync(dir, { recursive: true, force: true });
+      dir = undefined;
+    }
+  });
+
   it("produces a verdict file and a markdown reader's aid from two frozen files", () => {
-    const dir = mkdtempSync(join(tmpdir(), "parity-cli-"));
+    dir = mkdtempSync(join(tmpdir(), "parity-cli-"));
     const sheetPath = join(dir, "sheet.json");
     const prodPath = join(dir, "prod.json");
     const outPath = join(dir, "verdict.json");
@@ -83,12 +96,10 @@ describe("runParity, the real CLI call site, not a re-implementation of it", () 
     expect(md).toContain("interventions: 1");
     expect(md).toMatch(/wall-clock: \d+ms/);
     expect(md).toContain("tokens: 0, no model in the path");
-
-    rmSync(dir, { recursive: true, force: true });
   });
 
   it("re-running on the identical two frozen files produces a byte-identical verdict file", () => {
-    const dir = mkdtempSync(join(tmpdir(), "parity-cli-rerun-"));
+    dir = mkdtempSync(join(tmpdir(), "parity-cli-rerun-"));
     const sheetPath = join(dir, "sheet.json");
     const prodPath = join(dir, "prod.json");
     const outPath = join(dir, "verdict.json");
@@ -101,12 +112,10 @@ describe("runParity, the real CLI call site, not a re-implementation of it", () 
     runParity(opts);
     const second = readFileSync(outPath, "utf8");
     expect(second).toBe(first);
-
-    rmSync(dir, { recursive: true, force: true });
   });
 
   it("rejects an --out path with no .json suffix instead of letting the markdown write clobber it", () => {
-    const dir = mkdtempSync(join(tmpdir(), "parity-cli-badout-"));
+    dir = mkdtempSync(join(tmpdir(), "parity-cli-badout-"));
     const sheetPath = join(dir, "sheet.json");
     const prodPath = join(dir, "prod.json");
     writeFileSync(sheetPath, JSON.stringify(fixture()));
@@ -121,8 +130,6 @@ describe("runParity, the real CLI call site, not a re-implementation of it", () 
         outPath: join(dir, "verdict"), // no .json suffix
       })
     ).toThrow(/must end in \.json/);
-
-    rmSync(dir, { recursive: true, force: true });
   });
 
   it("computeParityRunId depends only on the two files' bytes, never on wall-clock time", () => {
