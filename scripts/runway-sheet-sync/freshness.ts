@@ -78,7 +78,13 @@ export function resolveFreshnessDecision(opts: { listingPath?: string; skip: boo
   }
   const stat = statSync(opts.listingPath);
   const ageDays = (Date.now() - stat.mtimeMs) / (1000 * 60 * 60 * 24);
-  const listing = (JSON.parse(readFileSync(opts.listingPath, "utf8")) as { files: DriveFile[] }).files;
+  const parsed = JSON.parse(readFileSync(opts.listingPath, "utf8")) as { files?: unknown };
+  if (!Array.isArray(parsed.files)) {
+    throw new Error(
+      `--drive-listing ${opts.listingPath} does not have the expected shape, { "files": [...] }. Recapture the listing with the google-api skill at a large page size, or check for a hand-edited file.`,
+    );
+  }
+  const listing = parsed.files as DriveFile[];
   return freshnessDecisionForAge({ listingPath: opts.listingPath, listing, ageDays, skip: false });
 }
 
