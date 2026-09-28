@@ -19,23 +19,20 @@
 # and is therefore his decision, not this file's. See docs/runway/test-gates.md.
 #
 # DO NOT GROW THIS FILE. No matrix, no OS spread, no node-version spread, no
-# build, no lint, no tsc. The fleet burned 3,000 Actions minutes in one day on
+# build, no lint. The fleet burned 3,000 Actions minutes in one day on
 # over-engineered pipelines; this shape is the one that does not become that.
-# Anything beyond one job and one command is a new decision, not an edit.
+# Anything beyond one job and one command per job is a new decision, not an edit.
 #
 # Specifically excluded, with reasons:
-#   - `pnpm build` — its first step connects to a live Turso database. It is
+#   - `pnpm build`, its first step connects to a live Turso database. It is
 #     safe only behind SKIP_DB_MIGRATIONS=1, which makes it a compile check
 #     rather than a build check. That belongs in a deliberate step, not an
 #     automatic one.
-#   - `tsc --noEmit` — currently reports ~210 errors, all in test files, which
-#     `next build` never reaches. Gating on an unmeasured backlog just gets the
-#     gate disabled. That is _R1#107 task 2.
-#   - lint — warnings only today; would add noise without adding signal.
+#   - lint, warnings only today, would add noise without adding signal.
 #
 # `pull_request`, NOT `pull_request_target`: our PRs come from a fork, and
 # pull_request_target would run fork code with access to repository secrets.
-# This job needs no secrets — the suite never touches a live database.
+# This job needs no secrets, since the suite never touches a live database.
 name: PR tests
 
 on:
@@ -74,7 +71,7 @@ jobs:
   # chat routes actually redirect an unauthenticated request. It runs
   # under its own vitest config (vitest.reachability.config.mts) via
   # `pnpm test:reachability`, a separate command from the `test` job's
-  # `pnpm test:run` above — one job, one command, same shape, per this
+  # `pnpm test:run` above, one job, one command, same shape, per this
   # file's own standing note. A second command folded into the `test`
   # job would violate that note; a second job with one command does not.
   # No secrets needed: the suite sets its own dummy WORKOS_* env vars at
@@ -98,3 +95,26 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm test:reachability
+
+  # _R1#147. tsc --noEmit now reports zero errors on runway, confirmed
+  # 2026-09-28, so the earlier exclusion above no longer holds. This job
+  # runs it alone, same shape as the other two jobs, one job, one command.
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: npx tsc --noEmit -p tsconfig.json
