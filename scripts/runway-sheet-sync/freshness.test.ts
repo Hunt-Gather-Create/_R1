@@ -14,10 +14,11 @@
  * entries this ticket's tests need are here; see the fixture's own "note"
  * field for what was cut and why.
  */
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { checkFreshness, type DriveFile } from "./freshness";
+import { afterEach, describe, expect, it } from "vitest";
+import { checkFreshness, resolveFreshnessDecision, type DriveFile } from "./freshness";
 import type { SheetConfig } from "./types";
 
 const FIXTURE_PATH = join(__dirname, "__fixtures__", "drive-listing-2026-09-27.json");
@@ -238,6 +239,59 @@ describe("checkFreshness (_R1#154 item 2), against the minimal frozen Drive list
 
       const reversedSameSlug = [...sameSlugOtherClient].reverse();
       expect(checkFreshness(planC, reversedSameSlug).fresh).toBe(true);
+    });
+  });
+
+  describe("_R1#189: a listing file with no files array refuses by name instead of crashing", () => {
+    let dir: string;
+
+    function writeListing(contents: string): string {
+      dir = mkdtempSync(join(tmpdir(), "sheet-sync-listing-189-"));
+      const listingPath = join(dir, "listing.json");
+      writeFileSync(listingPath, contents, "utf8");
+      return listingPath;
+    }
+
+    afterEach(() => {
+      if (dir) rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("acceptance 1a: a listing of {} refuses by name naming the path and the expected shape; on today's code resolveFreshnessDecision silently passes undefined through instead, and checkFreshness throws a raw TypeError downstream", () => {
+      const listingPath = writeListing("{}");
+      expect(() => resolveFreshnessDecision({ listingPath, skip: false })).toThrow(
+        /listing\.json/,
+      );
+      expect(() => resolveFreshnessDecision({ listingPath, skip: false })).toThrow(
+        /\{ "files": \[\.\.\.\] \}/,
+      );
+    });
+
+    it("acceptance 1b: a listing of {\"items\": []} refuses by name naming the path and the expected shape; on today's code resolveFreshnessDecision silently passes undefined through instead, and checkFreshness throws a raw TypeError downstream", () => {
+      const listingPath = writeListing(JSON.stringify({ items: [] }));
+      expect(() => resolveFreshnessDecision({ listingPath, skip: false })).toThrow(
+        /listing\.json/,
+      );
+      expect(() => resolveFreshnessDecision({ listingPath, skip: false })).toThrow(
+        /\{ "files": \[\.\.\.\] \}/,
+      );
+    });
+
+    it("acceptance 2: an empty files array still resolves and refuses through the existing not-present path, unchanged", () => {
+      const listingPath = writeListing(JSON.stringify({ files: [] }));
+      const decision = resolveFreshnessDecision({ listingPath, skip: false });
+      expect(decision.checked).toBe(true);
+      if (decision.checked) {
+        expect(decision.listing).toEqual([]);
+      }
+    });
+
+    it("acceptance 3: a valid listing with real files resolves exactly as before", () => {
+      const listingPath = writeListing(JSON.stringify({ files: listing }));
+      const decision = resolveFreshnessDecision({ listingPath, skip: false });
+      expect(decision.checked).toBe(true);
+      if (decision.checked) {
+        expect(decision.listing).toEqual(listing);
+      }
     });
   });
 });
