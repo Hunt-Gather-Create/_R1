@@ -9,7 +9,9 @@ The hooks are on `Hunt-Gather-Create:runway`. A seat does not vendor anything; i
 Two things changed on 2026-09-27 that a seat will notice:
 
 1. The pre-commit no longer carries its own dash rule. It runs the fleet's central voice core from a read-only mirror on the seat's machine, then `_R1`'s own code-file arm, then the secret-file arm. See section 3.
-2. The central core scans `*.md`, `*.txt`, `*.json`, `*.yaml` and `*.yml` files WHOLE, not just added lines. A commit that touches any such file still carrying an em, en, bar or minus dash anywhere is refused, even if the commit did not add it. On 2026-09-27, 78 tracked files were in that state, most of them verbatim prod snapshots and pinned skill copies that must never be cleaned. opeff#1392 is adding them to the core's hash-pinned exemption list. Until it lands, a seat that must touch one asks Overwatch first. Never `--no-verify`.
+2. The central core scans `*.md`, `*.txt`, `*.json`, `*.yaml` and `*.yml` files WHOLE, not just added lines. A commit that touches any such file still carrying an em, en, bar or minus dash anywhere is refused, even if the commit did not add it. On 2026-09-27, 78 tracked files were in that state. 74 of them are verbatim captures, prod snapshots, pinned skill copies and quoted text, that must never be cleaned; they are pinned by hash in the repo-root `CAPTURE-MANIFEST.json`, merged as `_R1#193` at `a4ce4df`, under the capture roots opeff#1392 added to the core. The other four were prose and have been cleaned: `.github/workflows/pr-tests.yml` in PR 206, and `docs/runway.md`, this doc and `.claude/sessions/runway-tp.md` in PR 207.
+
+A pinned file is exempt only while its bytes match its manifest hash. To change one, first land a commit that updates its hash in `CAPTURE-MANIFEST.json`, reviewed, then commit the file. The core reads the manifest from HEAD, so the two cannot share a commit. Never `--no-verify`.
 
 ## 1. What is on trunk, by blob id
 
