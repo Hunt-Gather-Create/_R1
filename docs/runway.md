@@ -168,7 +168,7 @@ Project and week item lookups use ranked fuzzy matching via `fuzzyMatch()`:
 2. **Starts-with match** -- single if only one, else returns `ambiguous` with options
 3. **Substring match** -- single if only one, else returns `ambiguous` with options
 
-All comparisons normalize dashes and whitespace via `normalizeForMatch()`: em dashes (—), en dashes (–), and hyphens (-) are replaced with spaces, then whitespace is collapsed. This means "Impact Report Dev" matches "Impact Report — Dev" in the database. Items are pre-normalized once per `fuzzyMatch` call for performance.
+All comparisons normalize dashes and whitespace via `normalizeForMatch()`: em dashes, U+2014, en dashes, U+2013, and hyphens are replaced with spaces, then whitespace is collapsed. This means "Impact Report Dev" matches a stored title of "Impact Report" and "Dev" joined by an em dash. Items are pre-normalized once per `fuzzyMatch` call for performance.
 
 When a match is ambiguous, write operations return an error like `"Multiple projects match 'Impact Report': Impact Report Dev, Impact Report Design. Which one?"` with an `available` list so the bot can ask clearly. The `resolveProjectOrFail()` helper encapsulates this pattern for all project write operations.
 

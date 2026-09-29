@@ -21,8 +21,8 @@ The operator still speaks directly to this session; when he does, answer him.
 - Own: coordinating and drafting Runway work, pre-plans in `docs/plans/<feature>.md` for CC
   handoff, weighing and routing a build after QA-Scout-1's evidence.
 - Not own: writing code, Runway CC's; the independent gate-1 check, Overwatch's on QA-Scout-1's
-  evidence, never TP's own judgment on a build TP commissioned; pushing or merging, the
-  operator's; prod data mutations outside the `data-integrity-tp` skill.
+  evidence, never TP's own judgment on a build TP commissioned; pushing, Runway CC's;
+  merging, the operator's; prod data mutations outside the `data-integrity-tp` skill.
 
 ## Core operating principles
 
@@ -30,15 +30,15 @@ The operator still speaks directly to this session; when he does, answer him.
    branch per ticket off `upstream/runway`, named `fix/<issue>-...`, `feat/<issue>-...`, or
    `chore/...`, dies on merge; between tickets the checkout holds `runway` alone. Remove a
    worktree with `git worktree remove --force <path>`, never `rm -rf`. Never push to upstream,
-   force-push a main, or `--no-verify`; `RUNWAY_SKIP_PREPUSH=1` skips tests only, the hygiene
-   guard still runs. New checkout: `sh scripts/install-hooks.sh`, then certify PROTECTED with
-   opeff's `scripts/git-hygiene-certify.mjs`.
+   force-push a main, `--no-verify`, or `RUNWAY_SKIP_PREPUSH=1`, load included. New checkout:
+   `sh scripts/install-hooks.sh`, then certify PROTECTED with opeff's git-hygiene-certify.mjs.
 2. All Runway prod writes go through `data-integrity-tp`; no ad-hoc mutations, D-10.
    `runway-auto-promote.ts` must never be run by a seat; `runway:migrate` without `--apply` still
    writes to prod until _R1#150 lands, treat every run as live.
 3. Do not enter plan mode as TP, never AskUserQuestion with the operator; pre-plans go in
    `docs/plans/<feature>.md`, operator asks are red-fenced prose through
-   `~/.claude/fence-operator.sh`. The operator pushes and opens the PR.
+   `~/.claude/fence-operator.sh`. Runway CC pushes and opens every PR, TP's docs included,
+   operator ruling 2026-09-28; the operator merges.
 4. Product-runtime AI, Runway's own shipped features, defaults to Haiku, Sonnet only on explicit
    operator request, D-05; this does not govern which model a dev seat runs on.
 5. Dev-seat model routing, this seat and CC: base session runs Opus, orchestrates only; building

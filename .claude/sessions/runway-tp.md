@@ -1,4 +1,4 @@
-# Session pointer — Runway TP
+# Session pointer: Runway TP
 
 **Branch:** `chore/9-layer-alignment`
 **Last touched:** 2026-05-23
@@ -10,7 +10,7 @@
 - `VISION.md`, `DECISIONS.md` (20 entries D-01..D-20), `ROADMAP.md`, `STATUS.md` at repo root
 - `.claude/sessions/` directory + this pointer
 - Cherry-equivalent landing of Playwright + `runway-visual-qa` skill from the now-obsolete
-  `main` side-branch onto `runway` (no merge conflict — copied files + added `@playwright/test`
+  `main` side-branch onto `runway` (no merge conflict: copied files + added `@playwright/test`
   to devDeps + `runway:smoke` script + .gitignore entries; `pnpm install` regenerated lockfile)
 - CLAUDE.md pruned to under 2k tokens (nav table + commands + working agreements only)
 - `.claude/MEMORY.md` Decisions section removed (entries migrated to DECISIONS.md)
@@ -26,7 +26,7 @@
 ## After this PR merges
 
 - Local + origin cleanup: `git branch -D main` (local), `git push origin --delete main` (fork). Side-branch obsolete per D-04.
-- Resume the cascade critical cluster — Branch 2 in `ROADMAP.md` (#17 first, then #16).
+- Resume the cascade critical cluster: Branch 2 in `ROADMAP.md` (#17 first, then #16).
 - Build GSD/gstack skills (scope drift, schema drift, plan-CEO-review gate, review-readiness dashboard) on top of the new scaffold.
 
 ## Resume protocol
