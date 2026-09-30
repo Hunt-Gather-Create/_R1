@@ -89,12 +89,13 @@ workflows.
 First, Runway is one repository-visibility change away from being metered. Nothing in the current
 design would survive going private, and nobody would notice until the allowance was gone.
 
-Second, `.github/workflows/cross-pr-recheck.yml` is an amplifier by design: one push to `runway`
-dispatches a full re-run of a two-job suite for up to 15 open pull requests, so a single merge can
-produce 30 job runs. Free here. Copied into a private repo it is the most expensive shape in the
-fleet, and it would look responsible while doing it, because the file is careful and well argued
-about everything except its own cost. If another seat asks to borrow a workflow from this repo,
-that is the one to warn them about.
+Second, `.github/workflows/cross-pr-recheck.yml` used to be an amplifier by design: one push to
+`runway` dispatched a full re-run of a two-job suite for up to 15 open pull requests, so a single
+merge could produce 30 job runs. `_R1#190` replaced that: the rerun never tested the new tip
+anyway, since a rerun reuses the original run's frozen commit, so the file now posts or edits one
+comment per stale open PR instead of dispatching any job runs at all. Free here either way, but
+worth remembering that this file's shape changed, in case an older description of it is still
+floating around somewhere.
 
 ### Why several of these moved
 
