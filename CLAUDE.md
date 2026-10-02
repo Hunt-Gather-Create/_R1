@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Client contact: the operator only, no exceptions
+
+Operator ruling 2026-10-02. No seat, bot, helper or service in this fleet ever sends anything to a client. That includes AM. It covers every channel: email, a DM, a chat message, a shared doc, a comment, any message online. No seat sends email or an online message to anyone outside the fleet, either. Only the operator does. A pipeline ends with the work ready for the operator. If a ticket, dispatch, charter or plan has a seat delivering to a client, stop and raise it to the operator; do not route it.
+
 ## Project Memory
 
 @.claude/MEMORY.md
