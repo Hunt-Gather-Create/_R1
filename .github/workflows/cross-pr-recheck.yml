@@ -1,4 +1,4 @@
-# Cross-PR re-test on runway push, _R1#121.
+# Cross-PR stale notice on runway push, _R1#121, rewritten for _R1#190.
 #
 # _R1#120 is the reason this exists. #108 and #112 each landed green
 # alone. Nothing re-ran the guard suite against the two of them combined
@@ -6,52 +6,84 @@
 # scripts/cross-pr-recheck/RECONSTRUCTION-120-PAIR.md for the
 # reproduction: green, green, red, reconstructed from the actual patches.
 #
-# WHAT THIS DOES, IN ONE SENTENCE. On every push to runway, this
-# re-triggers pr-tests.yml's own existing check run for every open PR
-# targeting runway, so each PR's checks list shows a fresh result
-# against the new tip instead of a stale result against whatever runway
-# was when the PR last pushed.
+# _R1#190 IS WHY THE SHAPE BELOW IS NOT WHAT #121 ORIGINALLY SHIPPED.
+# The original version called the GitHub Actions rerun API against each
+# PR's existing pr-tests.yml run. A rerun reuses the original run's
+# github.sha, the merge commit GitHub computed once when that run first
+# queued, frozen for the life of that run. So the rerun always rebuilt
+# the OLD merge commit and never tested the new runway tip, while still
+# reporting green on the PR's checks as if it had. Confirmed against
+# GitHub's own docs on re running workflows and jobs, and reproduced
+# live on PRs 200 to 202, scripts/cross-pr-recheck/RECONSTRUCTION-120-PAIR.md's
+# sibling ticket. Making the rerun actually test the new tip would need
+# a workflow_dispatch trigger on pr-tests.yml, explicit ref branching in
+# its checkout step, and a Checks API round trip to attach the result to
+# the PR, since a workflow_dispatch run is not attached to a PR's checks
+# the way a pull_request run is. pr-tests.yml's own header says not to
+# grow that file past one job, one command; the operator's 2026-09-29
+# ruling also keeps this repo's checks report only, not a build worth
+# making heavier to re run automatically. So this file no longer tries
+# to retest anything. It tells a PR's author their checks might be
+# stale instead, which is the honest version of what it can actually
+# do without either of those costs.
 #
-# REUSE, NOT REIMPLEMENT. This file does not run pnpm test:run itself and
-# never checks this repo out. It calls the GitHub Actions rerun API on
-# pr-tests.yml's own most recent run for each PR. GitHub regenerates a
-# PR's refs/pull/<n>/merge ref whenever the base branch moves, as long
-# as the PR still merges cleanly, so pr-tests.yml's own checkout step
-# picks up the current runway tip on the rerun without this file
-# touching pr-tests.yml at all. If a PR conflicts with the new tip, the
-# rerun's checkout step fails and that PR shows red for a real reason,
-# a genuine merge conflict, not a bug in this file.
+# WHAT THIS DOES, IN ONE SENTENCE. On every push to runway, for every
+# open PR targeting runway whose branch is not already caught up to the
+# new tip, this posts or edits a single comment naming the new tip and
+# telling the author to push or rebase to get a current check.
 #
-# THE BOUND. At most CROSS_PR_RECHECK_BOUND open PRs get a rerun
-# dispatched per push. Past the bound, the dropped PR numbers are
-# printed explicitly, never silently. An unbounded fan-out on a busy
-# runway day could dispatch dozens of reruns from one push; a bound
-# with a logged drop keeps that in view instead of pretending it did
-# not happen.
+# THE FILE IS STILL NAMED cross-pr-recheck.yml. Renaming it would break
+# the run history link GitHub keeps per file path, and other files
+# reference it by this exact path: ROADMAP.md and
+# scripts/cross-pr-recheck/RECONSTRUCTION-120-PAIR.md. The name: field
+# below is corrected instead, since that is the part a person actually
+# reads on the Actions tab and the PR timeline.
 #
-# RED VERSUS A QUIET SKIP, THE LESSON _R1#97 ALREADY PAID FOR. On #97
-# the shipped-and-reviewed gate could not tell "not applicable" apart
-# from "could not evaluate", so an infrastructure failure would have
-# rendered as a tidy grey skip forever. The same opening exists here: a
-# run that found zero open PRs and a run that could not list PRs at all
-# produce the same silence unless this file makes them differ. So a
-# failure to list open PRs, or a failure to find or dispatch a rerun for
-# any PR in the bounded set, fails this job outright. A genuine zero
-# open PRs is printed as exactly that, a confirmed zero from a
-# successful listing, and the job succeeds.
+# REUSE, NOT REIMPLEMENT. The staleness check below is the same
+# merge-base --is-ancestor ancestry question post-merge-smoke.yml already
+# asks about a different pair of commits, same reasoning: containment,
+# is the new tip reachable from this PR's head, not equality.
 #
-# THE WITNESSABLE ARTIFACT. Not "the workflow exists and parses". A
-# check re-run appearing on an open PR that nobody triggered by hand,
-# dated after an unrelated merge to runway. That is witnessable only
-# after a real merge with a real open PR present, which this file
-# cannot manufacture for itself at review time.
+# THE MARKER. Each comment starts with an HTML comment, invisible when
+# rendered, `<!-- cross-pr-recheck -->`. The real logic lives in
+# scripts/cross-pr-recheck/recheck.sh, which lists a PR's existing
+# comments, finds one starting with the marker, and PATCHes it instead
+# of POSTing a new one. A busy runway day must not bury a PR in
+# duplicate comments saying the same thing.
+#
+# THE BOUND. At most CROSS_PR_RECHECK_BOUND open PRs get checked per
+# push. Past the bound, the dropped PR numbers are printed explicitly,
+# never silently. Carried over unchanged from the original version.
+#
+# RED VERSUS A QUIET SKIP, THE LESSON _R1#97 ALREADY PAID FOR. A run
+# that found zero open PRs and a run that could not list PRs at all must
+# not render the same. A failure to list open PRs, to check a PR's
+# ancestry, or to post or edit its comment fails this job outright. A
+# genuine zero open PRs, or a genuine zero stale PRs among the ones
+# found, is printed as exactly that and the job succeeds.
+#
+# THE WITNESSABLE ARTIFACT. A stale-notice comment appearing on an open
+# PR, dated after an unrelated merge to runway, that nobody posted by
+# hand, with the marker line present so a second push edits it in place
+# instead of piling on. That is witnessable only after a real merge with
+# a real open PR present, which this file cannot manufacture for itself
+# at review time. scripts/cross-pr-recheck/recheck.sh accepts DRY_RUN=1
+# to print what it would post or edit without touching anything, runnable
+# by a person from their own machine against the live repo, read only,
+# for exactly this reason.
+#
+# PERMISSIONS, LEAST NEEDED. pull-requests: write, to read and post or
+# edit PR comments; contents: read, to fetch each PR's head commit and
+# check ancestry locally rather than over the API. actions: write is
+# gone, the old rerun API call is gone with it. pull-requests: read is
+# gone too, since write already implies read on this token's permission
+# model.
 #
 # HAZARD. No deployed host is touched. No pnpm build runs here, no
 # database is touched. GITHUB_TOKEN's value is never printed, echoed, or
-# logged, only its presence is relied on implicitly by gh and the
-# GitHub API client, the same shape as the secret presence check in
-# post-merge-smoke.yml.
-name: Cross-PR re-test on runway push
+# logged, only its presence is relied on implicitly by gh, the same
+# shape as the secret presence check in post-merge-smoke.yml.
+name: Cross-PR stale-notice comment on runway push
 
 on:
   push:
@@ -59,8 +91,7 @@ on:
       - runway
 
 permissions:
-  actions: write
-  pull-requests: read
+  pull-requests: write
   contents: read
 
 concurrency:
@@ -71,91 +102,17 @@ env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   GH_REPO: ${{ github.repository }}
   CROSS_PR_RECHECK_BOUND: 15
+  NEW_TIP: ${{ github.sha }}
 
 jobs:
   recheck:
-    name: re-run pr-tests.yml against every open PR targeting runway
+    name: comment on every open PR targeting runway whose branch is stale, bounded
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: re-run pr-tests.yml for every open PR targeting runway, bounded
-        run: |
-          set -euo pipefail
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-          if ! open_prs_json=$(gh pr list --base runway --state open --json number,headRefOid --limit 500); then
-            echo "COULD NOT LIST OPEN PRS TARGETING RUNWAY. This is an infrastructure failure, not a zero-PRs pass. Failing red rather than reporting a quiet skip."
-            exit 1
-          fi
-
-          # gh pr list can exit 0 and still hand back something that is
-          # not a list, the JSON literal null or an empty object being
-          # the two shapes seen in practice. jq's length builtin accepts
-          # either one and reports zero, which would otherwise print the
-          # same confirmed-zero message a genuine empty listing prints.
-          # That collapse is exactly what this workflow exists to catch
-          # one layer up, so a response that is not an array is red and
-          # named here, never coalesced into an empty list and never
-          # treated as the same green a real zero produces.
-          if ! echo "$open_prs_json" | jq -e 'type == "array"' >/dev/null; then
-            echo "gh pr list returned something that is not a JSON array. Raw response: $open_prs_json. This is not the same as a confirmed zero. Failing red rather than treating a malformed response as an empty list."
-            exit 1
-          fi
-
-          total=$(echo "$open_prs_json" | jq 'length')
-          echo "Found $total open PRs targeting runway."
-
-          if [ "$total" -eq 0 ]; then
-            echo "No open PRs targeting runway. This is a confirmed zero from a successful listing, not a failed lookup, so this run is green."
-            exit 0
-          fi
-
-          bounded_json=$(echo "$open_prs_json" | jq --argjson n "$CROSS_PR_RECHECK_BOUND" '.[0:$n]')
-          bounded_count=$(echo "$bounded_json" | jq 'length')
-          dropped_count=$((total - bounded_count))
-
-          if [ "$dropped_count" -gt 0 ]; then
-            dropped_numbers=$(echo "$open_prs_json" | jq --argjson n "$CROSS_PR_RECHECK_BOUND" -c '.[$n:] | map(.number)')
-            echo "BOUND is $CROSS_PR_RECHECK_BOUND open PRs per push. Dropping $dropped_count PRs past the bound, named here, not silently: $dropped_numbers"
-          fi
-
-          failures=0
-
-          while IFS= read -r pr; do
-            number=$(echo "$pr" | jq -r '.number')
-            head_sha=$(echo "$pr" | jq -r '.headRefOid')
-            echo "PR #$number at $head_sha: looking up the latest pr-tests.yml run"
-
-            # Filtered server side by head_sha, a fixed-format 40 character
-            # hex string, not by branch name. Branch names are attacker
-            # controlled and can legally contain a double quote or a
-            # backtick, which would otherwise break out of this jq filter,
-            # and two open PRs from different forks can share a branch
-            # name, which head_sha never collides on. head_sha filtering
-            # also avoids the runs list being paged out from under a PR
-            # that has not pushed recently, since it is a server side
-            # filter, not a client side scan of the most recent 100 runs
-            # across every PR combined.
-            run_id=$(gh api --jq '.workflow_runs[0].id' \
-              "repos/$GH_REPO/actions/workflows/pr-tests.yml/runs?event=pull_request&head_sha=$head_sha&per_page=1")
-
-            if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
-              echo "COULD NOT FIND a pr-tests.yml run for PR #$number at $head_sha. A re-run cannot be dispatched for it. Marking this job red rather than skipping it quietly."
-              failures=$((failures + 1))
-              continue
-            fi
-
-            echo "PR #$number at $head_sha: dispatching a re-run of pr-tests.yml run $run_id"
-            if gh api -X POST "repos/$GH_REPO/actions/runs/$run_id/rerun" >/dev/null; then
-              echo "PR #$number at $head_sha: re-run dispatched for workflow run $run_id, against runway's current tip."
-            else
-              echo "COULD NOT DISPATCH a re-run for PR #$number at $head_sha, run $run_id. Marking this job red rather than skipping it quietly."
-              failures=$((failures + 1))
-            fi
-          done < <(echo "$bounded_json" | jq -c '.[]')
-
-          if [ "$failures" -gt 0 ]; then
-            echo "$failures of $bounded_count PRs in the bounded set could not be re-checked. Failing red rather than reporting a quiet pass."
-            exit 1
-          fi
-
-          echo "Dispatched a re-run for all $bounded_count PRs in the bounded set."
+      - name: post or edit a stale-notice comment on every open PR targeting runway, bounded
+        run: bash scripts/cross-pr-recheck/recheck.sh
