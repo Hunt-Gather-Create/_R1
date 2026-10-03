@@ -8,9 +8,9 @@ for _code_glob in '*.ts' '*.tsx' '*.js' '*.mjs' '*.sh'; do
   if [ -n "$_added_code" ]; then
     _code_hits=$(printf '%s\n' "$_added_code" | perl -CS -ne 'print if /[\x{2013}\x{2014}]/')
     if [ -n "$_code_hits" ]; then
-      echo "pre-commit BLOCK (fleet voice): em/en dash in newly added $_code_glob. Use hyphen, period, comma, colon, semicolon."
+      echo "pre-commit BLOCK (fleet voice): em/en dash in newly added $_code_glob. Rewrite with a period, comma, colon, or semicolon; never a hyphen or other stand-in."
       printf '%s\n' "$_code_hits" | head -5
-      echo "Bypass only if certain: git commit --no-verify"
+      echo "Fix the flagged lines. If you believe the gate is wrong, ask Overwatch."
       exit 1
     fi
   fi

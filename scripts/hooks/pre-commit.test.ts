@@ -179,7 +179,7 @@ describe(".githooks/pre-commit, code-file dash arm (_R1#184)", () => {
     expect(result.combined).toMatch(STUB_CORE_MARKER);
     expect(result.combined).toMatch(/pre-commit BLOCK \(fleet voice\)/);
     expect(result.combined).toMatch(/\.ts/);
-    expect(result.combined).toMatch(/Bypass only if certain: git commit --no-verify/);
+    expect(result.combined).toMatch(/Fix the flagged lines\. If you believe the gate is wrong, ask Overwatch\./);
     expect(result.head).toBe(beforeHead);
   });
 

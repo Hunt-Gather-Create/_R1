@@ -16,10 +16,10 @@ _secrets=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep -E
 if [ -n "$_secrets" ]; then
   echo "pre-commit BLOCK: possible secret file(s) staged:"
   printf '%s\n' "$_secrets"
-  echo "Bypass only if certain: git commit --no-verify"
+  echo "Remove the flagged file from the commit. If you believe the gate is wrong, ask Overwatch."
   exit 1
 fi
-# Fleet block ends above, at fleet blob 14c9b4ec.
+# Fleet-generic content, the core load and the secret check, ends above. Below is the _R1-specific loader for the local voice-lint arm.
 # opeff#1390 step 1: the repo-specific _R1#184 code-arm voice gate moved to
 # .githooks/voice-lint-local.sh, verbatim, per Overwatch's ruling that a
 # repo-specific gate lives there, not inline here. REQUIRED, not optional:
@@ -32,7 +32,7 @@ _hookdir="$(cd "$(dirname "$0")" && pwd)"
 _VOICE_LINT_LOCAL="$_hookdir/voice-lint-local.sh"
 if [ ! -r "$_VOICE_LINT_LOCAL" ]; then
   echo "pre-commit BLOCK: voice-lint-local.sh is missing or unreadable at $_VOICE_LINT_LOCAL. Refusing to pass a commit with the repo-specific voice gate absent." >&2
-  echo "Bypass only if certain: git commit --no-verify" >&2
+  echo "Restore voice-lint-local.sh. If you believe the gate is wrong, ask Overwatch." >&2
   exit 1
 fi
 sh "$_VOICE_LINT_LOCAL" || exit 1
