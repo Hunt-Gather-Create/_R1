@@ -182,6 +182,23 @@ The tool still carries column J into notes as text. `assertPeopleFromRoleMap` in
 value that an independent role map lookup of that row's own label does not produce. It replaces
 `assertToolNeverPlansField`, which enforced the rule as first signed.
 
+**Rule R7, code drift.** Amended 2026-10-24 by the operator's ruling on
+[_R1#195](https://github.com/jasonburks23/_R1/issues/195), answer C. R7 came from the M1 plan: prod
+may track the engagement under the code the sheet banner carries, so banner drift is reported and
+the run goes on. That still holds for the banner. The file title is now held to a stricter line.
+
+1. The code at the start of the Drive file name must agree with the registry's `engagementCode`.
+   A title that drops the registry's two digit sub-number agrees: `BPC-2602` names the same
+   engagement as `BPC-2602-01`.
+2. A title code that disagrees stops the run before the sheet is read. The message names the sheet
+   id, the title code, the registry code, and how to add an exception.
+3. A registry entry may list exact title codes it accepts, in `acceptedTitleCodes` in
+   `scripts/runway-sheet-sync/config.ts`. The run reports each use. The first entry is the Soundly
+   RX Card sheet, titled `SND-2602`, registry `SND-2603`. Old documents keep their labels, operator
+   ruling 2026-10-07, so that mismatch is permanent. Any other title code on that sheet still stops.
+4. The title comes from the Drive listing. A run with `--skip-freshness-check` has no listing, so
+   it reports that the title code was not checked.
+
 ## 7. What this document does NOT decide
 
 Named so nobody reads silence as a ruling.

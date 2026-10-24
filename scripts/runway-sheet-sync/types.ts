@@ -38,6 +38,8 @@ export interface SheetConfig {
    * the entry, not a type-system inconvenience to paper over.
    */
   planSlug?: string;
+  /** Exact Drive title codes this sheet may carry although they disagree with engagementCode. Each one is a written exception. */
+  acceptedTitleCodes?: string[];
 }
 
 /** Fixture file shape produced by the google-api skill export step. */

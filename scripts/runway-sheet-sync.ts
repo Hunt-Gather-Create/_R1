@@ -35,6 +35,7 @@ import { assertTarget } from "./runway-sheet-sync/target-guard";
 import { applyPayloads } from "./runway-sheet-sync/apply";
 import { writePreSnapshot, postVerifyDiff } from "./runway-sheet-sync/snapshot";
 import { checkFreshness, resolveFreshnessDecision, type FreshnessDecision } from "./runway-sheet-sync/freshness";
+import { checkTitleCode } from "./runway-sheet-sync/title-code-check";
 
 const DEFAULT_FIXTURES_DIR = "docs/tmp/data/runway-sync/fixtures";
 const DEFAULT_OUT_DIR = "docs/tmp/data/runway-sync";
@@ -83,6 +84,7 @@ export async function runSheet(
   } else {
     freshnessNote = `FRESHNESS NOT CHECKED: ${freshness.reason}`;
   }
+  const titleCodeNote = checkTitleCode(config, freshness.checked ? freshness.listing : null);
 
   let fixture: SheetFixture;
   if (live) {
@@ -98,6 +100,7 @@ export async function runSheet(
 
   const parsed = parseSheet(fixture, config);
   if (freshnessNote) parsed.flags.push(freshnessNote);
+  if (titleCodeNote) parsed.flags.push(titleCodeNote);
 
   // Ledger persistence: --live uses the durable DB ledger (sheet_sync_ledger,
   // via the repo) so identity survives ephemeral serverless runs; fixture runs
