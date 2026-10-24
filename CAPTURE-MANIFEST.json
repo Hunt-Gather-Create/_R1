@@ -80,10 +80,6 @@
     "sha256": "2530fb68cb9c23ecc34ba5af188a75dc4b9d8d79bc4f578fdd0c4ff5d99245a0"
   },
   {
-    "path": "docs/data-walks/fixtures/ammonia/prod-snapshot.json",
-    "sha256": "b4267e668acfc321e5a043cfe0bd0be098901667401a0bb399ab436d66d3ffd2"
-  },
-  {
     "path": "docs/planning/exec-triage-pretriage-2026-07-28.md",
     "sha256": "a09f0fad5add7133470d08d9e73f3211dc032ef04a99755d0e3f6f42388a102b"
   },

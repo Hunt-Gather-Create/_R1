@@ -32,6 +32,9 @@ runway-local.db
 # Runway data
 data/
 
+# Captured client sheets and prod snapshots stay local, never in git
+.data-walks/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
