@@ -89,7 +89,7 @@ function bundle(wi: Partial<RunwayClientBundle["weekItems"][number]> = {}): Runw
 const EMPTY_L1: RunwayClientBundle = { ...bundle(), weekItems: [] };
 
 function run(tasks: LeafTask[], b: RunwayClientBundle, map: RoleMap = MAP) {
-  const diff = diffSheet(parsedWith(tasks), b, ledger(), "run-1", map);
+  const diff = diffSheet(parsedWith(tasks), b, ledger(), { runId: "run-1", roleMap: map });
   return { diff, payloads: buildPayloads(diff, "run-1") };
 }
 
@@ -253,7 +253,7 @@ describe("the Ammonia build set plans what a person set by hand", () => {
     );
     const base = parsedWith(tasks);
     const parsed: ParsedSheet = { ...base, config: { ...base.config, clientSlug: "beyond-petro" } };
-    const diff = diffSheet(parsed, EMPTY_L1, ledger(), "run-1");
+    const diff = diffSheet(parsed, EMPTY_L1, ledger(), { runId: "run-1", roleMap: ROLE_MAP });
     const creates = buildPayloads(diff, "run-1").filter((p) => p.op === "createWeekItem");
     expect(creates.map((p) => [p.params.title, p.params.owner, p.params.resources])).toEqual(
       cases.map(([, owner, resources], i) => [`Task ${i + 1}`, owner, resources])

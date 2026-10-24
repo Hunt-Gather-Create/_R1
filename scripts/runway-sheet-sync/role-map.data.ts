@@ -5,6 +5,7 @@
  * Holds only the staffing table on _R1#203. A label not listed here is a
  * counted refusal sent to review, never a guess.
  */
+import { CLIENT_SLUGS } from "./client-slugs";
 import type { ClientRoleMap, RoleBinding, RoleMap } from "./role-map";
 
 const AM: RoleBinding = { roleTag: "AM", person: "Kathy" };
@@ -38,8 +39,8 @@ function client(clientLabels: string[], clientName: string, only: ClientRoleMap[
 }
 
 export const ROLE_MAP: RoleMap = {
-  "beyond-petro": client(["BP", "Beyond Petro"], "Beyond Petro"),
-  lppc: client(["LPPC"], "LPPC"),
-  nfm: client(["NFM"], "NFM"),
-  soundly: client(["Soundly"], "Soundly", { Josefina: { roleTag: "Dev", person: "Josefina" } }),
+  [CLIENT_SLUGS.beyondPetro]: client(["BP", "Beyond Petro"], "Beyond Petro"),
+  [CLIENT_SLUGS.lppc]: client(["LPPC"], "LPPC"),
+  [CLIENT_SLUGS.nfm]: client(["NFM"], "NFM"),
+  [CLIENT_SLUGS.soundly]: client(["Soundly"], "Soundly", { Josefina: { roleTag: "Dev", person: "Josefina" } }),
 };

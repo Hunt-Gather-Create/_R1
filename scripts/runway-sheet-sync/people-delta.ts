@@ -3,6 +3,8 @@
  * payloads and the parity harness read. Values come only from role-map.ts.
  */
 import { planPeople, type PeoplePlan, type RoleMap } from "./role-map";
+import { refusedLabels } from "./refusal-record";
+import { PEOPLE_FIELDS } from "./sync-fields";
 import type { FieldDelta, RowDiff } from "./types";
 
 /**
@@ -15,7 +17,7 @@ export function peopleDeltas(
 ): FieldDelta[] {
   if (plan.kind !== "planned") return [];
   const deltas: FieldDelta[] = [];
-  for (const field of ["owner", "resources"] as const) {
+  for (const field of PEOPLE_FIELDS) {
     const runway = wi[field] ?? null;
     if (runway === plan[field]) continue;
     deltas.push({
@@ -32,5 +34,5 @@ export function peopleDeltas(
 export function attachPeople(rd: RowDiff, clientSlug: string, roleMap: RoleMap): number {
   if (!rd.leaf) return 0;
   rd.people = planPeople(rd.leaf.resource, clientSlug, roleMap);
-  return rd.people.kind === "refused" ? rd.people.unmapped.length : 0;
+  return refusedLabels(rd).length;
 }

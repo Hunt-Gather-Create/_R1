@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assertPeopleFromRoleMap, computeParity, reconcileVerdicts, structuralProbeDiff } from "./compare";
-import type { RoleMap } from "../role-map";
+import { ROLE_MAP, type RoleMap } from "../role-map";
 import { buildPayloads } from "../payloads";
 import type { ProdWeekItemRow } from "./types";
 import type { LeafTask, ParsedSheet, RowDiff, SheetConfig, SyncPayload } from "../types";
@@ -280,7 +280,7 @@ describe("computeParity, comparator unit test: owner/resources/category on an 18
         })
       ),
     };
-    const result = computeParity(parsed, prodSnapshot, "test-run-id");
+    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-id", roleMap: ROLE_MAP });
     expect(result.rows).toHaveLength(18);
     expect(result.rows.every((r) => r.verdict === "DISAGREE")).toBe(true);
     for (const row of result.rows) {
@@ -300,8 +300,8 @@ describe("computeParity, comparator unit test: owner/resources/category on an 18
       projects: [],
       weekItems: [prodRow({ id: "wi-x", owner: "Lane" })],
     };
-    const first = computeParity(parsed, prodSnapshot, "fixed-run-id");
-    const second = computeParity(parsed, prodSnapshot, "fixed-run-id");
+    const first = computeParity(parsed, prodSnapshot, { runId: "fixed-run-id", roleMap: ROLE_MAP });
+    const second = computeParity(parsed, prodSnapshot, { runId: "fixed-run-id", roleMap: ROLE_MAP });
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
   });
 });
@@ -325,7 +325,7 @@ describe("_R1#156 intervention count: HAND_ONLY + DISAGREE, the rows the tool co
         prodRow({ id: "wi-3", projectId: "p-1", title: "Prod-only task B", weekOf: "2026-06-15" }),
       ],
     };
-    const result = computeParity(parsed, prodSnapshot, "test-run-interventions-3");
+    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-interventions-3", roleMap: ROLE_MAP });
     expect(result.counts).toEqual({ AGREE: 0, DISAGREE: 1, TOOL_ONLY: 0, HAND_ONLY: 2 });
     expect(result.interventions).toBe(3);
 
@@ -359,7 +359,7 @@ describe("_R1#156 intervention count: HAND_ONLY + DISAGREE, the rows the tool co
         }),
       ],
     };
-    const result = computeParity(parsed, prodSnapshot, "test-run-interventions-0");
+    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-interventions-0", roleMap: ROLE_MAP });
     expect(result.counts).toEqual({ AGREE: 1, DISAGREE: 0, TOOL_ONLY: 0, HAND_ONLY: 0 });
     expect(result.interventions).toBe(0);
   });
@@ -425,9 +425,9 @@ describe("assertPeopleFromRoleMap, owner and resources only from the role map, r
       projects: [{ id: "p-1", name: "Widget Refresh", status: null, category: null, notes: "ACM-2601-01" }],
       weekItems: [prodRow({ category: "kickoff", owner: "Lane", resources: "CD: Lane" })],
     };
-    const result = computeParity(parsed, prodSnapshot, "test-run-map", "", MAP);
+    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-map", roleMap: MAP });
     expect(result.counts).toEqual({ AGREE: 1, DISAGREE: 0, TOOL_ONLY: 0, HAND_ONLY: 0 });
-    const disagree = computeParity(parsed, { ...prodSnapshot, weekItems: [prodRow({ category: "kickoff", owner: "Kathy", resources: "CD: Lane" })] }, "test-run-map", "", MAP);
+    const disagree = computeParity(parsed, { ...prodSnapshot, weekItems: [prodRow({ category: "kickoff", owner: "Kathy", resources: "CD: Lane" })] }, { runId: "test-run-map", roleMap: MAP });
     expect(disagree.rows[0].mismatchedFields).toEqual([{ field: "owner", tool: "Lane", hand: "Kathy" }]);
   });
 

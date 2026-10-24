@@ -28,6 +28,7 @@ import { loadDbLedger, saveDbLedger } from "./runway-sheet-sync/ledger-db";
 import { parseSheet } from "./runway-sheet-sync/parse-sheet";
 import { buildPayloads } from "./runway-sheet-sync/payloads";
 import { renderReport } from "./runway-sheet-sync/report";
+import { ROLE_MAP } from "./runway-sheet-sync/role-map";
 import { readClientBundle } from "./runway-sheet-sync/runway-read";
 import { chooseLiveSource, liveSourceLine, readSheetLive } from "./runway-sheet-sync/sheets-client";
 import type { SheetFixture } from "./runway-sheet-sync/types";
@@ -37,11 +38,10 @@ import { writePreSnapshot, postVerifyDiff } from "./runway-sheet-sync/snapshot";
 import { checkFreshness, resolveFreshnessDecision, type FreshnessDecision } from "./runway-sheet-sync/freshness";
 import { checkTitleCode } from "./runway-sheet-sync/title-code-check";
 import { recordingRefusal, refusingAll } from "./runway-sheet-sync/refusal-record";
+import { LIVE_RANGE } from "./runway-sheet-sync/columns";
 
 const DEFAULT_FIXTURES_DIR = "docs/tmp/data/runway-sync/fixtures";
 const DEFAULT_OUT_DIR = "docs/tmp/data/runway-sync";
-// Live reads use the same tab + range the fixtures were exported from.
-const LIVE_RANGE = "Task Tracker & Gantt Chart!A1:N";
 
 function arg(name: string): string | undefined {
   const idx = process.argv.indexOf(`--${name}`);
@@ -116,7 +116,7 @@ async function syncSheet(
   }
   const runId = computeRunId(sheetId, fixture);
 
-  const parsed = parseSheet(fixture, config);
+  const parsed = parseSheet(fixture, { config });
   if (freshnessNote) parsed.flags.push(freshnessNote);
   if (titleCodeNote) parsed.flags.push(titleCodeNote);
 
@@ -140,7 +140,7 @@ async function syncSheet(
   }
 
   const bundle = await readClientBundle(db, config.clientSlug);
-  const diff = diffSheet(parsed, bundle, ledger, runId);
+  const diff = diffSheet(parsed, bundle, ledger, { runId, roleMap: ROLE_MAP });
   const payloads = buildPayloads(diff, runId);
   // Ledger row count BEFORE this run's reconcile/link — the fact that tells
   // the report whether a zero match count is a true first run or a matcher
