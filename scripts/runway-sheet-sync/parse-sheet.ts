@@ -47,7 +47,11 @@ function parseBanner(values: (string | undefined)[][], config: SheetConfig): Omi
   };
 }
 
-export function parseSheet(fixture: SheetFixture, config: SheetConfig): ParsedSheet {
+export interface ParseOptions {
+  config: SheetConfig;
+}
+
+export function parseSheet(fixture: SheetFixture, { config }: ParseOptions): ParsedSheet {
   const { rows, headerRowNumber } = classifyRows(fixture.values);
   const flags: string[] = [];
 

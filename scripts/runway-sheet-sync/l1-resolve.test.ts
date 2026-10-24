@@ -4,6 +4,7 @@ import { BUNDLE, emptyLedger, parsedWith } from "./diff.test-fixtures";
 import { resolveL1 } from "./l1-resolve";
 import { buildPayloads } from "./payloads";
 import { renderReport } from "./report";
+import { ROLE_MAP } from "./role-map";
 import type { RunwayClientBundle } from "./runway-read";
 import type { Ledger, ParsedSheet, SheetConfig } from "./types";
 
@@ -331,7 +332,7 @@ describe("resolveL1: named resolvers (#153)", () => {
         },
       ],
     };
-    const diff = diffSheet(parsed, bundle, emptyLedger(), "run-lppc");
+    const diff = diffSheet(parsed, bundle, emptyLedger(), { runId: "run-lppc", roleMap: ROLE_MAP });
     expect(diff.l1.resolved).toBe(true);
     expect(diff.l1.projectId).toBe("p_revamp");
     expect(diff.l1.method).toBe("week-item-carry");
@@ -402,7 +403,7 @@ describe("resolveL1: named resolvers (#153)", () => {
         },
       ],
     };
-    const diff = diffSheet(parsed, bundle, emptyLedger(), "run-soundly");
+    const diff = diffSheet(parsed, bundle, emptyLedger(), { runId: "run-soundly", roleMap: ROLE_MAP });
     expect(diff.l1.resolved).toBe(false);
     expect(diff.l1.method).toBe("none");
     expect(diff.l1.reviewCandidate).toBeUndefined();

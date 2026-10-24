@@ -28,6 +28,7 @@ import { dirname } from "path";
 import { createRunwayDb, runIfDirect } from "../../lib/run-script";
 import { parseSheet } from "../parse-sheet";
 import { renderParityReport } from "../report";
+import { ROLE_MAP } from "../role-map";
 import type { SheetConfig, SheetFixture } from "../types";
 import { computeParity } from "./compare";
 import { captureProdSnapshot, writeProdSnapshot } from "./prod-snapshot";
@@ -103,9 +104,9 @@ export function runParity(opts: RunParityOptions): ParityResult {
   // below — those stay bytes-of-the-two-frozen-files only, so a re-run on
   // the same inputs still produces a byte-identical verdict file.
   const wallClockStart = Date.now();
-  const parsed = parseSheet(fixture, config);
+  const parsed = parseSheet(fixture, { config });
   const runId = computeParityRunId(sheetFixtureRaw, prodSnapshotRaw);
-  const result = computeParity(parsed, prodSnapshot, runId, fixture.exportedAt);
+  const result = computeParity(parsed, prodSnapshot, { runId, sheetFrozenAt: fixture.exportedAt, roleMap: ROLE_MAP });
   const wallClockMs = Date.now() - wallClockStart;
 
   writeParityResult(result, opts.outPath);

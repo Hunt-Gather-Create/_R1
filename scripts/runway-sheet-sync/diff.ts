@@ -12,16 +12,21 @@ import { resolveL1 } from "./l1-resolve";
 import { ledgerKey, linkEntry, normalizeTitle } from "./ledger";
 import { WI_CANDIDATE_THRESHOLD, WI_MATCH_THRESHOLD } from "./match-thresholds";
 import { attachPeople } from "./people-delta";
-import { planPeople, ROLE_MAP, type RoleMap } from "./role-map";
+import { planPeople, type RoleMap } from "./role-map";
 import type { RunwayClientBundle } from "./runway-read";
 import type { DiffResult, Disposition, Ledger, ParsedSheet, RowDiff } from "./types";
+
+/** Config the caller passes in; the stage reads no registry or role map of its own. */
+export interface DiffOptions {
+  runId: string;
+  roleMap: RoleMap;
+}
 
 export function diffSheet(
   parsed: ParsedSheet,
   bundle: RunwayClientBundle,
   ledger: Ledger,
-  runId: string,
-  roleMap: RoleMap = ROLE_MAP
+  { runId, roleMap }: DiffOptions
 ): DiffResult {
   const l1 = resolveL1(parsed, bundle, ledger);
   const rowDiffs: RowDiff[] = [];

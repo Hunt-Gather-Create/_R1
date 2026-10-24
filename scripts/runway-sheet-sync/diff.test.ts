@@ -3,6 +3,7 @@ import { diffSheet } from "./diff";
 import { BUNDLE, emptyLedger, leaf, parsedWith } from "./diff.test-fixtures";
 import { buildPayloads } from "./payloads";
 import { renderReport } from "./report";
+import { ROLE_MAP } from "./role-map";
 import type { RunwayClientBundle } from "./runway-read";
 
 describe("diffSheet", () => {
@@ -29,7 +30,7 @@ describe("diffSheet", () => {
     ];
     const ledger = emptyLedger();
     // reconcile ledger first (normally done by CLI)
-    const diff = diffSheet(parsedWith(tasks), BUNDLE, ledger, "run-1");
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, ledger, { runId: "run-1", roleMap: ROLE_MAP });
 
     expect(diff.l1.projectId).toBe("p_widget");
 
@@ -63,14 +64,14 @@ describe("diffSheet", () => {
         taskNo: "7.1",
       }),
     ];
-    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), { runId: "run-1", roleMap: ROLE_MAP });
     const rd = diff.rowDiffs.find((r) => r.leaf)!;
     expect(rd.disposition).toBe("missing-in-runway");
     expect(rd.weekItemId).toBeUndefined();
   });
 
   it("skips orphan analysis for unfilled templates (zero leaf tasks)", () => {
-    const diff = diffSheet(parsedWith([]), BUNDLE, emptyLedger(), "run-1");
+    const diff = diffSheet(parsedWith([]), BUNDLE, emptyLedger(), { runId: "run-1", roleMap: ROLE_MAP });
     expect(diff.orphans).toHaveLength(0);
     expect(diff.counts["runway-only-orphan"]).toBe(0);
     expect(
@@ -92,7 +93,7 @@ describe("diffSheet", () => {
         derivedStatus: "completed",
       }),
     ];
-    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), { runId: "run-1", roleMap: ROLE_MAP });
     const kick = diff.rowDiffs.find((r) => r.leaf)!;
     const dateFields = kick
       .deltas!.filter((d) => d.field.endsWith("Date"))
@@ -119,7 +120,7 @@ describe("diffSheet", () => {
       state: "pending-create",
       lastSeenRunId: "run-0",
     };
-    const diff = diffSheet(parsedWith(tasks), BUNDLE, ledger, "run-1");
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, ledger, { runId: "run-1", roleMap: ROLE_MAP });
     const rd = diff.rowDiffs.find((r) => r.leaf)!;
     expect(rd.disposition).toBe("missing-in-runway");
     expect(rd.collision).toBe(true);
@@ -144,7 +145,7 @@ describe("diffSheet", () => {
       state: "matched",
       lastSeenRunId: "run-0",
     };
-    const diff = diffSheet(parsedWith(tasks), BUNDLE, ledger, "run-1");
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, ledger, { runId: "run-1", roleMap: ROLE_MAP });
     const rd = diff.rowDiffs.find((r) => r.leaf)!;
     expect(rd.weekItemId).toBe("wi_kick");
     expect(rd.note).toBe("ledger-banked match");
@@ -160,7 +161,7 @@ describe("buildPayloads", () => {
         taskNo: "3.1",
       }),
     ];
-    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), { runId: "run-1", roleMap: ROLE_MAP });
     const payloads = buildPayloads(diff, "run-1");
     expect(payloads).toHaveLength(1);
     const p = payloads[0];
@@ -184,7 +185,7 @@ describe("buildPayloads", () => {
       parsedWith([leaf({})]),
       noL1,
       emptyLedger(),
-      "run-1"
+      { runId: "run-1", roleMap: ROLE_MAP }
     );
     const payloads = buildPayloads(diff, "run-1");
     expect(payloads[0].op).toBe("addProject");
@@ -203,7 +204,7 @@ describe("buildPayloads", () => {
         weekOf: "2026-06-01",
       }),
     ];
-    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), { runId: "run-1", roleMap: ROLE_MAP });
     const payloads = buildPayloads(diff, "run-1");
     const ops = payloads.map((p) => p.op);
     expect(ops).toContain("updateWeekItemField"); // endDate write
@@ -227,7 +228,7 @@ describe("buildPayloads", () => {
         derivedStatus: "completed",
       }),
     ];
-    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), { runId: "run-1", roleMap: ROLE_MAP });
     const update = buildPayloads(diff, "run-1").find(
       (p) => p.op === "updateWeekItemField"
     )!;
@@ -254,7 +255,7 @@ describe("buildPayloads", () => {
         weekOf: null,
       }),
     ];
-    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), { runId: "run-1", roleMap: ROLE_MAP });
     const create = buildPayloads(diff, "run-1").find(
       (p) => p.op === "createWeekItem"
     )!;
@@ -267,7 +268,7 @@ describe("buildPayloads", () => {
     const tasks = [
       leaf({ title: "Brand new task", resolvedTitle: "Brand new task" }),
     ];
-    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), { runId: "run-1", roleMap: ROLE_MAP });
     const create = buildPayloads(diff, "run-1").find(
       (p) => p.op === "createWeekItem"
     )!;
@@ -297,7 +298,7 @@ describe("buildPayloads", () => {
       parsedWith(tasks),
       canceledBundle,
       emptyLedger(),
-      "run-1"
+      { runId: "run-1", roleMap: ROLE_MAP }
     );
     const flag = buildPayloads(diff, "run-1").find(
       (p) => p.op === "flag-for-review"
@@ -315,7 +316,7 @@ describe("renderReport", () => {
       parsedWith(tasks),
       { ...BUNDLE, weekItems: [] },
       emptyLedger(),
-      "run-1"
+      { runId: "run-1", roleMap: ROLE_MAP }
     );
     const { report, error } = renderReport(diff, buildPayloads(diff, "run-1"));
     expect(report).toContain("Expected on a first run");
@@ -328,7 +329,7 @@ describe("renderReport", () => {
       parsedWith([leaf({})]),
       BUNDLE,
       emptyLedger(),
-      "run-1"
+      { runId: "run-1", roleMap: ROLE_MAP }
     );
     const { report } = renderReport(diff, []);
     expect(report).toContain("Hand-created legacy item");
@@ -356,7 +357,7 @@ describe("_R1#160 acceptance", () => {
       lastSeenRunId: "run-0",
       lastSeenContentHash: null,
     };
-    const diff = diffSheet(parsedWith(tasks), BUNDLE, ledger, "run-1");
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, ledger, { runId: "run-1", roleMap: ROLE_MAP });
     const rd = diff.rowDiffs.find((r) => r.leaf)!;
     expect(rd.disposition).toBe("mismatched-field");
     const fields = rd.deltas!.map((d) => d.field);
@@ -378,7 +379,7 @@ describe("_R1#160 acceptance", () => {
 
   it("2a: matched row with prod category kickoff is flagged, never a write; a second run is identical", () => {
     const tasks = [leaf({})]; // matches wi_kick, whose category is "kickoff"
-    const diff1 = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const diff1 = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), { runId: "run-1", roleMap: ROLE_MAP });
     const rd1 = diff1.rowDiffs.find((r) => r.leaf)!;
     const catDeltas1 = (rd1.deltas ?? []).filter((d) => d.field === "category");
     expect(catDeltas1).toHaveLength(1);
@@ -397,7 +398,7 @@ describe("_R1#160 acceptance", () => {
     expect(catFlag.reason).toContain("category");
 
     // Same inputs, second run: identical, because nothing was written.
-    const diff2 = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const diff2 = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), { runId: "run-1", roleMap: ROLE_MAP });
     const rd2 = diff2.rowDiffs.find((r) => r.leaf)!;
     expect((rd2.deltas ?? []).filter((d) => d.field === "category")).toEqual(catDeltas1);
   });
@@ -411,7 +412,7 @@ describe("_R1#160 acceptance", () => {
         category: "launch",
       }),
     ];
-    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), { runId: "run-1", roleMap: ROLE_MAP });
     const create = buildPayloads(diff, "run-1").find((p) => p.op === "createWeekItem")!;
     expect(create.params.category).toBeNull();
   });
@@ -427,7 +428,7 @@ describe("_R1#160 acceptance", () => {
         weekOf: "2026-06-01",
       }),
     ];
-    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), { runId: "run-1", roleMap: ROLE_MAP });
     const rd = diff.rowDiffs.find((r) => r.leaf)!;
     expect(rd.weekItemId).toBe("wi_comps"); // confirms fuzzy match fired, not ledger
     const titleD = rd.deltas!.find((d) => d.field === "title")!;
@@ -439,7 +440,7 @@ describe("_R1#160 acceptance", () => {
 
   it("4: report shows compared-and-equal vs not-compared, per field", () => {
     const tasks = [leaf({})]; // matches wi_kick exactly on dates and weekOf
-    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
+    const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), { runId: "run-1", roleMap: ROLE_MAP });
     const { report } = renderReport(diff, buildPayloads(diff, "run-1"));
     expect(report).toMatch(/weekOf: compared, equal/);
     expect(report).toMatch(/category: not compared/);

@@ -17,7 +17,7 @@ import { diffSheet } from "../diff";
 import { buildPayloads } from "../payloads";
 import type { DiffResult, LeafTask, Ledger, ParsedSheet, RowDiff, SheetConfig, SyncPayload } from "../types";
 import type { RunwayClientBundle } from "../runway-read";
-import { planPeople, ROLE_MAP, type RoleMap } from "../role-map";
+import { planPeople, type RoleMap } from "../role-map";
 import { PEOPLE_FIELDS, type PeopleField } from "../sync-fields";
 import {
   PARITY_FIELDS,
@@ -304,16 +304,20 @@ export function structuralProbeDiff(): DiffResult {
  * ticket's "Re-running on the same snapshots produces a byte-identical
  * file" rule.
  */
+export interface ParityOptions {
+  runId: string;
+  sheetFrozenAt?: string;
+  roleMap: RoleMap;
+}
+
 export function computeParity(
   parsed: ParsedSheet,
   prodSnapshot: ProdSnapshot,
-  runId: string,
-  sheetFrozenAt = "",
-  roleMap: RoleMap = ROLE_MAP
+  { runId, sheetFrozenAt = "", roleMap }: ParityOptions
 ): ParityResult {
   const bundle = toMatchingBundle(prodSnapshot);
   const ledger: Ledger = { sheetId: parsed.config.sheetId, updatedAt: "", lastRunId: "", entries: {} };
-  const diff = diffSheet(parsed, bundle, ledger, runId, roleMap);
+  const diff = diffSheet(parsed, bundle, ledger, { runId, roleMap });
   const payloads = buildPayloads(diff, runId);
   const probe = structuralProbeDiff();
   // Checked against this run's real output, which can legitimately be
