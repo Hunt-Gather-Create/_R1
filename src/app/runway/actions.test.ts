@@ -1,10 +1,10 @@
 /**
- * Thin coverage for runway server actions. These are 4-line wrappers over
- * `setViewPreferences` (covered in view-preferences.test.ts) and
- * `revalidatePath`. Verifies the toggle dispatches reach both collaborators
- * with the right preference key.
+ * Thin coverage for runway server actions over `setViewPreferences` and
+ * `revalidatePath`. The gate is mocked open; actions-gate.test.ts covers it.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("@/lib/runway/require-gate", () => ({ requireRunwayGate: vi.fn(async () => {}) }));
 
 vi.mock("@/lib/runway/view-preferences", () => ({
   setViewPreferences: vi.fn(async (patch: unknown) => ({ ok: true, patch })),

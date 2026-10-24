@@ -72,8 +72,8 @@ vi.mock("@/lib/runway/flags", () => ({
 }));
 
 // v4 chunk 3 #6: page loads view preferences for the In Flight toggle default.
-vi.mock("@/lib/runway/view-preferences", () => ({
-  getViewPreferences: vi.fn().mockResolvedValue({ inFlightToggle: true }),
+vi.mock("@/lib/runway/view-preferences-read", () => ({
+  readViewPreferences: vi.fn().mockResolvedValue({ inFlightToggle: true }),
 }));
 
 vi.mock("../runway-board", () => ({
