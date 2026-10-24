@@ -8,6 +8,8 @@
  */
 import { sorensenDice } from "../../src/lib/runway/fuzzy-match";
 import { ledgerKey, linkEntry, normalizeTitle } from "./ledger";
+import { attachPeople, peopleDeltas } from "./people-delta";
+import { planPeople, ROLE_MAP, type PeoplePlan, type RoleMap } from "./role-map";
 import type { RunwayClientBundle } from "./runway-read";
 import type {
   DiffResult,
@@ -439,11 +441,19 @@ function dateDeltas(
   return deltas;
 }
 
+/** Every field delta for a matched pair, in apply order. */
+function matchedDeltas(leaf: LeafTask, wi: RunwayClientBundle["weekItems"][number], viaLedger: boolean, people: PeoplePlan): FieldDelta[] {
+  const single = [statusDelta(leaf.derivedStatus, wi.status), weekOfDelta(leaf.weekOf, wi.weekOf ?? null)];
+  single.push(titleDelta(leaf.title, wi.title, viaLedger), categoryDelta(wi.category ?? null));
+  return [...dateDeltas(leaf, wi), ...single.filter((d): d is FieldDelta => d !== null), ...peopleDeltas(people, wi)];
+}
+
 export function diffSheet(
   parsed: ParsedSheet,
   bundle: RunwayClientBundle,
   ledger: Ledger,
-  runId: string
+  runId: string,
+  roleMap: RoleMap = ROLE_MAP
 ): DiffResult {
   const l1 = resolveL1(parsed, bundle, ledger);
   const rowDiffs: RowDiff[] = [];
@@ -481,15 +491,7 @@ export function diffSheet(
       const wi = clientWis.find((w) => w.id === banked.weekItemId);
       if (wi) {
         matchedWiIds.add(wi.id);
-        const deltas = [...dateDeltas(leaf, wi)];
-        const sd = statusDelta(leaf.derivedStatus, wi.status);
-        if (sd) deltas.push(sd);
-        const wd = weekOfDelta(leaf.weekOf, wi.weekOf ?? null);
-        if (wd) deltas.push(wd);
-        const td = titleDelta(leaf.title, wi.title, true);
-        if (td) deltas.push(td);
-        const cd = categoryDelta(wi.category ?? null);
-        if (cd) deltas.push(cd);
+        const deltas = matchedDeltas(leaf, wi, true, planPeople(leaf.resource, parsed.config.clientSlug, roleMap));
         rowDiffs.push({
           disposition: deltas.length > 0 ? "mismatched-field" : "matched",
           leaf,
@@ -532,15 +534,7 @@ export function diffSheet(
 
     if (best && best.score >= WI_MATCH_THRESHOLD) {
       matchedWiIds.add(best.wi.id);
-      const deltas = [...dateDeltas(leaf, best.wi)];
-      const sd = statusDelta(leaf.derivedStatus, best.wi.status);
-      if (sd) deltas.push(sd);
-      const wd = weekOfDelta(leaf.weekOf, best.wi.weekOf ?? null);
-      if (wd) deltas.push(wd);
-      const td = titleDelta(leaf.title, best.wi.title, false);
-      if (td) deltas.push(td);
-      const cd = categoryDelta(best.wi.category ?? null);
-      if (cd) deltas.push(cd);
+      const deltas = matchedDeltas(leaf, best.wi, false, planPeople(leaf.resource, parsed.config.clientSlug, roleMap));
       rowDiffs.push({
         disposition: deltas.length > 0 ? "mismatched-field" : "matched",
         leaf,
@@ -622,10 +616,12 @@ export function diffSheet(
     "skipped-milestone": 0,
     "skipped-spacer": 0,
     collisions: 0,
+    "role-map-refusals": 0,
   } as DiffResult["counts"];
   for (const rd of rowDiffs) {
     counts[rd.disposition as Disposition]++;
     if (rd.collision) counts.collisions++;
+    counts["role-map-refusals"] += attachPeople(rd, parsed.config.clientSlug, roleMap);
   }
 
   return {

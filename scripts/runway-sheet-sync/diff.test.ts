@@ -902,8 +902,8 @@ describe("renderReport", () => {
 
 /**
  * _R1#160: full-field delta. weekOf and title join the correctable set;
- * category gains a flag-only policy. owner/resources stay OUT (rule R1,
- * _R1#159), unchanged by this ticket.
+ * category gains a flag-only policy. owner/resources come from the role
+ * map, _R1#159, and are covered in role-map.test.ts.
  */
 describe("weekOfDelta (§2.4-style update policy, _R1#160)", () => {
   it("writes when the sheet's weekOf differs from Runway's", () => {
@@ -1069,7 +1069,9 @@ describe("_R1#160 acceptance", () => {
     const diff = diffSheet(parsedWith(tasks), BUNDLE, emptyLedger(), "run-1");
     const { report } = renderReport(diff, buildPayloads(diff, "run-1"));
     expect(report).toMatch(/weekOf: compared, equal/);
-    expect(report).toMatch(/owner: not compared/);
-    expect(report).toMatch(/resources: not compared/);
+    expect(report).toMatch(/category: not compared/);
+    // No column J label on this row, so the map planned nothing to compare.
+    expect(report).toMatch(/owner: not planned, no RESOURCE label on this row/);
+    expect(report).toMatch(/resources: not planned, no RESOURCE label on this row/);
   });
 });

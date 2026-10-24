@@ -44,8 +44,8 @@ function prodSnapshot(): ProdSnapshot {
         endDate: "2026-06-01",
         status: "completed", // TRUE checkbox -> derivedStatus "completed", agrees
         category: null, // tool derives "kickoff" -> disagrees
-        owner: "Lane", // tool never plans an owner -> disagrees
-        resources: "CD: Lane", // tool never plans resources -> disagrees
+        owner: "Lane", // no role map entry for acme, tool plans no owner -> disagrees
+        resources: "CD: Lane", // no role map entry for acme, tool plans no resources -> disagrees
         notes: null,
       },
     ],
