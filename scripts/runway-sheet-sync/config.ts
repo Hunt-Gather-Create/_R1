@@ -6,19 +6,20 @@
  * (Soundly RX file title says SND-2602, LPPC 2604-01 body says LPP-2603-01) —
  * read by content, flag drift, never rename (locked gotcha).
  */
+import { CLIENT_SLUGS } from "./client-slugs";
 import type { SheetConfig } from "./types";
 
 export const SHEETS: SheetConfig[] = [
   {
     sheetId: "1e0VtdHSGG-LMpQqeZ9Bm709fPSYGjrIBOi2sNFKObog",
-    clientSlug: "beyond-petro",
+    clientSlug: CLIENT_SLUGS.beyondPetro,
     engagementCode: "BPC-2603-01",
     label: "ITEP Landing Page",
     planSlug: "itep",
   },
   {
     sheetId: "1iK2uiKLvaxezqfW43DdMihQAwmOgV0Z8gNh7uCcbvrM",
-    clientSlug: "soundly",
+    clientSlug: CLIENT_SLUGS.soundly,
     engagementCode: "SND-2603",
     label: "RX Card Rebuild",
     planSlug: "rx-card-rebuild",
@@ -27,35 +28,35 @@ export const SHEETS: SheetConfig[] = [
   },
   {
     sheetId: "1Ly8koIAYw2IvU_3YC4vouoVjoy8yIlVSIlsf8mfs4pg",
-    clientSlug: "lppc",
+    clientSlug: CLIENT_SLUGS.lppc,
     engagementCode: "LPP-2604-01",
     label: "Phase 2.1 Homepage Update + Featured Reports",
     planSlug: "homepage-update",
   },
   {
     sheetId: "1agy2J6fIddCjn-HNt_exxIIm1AV-ZOREEYPwr_AngmI",
-    clientSlug: "lppc",
+    clientSlug: CLIENT_SLUGS.lppc,
     engagementCode: "LPP-2604-02",
     label: "Website Revamp Phase 2",
     planSlug: "website-revamp-phase-2",
   },
   {
     sheetId: "1JuPXk46yjAAav8fu7U6CEg8ILLd9TzALcmZYeGE3XOk",
-    clientSlug: "beyond-petro",
+    clientSlug: CLIENT_SLUGS.beyondPetro,
     engagementCode: "BPC-2602-01",
     label: "Spilltracker Website Refresh",
     planSlug: "spilltracker",
   },
   {
     sheetId: "1lt-Guu94c-mBvHdNVjHLwDHP0CstxDLBOMpop1he-Cw",
-    clientSlug: "beyond-petro",
+    clientSlug: CLIENT_SLUGS.beyondPetro,
     engagementCode: "BPC-2605-01",
     label: "Ammonia Landing Page",
     planSlug: "ammonia",
   },
   {
     sheetId: "14x2WqepMH2iexwinkZ1mQQJY37TbSvqu1NhBqNL_dp0",
-    clientSlug: "nfm",
+    clientSlug: CLIENT_SLUGS.nfm,
     engagementCode: "NFM-2601",
     label: "Cedar Park Digital Screen",
     planSlug: "cedar-park-digital-screen",

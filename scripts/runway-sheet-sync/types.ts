@@ -4,7 +4,10 @@
  * Spec: civ-account-manager/docs/runway-tp-runway-integration-pre-plan.md (v4)
  * §2 data model, §2.9 row-identity ledger, §3 Phase 1a.
  */
+import type { WeekItemCategory } from "../../src/lib/runway/week-item-categories";
+import type { WeekItemStatus } from "../../src/lib/runway/week-item-statuses";
 import type { PeoplePlan } from "./role-map";
+import type { SyncField } from "./sync-fields";
 
 /** One sheet in the sync registry. Client slug comes from config, never parsed from banners. */
 export interface SheetConfig {
@@ -87,15 +90,9 @@ export interface LeafTask {
   /** Col B checkbox. */
   completed: boolean;
   /** §2.4 CREATE-branch derived status. */
-  derivedStatus: "completed" | "scheduled";
+  derivedStatus: Extract<WeekItemStatus, "completed" | "scheduled">;
   /** Q1.12 keyword-derived category. */
-  category:
-    | "delivery"
-    | "review"
-    | "kickoff"
-    | "deadline"
-    | "approval"
-    | "launch";
+  category: WeekItemCategory;
   /** Enclosing section header title, if any. */
   section: string | null;
   priority: string | null;
@@ -169,7 +166,7 @@ export type Disposition =
 
 export interface FieldDelta {
   /** A literal union, never string, so a mistyped field name fails to compile. */
-  field: "status" | "startDate" | "endDate" | "weekOf" | "category" | "title" | "owner" | "resources";
+  field: SyncField;
   sheet: string | null;
   runway: string | null;
   /** §2.4 update policy applied to this delta. */

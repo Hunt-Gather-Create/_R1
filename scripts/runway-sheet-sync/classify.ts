@@ -8,12 +8,11 @@
  *   - Rollup detection is span-based (two-pass), not position-based: ITEP's
  *     first data row is a section header, not a rollup.
  */
+import { COL } from "./columns";
 import { parseSheetDate } from "./parse-dates";
 import type { ClassifiedRow, RowType } from "./types";
 
 export const LEAF_PREFIX = /^\s+(\d+(?:\.\d+)?)\s+/;
-
-const COL = { B: 1, C: 2, E: 4, F: 5 } as const;
 
 function cell(row: (string | undefined)[], idx: number): string {
   return String(row[idx] ?? "");

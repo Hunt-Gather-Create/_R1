@@ -3,24 +3,12 @@
  * tasks with derived fields, variance flags vs the Appendix D contract).
  */
 import { classifyRows, LEAF_PREFIX } from "./classify";
+import { COL, EXPECTED_HEADERS } from "./columns";
 import { composeNotes, deriveCategory, deriveStatus, disambiguateTitles } from "./derive";
 import { getMondayIso, isParseableDate, parseSheetDate } from "./parse-dates";
 import type { LeafTask, ParsedSheet, SheetConfig, SheetFixture, SheetMeta } from "./types";
 
-const COL = { B: 1, C: 2, D: 3, E: 4, F: 5, H: 7, I: 8, J: 9, K: 10 } as const;
-
 const CODE_RE = /\b[A-Z]{2,4}-\d{4}(?:-\d{2})?\b/;
-
-/** Expected column-header labels (Appendix D §D.2) — drift raises a flag. */
-const EXPECTED_HEADERS: [number, string][] = [
-  [COL.C, "TASKS"],
-  [COL.E, "START DATE"],
-  [COL.F, "DUE DATE"],
-  [COL.H, "PREDECESSOR"],
-  [COL.I, "LAG"],
-  [COL.J, "RESOURCE"],
-  [COL.K, "STATUS"],
-];
 
 function cell(row: (string | undefined)[] | undefined, idx: number): string {
   return String(row?.[idx] ?? "");

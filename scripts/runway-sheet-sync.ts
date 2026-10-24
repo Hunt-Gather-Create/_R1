@@ -37,11 +37,10 @@ import { writePreSnapshot, postVerifyDiff } from "./runway-sheet-sync/snapshot";
 import { checkFreshness, resolveFreshnessDecision, type FreshnessDecision } from "./runway-sheet-sync/freshness";
 import { checkTitleCode } from "./runway-sheet-sync/title-code-check";
 import { recordingRefusal, refusingAll } from "./runway-sheet-sync/refusal-record";
+import { LIVE_RANGE } from "./runway-sheet-sync/columns";
 
 const DEFAULT_FIXTURES_DIR = "docs/tmp/data/runway-sync/fixtures";
 const DEFAULT_OUT_DIR = "docs/tmp/data/runway-sync";
-// Live reads use the same tab + range the fixtures were exported from.
-const LIVE_RANGE = "Task Tracker & Gantt Chart!A1:N";
 
 function arg(name: string): string | undefined {
   const idx = process.argv.indexOf(`--${name}`);

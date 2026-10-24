@@ -6,6 +6,7 @@
  * Phase 1a emits payloads. It never executes them.
  */
 import { WEEK_ITEM_STATUSES } from "../../src/lib/runway/week-item-statuses";
+import { isPeopleField } from "./sync-fields";
 import type { DiffResult, SyncPayload } from "./types";
 
 export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
@@ -169,7 +170,7 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
             reason:
               delta.action === "protected-no-write"
                 ? `Runway status "${delta.runway}" is human-set (§2.4), sync never overwrites`
-                : delta.field === "owner" || delta.field === "resources"
+                : isPeopleField(delta.field)
                   ? `Runway ${delta.field} "${delta.runway}" already set by a person, the role map plans "${delta.sheet}", never overwritten`
                   : delta.field === "category"
                     ? `Runway category "${delta.runway}" already set, the sheet has no category column and never authorizes a value (_R1#160)`

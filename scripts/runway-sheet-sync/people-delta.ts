@@ -3,6 +3,7 @@
  * payloads and the parity harness read. Values come only from role-map.ts.
  */
 import { planPeople, type PeoplePlan, type RoleMap } from "./role-map";
+import { PEOPLE_FIELDS } from "./sync-fields";
 import type { FieldDelta, RowDiff } from "./types";
 
 /**
@@ -15,7 +16,7 @@ export function peopleDeltas(
 ): FieldDelta[] {
   if (plan.kind !== "planned") return [];
   const deltas: FieldDelta[] = [];
-  for (const field of ["owner", "resources"] as const) {
+  for (const field of PEOPLE_FIELDS) {
     const runway = wi[field] ?? null;
     if (runway === plan[field]) continue;
     deltas.push({

@@ -18,6 +18,7 @@ import { buildPayloads } from "../payloads";
 import type { DiffResult, LeafTask, Ledger, ParsedSheet, RowDiff, SheetConfig, SyncPayload } from "../types";
 import type { RunwayClientBundle } from "../runway-read";
 import { planPeople, ROLE_MAP, type RoleMap } from "../role-map";
+import { PEOPLE_FIELDS, type PeopleField } from "../sync-fields";
 import {
   PARITY_FIELDS,
   type ParityFieldValues,
@@ -47,7 +48,7 @@ function toolPlannedFields(rd: RowDiff & { leaf: LeafTask }): ParityFieldValues 
 }
 
 /** The owner or resources value a payload would set, or undefined when it sets neither. */
-function plannedPeopleValue(payload: SyncPayload, field: "owner" | "resources"): unknown {
+function plannedPeopleValue(payload: SyncPayload, field: PeopleField): unknown {
   const direct = payload.params[field];
   if (direct !== undefined && direct !== null) return direct;
   if (payload.params.field === field) return payload.params.newValue ?? payload.params.sheetValue ?? null;
@@ -70,7 +71,7 @@ export function assertPeopleFromRoleMap(
 ): void {
   const leafByRow = new Map(leaves.map((l) => [l.rowNumber, l]));
   for (const payload of payloads) {
-    for (const field of ["owner", "resources"] as const) {
+    for (const field of PEOPLE_FIELDS) {
       const value = plannedPeopleValue(payload, field);
       if (value === undefined) continue;
       const leaf = leafByRow.get(payload.source.rowNumber);

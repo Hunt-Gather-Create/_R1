@@ -8,23 +8,12 @@
  * because this harness compares its own field set, not the tool's.
  */
 
+import type { ParityField } from "../sync-fields";
+
 export type ParityVerdict = "AGREE" | "DISAGREE" | "TOOL_ONLY" | "HAND_ONLY";
 
-/** The fields this harness compares. A strict superset of diff.ts's three,
- * `status`, `startDate`, `endDate`. owner/resources/category are added
- * because diff.ts never emits a FieldDelta for them, measured in the
- * _R1#151 ticket body. title/weekOf are excluded on purpose. They are
- * match keys, never correction targets, per the ticket's "title and weekOf
- * are MATCH KEYS only" rule. */
-export const PARITY_FIELDS = [
-  "status",
-  "startDate",
-  "endDate",
-  "category",
-  "owner",
-  "resources",
-] as const;
-export type ParityField = (typeof PARITY_FIELDS)[number];
+/** The fields this harness compares, owned by sync-fields.ts. */
+export { PARITY_FIELDS, type ParityField } from "../sync-fields";
 
 export type ParityFieldValues = Record<ParityField, string | null>;
 

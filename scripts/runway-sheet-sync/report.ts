@@ -4,6 +4,7 @@
  */
 import type { DiffResult, FieldDelta, RowDiff, SyncPayload } from "./types";
 import type { ParityResult } from "./parity/types";
+import { COMPARED_FIELDS, isPeopleField, NEVER_COMPARED_FIELDS } from "./sync-fields";
 
 /**
  * _R1#160 item 4: the report must distinguish "compared and equal" from
@@ -16,20 +17,11 @@ import type { ParityResult } from "./parity/types";
  * owner/resources are compared whenever the role map plans them, rule R1
  * as amended 2026-10-24; a row the map did not plan says why.
  */
-const COMPARED_FIELDS: FieldDelta["field"][] = [
-  "status",
-  "startDate",
-  "endDate",
-  "weekOf",
-  "title",
-  "owner",
-  "resources",
-];
-export const NEVER_COMPARED_FIELDS = ["category"] as const;
+export { NEVER_COMPARED_FIELDS } from "./sync-fields";
 
 /** The line for a compared field with no delta. Owner and resources were only compared if the map planned them. */
 function noDeltaLine(f: FieldDelta["field"], rd: RowDiff): string {
-  if (f !== "owner" && f !== "resources") return `- ${f}: compared, equal`;
+  if (!isPeopleField(f)) return `- ${f}: compared, equal`;
   if (rd.people?.kind === "planned") return `- ${f}: compared, equal`;
   if (rd.people?.kind === "refused") {
     return `- ${f}: not planned, unmapped label ${rd.people.unmapped.map((l) => `"${l}"`).join(", ")} sent to review`;
