@@ -4,7 +4,7 @@ import type { ItemStatus, ItemCategory } from "../types";
 import { RunwayBoard } from "../runway-board";
 import { getMondayISODate, parseISODate } from "../date-utils";
 import { analyzeFlags } from "@/lib/runway/flags";
-import { getViewPreferences } from "@/lib/runway/view-preferences";
+import { readViewPreferences } from "@/lib/runway/view-preferences-read";
 import { buildUnifiedAccounts, filterWrapperDayItems } from "../unified-view";
 import { extractClientRundown } from "@/lib/runway/gantt/server";
 import { getRunwayDb } from "@/lib/db/runway";
@@ -188,7 +188,7 @@ export default async function RunwayPage() {
     getWeekItems(),
     getPipeline(),
     getStaleWeekItems(),
-    getViewPreferences(),
+    readViewPreferences(),
     getClientRundowns(),
   ]);
 
