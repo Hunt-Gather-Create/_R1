@@ -19,6 +19,7 @@ import {
   linkWeekItemToProject,
 } from "@/lib/runway/operations-writes-week";
 import { getProjectsForClient } from "@/lib/runway/operations-utils";
+import { requireRunwayGate } from "@/lib/runway/require-gate";
 import type {
   ListProjectsForWeekItemResult,
   ProjectOption,
@@ -37,6 +38,7 @@ import type {
 export async function toggleInFlightAction(
   next: boolean
 ): Promise<RunwayViewPreferences> {
+  await requireRunwayGate();
   const prefs = await setViewPreferences({ inFlightToggle: next });
   revalidatePath("/runway");
   return prefs;
@@ -48,6 +50,7 @@ export async function toggleInFlightAction(
 export async function toggleNeedsUpdateAction(
   next: boolean
 ): Promise<RunwayViewPreferences> {
+  await requireRunwayGate();
   const prefs = await setViewPreferences({ needsUpdateToggle: next });
   revalidatePath("/runway");
   return prefs;
@@ -69,6 +72,7 @@ export async function setWeekItemStatusAction(input: {
   newStatus: string | null;
   editorName: string;
 }): Promise<SetWeekItemStatusResult> {
+  await requireRunwayGate();
   // #80 — `updateWeekItemField`'s idempotency key includes `updatedBy`. When
   // every dashboard click wrote `"runway:dashboard"`, the second click on
   // the same (row, field, value) collided with the audit row left by the
@@ -162,6 +166,7 @@ export async function setWeekItemStatusAction(input: {
 export async function updateWeekItemFieldsAction(
   input: UpdateWeekItemFieldsInput,
 ): Promise<UpdateWeekItemFieldsResult> {
+  await requireRunwayGate();
   // P1.1 — server-side guardrails. The client modal validates these too
   // but cannot be trusted (per the Hemingway note "Sheet column M is the
   // sole authority for what action to take").
@@ -422,6 +427,7 @@ function moveFirst<T>(arr: T[], first: T, second: T): T[] {
 export async function listProjectsForWeekItemAction(input: {
   weekItemId: string;
 }): Promise<ListProjectsForWeekItemResult> {
+  await requireRunwayGate();
   const db = getRunwayDb();
   const rows = await db
     .select()

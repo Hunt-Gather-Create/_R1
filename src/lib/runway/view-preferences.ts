@@ -17,6 +17,7 @@
 import { getRunwayDb } from "@/lib/db/runway";
 import { viewPreferences } from "@/lib/db/runway-schema";
 import { withRunwayRetry } from "@/lib/runway/retry";
+import { requireRunwayGate } from "@/lib/runway/require-gate";
 import { eq } from "drizzle-orm";
 
 export interface RunwayViewPreferences {
@@ -54,6 +55,14 @@ function parsePreferences(raw: string | null): RunwayViewPreferences {
 
 export async function getViewPreferences(
   scope: string = GLOBAL_SCOPE
+): Promise<RunwayViewPreferences> {
+  await requireRunwayGate();
+  return readViewPreferences(scope);
+}
+
+// Ungated read shared by both actions, so each action's own gate is the one that guards it.
+async function readViewPreferences(
+  scope: string
 ): Promise<RunwayViewPreferences> {
   // Graceful fallback: if the `view_preferences` table does not yet exist
   // (i.e. schema not yet pushed to prod), return defaults rather than
@@ -97,7 +106,8 @@ export async function setViewPreferences(
   patch: Partial<RunwayViewPreferences>,
   scope: string = GLOBAL_SCOPE
 ): Promise<RunwayViewPreferences> {
-  const current = await getViewPreferences(scope);
+  await requireRunwayGate();
+  const current = await readViewPreferences(scope);
   const next = { ...current, ...patch };
 
   try {
