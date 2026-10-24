@@ -36,6 +36,7 @@ import { applyPayloads } from "./runway-sheet-sync/apply";
 import { writePreSnapshot, postVerifyDiff } from "./runway-sheet-sync/snapshot";
 import { checkFreshness, resolveFreshnessDecision, type FreshnessDecision } from "./runway-sheet-sync/freshness";
 import { checkTitleCode } from "./runway-sheet-sync/title-code-check";
+import { recordingRefusal, refusingAll } from "./runway-sheet-sync/refusal-record";
 
 const DEFAULT_FIXTURES_DIR = "docs/tmp/data/runway-sync/fixtures";
 const DEFAULT_OUT_DIR = "docs/tmp/data/runway-sync";
@@ -66,6 +67,23 @@ export async function runSheet(
   apply = false,
   force = false,
   freshness: FreshnessDecision
+): Promise<Record<string, unknown>> {
+  return recordingRefusal(outDir, sheetId, (diffWritten) =>
+    syncSheet(db, sheetId, fixturesDir, outDir, live, apply, force, freshness, diffWritten)
+  );
+}
+
+/** One sheet's run; calls diffWritten once the diff report is on disk. */
+async function syncSheet(
+  db: ReturnType<typeof createRunwayDb>["db"],
+  sheetId: string,
+  fixturesDir: string,
+  outDir: string,
+  live: boolean,
+  apply: boolean,
+  force: boolean,
+  freshness: FreshnessDecision,
+  diffWritten: () => void
 ): Promise<Record<string, unknown>> {
   const config = getSheetConfig(sheetId);
   if (!config) throw new Error(`Sheet ${sheetId} not in registry (scripts/runway-sheet-sync/config.ts)`);
@@ -135,6 +153,7 @@ export async function runSheet(
   const reportPath = join(outDir, `diff-${sheetId}-${date}.md`);
   const payloadsPath = join(outDir, `diff-${sheetId}-${date}.payloads.json`);
   writeFileSync(reportPath, report);
+  diffWritten();
   writeFileSync(
     payloadsPath,
     JSON.stringify({ sheetId, runId, generatedAt: diff.generatedAt, payloads }, null, 2) + "\n"
@@ -205,15 +224,16 @@ async function main(): Promise<void> {
   // _R1#154 item 2, TP's gate-1 ruling: the decision is required, resolved
   // and validated BEFORE any DB connection or sheet read, so a missing or
   // stale --drive-listing refuses immediately, not partway through a run.
+  const targets = only ? SHEETS.filter((s) => s.sheetId === only) : SHEETS;
+  if (targets.length === 0) throw new Error(`--sheet ${only} not in registry`);
   const skipFreshnessCheck = process.argv.includes("--skip-freshness-check");
-  const freshness = resolveFreshnessDecision({ listingPath: arg("drive-listing"), skip: skipFreshnessCheck });
+  const freshness = refusingAll(outDir, targets.map((t) => t.sheetId), () =>
+    resolveFreshnessDecision({ listingPath: arg("drive-listing"), skip: skipFreshnessCheck })
+  );
 
   // E2 (#102): point --live at the runway-staging clone, never prod.
   // E3 (#103): --target staging|prod drives DB resolution when --apply is set.
   const staging = doApply ? target === "staging" : process.argv.includes("--staging");
-
-  const targets = only ? SHEETS.filter((s) => s.sheetId === only) : SHEETS;
-  if (targets.length === 0) throw new Error(`--sheet ${only} not in registry`);
 
   const { db, url } = createRunwayDb({ staging });
   if (staging) console.error("── ledger target: runway-staging (E2 test mode)");

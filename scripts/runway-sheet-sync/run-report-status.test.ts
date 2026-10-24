@@ -48,3 +48,49 @@ describe("readRunReportStatus", () => {
     expect(status.kind === "could-not-tell" && status.reason).toMatch(/EACCES/);
   });
 });
+
+describe("readRunReportStatus with refusal records", () => {
+  const report = (at: string) => `# Runway Sheet Sync\n\n- Run: \`abc\` at ${at}\n\n## Summary\n`;
+  const refusal = "> **ERROR: refused before the diff.** Sheet S1: title code X disagrees\n";
+
+  it("calls a refusal newer than the same-day clean report failed, with its message", () => {
+    writeFileSync(join(dir, "diff-S1-2026-10-20.md"), report("2026-10-20T09:00:00.000Z"));
+    writeFileSync(join(dir, "refused-S1-2026-10-20T10-00-00.000Z.md"), refusal);
+    expect(readRunReportStatus(dir, "S1")).toEqual({
+      kind: "failed",
+      path: join(dir, "refused-S1-2026-10-20T10-00-00.000Z.md"),
+      reason: "ERROR: refused before the diff. Sheet S1: title code X disagrees",
+    });
+  });
+
+  it("calls a same-day clean report newer than the refusal clean", () => {
+    writeFileSync(join(dir, "refused-S1-2026-10-20T10-00-00.000Z.md"), refusal);
+    writeFileSync(join(dir, "diff-S1-2026-10-20.md"), report("2026-10-20T11:00:00.000Z"));
+    expect(readRunReportStatus(dir, "S1")).toEqual({ kind: "clean", path: join(dir, "diff-S1-2026-10-20.md") });
+  });
+
+  it("calls a refusal with no report beside it failed", () => {
+    writeFileSync(join(dir, "refused-S1-2026-10-20T10-00-00.000Z.md"), refusal);
+    expect(readRunReportStatus(dir, "S1").kind).toBe("failed");
+  });
+
+  it("lets a same-day refusal win over a report with no run time", () => {
+    writeFileSync(join(dir, "diff-S1-2026-10-20.md"), "## Summary\n");
+    writeFileSync(join(dir, "refused-S1-2026-10-20T00-00-01.000Z.md"), refusal);
+    expect(readRunReportStatus(dir, "S1").kind).toBe("failed");
+  });
+
+  it("ignores another sheet's refusal record", () => {
+    writeFileSync(join(dir, "diff-S1-2026-10-20.md"), report("2026-10-20T09:00:00.000Z"));
+    writeFileSync(join(dir, "refused-S2-2026-10-21T10-00-00.000Z.md"), refusal);
+    expect(readRunReportStatus(dir, "S1").kind).toBe("clean");
+  });
+
+  it("maps a refused read of the refusal record to could-not-tell", () => {
+    const p = join(dir, "refused-S1-2026-10-20T10-00-00.000Z.md");
+    writeFileSync(p, refusal);
+    chmodSync(p, 0o000);
+    locked.push(p);
+    expect(readRunReportStatus(dir, "S1").kind).toBe("could-not-tell");
+  });
+});
