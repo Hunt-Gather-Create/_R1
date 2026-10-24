@@ -163,8 +163,8 @@ describe("acceptance 3: an unmapped label plans neither field, adds one review i
     expect(diff.counts["role-map-refusals"]).toBe(1);
   });
 
-  it("a client with no map entry refuses every label, so the shipped empty map is loud, not blank", () => {
-    expect(ROLE_MAP).toEqual({});
+  it("a client with no map entry refuses every label, loud, not blank", () => {
+    expect(ROLE_MAP).not.toHaveProperty("acme");
     const { diff, payloads } = run([leaf({ resource: "Design + Creatives" })], bundle(), ROLE_MAP);
     expect(diff.counts["role-map-refusals"]).toBe(1);
     expect(payloads.filter((p) => p.params.policy === "role-map-refusal")).toHaveLength(1);
@@ -197,5 +197,67 @@ describe("acceptance 5: the diff report compares owner and resources", () => {
     expect(report).toMatch(/- owner: compared, equal/);
     expect(report).toMatch(/- resources: compared, equal/);
     expect(report).toMatch(/- category: not compared/);
+  });
+});
+
+describe("a label may bind to more than one role", () => {
+  const LISTED: RoleMap = {
+    acme: {
+      ...MAP.acme,
+      labels: {
+        "Design + QA": [
+          { roleTag: "CD", person: "Lane" },
+          { roleTag: "QA", person: "Leslie" },
+        ],
+        "QA + Design": [
+          { roleTag: "QA", person: "Leslie" },
+          { roleTag: "CD", person: "Lane" },
+        ],
+      },
+    },
+  };
+
+  it("plans every binding in order, and the first binding sets the owner", () => {
+    expect(planPeople("Design + QA", "acme", LISTED)).toEqual({ kind: "planned", owner: "Lane", resources: "CD: Lane, QA: Leslie" });
+    expect(planPeople("QA + Design", "acme", LISTED)).toEqual({ kind: "planned", owner: "Leslie", resources: "QA: Leslie, CD: Lane" });
+  });
+
+  it("checks every binding in the list, not only the first", () => {
+    const bad: RoleMap = { acme: { ...MAP.acme, labels: { "Design + QA": [{ roleTag: "CD", person: "Lane" }, { roleTag: "", person: "Leslie" }] } } };
+    expect(() => planPeople("Design + QA", "acme", bad)).toThrow(/ROLE MAP: client "acme"/);
+  });
+
+  it("a label bound to an empty list throws instead of planning no owner", () => {
+    const empty: RoleMap = { acme: { ...MAP.acme, labels: { Design: [] } } };
+    expect(() => planPeople("Design", "acme", empty)).toThrow(/bound to no role/);
+  });
+});
+
+describe("the Ammonia build set plans what a person set by hand", () => {
+  const cases: Array<[string, string, string]> = [
+    ["Design + QA", "Lane", "CD: Lane, QA: Leslie"],
+    ["Dev + QA", "Leslie", "Dev: Leslie"],
+    ["Dev + Design", "Leslie", "Dev: Leslie, CD: Lane"],
+    ["BP", "Kathy", "Client: Beyond Petro"],
+    ["Civ + BP", "Kathy", "AM: Kathy, Client: Beyond Petro"],
+    ["Account", "Kathy", "AM: Kathy"],
+  ];
+
+  it.each(cases)("%s plans owner %s, resources %s", (label, owner, resources) => {
+    expect(planPeople(label, "beyond-petro", ROLE_MAP)).toEqual({ kind: "planned", owner, resources });
+  });
+
+  it("all six synthetic rows plan the same owner and resources on a create, through the shipped map", () => {
+    const tasks = cases.map(([label], i) =>
+      leaf({ rowNumber: 20 + i, taskNo: `2.${i + 1}`, title: `Task ${i + 1}`, resolvedTitle: `Task ${i + 1}`, resource: label, sortOrder: i })
+    );
+    const base = parsedWith(tasks);
+    const parsed: ParsedSheet = { ...base, config: { ...base.config, clientSlug: "beyond-petro" } };
+    const diff = diffSheet(parsed, EMPTY_L1, ledger(), "run-1");
+    const creates = buildPayloads(diff, "run-1").filter((p) => p.op === "createWeekItem");
+    expect(creates.map((p) => [p.params.title, p.params.owner, p.params.resources])).toEqual(
+      cases.map(([, owner, resources], i) => [`Task ${i + 1}`, owner, resources])
+    );
+    expect(diff.counts["role-map-refusals"]).toBe(0);
   });
 });

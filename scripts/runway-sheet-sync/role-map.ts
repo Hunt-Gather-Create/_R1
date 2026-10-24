@@ -18,8 +18,8 @@ export interface ClientRoleMap {
   clientLabels: string[];
   /** The resources entry a client-resource row carries, for example Client: BP. */
   clientResource: RoleBinding;
-  /** A role or a person's first name, as typed in column J, to the person it binds. */
-  labels: Record<string, RoleBinding>;
+  /** A role or a person's first name, as typed in column J, to the bindings it plans, in order. */
+  labels: Record<string, RoleBinding | RoleBinding[]>;
 }
 
 /** Keyed by client slug. */
@@ -52,7 +52,7 @@ export function splitLabels(cell: string, clientMap?: ClientRoleMap): string[] {
     .filter((s) => s.length > 0);
 }
 
-function checkBinding(b: RoleBinding, clientSlug: string): RoleBinding {
+export function checkBinding(b: RoleBinding, clientSlug: string): RoleBinding {
   for (const part of [b.roleTag, b.person]) {
     if (!part.trim() || UNSAFE_IN_BINDING.test(part)) {
       throw new Error(
@@ -63,8 +63,17 @@ function checkBinding(b: RoleBinding, clientSlug: string): RoleBinding {
   return b;
 }
 
+/** Every binding a label plans, in map order, each one checked. */
+function bindingsFor(bound: RoleBinding | RoleBinding[], clientSlug: string): RoleBinding[] {
+  const list = Array.isArray(bound) ? bound : [bound];
+  if (list.length === 0) {
+    throw new Error(`ROLE MAP: client "${clientSlug}" has a label bound to no role. Fix role-map.data.ts.`);
+  }
+  return list.map((b) => checkBinding(b, clientSlug));
+}
+
 /**
- * Rule R1 as amended: the first label sets the owner, every label sets
+ * Rule R1 as amended: the first binding sets the owner, every binding sets
  * resources, a client label makes the account manager the owner, and any
  * unmapped label refuses the whole row.
  */
@@ -89,8 +98,8 @@ export function planPeople(
       bindings.push(checkBinding(clientMap.clientResource, clientSlug));
       continue;
     }
-    const binding = byLabel.get(norm(label));
-    if (binding) bindings.push(checkBinding(binding, clientSlug));
+    const bound = byLabel.get(norm(label));
+    if (bound) bindings.push(...bindingsFor(bound, clientSlug));
     else unmapped.push(label);
   }
   if (unmapped.length > 0) return { kind: "refused", unmapped };
