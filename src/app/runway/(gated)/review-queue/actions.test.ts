@@ -123,7 +123,7 @@ describe("review queue actions", () => {
       holder.cookieValue = undefined;
       const before = await snapshotAllTables(client);
 
-      await expect(action(null, form("rq-1"))).rejects.toThrow(/not authorized/i);
+      await expect(action(null, form("rq-1"))).rejects.toThrow(/not signed in/i);
 
       expect(await snapshotAllTables(client)).toEqual(before);
     });
