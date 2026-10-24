@@ -8,7 +8,10 @@ vi.mock("googleapis", () => ({
   },
 }));
 
-import { readSheetViaServiceAccount } from "./sheets-client";
+import { existsSync, mkdtempSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { chooseLiveSource, liveSourceLine, readSheetLive, readSheetViaServiceAccount } from "./sheets-client";
 import type { SheetFixture } from "./types";
 
 const FAKE_CRED = Buffer.from(
@@ -58,5 +61,37 @@ describe("readSheetViaServiceAccount", () => {
     valuesGet.mockResolvedValue({ data: {} });
     const fx = await readSheetViaServiceAccount("s", "Tab!A1:N");
     expect(fx.values).toEqual([]);
+  });
+});
+
+describe("live credential source choice", () => {
+  it("with GOOGLE_SERVICE_ACCOUNT_JSON set, uses the service account and never calls the CLI", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "runway-gapi-stub-"));
+    const marker = join(dir, "called");
+    const cliPath = join(dir, "cli.cjs");
+    writeFileSync(cliPath, `require("fs").writeFileSync(${JSON.stringify(marker)}, "x"); process.stdout.write('{"values":[]}');`);
+    valuesGet.mockResolvedValue({ data: { values: [["sa"]] } });
+
+    const source = chooseLiveSource();
+    const fx = await readSheetLive("sheet-123", "Tab!A1:N", source, { cliPath });
+
+    expect(source).toBe("service-account");
+    expect(fx.values).toEqual([["sa"]]);
+    expect(valuesGet).toHaveBeenCalledTimes(1);
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("with GOOGLE_SERVICE_ACCOUNT_JSON unset or blank, picks the google-api CLI", () => {
+    expect(chooseLiveSource({})).toBe("google-api-cli");
+    expect(chooseLiveSource({ GOOGLE_SERVICE_ACCOUNT_JSON: "  " })).toBe("google-api-cli");
+  });
+
+  it("names the source in one startup line", () => {
+    expect(liveSourceLine("service-account")).toBe(
+      "── sheet source: service account, GOOGLE_SERVICE_ACCOUNT_JSON"
+    );
+    expect(liveSourceLine("google-api-cli")).toBe(
+      "── sheet source: google-api CLI as consumer runway-sheet-sync"
+    );
   });
 });

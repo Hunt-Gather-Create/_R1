@@ -5,7 +5,7 @@
  *   pnpm runway:sheet-sync                       # all registered sheets
  *   pnpm runway:sheet-sync -- --sheet <sheetId>  # one sheet
  *   pnpm runway:sheet-sync -- --fixtures <dir> --out <dir>
- *   pnpm runway:sheet-sync -- --live             # read via service account (deployed path, needs GOOGLE_SERVICE_ACCOUNT_JSON)
+ *   pnpm runway:sheet-sync -- --live             # service account when GOOGLE_SERVICE_ACCOUNT_JSON is set, else the google-api CLI
  *
  * Inputs:  fixture JSON exports (google-api skill) in --fixtures dir,
  *          Runway prod via RUNWAY_DATABASE_URL (.env.local).
@@ -29,7 +29,7 @@ import { parseSheet } from "./runway-sheet-sync/parse-sheet";
 import { buildPayloads } from "./runway-sheet-sync/payloads";
 import { renderReport } from "./runway-sheet-sync/report";
 import { readClientBundle } from "./runway-sheet-sync/runway-read";
-import { readSheetViaServiceAccount } from "./runway-sheet-sync/sheets-client";
+import { chooseLiveSource, liveSourceLine, readSheetLive } from "./runway-sheet-sync/sheets-client";
 import type { SheetFixture } from "./runway-sheet-sync/types";
 import { assertTarget } from "./runway-sheet-sync/target-guard";
 import { applyPayloads } from "./runway-sheet-sync/apply";
@@ -86,7 +86,7 @@ export async function runSheet(
 
   let fixture: SheetFixture;
   if (live) {
-    fixture = await readSheetViaServiceAccount(sheetId, LIVE_RANGE);
+    fixture = await readSheetLive(sheetId, LIVE_RANGE, chooseLiveSource());
   } else {
     const fixturePath = join(fixturesDir, `${sheetId}.json`);
     if (!existsSync(fixturePath)) {
@@ -225,6 +225,8 @@ async function main(): Promise<void> {
   if (doApply) {
     assertTarget(target, url, process.env);
   }
+
+  if (live) console.error(liveSourceLine(chooseLiveSource()));
 
   const summaries: Record<string, unknown>[] = [];
   for (const t of targets) {
