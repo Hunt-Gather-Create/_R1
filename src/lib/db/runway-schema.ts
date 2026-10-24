@@ -389,4 +389,7 @@ export const applyReviewQueue = sqliteTable("apply_review_queue", {
   runId: text("run_id").notNull(),
   payloadJson: text("payload_json").notNull(), // full SyncPayload as JSON
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  status: text("status", { enum: ["approved", "dismissed"] }), // null means pending
+  resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+  resolvedBy: text("resolved_by"),
 });

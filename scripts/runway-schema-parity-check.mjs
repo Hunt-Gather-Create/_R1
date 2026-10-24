@@ -109,6 +109,16 @@ export const EXPECTED_COLUMNS = {
     "last_seen_at",
   ],
   _meta: ["key", "value", "updated_at"],
+  // The review queue page selects the resolution columns, so a DB without them would 500 that page.
+  apply_review_queue: [
+    "id",
+    "run_id",
+    "payload_json",
+    "created_at",
+    "status",
+    "resolved_at",
+    "resolved_by",
+  ],
 };
 
 export const EXPECTED_META_KEYS = ["schema_version", "feature_flags"];
