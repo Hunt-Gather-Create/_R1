@@ -1,91 +1,27 @@
 "use server";
 
 /**
- * Runway view-preferences read/write — persistent per-scope UI toggles.
- *
- * The runway DB is currently single-tenant so all reads/writes key off
- * a `global` scope row. Future per-user scopes (e.g. Slack user id) are
- * additive without a migration — just pass a different scope string.
- *
- * JSON shape (versionless, add fields as needed):
- *   { inFlightToggle?: boolean; needsUpdateToggle?: boolean; ... }
- *
- * v4 (2026-04-21): introduced for the Week Of In Flight toggle.
- * v5 (2026-05-07): added needsUpdateToggle for the Needs Update section.
+ * Runway view-preferences server actions. Each one checks the password gate
+ * first. The ungated read and the stored shape live in view-preferences-read.ts.
  */
 
 import { getRunwayDb } from "@/lib/db/runway";
 import { viewPreferences } from "@/lib/db/runway-schema";
-import { withRunwayRetry } from "@/lib/runway/retry";
+import { requireRunwayGate } from "@/lib/runway/require-gate";
+import {
+  GLOBAL_SCOPE,
+  readViewPreferences,
+  type RunwayViewPreferences as StoredViewPreferences,
+} from "@/lib/runway/view-preferences-read";
 import { eq } from "drizzle-orm";
 
-export interface RunwayViewPreferences {
-  inFlightToggle?: boolean;
-  needsUpdateToggle?: boolean;
-}
-
-const DEFAULT_PREFERENCES: RunwayViewPreferences = {
-  // Chunk 3 #6 — locked pre-flight decision (pr86-orchestration-amendment.md):
-  // In Flight toggle default = ON.
-  inFlightToggle: true,
-  // Dashboard cleanup item 3 (extended 2026-05-07): Needs Update toggle
-  // default = ON. Mirrors In Flight pattern.
-  needsUpdateToggle: true,
-};
-
-const GLOBAL_SCOPE = "global";
-
-/**
- * Parse stored JSON preferences. Silently falls back to defaults for any
- * malformed payload so a single bad write cannot break the board.
- */
-function parsePreferences(raw: string | null): RunwayViewPreferences {
-  if (!raw) return { ...DEFAULT_PREFERENCES };
-  try {
-    const parsed = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) {
-      return { ...DEFAULT_PREFERENCES };
-    }
-    return { ...DEFAULT_PREFERENCES, ...parsed };
-  } catch {
-    return { ...DEFAULT_PREFERENCES };
-  }
-}
+export type RunwayViewPreferences = StoredViewPreferences;
 
 export async function getViewPreferences(
   scope: string = GLOBAL_SCOPE
 ): Promise<RunwayViewPreferences> {
-  // Graceful fallback: if the `view_preferences` table does not yet exist
-  // (i.e. schema not yet pushed to prod), return defaults rather than
-  // crashing the whole page. TP coordinates `pnpm runway:push` at
-  // integration; in the meantime the UI behaves as if the toggle is ON.
-  //
-  // 2026-05-08: wrapped the read in withRunwayRetry so transient libsql/Turso
-  // ECONNRESETs no longer take the SSR render down. Same pattern as the rest
-  // of the /runway hot-path reads. The retry helper rethrows non-transient
-  // errors untouched, so the existing `no such table` catch below still fires
-  // exactly as before.
-  try {
-    const db = getRunwayDb();
-    const rows = await withRunwayRetry(
-      () =>
-        db
-          .select()
-          .from(viewPreferences)
-          .where(eq(viewPreferences.scope, scope))
-          .limit(1),
-      "getViewPreferences",
-    );
-    if (rows.length === 0) return { ...DEFAULT_PREFERENCES };
-    return parsePreferences(rows[0].preferences);
-  } catch (err) {
-    // SQLITE_ERROR: no such table — ignore quietly; any other error re-throws.
-    const message = err instanceof Error ? err.message : String(err);
-    if (/no such table|SQLITE_ERROR/i.test(message)) {
-      return { ...DEFAULT_PREFERENCES };
-    }
-    throw err;
-  }
+  await requireRunwayGate();
+  return readViewPreferences(scope);
 }
 
 /**
@@ -97,7 +33,8 @@ export async function setViewPreferences(
   patch: Partial<RunwayViewPreferences>,
   scope: string = GLOBAL_SCOPE
 ): Promise<RunwayViewPreferences> {
-  const current = await getViewPreferences(scope);
+  await requireRunwayGate();
+  const current = await readViewPreferences(scope);
   const next = { ...current, ...patch };
 
   try {
