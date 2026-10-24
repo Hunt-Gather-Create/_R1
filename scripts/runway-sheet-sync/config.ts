@@ -22,6 +22,8 @@ export const SHEETS: SheetConfig[] = [
     engagementCode: "SND-2603",
     label: "RX Card Rebuild",
     planSlug: "rx-card-rebuild",
+    // Old documents keep their labels, operator ruling 2026-10-07.
+    acceptedTitleCodes: ["SND-2602"],
   },
   {
     sheetId: "1Ly8koIAYw2IvU_3YC4vouoVjoy8yIlVSIlsf8mfs4pg",
