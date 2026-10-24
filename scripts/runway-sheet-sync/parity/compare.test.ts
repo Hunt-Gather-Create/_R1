@@ -245,8 +245,8 @@ describe("reconcileVerdicts, the harness's own instrument, tested in isolation f
 // Unit test of the field comparator, not the milestone proof. Both sides of
 // the comparison below are authored in this same file, so a broken
 // comparator could be made to pass it. The real bar is a run against a
-// frozen Ammonia sheet fixture and prod snapshot, docs/data-walks/fixtures/,
-// captured separately per _R1#151 thread follow-up, TP note 2026-09-07.
+// frozen sheet fixture and prod snapshot captured into the untracked
+// .data-walks/ folder, never committed, since they hold client data.
 describe("computeParity, comparator unit test: owner/resources/category on an 18-row synthetic scenario", () => {
   it("names exactly {owner, resources, category} when a synthetic scenario differs on exactly those fields", () => {
     const tasks: LeafTask[] = Array.from({ length: 18 }, (_, i) =>
