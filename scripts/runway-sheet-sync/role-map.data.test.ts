@@ -58,6 +58,24 @@ describe("the shipped role map", () => {
     }
   });
 
+  it.each([
+    ["Civ Creative", "Lane", "CD: Lane"],
+    ["Civ Motion", "Lane", "Motion: Lane"],
+    ["Civ AM", "Kathy", "AM: Kathy"],
+    ["Civ QA", "Kathy", "QA: Kathy"],
+    ["Civ Strategy", "Kathy", "Strategy: Kathy"],
+  ])("%s binds %s as %s on nfm, and on nfm only", (label, owner, resources) => {
+    expect(planPeople(label, "nfm", ROLE_MAP)).toEqual({ kind: "planned", owner, resources });
+    expect(validateRoleTagOnResources(resources)).toEqual({ ok: true });
+    for (const slug of ["beyond-petro", "lppc", "soundly"]) {
+      expect(planPeople(label, slug, ROLE_MAP)).toEqual({ kind: "refused", unmapped: [label] });
+    }
+  });
+
+  it("QA still binds Leslie on beyond-petro", () => {
+    expect(planPeople("QA", "beyond-petro", ROLE_MAP)).toEqual({ kind: "planned", owner: "Leslie", resources: "QA: Leslie" });
+  });
+
   it.each(REGISTERED)("a label outside the table is still refused on %s", (slug) => {
     expect(planPeople("Copywriting", slug, ROLE_MAP)).toEqual({ kind: "refused", unmapped: ["Copywriting"] });
     expect(planPeople("Design, Strategy", slug, ROLE_MAP)).toEqual({ kind: "refused", unmapped: ["Strategy"] });

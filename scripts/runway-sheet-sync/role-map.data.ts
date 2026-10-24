@@ -41,6 +41,12 @@ function client(clientLabels: string[], clientName: string, only: ClientRoleMap[
 export const ROLE_MAP: RoleMap = {
   [CLIENT_SLUGS.beyondPetro]: client(["BP", "Beyond Petro"], "Beyond Petro"),
   [CLIENT_SLUGS.lppc]: client(["LPPC"], "LPPC"),
-  [CLIENT_SLUGS.nfm]: client(["NFM"], "NFM"),
+  [CLIENT_SLUGS.nfm]: client(["NFM"], "NFM", {
+    "Civ Creative": CD,
+    "Civ Motion": { roleTag: "Motion", person: "Lane" },
+    "Civ AM": AM,
+    "Civ QA": { roleTag: "QA", person: "Kathy" },
+    "Civ Strategy": { roleTag: "Strategy", person: "Kathy" },
+  }),
   [CLIENT_SLUGS.soundly]: client(["Soundly"], "Soundly", { Josefina: { roleTag: "Dev", person: "Josefina" } }),
 };

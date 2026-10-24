@@ -21,4 +21,10 @@ export const COVERAGE_EXCLUSIONS: CoverageExclusion[] = [
     name: "BPC-2605_ammonia_Project-Plan-v1",
     reason: "Superseded v1. The v2 plan, BPC-2605_ammonia_Project-Plan-v2, is the registered sheet.",
   },
+  {
+    sheetId: "1giFx_-ewRrX-vpDxsNWUWBxxWlpBh_wtu0C-Jtu6sWs",
+    name: "NFM-2601_cedar-park-digital-screen_Project-Plan-v1",
+    reason:
+      "A second Drive file with the same name as the registered NFM plan; the registered sheet is 14x2WqepMH2iexwinkZ1mQQJY37TbSvqu1NhBqNL_dp0.",
+  },
 ];

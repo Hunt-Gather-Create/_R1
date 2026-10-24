@@ -34,11 +34,12 @@ export function resolveGoogleApiCli(env: NodeJS.ProcessEnv = process.env): strin
   return override || join(homedir(), ".claude", "skills", "google-api", "cli.js");
 }
 
-/** Only what the CLI needs to find node and its own badge folder. */
+/** Only what the CLI needs to find node and its own badge folder, which GOOGLE_API_HOME can move. */
 function minimalEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   if (process.env.HOME) env.HOME = process.env.HOME;
   if (process.env.PATH) env.PATH = process.env.PATH;
+  if (process.env.GOOGLE_API_HOME) env.GOOGLE_API_HOME = process.env.GOOGLE_API_HOME;
   return env;
 }
 
