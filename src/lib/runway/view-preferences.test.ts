@@ -44,6 +44,9 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn((a, b) => ({ eq: [a, b] })),
 }));
 
+// The gate has its own tests in view-preferences-gate.test.ts.
+vi.mock("@/lib/runway/require-gate", () => ({ requireRunwayGate: vi.fn(async () => {}) }));
+
 beforeEach(() => {
   vi.clearAllMocks();
   resetState();
