@@ -4,6 +4,7 @@
  */
 import type { DiffResult, FieldDelta, RowDiff, SyncPayload } from "./types";
 import type { ParityResult } from "./parity/types";
+import { errorLine, refusedLabels } from "./refusal-record";
 import { COMPARED_FIELDS, isPeopleField, NEVER_COMPARED_FIELDS } from "./sync-fields";
 
 /**
@@ -128,10 +129,13 @@ export function renderReport(
     } else {
       error = true;
       lines.push(
-        `> **ERROR: ledger populated, nothing matched.** The identity ledger already holds ` +
+        errorLine(
+          "ledger populated, nothing matched.",
+          `The identity ledger already holds ` +
           `${priorLedgerRowCount} row(s) banked from a prior run, but this run matched 0 sheet ` +
           `tasks. A matcher stuck at zero would print the same counts a genuine first run does, so ` +
           `this is a failure, not a note. Do not apply these payloads until the matcher is fixed.`
+        )
       );
     }
     lines.push("");
@@ -188,11 +192,7 @@ export function renderReport(
     }
   }
 
-  const refusals = diff.rowDiffs.flatMap((rd) =>
-    rd.leaf && rd.people?.kind === "refused"
-      ? rd.people.unmapped.map((label) => ({ leaf: rd.leaf!, label }))
-      : []
-  );
+  const refusals = diff.rowDiffs.flatMap((rd) => refusedLabels(rd).map((label) => ({ leaf: rd.leaf!, label })));
   if (refusals.length > 0) {
     lines.push(`## Role map refusals`);
     lines.push("");

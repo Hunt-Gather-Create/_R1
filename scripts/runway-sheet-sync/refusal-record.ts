@@ -1,4 +1,7 @@
 /**
+ * The one owner of refusal: why a row or a sheet was not written, and the
+ * ERROR marker the run report and the refusal record both carry.
+ *
  * A sheet the sync refuses before it writes a diff report still leaves a
  * record, refused-<sheetId>-<time>.md, in the same output folder. The
  * coverage reader treats it as a failed run, so a refused sheet never reads
@@ -6,8 +9,34 @@
  */
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
+import type { RowDiff } from "./types";
 
 export const REFUSAL_PREFIX = "refused-";
+/** The time part of a refusal record name, as refusalStamp writes it. */
+export const REFUSAL_STAMP = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(\.\d+)?Z$/;
+
+const ERROR_LINE = /^> \*\*ERROR:[^\n]*/m;
+
+/** The marker line for a run that must be treated as failure. */
+export function errorLine(headline: string, detail: string): string {
+  return `> **ERROR: ${headline}** ${detail}`;
+}
+
+/** The first ERROR marker in a report or record, without its markdown, or null. */
+export function readErrorLine(body: string): string | null {
+  const error = body.match(ERROR_LINE);
+  return error ? error[0].replace(/^> /, "").replace(/\*\*/g, "") : null;
+}
+
+/** The column J labels the role map refused on this row; owner and resources are not planned for it. */
+export function refusedLabels(rd: RowDiff): string[] {
+  return rd.leaf && rd.people?.kind === "refused" ? rd.people.unmapped : [];
+}
+
+/** Why a row refused by the role map gets a review item instead of an owner. */
+export function roleMapRefusalReason(label: string, clientSlug: string): string {
+  return `column J label "${label}" is not in the role map for "${clientSlug}", owner and resources not planned for this row`;
+}
 
 /** File-safe form of an ISO time: colons become dashes, so names still sort by time. */
 export function refusalStamp(at: Date): string {
@@ -32,7 +61,7 @@ export function writeRefusalRecord(outDir: string, sheetId: string, err: unknown
     `- Refused at ${at.toISOString()}`,
     "",
     // The reader keys on this ERROR line, the same marker a failed diff report carries.
-    `> **ERROR: refused before the diff.** ${messageOf(err)}`,
+    errorLine("refused before the diff.", messageOf(err)),
     "",
   ].join("\n");
   mkdirSync(outDir, { recursive: true });

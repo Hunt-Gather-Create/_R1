@@ -6,6 +6,7 @@
  * Phase 1a emits payloads. It never executes them.
  */
 import { WEEK_ITEM_STATUSES } from "../../src/lib/runway/week-item-statuses";
+import { refusedLabels, roleMapRefusalReason } from "./refusal-record";
 import { isPeopleField } from "./sync-fields";
 import type { DiffResult, SyncPayload } from "./types";
 
@@ -63,7 +64,7 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
     const people = rd.people?.kind === "planned" ? rd.people : null;
 
     // Rule R1 as amended: one review item per unmapped label, never a silent blank.
-    for (const label of rd.people?.kind === "refused" ? rd.people.unmapped : []) {
+    for (const label of refusedLabels(rd)) {
       payloads.push({
         op: "flag-for-review",
         params: { weekItemId: rd.weekItemId ?? null, unmappedLabel: label, policy: "role-map-refusal" },
@@ -71,7 +72,7 @@ export function buildPayloads(diff: DiffResult, runId: string): SyncPayload[] {
         applyOrder: order++,
         requiresReview: true,
         preflight: { statusValid: true, categoryValid: true },
-        reason: `column J label "${label}" is not in the role map for "${diff.config.clientSlug}", owner and resources not planned for this row`,
+        reason: roleMapRefusalReason(label, diff.config.clientSlug),
       });
     }
 

@@ -52,6 +52,7 @@ const LISTS: NamedList[] = [
   },
   { name: "sheet column letters", owner: "runway-sheet-sync/columns.ts", defines: /\bB:\s*1\s*,\s*C:\s*2\b/ },
   { name: "live sheet range", owner: "runway-sheet-sync/columns.ts", defines: /!A1:N\b/ },
+  { name: "refusal ERROR marker", owner: "runway-sheet-sync/refusal-record.ts", defines: /\*\*ERROR:|\\\*\\\*ERROR:/ },
 ];
 
 describe("one owner per named list", () => {
@@ -77,6 +78,7 @@ describe("one owner per named list", () => {
       "client slugs": `clientSlug: "lppc",`,
       "sheet column letters": `const COL = { B: 1, C: 2, E: 4 } as const;`,
       "live sheet range": `const R = "Task Tracker & Gantt Chart!A1:N";`,
+      "refusal ERROR marker": "lines.push(`> **ERROR: refused.** ${why}`);",
     };
     for (const list of LISTS) expect(list.defines.test(copies[list.name]), list.name).toBe(true);
   });
