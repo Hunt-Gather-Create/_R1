@@ -15,19 +15,17 @@ import { buildPayloads } from "./payloads";
 import type { RoleMap } from "./role-map";
 import type { SheetConfig, SheetFixture } from "./types";
 
-vi.mock("./config", () => ({
-  get SHEETS(): never {
-    throw new Error("a stage read the shipped sheet registry");
-  },
-  getSheetConfig(): never {
-    throw new Error("a stage read the shipped sheet registry");
-  },
-}));
-vi.mock("./role-map.data", () => ({
-  get ROLE_MAP(): never {
-    throw new Error("a stage read the shipped role map");
-  },
-}));
+/** An object that throws on any read, standing in for shipped config. */
+function forbidden(what: string): never {
+  return new Proxy({}, {
+    get() {
+      throw new Error(`a stage read the shipped ${what}`);
+    },
+  }) as never;
+}
+
+vi.mock("./config", () => ({ SHEETS: forbidden("sheet registry"), getSheetConfig: forbidden("sheet registry") }));
+vi.mock("./role-map.data", () => ({ ROLE_MAP: forbidden("role map") }));
 
 /** A registry entry and a role map the shipped config has never heard of. */
 const REGISTRY_ENTRY: SheetConfig = {
