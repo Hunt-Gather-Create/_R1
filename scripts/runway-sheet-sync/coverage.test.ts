@@ -43,6 +43,16 @@ describe("buildCoverage on the frozen listing", () => {
     expect(result.counts.excluded).toBe(COVERAGE_EXCLUSIONS.length);
   });
 
+  it("reads the second NFM file with the registered plan's name as EXCLUDED, with its reason", () => {
+    const row = result.rows.find((r) => r.sheetId === "1giFx_-ewRrX-vpDxsNWUWBxxWlpBh_wtu0C-Jtu6sWs");
+    expect(row?.label).toBe("EXCLUDED");
+    const reason =
+      "A second Drive file with the same name as the registered NFM plan; the registered sheet is 14x2WqepMH2iexwinkZ1mQQJY37TbSvqu1NhBqNL_dp0.";
+    expect(row?.detail.startsWith(reason)).toBe(true);
+    const registered = result.rows.find((r) => r.sheetId === "14x2WqepMH2iexwinkZ1mQQJY37TbSvqu1NhBqNL_dp0");
+    expect(registered?.label).not.toBe("EXCLUDED");
+  });
+
   it("carries discovery's notes, such as the superseded registered ITEP v1", () => {
     const itepV1 = result.rows.find((r) => r.sheetId === "1e0VtdHSGG-LMpQqeZ9Bm709fPSYGjrIBOi2sNFKObog");
     expect(itepV1?.detail).toMatch(/not the latest plan/);

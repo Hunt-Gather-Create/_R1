@@ -1,8 +1,8 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { GoogleApiCliError, resolveGoogleApiCli } from "./google-api-cli";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { GoogleApiCliError, resolveGoogleApiCli, runGoogleApiCli } from "./google-api-cli";
 import { readSheetViaGoogleApiCli } from "./sheets-client";
 import type { SheetFixture } from "./types";
 
@@ -36,6 +36,27 @@ beforeEach(() => {
 });
 afterEach(() => {
   delete process.env.RUNWAY_GOOGLE_API_CLI;
+  vi.unstubAllEnvs();
+});
+
+describe("the env the CLI child sees", () => {
+  // macOS adds __CF_USER_TEXT_ENCODING to every process it starts; the parent does not pass it.
+  const envStub = () =>
+    stub(`const e = { ...process.env }; delete e.__CF_USER_TEXT_ENCODING; process.stdout.write(JSON.stringify(e));`);
+
+  it("carries GOOGLE_API_HOME when set, beside HOME and PATH, and no other variable", async () => {
+    vi.stubEnv("GOOGLE_API_HOME", "/tmp/unmerged-google-api-clone");
+    vi.stubEnv("RUNWAY_SYNC_DECOY", "must-not-pass");
+    const childEnv = (await runGoogleApiCli("whoami", [], { cliPath: envStub() })) as Record<string, string>;
+    expect(Object.keys(childEnv).sort()).toEqual(["GOOGLE_API_HOME", "HOME", "PATH"]);
+    expect(childEnv.GOOGLE_API_HOME).toBe("/tmp/unmerged-google-api-clone");
+  });
+
+  it("carries only HOME and PATH when GOOGLE_API_HOME is not set", async () => {
+    vi.stubEnv("GOOGLE_API_HOME", undefined);
+    const childEnv = (await runGoogleApiCli("whoami", [], { cliPath: envStub() })) as Record<string, string>;
+    expect(Object.keys(childEnv).sort()).toEqual(["HOME", "PATH"]);
+  });
 });
 
 describe("readSheetViaGoogleApiCli, live read through the google-api one door", () => {
