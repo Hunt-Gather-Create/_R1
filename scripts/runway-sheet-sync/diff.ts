@@ -16,9 +16,6 @@ import { planPeople, ROLE_MAP, type RoleMap } from "./role-map";
 import type { RunwayClientBundle } from "./runway-read";
 import type { DiffResult, Disposition, Ledger, ParsedSheet, RowDiff } from "./types";
 
-export { resolveL1 } from "./l1-resolve";
-export { categoryDelta, statusDelta, titleDelta, weekOfDelta } from "./field-deltas";
-
 export function diffSheet(
   parsed: ParsedSheet,
   bundle: RunwayClientBundle,
