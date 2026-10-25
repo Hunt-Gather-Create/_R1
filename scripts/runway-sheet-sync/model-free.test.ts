@@ -26,8 +26,8 @@ import {
   type TestDb,
 } from "../../src/lib/runway/test-db";
 import { clients, projects } from "../../src/lib/db/runway-schema";
-import { getSheetConfig, SHEETS } from "./config";
-import type { SheetFixture } from "./types";
+import { oneScheduleDiscovery } from "./schedule.test-fixtures";
+import type { SheetConfig, SheetFixture } from "./types";
 
 /** Every export of the named module throws the moment it is CALLED. Access
  * (e.g. destructuring an import) does not throw — only invocation does,
@@ -73,7 +73,7 @@ describe("_R1#156 model-free proof", () => {
   });
 
   describe("the full sync against fixtures, with the model client stubbed to throw", () => {
-    const CONFIG = getSheetConfig(SHEETS[0].sheetId)!; // beyond-petro / BPC-2603-01
+    const CONFIG: SheetConfig = { sheetId: "syn-widget", clientSlug: "acme-widgets", engagementCode: "ACW-2603-01", label: "Widget Page" };
 
     let db: TestDb;
     let dbPath: string;
@@ -88,8 +88,8 @@ describe("_R1#156 model-free proof", () => {
 
       await db.insert(clients).values({
         id: "cl-156-model-free",
-        name: "Beyond Petro",
-        slug: "beyond-petro",
+        name: "Acme Widgets",
+        slug: "acme-widgets",
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -116,7 +116,7 @@ describe("_R1#156 model-free proof", () => {
       const values: (string | undefined)[][] = [
         ["", "CIVILIZATION"],
         [],
-        ["", "Beyond Petro | Project Plan"],
+        ["", "Acme Widgets | Project Plan"],
         [],
         ["", `${CONFIG.label}  |   ${CONFIG.engagementCode}`],
         [],
@@ -137,13 +137,7 @@ describe("_R1#156 model-free proof", () => {
       writeFileSync(join(fixturesDir, `${CONFIG.sheetId}.json`), JSON.stringify(fixture));
 
       const { runSheet } = await import("../runway-sheet-sync");
-      // _R1#154, TP's gate-1 ruling: runSheet's freshness decision is
-      // required. This suite proves the pipeline is model-free, not
-      // freshness behavior, so the explicit skip is a test-harness choice.
-      const summary = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, {
-        checked: false,
-        reason: "_R1#156 model-free test, freshness not under test here",
-      })) as {
+      const summary = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, oneScheduleDiscovery(CONFIG))) as {
         counts: { "leaf-tasks": number };
       };
 

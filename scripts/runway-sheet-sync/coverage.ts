@@ -1,44 +1,45 @@
 /**
- * Rollout coverage: a pure function of a Drive listing, the registry, the
- * exclusions list and each registered sheet's run report status.
+ * Rollout coverage: a pure function of a schedule discovery and each chosen
+ * sheet's run report status.
  *
- * The denominator is the Drive listing. Every Drive sheet gets exactly one
- * label, and every exclusion stays in the output with its reason.
+ * The denominator is every Drive file that matches the schedule name rule,
+ * plus every live or proposed ledger job with no such file. Each reads
+ * exactly one label, and superseded versions say so by rule, never from a list.
  */
-import type { CoverageExclusion } from "./coverage-exclusions";
-import { discoverPlans, type DriveFile } from "./discovery";
 import type { RunReportReader, RunReportStatus } from "./run-report-status";
-import type { SheetConfig } from "./types";
+import type { ScheduleDiscovery } from "./schedule-discovery";
+import type { DriveFile } from "./schedule-files";
 
-export type CoverageLabel = "DEPLOYED" | "FAILED" | "COULD-NOT-TELL" | "EXCLUDED" | "MISSING";
+export type CoverageLabel = "DEPLOYED" | "FAILED" | "COULD-NOT-TELL" | "SUPERSEDED" | "MISSING";
+
+/** Ledger statuses whose jobs owe a schedule. */
+export const COUNTED_STATUSES = ["live", "proposed"];
 
 export interface CoverageRow {
   label: CoverageLabel;
-  sheetId: string;
+  job: string | null;
+  sheetId: string | null;
   name: string;
   detail: string;
 }
 
 export interface CoverageCounts {
   covered: number;
-  excluded: number;
+  superseded: number;
   missing: number;
   failed: number;
   couldNotTell: number;
 }
 
 export interface CoverageResult {
-  driveTotal: number;
+  total: number;
   rows: CoverageRow[];
   counts: CoverageCounts;
-  /** DEPLOYED over Drive sheets not excluded, null when nothing is left to cover. */
+  /** DEPLOYED over rows not SUPERSEDED, null when nothing is left to cover. */
   percent: number | null;
-  exclusions: CoverageExclusion[];
-  registeredNotInDrive: SheetConfig[];
-  staleExclusions: CoverageExclusion[];
 }
 
-/** A registered sheet's state from its most recent run report. */
+/** A chosen sheet's state from its most recent run report. */
 export function stateForReport(status: RunReportStatus): { label: CoverageLabel; detail: string } {
   switch (status.kind) {
     case "clean":
@@ -46,103 +47,65 @@ export function stateForReport(status: RunReportStatus): { label: CoverageLabel;
     case "failed":
       return { label: "FAILED", detail: `${status.reason}, ${status.path}` };
     case "none":
-      return { label: "FAILED", detail: "registered, no run report" };
+      return { label: "FAILED", detail: "chosen, no run report" };
     case "could-not-tell":
       return { label: "COULD-NOT-TELL", detail: status.reason };
   }
 }
 
-/** Discovery's own buckets, reused as per-sheet notes a person should see. */
-function discoveryNotes(registry: SheetConfig[], listing: DriveFile[]): Map<string, string[]> {
-  const report = discoverPlans(registry, listing);
-  const notes = new Map<string, string[]>();
-  const add = (id: string, note: string) => notes.set(id, [...(notes.get(id) ?? []), note]);
-  for (const s of report.superseded) add(s.sheetId, `not the latest plan: ${s.reason}`);
-  for (const d of report.duplicates) for (const id of d.ids) add(id, "another Drive file has the same name");
-  for (const p of report.pendingClearanceOrTest) add(p.id, "pending clearance or test file");
-  for (const u of report.unrecognizedShape) add(u.id, "title shape not recognised");
-  return notes;
-}
+const fileRow = (label: CoverageLabel, job: string | null, f: DriveFile, detail: string): CoverageRow => ({
+  label,
+  job,
+  sheetId: f.id,
+  name: f.name,
+  detail,
+});
 
-export function buildCoverage(args: {
-  listing: DriveFile[];
-  registry: SheetConfig[];
-  exclusions: CoverageExclusion[];
-  readReport: RunReportReader;
-}): CoverageResult {
-  const { listing, registry, exclusions, readReport } = args;
-  const registered = new Map(registry.map((r) => [r.sheetId, r]));
-  const excluded = new Map(exclusions.map((e) => [e.sheetId, e]));
-  const driveIds = new Set(listing.map((f) => f.id));
-  const notes = discoveryNotes(registry, listing);
-
-  const rows: CoverageRow[] = listing.map((file) => {
-    const extra = [...(notes.get(file.id) ?? [])];
-    let label: CoverageLabel;
-    let detail: string;
-    if (registered.has(file.id)) {
-      ({ label, detail } = stateForReport(readReport(file.id)));
-      if (excluded.has(file.id)) extra.push("also in coverage-exclusions.ts, the registry wins, remove one");
-    } else if (excluded.has(file.id)) {
-      label = "EXCLUDED";
-      detail = excluded.get(file.id)!.reason;
-    } else {
-      label = "MISSING";
-      detail = "not in the registry and not excluded";
+export function buildCoverage(args: { discovery: ScheduleDiscovery; readReport: RunReportReader }): CoverageResult {
+  const rows: CoverageRow[] = [];
+  for (const entry of args.discovery.jobs) {
+    const job = entry.job.jobNumber;
+    if (entry.kind === "chosen") {
+      const { label, detail } = stateForReport(args.readReport(entry.config.sheetId));
+      const via = entry.config.fromRegistry ? "; chosen by a sheet_registry row" : "";
+      rows.push({ label, job, sheetId: entry.config.sheetId, name: entry.file?.name ?? entry.job.engagement, detail: detail + via });
+      for (const f of entry.superseded) {
+        rows.push(fileRow("SUPERSEDED", job, f, `job ${job} chose ${entry.config.sheetId}`));
+      }
+    } else if (entry.kind === "refused") {
+      for (const f of entry.files) rows.push(fileRow("COULD-NOT-TELL", job, f, entry.reason));
+      if (entry.files.length === 0) rows.push({ label: "COULD-NOT-TELL", job, sheetId: null, name: entry.job.engagement, detail: entry.reason });
+    } else if (COUNTED_STATUSES.includes(entry.job.status)) {
+      rows.push({ label: "MISSING", job, sheetId: null, name: entry.job.engagement, detail: `${entry.job.status} job with no schedule in Drive` });
     }
-    return { label, sheetId: file.id, name: file.name, detail: [detail, ...extra].join("; ") };
-  });
+  }
+  for (const f of args.discovery.unowned) rows.push(fileRow("MISSING", null, f, "no job ledger number starts this file name"));
 
   const count = (l: CoverageLabel) => rows.filter((r) => r.label === l).length;
   const counts: CoverageCounts = {
     covered: count("DEPLOYED"),
-    excluded: count("EXCLUDED"),
+    superseded: count("SUPERSEDED"),
     missing: count("MISSING"),
     failed: count("FAILED"),
     couldNotTell: count("COULD-NOT-TELL"),
   };
-  const target = listing.length - counts.excluded;
-
-  return {
-    driveTotal: listing.length,
-    rows,
-    counts,
-    percent: target > 0 ? (100 * counts.covered) / target : null,
-    exclusions: exclusions.filter((e) => driveIds.has(e.sheetId) && !registered.has(e.sheetId)),
-    registeredNotInDrive: registry.filter((r) => !driveIds.has(r.sheetId)),
-    staleExclusions: exclusions.filter((e) => !driveIds.has(e.sheetId)),
-  };
-}
-
-function section(title: string, items: string[]): string[] {
-  return ["", title, ...(items.length > 0 ? items.map((i) => `- ${i}`) : ["- none"])];
+  const target = rows.length - counts.superseded;
+  return { total: rows.length, rows, counts, percent: target > 0 ? (100 * counts.covered) / target : null };
 }
 
 export function renderCoverage(result: CoverageResult, source: string): string {
   const c = result.counts;
   const percent =
     result.percent === null
-      ? "percent rolled out: none, every Drive sheet is excluded"
-      : `percent rolled out: ${result.percent.toFixed(1)}%, ${c.covered} deployed of ${result.driveTotal - c.excluded} not excluded`;
-  const width = Math.max(...result.rows.map((r) => r.label.length));
+      ? "percent rolled out: none, nothing left to cover"
+      : `percent rolled out: ${result.percent.toFixed(1)}%, ${c.covered} deployed of ${result.total - c.superseded} not superseded`;
+  const width = Math.max(0, ...result.rows.map((r) => r.label.length));
   const lines = [
-    `Sheet coverage: ${result.driveTotal} sheet(s) in Drive, from ${source}`,
-    `covered ${c.covered}, excluded ${c.excluded}, missing ${c.missing}, failed ${c.failed}, could-not-tell ${c.couldNotTell}`,
+    `Sheet coverage: ${result.total} row(s), from ${source}`,
+    `covered ${c.covered}, superseded ${c.superseded}, missing ${c.missing}, failed ${c.failed}, could-not-tell ${c.couldNotTell}`,
     percent,
     "",
-    ...result.rows.map((r) => `${r.label.padEnd(width)} ${r.name} | ${r.sheetId} | ${r.detail}`),
-    ...section(
-      "Exclusions, each with its reason:",
-      result.exclusions.map((e) => `${e.name} | ${e.sheetId} | ${e.reason}`)
-    ),
-    ...section(
-      "Registered but not in this Drive listing, outside the count:",
-      result.registeredNotInDrive.map((r) => `${r.sheetId} | ${r.label}`)
-    ),
-    ...section(
-      "Exclusions naming a sheet not in this Drive listing:",
-      result.staleExclusions.map((e) => `${e.name} | ${e.sheetId} | ${e.reason}`)
-    ),
+    ...result.rows.map((r) => `${r.label.padEnd(width)} ${r.job ?? "no job"} | ${r.name} | ${r.sheetId ?? "no sheet"} | ${r.detail}`),
   ];
   return lines.join("\n") + "\n";
 }

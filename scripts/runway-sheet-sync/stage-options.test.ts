@@ -1,6 +1,6 @@
 /**
  * Every stage runs on the config its caller passes and reads none of its
- * own. The shipped registry and role map are mocked to throw on any read,
+ * own. Schedule discovery and the role map are mocked to throw on any read,
  * so a stage that reaches for either fails here.
  */
 import { readFileSync } from "fs";
@@ -24,7 +24,7 @@ function forbidden(what: string): never {
   }) as never;
 }
 
-vi.mock("./config", () => ({ SHEETS: forbidden("sheet registry"), getSheetConfig: forbidden("sheet registry") }));
+vi.mock("./schedule-discovery", () => ({ discoverSchedules: forbidden("schedule discovery") }));
 vi.mock("./role-map.data", () => ({ ROLE_MAP: forbidden("role map") }));
 
 /** A registry entry and a role map the shipped config has never heard of. */
@@ -139,7 +139,7 @@ describe("stages run on the options they are passed", () => {
     ];
     for (const file of stages) {
       const text = readFileSync(join(__dirname, file), "utf8");
-      expect(text, file).not.toMatch(/from "\.\.?\/(config|role-map\.data)"|\bROLE_MAP\b|\bSHEETS\b|\bgetSheetConfig\b/);
+      expect(text, file).not.toMatch(/from "\.\.?\/(schedule-discovery|discover-live|role-map\.data)"|\bROLE_MAP\b|\bdiscoverSchedules\b/);
     }
   });
 });
