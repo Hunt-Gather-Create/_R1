@@ -1,10 +1,12 @@
 /**
  * Runway Sheet Sync, Phase 1a diff CLI: read a plan sheet, diff it against Runway, emit the result.
  *
- * Without --apply a run never writes prod. It always opens runway-staging,
- * whatever other flags it carries. It writes the files below to --out, plus a
- * refusal record there when a sheet refuses, and a --live run also writes
- * sheet_sync_ledger rows to runway-staging.
+ * A run without --apply, with or without --live, opens prod read-only and
+ * writes nothing to any database: no sheet_sync_ledger, sheet_registry or
+ * queue rows. Its handle throws on every write method. It writes only the
+ * report files below to --out on local disk, plus a refusal record there
+ * when a sheet refuses. Only --apply writes, to prod, or to runway-staging
+ * with --target staging.
  *
  * Usage:
  *   pnpm runway:sheet-sync                       # every schedule discovery chooses
@@ -17,8 +19,8 @@
  * a Drive search, and the clients and sheet_registry tables. No sheet lives in code.
  *
  * Inputs:  fixture JSON exports (google-api skill) in --fixtures dir,
- *          runway-staging via RUNWAY_STAGING_DATABASE_URL (.env.local);
- *          prod only on --apply --target prod.
+ *          prod via RUNWAY_DATABASE_URL (.env.local), read-only without --apply;
+ *          runway-staging via RUNWAY_STAGING_DATABASE_URL only on --apply --target staging.
  * Outputs per sheet (in --out dir, gitignored under docs/tmp/):
  *   diff-<sheetId>-<date>.md            human-readable diff report
  *   diff-<sheetId>-<date>.payloads.json ready-to-apply operation payloads
@@ -43,7 +45,8 @@ import { loadStaffing } from "./runway-sheet-sync/staffing-read";
 import { chooseLiveSource, liveSourceLine, readSheetLive } from "./runway-sheet-sync/sheets-client";
 import type { SheetFixture } from "./runway-sheet-sync/types";
 import { assertTarget } from "./runway-sheet-sync/target-guard";
-import { opensStaging } from "./runway-sheet-sync/db-target";
+import { runDatabase } from "./runway-sheet-sync/db-target";
+import { readOnlyDb } from "./runway-sheet-sync/read-only-db";
 import { applyPayloads } from "./runway-sheet-sync/apply";
 import { writePreSnapshot, postVerifyDiff } from "./runway-sheet-sync/snapshot";
 import { discoverForRun, liveDiscoveryDeps } from "./runway-sheet-sync/discover-live";
@@ -82,8 +85,10 @@ export async function runSheet(
   discovery: ScheduleDiscovery,
   staffing?: Staffing
 ): Promise<Record<string, unknown>> {
+  // Only --apply may write, so every other run gets a handle that cannot.
+  const handle = apply ? db : readOnlyDb(db);
   return recordingRefusal(outDir, sheetId, async (diffWritten) =>
-    syncSheet(db, sheetId, fixturesDir, outDir, live, apply, force, discovery, staffing ?? (await loadStaffing(db)), diffWritten)
+    syncSheet(handle, sheetId, fixturesDir, outDir, live, apply, force, discovery, staffing ?? (await loadStaffing(handle)), diffWritten)
   );
 }
 
@@ -159,7 +164,9 @@ async function syncSheet(
   );
 
   let ledgerSink: string;
-  if (repo) {
+  if (repo && !apply) {
+    ledgerSink = "db:sheet_sync_ledger (not saved, dry run)";
+  } else if (repo) {
     const saved = await saveDbLedger(repo, config.engagementCode, ledger, runId);
     for (const w of saved.warnings) parsed.flags.push(`LEDGER: ${w}`);
     ledgerSink = `db:sheet_sync_ledger (persisted ${saved.persisted}, skipped ${saved.skipped})`;
@@ -226,10 +233,12 @@ async function main(): Promise<void> {
   const target = arg("target");
   const force = process.argv.includes("--force");
 
-  // A run without --apply opens runway-staging; only --apply --target prod opens prod.
-  const staging = opensStaging(process.argv, target);
-  const { db, url } = createRunwayDb({ staging });
-  if (staging) console.error("── ledger target: runway-staging");
+  // A run without --apply opens prod read-only; --apply opens prod or --target staging.
+  const { staging, readOnly } = runDatabase(process.argv, target);
+  const opened = createRunwayDb({ staging });
+  const db = readOnly ? readOnlyDb(opened.db) : opened.db;
+  const url = opened.url;
+  console.error(readOnly ? "── dry run: prod, read-only, writes nothing" : `── apply target: ${staging ? "runway-staging" : "prod"}`);
   if (!url.startsWith("libsql")) {
     throw new Error(
       `${staging ? "RUNWAY_STAGING_DATABASE_URL" : "RUNWAY_DATABASE_URL"} not loaded (resolved "${url}"): check .env.local before diffing against a stale local file`
