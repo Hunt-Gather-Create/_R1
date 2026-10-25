@@ -15,7 +15,7 @@ export function titleCode(name: string): string | null {
   return name.match(TITLE_CODE)?.[1] ?? null;
 }
 
-/** New-shape titles drop the sub-number, so BPC-2602 names the same engagement as BPC-2602-01. */
+/** New-shape titles drop the sub-number, so ACM-2602 names the same engagement as ACM-2602-01. */
 function codesAgree(title: string, job: string): boolean {
   return title === job || title === job.replace(/-\d{2}$/, "");
 }

@@ -21,7 +21,7 @@ import { createWeekItem, updateWeekItemField, addProject } from "../../src/lib/r
 function payload(over: Partial<SyncPayload>): SyncPayload {
   return {
     op: "createWeekItem",
-    params: { clientSlug: "soundly", title: "Kickoff" },
+    params: { clientSlug: "acme", title: "Kickoff" },
     source: { sheetId: "s", rowNumber: 12, taskNo: "1.1" },
     applyOrder: 0,
     requiresReview: false,
@@ -109,7 +109,7 @@ describe("applyPayloads apply path", () => {
   afterEach(() => cleanupTestDb(dbPath));
 
   it("(a) dispatches createWeekItem once with payload.params and records it in applied", async () => {
-    const p = payload({ op: "createWeekItem", params: { clientSlug: "soundly", title: "Kickoff" } });
+    const p = payload({ op: "createWeekItem", params: { clientSlug: "acme", title: "Kickoff" } });
     const result = await applyPayloads(db, [p], { runId: "run-a", apply: true });
 
     expect(result.dryRun).toBe(false);

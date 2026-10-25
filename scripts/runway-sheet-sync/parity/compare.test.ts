@@ -255,17 +255,17 @@ describe("computeParity, comparator unit test: owner/resources/category on an 18
       leaf({
         rowNumber: 12 + i,
         taskNo: `${i + 1}.1`,
-        title: `Ammonia task ${i}`,
-        resolvedTitle: `Ammonia task ${i}`,
+        title: `Widget task ${i}`,
+        resolvedTitle: `Widget task ${i}`,
         category: "kickoff", // tool always derives a non-null category
       })
     );
     const parsed = parsedWith(tasks);
     const prodSnapshot = {
-      clientSlug: "beyond-petro",
+      clientSlug: "northwind",
       capturedAt: "2026-09-07T22:00:00Z",
-      client: { id: "c-1", slug: "beyond-petro", name: "Beyond Petro" },
-      projects: [{ id: "p-1", name: "Ammonia Landing Page", status: null, category: null, notes: "BPC-2605-01" }],
+      client: { id: "c-1", slug: "northwind", name: "Northwind Petro" },
+      projects: [{ id: "p-1", name: "Widget Landing Page", status: null, category: null, notes: "NWP-2605-01" }],
       weekItems: tasks.map((t, i) =>
         prodRow({
           id: `wi-${i}`,
@@ -366,7 +366,7 @@ describe("_R1#156 intervention count: HAND_ONLY + DISAGREE, the rows the tool co
   });
 });
 
-const MAP = staffingFromRows([{ slug: "acme", name: "Acme", nicknames: JSON.stringify(["BP"]), team: "CD: Wren" }], MEMBER_ROWS);
+const MAP = staffingFromRows([{ slug: "acme", name: "Acme", nicknames: JSON.stringify(["ACM"]), team: "CD: Wren" }], MEMBER_ROWS);
 const MAPPED_LEAF = leaf({ resource: "Design + Creatives" });
 
 describe("assertPeopleFromRoleMap, owner and resources only from staffing, rule R1", () => {
@@ -428,7 +428,7 @@ describe("assertPeopleFromRoleMap, owner and resources only from staffing, rule 
   it("the structural probe itself is non-vacuous: it reaches both the write and flag-for-review branches", () => {
     // A live run's payload list is empty whenever every compared field
     // agrees. TP mutation finding, 2026-09-07: payloads.ts:93 changed to a
-    // hardcoded field, real Ammonia CLI run produced zero payloads and did
+    // hardcoded field, real live CLI run produced zero payloads and did
     // not throw. If a future edit to structuralProbeDiff ever stops forcing
     // both branches, this goes red before the guard silently goes blind.
     const probePayloads = buildPayloads(structuralProbeDiff(), "structural-probe-test");

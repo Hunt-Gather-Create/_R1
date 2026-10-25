@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getMondayIso, isParseableDate, parseSheetDate } from "./parse-dates";
 
 describe("parseSheetDate", () => {
-  it("parses d-MMM-yyyy (LPPC/Soundly format)", () => {
+  it("parses d-MMM-yyyy, the plan sheet date format", () => {
     expect(parseSheetDate("22-Jun-2026")).toBe("2026-06-22");
     expect(parseSheetDate("2-Jul-2026")).toBe("2026-07-02");
     expect(parseSheetDate("10-Jul-2026")).toBe("2026-07-10");
