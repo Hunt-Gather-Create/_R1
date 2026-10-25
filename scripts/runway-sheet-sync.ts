@@ -51,7 +51,7 @@ import { applyPayloads } from "./runway-sheet-sync/apply";
 import { writePreSnapshot, postVerifyDiff } from "./runway-sheet-sync/snapshot";
 import { discoverForRun, liveDiscoveryDeps } from "./runway-sheet-sync/discover-live";
 import type { ScheduleDiscovery } from "./runway-sheet-sync/schedule-discovery";
-import { allSchedules, scheduleForJob, scheduleForSheet } from "./runway-sheet-sync/schedule-select";
+import { allSchedules, scheduleForJob, scheduleForSheet, skippedRowLines } from "./runway-sheet-sync/schedule-select";
 import { checkTitleCode } from "./runway-sheet-sync/title-code-check";
 import { recordingRefusal, refusingAll } from "./runway-sheet-sync/refusal-record";
 import { LIVE_RANGE } from "./runway-sheet-sync/columns";
@@ -254,6 +254,8 @@ async function main(): Promise<void> {
   if (live) console.error(liveSourceLine(chooseLiveSource()));
 
   const discovery = await discoverForRun(process.env, liveDiscoveryDeps(db));
+  const skipped = skippedRowLines(discovery);
+  if (skipped.length > 0) console.error(`── SKIPPED ${skipped.length} job ledger row(s):\n${skipped.map((l) => `   ${l}`).join("\n")}`);
   const { targets, refusals } = pickTargets(discovery, outDir, onlyJob, onlySheet);
   for (const r of refusals) console.error(`── REFUSED: ${r}`);
 

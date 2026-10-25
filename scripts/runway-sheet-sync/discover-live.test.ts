@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { discoverForRun, type DiscoveryDeps } from "./discover-live";
 import { JOB_LEDGER_ENV, parseJobLedger } from "./job-ledger";
-import { scheduleForJob, scheduleForSheet } from "./schedule-select";
+import { allSchedules, scheduleForJob, scheduleForSheet, skippedRowLines } from "./schedule-select";
 import { driveFile, SYN_CLIENTS } from "./schedule.test-fixtures";
 
 const JOB_HEADER = ["Job #", "Client", "Engagement", "Status", "Year", "SOW Signed", "SOW File ID", "Folder ID"];
@@ -79,5 +79,36 @@ describe("--job and --sheet resolve through discovery, with no registry entry in
   it("--sheet on a file in a refused job throws the job's refusal", async () => {
     const discovery = await discoverForRun(ENV, deps({ readClients: async () => [] }));
     expect(() => scheduleForSheet(discovery, "syn-base")).toThrow(/Job ABC-2604: client "Acme Widgets" matches no Runway client/);
+  });
+});
+
+describe("a ledger row the run cannot use is skipped, never a run-stopper", () => {
+  const ledger = () =>
+    parseJobLedger(
+      [
+        JOB_HEADER,
+        ["ABC-2604", "Acme Widgets", "Base Work", "live"],
+        ["ABC 2604-02", "Acme Widgets", "Bad Shape", "live"],
+        ["GLX-2605", "Globex", "Twice", "live"],
+        ["GLX-2605", "Globex", "Twice Again", "live"],
+        ["ZQ7-2601", "Globex", "Digit Prefix", "live"],
+      ],
+      [PREFIX_HEADER],
+    );
+  const listDrive = async () => [driveFile("syn-base", "ABC-2604 Schedule v1"), driveFile("syn-zq7", "ZQ7-2601 | Digit Prefix Schedule v1")];
+
+  it("the run continues past the skipped rows and the report counts each one with its text", async () => {
+    const discovery = await discoverForRun(ENV, deps({ readLedger: async () => ledger(), listDrive }));
+    expect(allSchedules(discovery).targets.map((t) => t.sheetId)).toEqual(["syn-base", "syn-zq7"]);
+    expect(skippedRowLines(discovery)).toEqual([
+      'job ledger row "ABC 2604-02" skipped: not shaped like ABC-2604, AB1-2601 or ABC-2501-03-35',
+      'job ledger row "GLX-2605" skipped: listed 2 times',
+    ]);
+  });
+
+  it("--job on a malformed or a duplicate job number still refuses", async () => {
+    const discovery = await discoverForRun(ENV, deps({ readLedger: async () => ledger(), listDrive }));
+    expect(() => scheduleForJob(discovery, "ABC 2604-02")).toThrow("Job ABC 2604-02 is not shaped like ABC-2604, AB1-2601 or ABC-2501-03-35.");
+    expect(() => scheduleForJob(discovery, "glx-2605")).toThrow("Job GLX-2605 is refused: the job ledger row was skipped, listed 2 times.");
   });
 });

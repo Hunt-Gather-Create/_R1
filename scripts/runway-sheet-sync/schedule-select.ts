@@ -2,7 +2,7 @@
  * Picks run targets out of a schedule discovery. Every miss throws a plain
  * reason, so a run never syncs a sheet discovery did not choose.
  */
-import { scheduleVersion } from "./schedule-files";
+import { JOB_NUMBER, scheduleVersion } from "./schedule-files";
 import type { JobSchedule, ScheduleDiscovery } from "./schedule-discovery";
 import type { SheetConfig } from "./types";
 
@@ -16,7 +16,11 @@ function chosenOrThrow(entry: JobSchedule): SheetConfig {
 }
 
 export function scheduleForJob(discovery: ScheduleDiscovery, jobNumber: string): SheetConfig {
-  const entry = discovery.jobs.find((j) => j.job.jobNumber === jobNumber.trim().toUpperCase());
+  const wanted = jobNumber.trim().toUpperCase();
+  if (!JOB_NUMBER.test(wanted)) throw new Error(`Job ${jobNumber} is not shaped like ABC-2604, AB1-2601 or ABC-2501-03-35.`);
+  const skipped = discovery.skipped.find((s) => s.text === wanted);
+  if (skipped) throw new Error(`Job ${wanted} is refused: the job ledger row was skipped, ${skipped.reason}.`);
+  const entry = discovery.jobs.find((j) => j.job.jobNumber === wanted);
   if (!entry) throw new Error(`Job ${jobNumber} is not in the job ledger.`);
   return chosenOrThrow(entry);
 }
@@ -49,4 +53,9 @@ export function allSchedules(discovery: ScheduleDiscovery): { targets: SheetConf
     if (entry.kind === "refused") refusals.push(entry.reason);
   }
   return { targets, refusals };
+}
+
+/** One run report line per skipped job ledger row, each naming the row's text. */
+export function skippedRowLines(discovery: ScheduleDiscovery): string[] {
+  return discovery.skipped.map((s) => `job ledger row "${s.text}" skipped: ${s.reason}`);
 }
