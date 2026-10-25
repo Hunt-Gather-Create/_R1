@@ -14,7 +14,7 @@ import { clients, projects, sheetSyncLedger, weekItems } from "../../src/lib/db/
 import { getSheetSyncLedger } from "../../src/lib/runway/sheet-sync-ledger-repo";
 import { runSheet } from "../runway-sheet-sync";
 import { applyPayloads } from "./apply";
-import { WRITE_METHODS } from "./read-only-db";
+import { READ_METHODS } from "./read-only-db";
 import { oneScheduleDiscovery } from "./schedule.test-fixtures";
 import type { SheetConfig, SheetFixture } from "./types";
 
@@ -49,14 +49,15 @@ vi.mock("./sheets-client", async (original) => ({
 vi.mock("./apply", () => ({ applyPayloads: vi.fn(async () => ({ applied: [], review: [] })) }));
 vi.mock("./snapshot", () => ({ writePreSnapshot: vi.fn(), postVerifyDiff: vi.fn() }));
 
-/** Wraps the test db so every touch of a write method is recorded, then passed through. */
+/** Wraps the test db so every touch of a property that is not a read builder is recorded, then passed through. */
 function countingDb(db: TestDb): { db: TestDb; writes: string[] } {
   const writes: string[] = [];
-  const blocked = new Set<string | symbol>(WRITE_METHODS);
+  const reads = new Set<string | symbol>(READ_METHODS);
   const spy = new Proxy(db, {
-    get(target, prop, receiver) {
-      if (blocked.has(prop)) writes.push(String(prop));
-      return Reflect.get(target, prop, receiver);
+    get(target, prop) {
+      if (!reads.has(prop)) writes.push(String(prop));
+      const value = Reflect.get(target, prop, target);
+      return typeof value === "function" ? value.bind(target) : value;
     },
   });
   return { db: spy, writes };
