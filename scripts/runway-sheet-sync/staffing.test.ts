@@ -9,6 +9,7 @@ import { planPeople } from "./role-map";
 import { vocabularyTags } from "./role-vocabulary";
 import { parseTeam, staffingFromRows, type Staffing } from "./staffing";
 import { loadStaffing } from "./staffing-read";
+import { SYNTHETIC_SOURCE } from "./account-teams.test-fixtures";
 import { CLIENT_ROWS, MEMBER_ROWS, STAFFING } from "./staffing.test-fixtures";
 
 const planned = (owner: string, resources: string) => ({ kind: "planned", owner, resources });
@@ -176,13 +177,13 @@ describe("parseTeam", () => {
   });
 });
 
-describe("loadStaffing reads clients and team members from the Runway database", () => {
+describe("loadStaffing reads client labels from the Runway database and teams from the Account Teams sheet", () => {
   let dbPath = "";
   afterEach(() => {
     if (dbPath) cleanupTestDb(dbPath);
   });
 
-  it("returns the same staffing the rows build", async () => {
+  it("resolves the same client row the rows build", async () => {
     const created = await createTestDb();
     dbPath = created.dbPath;
     await seedTestDb(created.client);
@@ -193,15 +194,14 @@ describe("loadStaffing reads clients and team members from the Runway database",
         args: [`cl-syn-${i}`, c.name, c.slug, c.nicknames, c.team],
       });
     }
-    for (const [i, m] of MEMBER_ROWS.entries()) {
-      await created.client.execute({
-        sql: "INSERT INTO team_members (id, name, first_name, full_name, role_category, accounts_led, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        args: [`tm-syn-${i}`, m.name, m.firstName, m.fullName, m.roleCategory, m.accountsLed, Number(m.isActive)],
+    const loaded = await loadStaffing(created.db, SYNTHETIC_SOURCE);
+    for (const slug of ["northwind", "emptyco", "teamam"]) {
+      expect({ name: loaded.clients[slug].name, nicknames: loaded.clients[slug].nicknames }).toEqual({
+        name: STAFFING.clients[slug].name,
+        nicknames: STAFFING.clients[slug].nicknames,
       });
     }
-    const loaded = await loadStaffing(created.db);
-    for (const slug of ["northwind", "emptyco", "teamam"]) expect(loaded.clients[slug]).toEqual(STAFFING.clients[slug]);
-    expect(loaded.members).toEqual(STAFFING.members);
+    expect(loaded.members.map((m) => m.fullName)).toEqual(STAFFING.members.map((m) => m.fullName));
     expect(planPeople("Civ + NWP", "northwind", loaded)).toEqual(planned("Marlo", "AM: Marlo, Client: Northwind Petro"));
   });
 });

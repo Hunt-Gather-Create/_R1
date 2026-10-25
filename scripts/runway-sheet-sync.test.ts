@@ -4,7 +4,7 @@
  * proves the rules; this drives runSheet, the real entrypoint every CLI
  * invocation goes through, with an injected synthetic discovery.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,10 @@ import { discoverSchedules } from "./runway-sheet-sync/schedule-discovery";
 import { driveFile, ledgerJob, oneScheduleDiscovery, SYN_CLIENTS } from "./runway-sheet-sync/schedule.test-fixtures";
 import type { SheetConfig, SheetFixture } from "./runway-sheet-sync/types";
 import { pickTargets, runSheet } from "./runway-sheet-sync";
+
+vi.mock("./runway-sheet-sync/staffing-read", async (original) =>
+  (await import("./runway-sheet-sync/account-teams.test-fixtures")).loaderOverSyntheticSheet(await original())
+);
 
 const CONFIG: SheetConfig = { sheetId: "syn-widget", clientSlug: "acme-widgets", engagementCode: "ACW-2603-01", label: "Widget Page" };
 const NEWER: SheetConfig = { ...CONFIG, sheetId: "syn-widget-v2" };

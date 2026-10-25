@@ -29,6 +29,10 @@ import { clients, projects } from "../../src/lib/db/runway-schema";
 import { oneScheduleDiscovery } from "./schedule.test-fixtures";
 import type { SheetConfig, SheetFixture } from "./types";
 
+vi.mock("./staffing-read", async (original) =>
+  (await import("./account-teams.test-fixtures")).loaderOverSyntheticSheet(await original())
+);
+
 /** Every export of the named module throws the moment it is CALLED. Access
  * (e.g. destructuring an import) does not throw — only invocation does,
  * which mirrors how a real model client is actually used. */

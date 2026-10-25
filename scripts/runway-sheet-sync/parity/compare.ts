@@ -293,6 +293,7 @@ export function structuralProbeDiff(): DiffResult {
       collisions: 0,
       "role-map-refusals": 0,
       "staffing-ignored-parts": 0,
+      "staffing-skipped-people": 0,
     },
     flags: [],
   };

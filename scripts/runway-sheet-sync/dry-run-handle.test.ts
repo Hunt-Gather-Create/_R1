@@ -48,10 +48,9 @@ vi.mock("./runway-read", async (original) => {
   const real = await original<typeof import("./runway-read")>();
   return { ...real, readClientBundle: vi.fn(real.readClientBundle) };
 });
-vi.mock("./staffing-read", async (original) => {
-  const real = await original<typeof import("./staffing-read")>();
-  return { ...real, loadStaffing: vi.fn(real.loadStaffing) };
-});
+vi.mock("./staffing-read", async (original) =>
+  (await import("./account-teams.test-fixtures")).loaderOverSyntheticSheet(await original())
+);
 vi.mock("../../src/lib/runway/sheet-sync-ledger-repo", async (original) => {
   const real = await original<typeof import("../../src/lib/runway/sheet-sync-ledger-repo")>();
   return { ...real, getSheetSyncLedger: vi.fn(real.getSheetSyncLedger) };

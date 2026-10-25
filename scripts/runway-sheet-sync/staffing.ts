@@ -1,6 +1,6 @@
 /**
  * Staffing as the sync reads it: each client's team and nicknames, and the
- * team members. Built from Runway rows; the run loads it once and passes it in.
+ * team members. The run loads it once from the Account Teams sheet and passes it in.
  */
 import { roleTagForWord } from "./role-vocabulary";
 
@@ -26,6 +26,8 @@ export interface ClientStaffing {
   team: TeamPair[];
   /** Parts of clients.team that are not a "Role: Name" pair with a known role, kept for the report count. */
   ignoredTeamParts: string[];
+  /** Account Teams rows whose person is not in People or not active, kept for the report count. */
+  skippedPeople?: string[];
 }
 
 export interface Staffing {
@@ -53,7 +55,7 @@ export interface MemberRow {
 }
 
 /** A JSON array of strings, or empty when the cell is blank or malformed. */
-function jsonStrings(raw: string | null): string[] {
+export function jsonStrings(raw: string | null): string[] {
   if (!raw || !raw.trim()) return [];
   try {
     const parsed: unknown = JSON.parse(raw);

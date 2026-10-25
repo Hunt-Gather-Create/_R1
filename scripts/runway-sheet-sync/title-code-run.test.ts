@@ -5,7 +5,7 @@
  * drift is still reported and tolerated; a sheet_registry row lets an old
  * title run.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,10 @@ import { clients, projects } from "../../src/lib/db/runway-schema";
 import { oneScheduleDiscovery } from "./schedule.test-fixtures";
 import type { SheetConfig, SheetFixture } from "./types";
 import { runSheet } from "../runway-sheet-sync";
+
+vi.mock("./staffing-read", async (original) =>
+  (await import("./account-teams.test-fixtures")).loaderOverSyntheticSheet(await original())
+);
 
 const WIDGET: SheetConfig = { sheetId: "syn-widget", clientSlug: "acme-widgets", engagementCode: "ACW-2603-01", label: "Widget Page" };
 const PINNED: SheetConfig = {

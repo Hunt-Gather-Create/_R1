@@ -234,6 +234,8 @@ export interface DiffResult {
     "role-map-refusals": number;
     /** Parts of this client's clients.team that are not a usable "Role: Name" pair. */
     "staffing-ignored-parts": number;
+    /** Account Teams rows for this client whose person is not in People or not active. */
+    "staffing-skipped-people": number;
   };
   flags: string[];
 }

@@ -192,6 +192,7 @@ export function diffSheet(
     collisions: 0,
     "role-map-refusals": 0,
     "staffing-ignored-parts": staffing.clients[parsed.config.clientSlug]?.ignoredTeamParts.length ?? 0,
+    "staffing-skipped-people": staffing.clients[parsed.config.clientSlug]?.skippedPeople?.length ?? 0,
   } as DiffResult["counts"];
   for (const rd of rowDiffs) {
     counts[rd.disposition as Disposition]++;
