@@ -153,15 +153,15 @@ describe("runSheet twice against one frozen snapshot (#152)", () => {
     dbPath = t.dbPath;
 
     await db.insert(clients).values({
-      id: "cl-bp-152",
+      id: "cl-acw-152",
       name: "Acme Widgets",
       slug: "acme-widgets",
       createdAt: new Date(),
       updatedAt: new Date(),
     });
     await db.insert(projects).values({
-      id: "pj-bp-152",
-      clientId: "cl-bp-152",
+      id: "pj-acw-152",
+      clientId: "cl-acw-152",
       name: CONFIG.label,
       notes: `${CONFIG.engagementCode} SOW`,
       createdAt: new Date(),
@@ -186,8 +186,8 @@ describe("runSheet twice against one frozen snapshot (#152)", () => {
     await db.insert(weekItems).values([
       {
         id: "wi-152-kick",
-        projectId: "pj-bp-152",
-        clientId: "cl-bp-152",
+        projectId: "pj-acw-152",
+        clientId: "cl-acw-152",
         title: "Kickoff call",
         weekOf: "2026-06-01",
         startDate: "2026-06-01",
@@ -198,8 +198,8 @@ describe("runSheet twice against one frozen snapshot (#152)", () => {
       },
       {
         id: "wi-152-design",
-        projectId: "pj-bp-152",
-        clientId: "cl-bp-152",
+        projectId: "pj-acw-152",
+        clientId: "cl-acw-152",
         title: "Design review",
         weekOf: "2026-06-08",
         startDate: "2026-06-08",

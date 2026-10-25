@@ -23,7 +23,7 @@ describe("deriveCategory (Q1.12)", () => {
     expect(deriveCategory("Publish LIVE on example.org", null)).toBe("launch");
     expect(deriveCategory("Accessibility QA", null)).toBe("review");
     expect(deriveCategory("Client Review Round 1", null)).toBe("review");
-    expect(deriveCategory("LPPC reviews + selects treatment", null)).toBe("review");
+    expect(deriveCategory("ACME reviews + selects treatment", null)).toBe("review");
     expect(deriveCategory("Pre-launch review", null)).toBe("launch"); // launch outranks review (rule order)
   });
 
@@ -60,8 +60,8 @@ describe("composeNotes (§2.5)", () => {
   it("omits empty segments", () => {
     expect(composeNotes({ taskNo: null, resource: null, predecessorRow: null, lag: null, priority: null }).notes).toBe("");
     expect(
-      composeNotes({ taskNo: "1.1", resource: "LPPC", predecessorRow: null, lag: null, priority: null }).notes
-    ).toBe("[Sheet 1.1] Resource: LPPC");
+      composeNotes({ taskNo: "1.1", resource: "ACME", predecessorRow: null, lag: null, priority: null }).notes
+    ).toBe("[Sheet 1.1] Resource: ACME");
   });
 
   it("truncates at the 280 L2 cap with ellipsis", () => {

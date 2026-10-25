@@ -9,12 +9,13 @@
  *
  * The denominator comes from schedule discovery: the job ledger named by
  * RUNWAY_JOB_LEDGER_SHEET_ID and a Drive search, with clients and
- * sheet_registry read from runway-staging, the same database a dry run reads.
+ * sheet_registry read from prod through a read-only handle, as a dry run reads them.
  * Exit 0 full coverage, 2 a gap, 1 discovery could not run.
  */
 import { createRunwayDb } from "./lib/run-script";
 import { runCoverage } from "./runway-sheet-sync/coverage-command";
 import { discoverForRun, liveDiscoveryDeps } from "./runway-sheet-sync/discover-live";
+import { readOnlyDb } from "./runway-sheet-sync/read-only-db";
 import { DRIVE_PLAN_QUERY } from "./runway-sheet-sync/drive-plan-listing";
 import { JOB_LEDGER_ENV } from "./runway-sheet-sync/job-ledger";
 import { reportStatusReader } from "./runway-sheet-sync/run-report-status";
@@ -29,7 +30,7 @@ function arg(name: string): string | undefined {
 async function main(): Promise<void> {
   const outDir = arg("out") ?? DEFAULT_OUT_DIR;
   const { exitCode, output } = await runCoverage({
-    discover: () => discoverForRun(process.env, liveDiscoveryDeps(createRunwayDb({ staging: true }).db)),
+    discover: () => discoverForRun(process.env, liveDiscoveryDeps(readOnlyDb(createRunwayDb().db))),
     readReport: reportStatusReader(outDir),
     source: `the job ledger in ${JOB_LEDGER_ENV} and Drive query ${DRIVE_PLAN_QUERY}`,
   });

@@ -36,7 +36,7 @@ export type RowType =
   | "rollup" // engagement-spanning summary row (represented by the L1 itself)
   | "section-header" // phase/section grouping row — skipped per Q1.9
   | "leaf" // numbered leaf task → L2 WeekItem
-  | "leaf-unnumbered" // indented, dated, but no numeric prefix (Soundly "Buffer / contingency")
+  | "leaf-unnumbered" // indented, dated, but no numeric prefix (a "Buffer / contingency" row)
   | "milestone" // *** MARKER *** rows — skipped
   | "empty-template" // reserved template rows below content
   | "spacer"; // fully empty

@@ -296,19 +296,19 @@ describe("resolveL1: named resolvers (#153)", () => {
     expect(res.reviewCandidate?.projectId).toBe("p_revamp");
   });
 
-  it("LPPC 2604-01 fixture: resolves via week-item-carry, does not propose a new project", () => {
+  it("Globex 2604-01 fixture: resolves via week-item-carry, does not propose a new project", () => {
     const config: SheetConfig = {
-      sheetId: "lppc-2604-01",
-      clientSlug: "lppc",
-      engagementCode: "LPP-2604-01",
+      sheetId: "globex-2604-01",
+      clientSlug: "globex",
+      engagementCode: "GLX-2604-01",
       label: "Phase 2.1 Homepage",
     };
     const parsed = parsedFor(config, {
-      bannerCode: "LPP-2603-01",
+      bannerCode: "GLX-2603-01",
       codeDrift: true,
     });
     const bundle: RunwayClientBundle = {
-      client: { id: "cl_lppc", slug: "lppc", name: "LPPC" },
+      client: { id: "cl_globex", slug: "globex", name: "Globex" },
       projects: [
         {
           id: "p_revamp",
@@ -332,20 +332,20 @@ describe("resolveL1: named resolvers (#153)", () => {
         },
       ],
     };
-    const diff = diffSheet(parsed, bundle, emptyLedger(), { runId: "run-lppc", staffing: NO_STAFFING });
+    const diff = diffSheet(parsed, bundle, emptyLedger(), { runId: "run-globex", staffing: NO_STAFFING });
     expect(diff.l1.resolved).toBe(true);
     expect(diff.l1.projectId).toBe("p_revamp");
     expect(diff.l1.method).toBe("week-item-carry");
-    const payloads = buildPayloads(diff, "run-lppc");
+    const payloads = buildPayloads(diff, "run-globex");
     expect(payloads.some((p) => p.op === "addProject")).toBe(false);
   });
 
-  it("Soundly RX Card fixture: no resolver fires, report reads 'no resolver fired', create still proposed", () => {
+  it("Initech Loyalty Card fixture: no resolver fires, report reads 'no resolver fired', create still proposed", () => {
     const config: SheetConfig = {
-      sheetId: "soundly-rx-card",
-      clientSlug: "soundly",
-      engagementCode: "SND-2602-01",
-      label: "RX Card Rebuild",
+      sheetId: "initech-loyalty-card",
+      clientSlug: "initech",
+      engagementCode: "INI-2602-01",
+      label: "Loyalty Card Rebuild",
     };
     const parsed = parsedFor(config);
     parsed.leafTasks = [
@@ -372,11 +372,11 @@ describe("resolveL1: named resolvers (#153)", () => {
       },
     ];
     const bundle: RunwayClientBundle = {
-      client: { id: "cl_soundly", slug: "soundly", name: "Soundly" },
+      client: { id: "cl_initech", slug: "initech", name: "Initech" },
       projects: [
         {
           id: "p_a",
-          name: "AARP Campaign",
+          name: "Charity Campaign",
           status: null,
           category: null,
           notes: null,
@@ -403,16 +403,16 @@ describe("resolveL1: named resolvers (#153)", () => {
         },
       ],
     };
-    const diff = diffSheet(parsed, bundle, emptyLedger(), { runId: "run-soundly", staffing: NO_STAFFING });
+    const diff = diffSheet(parsed, bundle, emptyLedger(), { runId: "run-initech", staffing: NO_STAFFING });
     expect(diff.l1.resolved).toBe(false);
     expect(diff.l1.method).toBe("none");
     expect(diff.l1.reviewCandidate).toBeUndefined();
     expect(diff.l1.evidence?.map((e) => e.resolver).sort()).toEqual(
       ["code", "fuzzy", "ledger-identity", "week-item-carry"].sort()
     );
-    const { report } = renderReport(diff, buildPayloads(diff, "run-soundly"));
+    const { report } = renderReport(diff, buildPayloads(diff, "run-initech"));
     expect(report).toContain("no resolver fired");
-    const payloads = buildPayloads(diff, "run-soundly");
+    const payloads = buildPayloads(diff, "run-initech");
     expect(payloads.some((p) => p.op === "addProject")).toBe(true);
   });
 });

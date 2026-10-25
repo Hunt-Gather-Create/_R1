@@ -7,10 +7,12 @@
  *   pnpm runway:sheet-discovery
  *
  * Reads the job ledger named by RUNWAY_JOB_LEDGER_SHEET_ID and Drive through
- * the google-api CLI, and clients and sheet_registry from runway-staging.
+ * the google-api CLI, and clients and sheet_registry from prod through a
+ * read-only handle, as a dry run reads them.
  */
 import { createRunwayDb, runIfDirect } from "./lib/run-script";
 import { discoverForRun, liveDiscoveryDeps } from "./runway-sheet-sync/discover-live";
+import { readOnlyDb } from "./runway-sheet-sync/read-only-db";
 import type { ScheduleDiscovery } from "./runway-sheet-sync/schedule-discovery";
 
 /** One line per job and per unowned file. */
@@ -27,8 +29,7 @@ export function discoveryLines(d: ScheduleDiscovery): string[] {
 }
 
 async function main(): Promise<void> {
-  const { db } = createRunwayDb({ staging: true });
-  const discovery = await discoverForRun(process.env, liveDiscoveryDeps(db));
+  const discovery = await discoverForRun(process.env, liveDiscoveryDeps(readOnlyDb(createRunwayDb().db)));
   console.log(discoveryLines(discovery).join("\n"));
   process.exit(0);
 }
