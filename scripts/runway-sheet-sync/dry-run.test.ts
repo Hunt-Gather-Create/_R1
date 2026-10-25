@@ -2,7 +2,7 @@
  * A run without --apply reads the database and writes nothing to it, with or
  * without --live. An --apply run still saves the ledger and applies through
  * applyPayloads. The database is a synthetic sqlite file behind a spy that
- * counts every write method touched.
+ * counts every property touched that is not a read builder.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";

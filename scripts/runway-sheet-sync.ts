@@ -3,7 +3,7 @@
  *
  * A run without --apply, with or without --live, opens prod read-only and
  * writes nothing to any database: no sheet_sync_ledger, sheet_registry or
- * queue rows. Its handle throws on every write method. It writes only the
+ * queue rows. Its handle passes only select and throws on anything else. It writes only the
  * report files below to --out on local disk, plus a refusal record there
  * when a sheet refuses. Only --apply writes, to prod, or to runway-staging
  * with --target staging.

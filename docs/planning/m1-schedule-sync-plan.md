@@ -133,7 +133,7 @@ These cover gaps not addressed by any existing issue. Sequenced so Ticket 1 is t
 **Gate flow:** branch off fresh runway -> Ops gate-1 (Ops confirms `--live` flag reads real sheet from a cold start without fixture) -> Holdout gate-2 -> Ops merges same cycle -> Holdout closes on merged main.
 
 **References:**
-- `scripts/runway-sheet-sync/schedule-discovery.ts` (SheetConfig per job, from the job ledger, Drive and `sheet_registry`)
+- `scripts/runway-sheet-sync/schedule-discovery.ts`: SheetConfig per job, from the job ledger, Drive and `sheet_registry`
 - `scripts/runway-sheet-sync/parse-sheet.ts` (SheetFixture consumer)
 - `scripts/runway-sheet-sync.ts` (CLI entry, fixture-file path today)
 - Pre-plan Q1.11 (service account as the deployed read path)
