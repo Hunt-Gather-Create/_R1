@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { beforeEach, describe, expect, it } from "vitest";
+import { buildCoverage } from "./coverage";
 import { DRIVE_PLAN_QUERY, listDrivePlanSheets } from "./drive-plan-listing";
 
 let dir: string;
@@ -32,6 +33,20 @@ process.stdout.write(JSON.stringify(page));
   return path;
 }
 
+// A stub that filters like Drive: a file is returned when its name holds any
+// "name contains" term in the query it was given.
+function queryStub(files: { id: string; name: string; modifiedTime: string }[]): string {
+  const path = join(dir, "query-cli.cjs");
+  writeFileSync(
+    path,
+    `const terms = [...process.argv[3].matchAll(/name contains '([^']*)'/g)].map((m) => m[1]);
+const files = ${JSON.stringify(files)}.filter((f) => terms.some((t) => f.name.includes(t)));
+process.stdout.write(JSON.stringify({ files, nextPageToken: null }));
+`
+  );
+  return path;
+}
+
 const calls = (): string[][] =>
   readFileSync(join(dir, "calls.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as string[]);
 
@@ -53,10 +68,21 @@ describe("listDrivePlanSheets", () => {
     expect(JSON.parse(argv[1][2])).toMatchObject({ pageToken: "p2" });
   });
 
-  it("asks Drive for spreadsheets only, not trashed, with Project-Plan-v in the name", () => {
+  it("asks Drive for spreadsheets only, not trashed, with a plan or schedule name", () => {
     expect(DRIVE_PLAN_QUERY).toContain("mimeType = 'application/vnd.google-apps.spreadsheet'");
     expect(DRIVE_PLAN_QUERY).toContain("trashed = false");
     expect(DRIVE_PLAN_QUERY).toContain("name contains 'Project-Plan-v'");
+    expect(DRIVE_PLAN_QUERY).toContain("name contains 'Schedule v'");
+  });
+
+  it("lists a Schedule v3 plan, so it lands in the coverage denominator", async () => {
+    const schedule = { id: "S", name: "SND-2604-02 | Pre-Purchase Phase 2 | Schedule v3", modifiedTime: "2026-10-24T00:00:00.000Z" };
+    const other = { id: "O", name: "SND-2604-02 | Pre-Purchase Phase 2 | Budget", modifiedTime: "2026-10-24T00:00:00.000Z" };
+    const listing = await listDrivePlanSheets({ cliPath: queryStub([f("A"), schedule, other]) });
+    expect(listing.map((x) => x.id)).toEqual(["A", "S"]);
+    const result = buildCoverage({ listing, registry: [], exclusions: [], readReport: () => ({ kind: "none" }) });
+    expect(result.driveTotal).toBe(2);
+    expect(result.rows.find((r) => r.sheetId === "S")?.label).toBe("MISSING");
   });
 
   it("keeps a file returned on two pages once", async () => {

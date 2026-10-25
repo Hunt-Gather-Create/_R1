@@ -27,4 +27,14 @@ export const COVERAGE_EXCLUSIONS: CoverageExclusion[] = [
     reason:
       "A second Drive file with the same name as the registered NFM plan; the registered sheet is 14x2WqepMH2iexwinkZ1mQQJY37TbSvqu1NhBqNL_dp0.",
   },
+  {
+    sheetId: "1xwos_75MXjkg4E724KHz_NnYVf4gOkR0kjrjEuGL_Cw",
+    name: "SND-2604-02 | Pre-Purchase Phase 2 | Schedule v1 serial",
+    reason: "Superseded by v3. The v3 schedule, SND-2604-02 | Pre-Purchase Phase 2 | Schedule v3, is the registered sheet.",
+  },
+  {
+    sheetId: "1u9USwJk_AkKBNjjrnkLnz6gG0qF-z6Yv08sZDs50Wcw",
+    name: "SND-2604-02 | Pre-Purchase Phase 2 | Schedule v2",
+    reason: "Superseded by v3. The v3 schedule, SND-2604-02 | Pre-Purchase Phase 2 | Schedule v3, is the registered sheet.",
+  },
 ];

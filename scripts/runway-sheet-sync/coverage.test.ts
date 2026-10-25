@@ -12,6 +12,9 @@ import type { DriveFile } from "./discovery";
 
 const FIXTURE_PATH = join(__dirname, "__fixtures__", "drive-listing-2026-09-27.json");
 const listing = (JSON.parse(readFileSync(FIXTURE_PATH, "utf8")) as { files: DriveFile[] }).files;
+// Registered or excluded after this listing was captured, so not in it.
+const PHASE_2 = "1K3nJwAO6DaFmcJYwFsGPOZZWMCh9rf8CvudnBQfvCF8";
+const PHASE_2_OLDER = ["1xwos_75MXjkg4E724KHz_NnYVf4gOkR0kjrjEuGL_Cw", "1u9USwJk_AkKBNjjrnkLnz6gG0qF-z6Yv08sZDs50Wcw"];
 const result = buildCoverage({
   listing,
   registry: SHEETS,
@@ -32,15 +35,16 @@ describe("buildCoverage on the frozen listing", () => {
     expect(itepV2?.label).toBe("MISSING");
   });
 
-  it("reads every registered sheet with no run report as FAILED", () => {
-    for (const s of SHEETS) {
+  it("reads every registered sheet in the listing with no run report as FAILED", () => {
+    for (const s of SHEETS.filter((s) => s.sheetId !== PHASE_2)) {
       expect(result.rows.find((r) => r.sheetId === s.sheetId)?.label).toBe("FAILED");
     }
+    expect(result.registeredNotInDrive.map((r) => r.sheetId)).toEqual([PHASE_2]);
   });
 
-  it("matches every real exclusion to a sheet in the listing", () => {
-    expect(result.staleExclusions).toEqual([]);
-    expect(result.counts.excluded).toBe(COVERAGE_EXCLUSIONS.length);
+  it("matches every real exclusion to a sheet in the listing, except the newer Phase 2 ones", () => {
+    expect(result.staleExclusions.map((e) => e.sheetId)).toEqual(PHASE_2_OLDER);
+    expect(result.counts.excluded).toBe(COVERAGE_EXCLUSIONS.length - PHASE_2_OLDER.length);
   });
 
   it("reads the second NFM file with the registered plan's name as EXCLUDED, with its reason", () => {
@@ -60,7 +64,7 @@ describe("buildCoverage on the frozen listing", () => {
 
   it("renders a percent over Drive sheets that are not excluded", () => {
     const out = renderCoverage(result, "frozen listing");
-    expect(out).toContain(`0 deployed of ${listing.length - COVERAGE_EXCLUSIONS.length} not excluded`);
+    expect(out).toContain(`0 deployed of ${listing.length - result.counts.excluded} not excluded`);
   });
 });
 

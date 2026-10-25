@@ -11,9 +11,10 @@ import { GoogleApiCliError, runGoogleApiCli, type GoogleApiCliOptions } from "./
 
 // The old title shape, "Project Plan v1" with spaces, is matched too, since
 // registered sheets use it and a query that misses them would shrink the set.
+// Plans titled "Schedule v3" and the like are plan sheets too.
 export const DRIVE_PLAN_QUERY =
   "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and " +
-  "(name contains 'Project-Plan-v' or name contains 'Project Plan')";
+  "(name contains 'Project-Plan-v' or name contains 'Project Plan' or name contains 'Schedule v')";
 
 const PAGE_SIZE = 1000;
 const DEFAULT_MAX_PAGES = 20;

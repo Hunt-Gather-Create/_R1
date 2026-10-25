@@ -61,6 +61,13 @@ export const SHEETS: SheetConfig[] = [
     label: "Cedar Park Digital Screen",
     planSlug: "cedar-park-digital-screen",
   },
+  {
+    sheetId: "1K3nJwAO6DaFmcJYwFsGPOZZWMCh9rf8CvudnBQfvCF8",
+    clientSlug: CLIENT_SLUGS.soundly,
+    engagementCode: "SND-2604-02",
+    label: "Pre-Purchase Phase 2",
+    planSlug: "pre-purchase-phase-2",
+  },
 ];
 
 export function getSheetConfig(sheetId: string): SheetConfig | undefined {

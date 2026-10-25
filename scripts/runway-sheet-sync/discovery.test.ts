@@ -43,8 +43,8 @@ describe("discoverPlans (_R1#154 item 3), against the minimal frozen Drive listi
     expect(report.superseded.some((s) => s.sheetId === "1JuPXk46yjAAav8fu7U6CEg8ILLd9TzALcmZYeGE3XOk")).toBe(false);
   });
 
-  it("registeredNotFound is empty: every registered id in this fixture is present in the listing, Soundly included", () => {
-    expect(report.registeredNotFound).toEqual([]);
+  it("registeredNotFound holds only the Soundly Phase 2 schedule, registered after this listing was captured", () => {
+    expect(report.registeredNotFound.map((e) => e.sheetId)).toEqual(["1K3nJwAO6DaFmcJYwFsGPOZZWMCh9rf8CvudnBQfvCF8"]);
   });
 
   it("names the NFM same-title pair as a duplicate, by id, not just by title", () => {
