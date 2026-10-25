@@ -37,8 +37,9 @@ import { loadDbLedger, saveDbLedger } from "./runway-sheet-sync/ledger-db";
 import { parseSheet } from "./runway-sheet-sync/parse-sheet";
 import { buildPayloads } from "./runway-sheet-sync/payloads";
 import { renderReport } from "./runway-sheet-sync/report";
-import { ROLE_MAP } from "./runway-sheet-sync/role-map";
 import { readClientBundle } from "./runway-sheet-sync/runway-read";
+import type { Staffing } from "./runway-sheet-sync/staffing";
+import { loadStaffing } from "./runway-sheet-sync/staffing-read";
 import { chooseLiveSource, liveSourceLine, readSheetLive } from "./runway-sheet-sync/sheets-client";
 import type { SheetFixture } from "./runway-sheet-sync/types";
 import { assertTarget } from "./runway-sheet-sync/target-guard";
@@ -78,10 +79,11 @@ export async function runSheet(
   live: boolean,
   apply = false,
   force = false,
-  discovery: ScheduleDiscovery
+  discovery: ScheduleDiscovery,
+  staffing?: Staffing
 ): Promise<Record<string, unknown>> {
-  return recordingRefusal(outDir, sheetId, (diffWritten) =>
-    syncSheet(db, sheetId, fixturesDir, outDir, live, apply, force, discovery, diffWritten)
+  return recordingRefusal(outDir, sheetId, async (diffWritten) =>
+    syncSheet(db, sheetId, fixturesDir, outDir, live, apply, force, discovery, staffing ?? (await loadStaffing(db)), diffWritten)
   );
 }
 
@@ -95,6 +97,7 @@ async function syncSheet(
   apply: boolean,
   force: boolean,
   discovery: ScheduleDiscovery,
+  staffing: Staffing,
   diffWritten: () => void
 ): Promise<Record<string, unknown>> {
   // Discovery already chose the newest schedule per job, so a superseded or refused sheet throws here.
@@ -136,7 +139,7 @@ async function syncSheet(
   }
 
   const bundle = await readClientBundle(db, config.clientSlug);
-  const diff = diffSheet(parsed, bundle, ledger, { runId, roleMap: ROLE_MAP });
+  const diff = diffSheet(parsed, bundle, ledger, { runId, staffing });
   const payloads = buildPayloads(diff, runId);
   // Ledger row count BEFORE this run's reconcile/link — the fact that tells
   // the report whether a zero match count is a true first run or a matcher
@@ -245,10 +248,12 @@ async function main(): Promise<void> {
   const { targets, refusals } = pickTargets(discovery, outDir, onlyJob, onlySheet);
   for (const r of refusals) console.error(`── REFUSED: ${r}`);
 
+  // Owner and resources resolve through Runway staffing, read once for every sheet.
+  const staffing = await loadStaffing(db);
   const summaries: Record<string, unknown>[] = [];
   for (const t of targets) {
     console.error(`── diffing ${t.engagementCode} ${t.label} (${t.sheetId.slice(0, 8)}…)`);
-    summaries.push(await runSheet(db, t.sheetId, fixturesDir, outDir, live, doApply, force, discovery));
+    summaries.push(await runSheet(db, t.sheetId, fixturesDir, outDir, live, doApply, force, discovery, staffing));
   }
   console.log(JSON.stringify(summaries, null, 2));
   process.exit(refusals.length > 0 ? 1 : 0);

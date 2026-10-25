@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assertPeopleFromRoleMap, computeParity, reconcileVerdicts, structuralProbeDiff } from "./compare";
-import { ROLE_MAP, type RoleMap } from "../role-map";
+import { NO_STAFFING, staffingFromRows } from "../staffing";
+import { MEMBER_ROWS } from "../staffing.test-fixtures";
 import { buildPayloads } from "../payloads";
 import type { ProdWeekItemRow } from "./types";
 import type { LeafTask, ParsedSheet, RowDiff, SheetConfig, SyncPayload } from "../types";
@@ -97,7 +98,7 @@ describe("reconcileVerdicts, the harness's own instrument, tested in isolation f
       },
     ];
     const prodById = new Map([
-      ["wi-1", prodRow({ owner: "Lane", resources: "CD: Lane", category: null })],
+      ["wi-1", prodRow({ owner: "Wren", resources: "CD: Wren", category: null })],
     ]);
     const rows = reconcileVerdicts(rowDiffs, [], prodById);
     expect(rows).toHaveLength(1);
@@ -107,7 +108,7 @@ describe("reconcileVerdicts, the harness's own instrument, tested in isolation f
     expect(rows[0].mismatchedFields.find((f) => f.field === "owner")).toEqual({
       field: "owner",
       tool: null,
-      hand: "Lane",
+      hand: "Wren",
     });
   });
 
@@ -275,12 +276,12 @@ describe("computeParity, comparator unit test: owner/resources/category on an 18
           endDate: t.endDate,
           status: t.derivedStatus, // dates/status agree, the measured baseline, lesson 13
           category: null, // prod convention: null, lesson 15
-          owner: "Lane", // prod holds a real owner, lesson 14/16
-          resources: "CD: Lane", // prod holds real resources, lesson 14/16
+          owner: "Wren", // prod holds a real owner, lesson 14/16
+          resources: "CD: Wren", // prod holds real resources, lesson 14/16
         })
       ),
     };
-    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-id", roleMap: ROLE_MAP });
+    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-id", staffing: NO_STAFFING });
     expect(result.rows).toHaveLength(18);
     expect(result.rows.every((r) => r.verdict === "DISAGREE")).toBe(true);
     for (const row of result.rows) {
@@ -298,10 +299,10 @@ describe("computeParity, comparator unit test: owner/resources/category on an 18
       capturedAt: "2026-09-07T22:00:00Z",
       client: { id: "c-1", slug: "acme", name: "Acme" },
       projects: [],
-      weekItems: [prodRow({ id: "wi-x", owner: "Lane" })],
+      weekItems: [prodRow({ id: "wi-x", owner: "Wren" })],
     };
-    const first = computeParity(parsed, prodSnapshot, { runId: "fixed-run-id", roleMap: ROLE_MAP });
-    const second = computeParity(parsed, prodSnapshot, { runId: "fixed-run-id", roleMap: ROLE_MAP });
+    const first = computeParity(parsed, prodSnapshot, { runId: "fixed-run-id", staffing: NO_STAFFING });
+    const second = computeParity(parsed, prodSnapshot, { runId: "fixed-run-id", staffing: NO_STAFFING });
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
   });
 });
@@ -325,7 +326,7 @@ describe("_R1#156 intervention count: HAND_ONLY + DISAGREE, the rows the tool co
         prodRow({ id: "wi-3", projectId: "p-1", title: "Prod-only task B", weekOf: "2026-06-15" }),
       ],
     };
-    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-interventions-3", roleMap: ROLE_MAP });
+    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-interventions-3", staffing: NO_STAFFING });
     expect(result.counts).toEqual({ AGREE: 0, DISAGREE: 1, TOOL_ONLY: 0, HAND_ONLY: 2 });
     expect(result.interventions).toBe(3);
 
@@ -359,52 +360,45 @@ describe("_R1#156 intervention count: HAND_ONLY + DISAGREE, the rows the tool co
         }),
       ],
     };
-    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-interventions-0", roleMap: ROLE_MAP });
+    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-interventions-0", staffing: NO_STAFFING });
     expect(result.counts).toEqual({ AGREE: 1, DISAGREE: 0, TOOL_ONLY: 0, HAND_ONLY: 0 });
     expect(result.interventions).toBe(0);
   });
 });
 
-const MAP: RoleMap = {
-  acme: {
-    accountManager: "Kathy",
-    clientLabels: ["BP"],
-    clientResource: { roleTag: "Client", person: "BP" },
-    labels: { "Design + Creatives": { roleTag: "CD", person: "Lane" } },
-  },
-};
+const MAP = staffingFromRows([{ slug: "acme", name: "Acme", nicknames: JSON.stringify(["BP"]), team: "CD: Wren" }], MEMBER_ROWS);
 const MAPPED_LEAF = leaf({ resource: "Design + Creatives" });
 
-describe("assertPeopleFromRoleMap, owner and resources only from the role map, rule R1 as amended 2026-10-24", () => {
+describe("assertPeopleFromRoleMap, owner and resources only from staffing, rule R1", () => {
   it("control: a status write and a map-sourced owner write on a mapped row do not throw", () => {
     const payloads = [
       payload({}),
-      payload({ params: { weekOf: "2026-06-01", weekItemTitle: "Kickoff call", field: "owner", newValue: "Lane", updatedBy: "sheet-sync:test" } }),
-      payload({ op: "createWeekItem", params: { clientSlug: "acme", owner: "Lane", resources: "CD: Lane" } }),
+      payload({ params: { weekOf: "2026-06-01", weekItemTitle: "Kickoff call", field: "owner", newValue: "Wren", updatedBy: "sheet-sync:test" } }),
+      payload({ op: "createWeekItem", params: { clientSlug: "acme", owner: "Wren", resources: "CD: Wren" } }),
     ];
     expect(() => assertPeopleFromRoleMap(payloads, "acme", [MAPPED_LEAF], MAP)).not.toThrow();
   });
 
   it("mutation A: FAILS when an updateWeekItemField payload writes an owner the map did not plan", () => {
-    const payloads = [payload({ params: { weekOf: "2026-06-01", weekItemTitle: "Kickoff call", field: "owner", newValue: "Kathy", updatedBy: "sheet-sync:test" } })];
-    expect(() => assertPeopleFromRoleMap(payloads, "acme", [MAPPED_LEAF], MAP)).toThrow(/op "updateWeekItemField" on row 12 plans "owner" = "Kathy" without a role map source/);
+    const payloads = [payload({ params: { weekOf: "2026-06-01", weekItemTitle: "Kickoff call", field: "owner", newValue: "Marlo", updatedBy: "sheet-sync:test" } })];
+    expect(() => assertPeopleFromRoleMap(payloads, "acme", [MAPPED_LEAF], MAP)).toThrow(/op "updateWeekItemField" on row 12 plans "owner" = "Marlo" without a staffing source/);
   });
 
   it("mutation B: FAILS when any payload carries resources directly on params for a row with no label", () => {
-    const payloads = [payload({ op: "createWeekItem", params: { clientSlug: "acme", resources: "CD: Lane" } })];
-    expect(() => assertPeopleFromRoleMap(payloads, "acme", [leaf({})], MAP)).toThrow(/plans "resources" = "CD: Lane" without a role map source/);
+    const payloads = [payload({ op: "createWeekItem", params: { clientSlug: "acme", resources: "CD: Wren" } })];
+    expect(() => assertPeopleFromRoleMap(payloads, "acme", [leaf({})], MAP)).toThrow(/plans "resources" = "CD: Wren" without a staffing source/);
   });
 
   it("mutation C: FAILS when a flag-for-review payload proposes an owner for a row whose label the map refused", () => {
     const payloads = [
-      payload({ op: "flag-for-review", params: { weekItemId: "wi-1", field: "owner", sheetValue: "Lane", runwayValue: null, policy: "flag-for-review" } }),
+      payload({ op: "flag-for-review", params: { weekItemId: "wi-1", field: "owner", sheetValue: "Wren", runwayValue: null, policy: "flag-for-review" } }),
     ];
     expect(() => assertPeopleFromRoleMap(payloads, "acme", [leaf({ resource: "Account" })], MAP)).toThrow(/op "flag-for-review" on row 12 plans "owner"/);
   });
 
   it("mutation D: FAILS when a payload names resources for a row the run never parsed", () => {
     const payloads = [
-      payload({ op: "flag-for-review", params: { weekItemId: "wi-1", field: "resources", sheetValue: "CD: Lane", runwayValue: null, policy: "flag-for-review" } }),
+      payload({ op: "flag-for-review", params: { weekItemId: "wi-1", field: "resources", sheetValue: "CD: Wren", runwayValue: null, policy: "flag-for-review" } }),
     ];
     expect(() => assertPeopleFromRoleMap(payloads, "acme", [], MAP)).toThrow(/plans "resources"/);
   });
@@ -423,12 +417,12 @@ describe("assertPeopleFromRoleMap, owner and resources only from the role map, r
       capturedAt: "2026-10-24T00:00:00Z",
       client: { id: "c-1", slug: "acme", name: "Acme" },
       projects: [{ id: "p-1", name: "Widget Refresh", status: null, category: null, notes: "ACM-2601-01" }],
-      weekItems: [prodRow({ category: "kickoff", owner: "Lane", resources: "CD: Lane" })],
+      weekItems: [prodRow({ category: "kickoff", owner: "Wren", resources: "CD: Wren" })],
     };
-    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-map", roleMap: MAP });
+    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-map", staffing: MAP });
     expect(result.counts).toEqual({ AGREE: 1, DISAGREE: 0, TOOL_ONLY: 0, HAND_ONLY: 0 });
-    const disagree = computeParity(parsed, { ...prodSnapshot, weekItems: [prodRow({ category: "kickoff", owner: "Kathy", resources: "CD: Lane" })] }, { runId: "test-run-map", roleMap: MAP });
-    expect(disagree.rows[0].mismatchedFields).toEqual([{ field: "owner", tool: "Lane", hand: "Kathy" }]);
+    const disagree = computeParity(parsed, { ...prodSnapshot, weekItems: [prodRow({ category: "kickoff", owner: "Marlo", resources: "CD: Wren" })] }, { runId: "test-run-map", staffing: MAP });
+    expect(disagree.rows[0].mismatchedFields).toEqual([{ field: "owner", tool: "Wren", hand: "Marlo" }]);
   });
 
   it("the structural probe itself is non-vacuous: it reaches both the write and flag-for-review branches", () => {

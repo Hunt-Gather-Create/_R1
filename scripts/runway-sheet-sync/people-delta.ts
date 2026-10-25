@@ -1,8 +1,9 @@
 /**
  * Owner and resources deltas for a matched row, and the per-row plan the
- * payloads and the parity harness read. Values come only from role-map.ts.
+ * payloads and the parity harness read. Values come only from planPeople over staffing.
  */
-import { planPeople, type PeoplePlan, type RoleMap } from "./role-map";
+import { planPeople, type PeoplePlan } from "./role-map";
+import type { Staffing } from "./staffing";
 import { refusedLabels } from "./refusal-record";
 import { PEOPLE_FIELDS } from "./sync-fields";
 import type { FieldDelta, RowDiff } from "./types";
@@ -31,8 +32,8 @@ export function peopleDeltas(
 }
 
 /** Sets the row's plan and returns how many refusals it adds to the run counter. */
-export function attachPeople(rd: RowDiff, clientSlug: string, roleMap: RoleMap): number {
+export function attachPeople(rd: RowDiff, clientSlug: string, staffing: Staffing): number {
   if (!rd.leaf) return 0;
-  rd.people = planPeople(rd.leaf.resource, clientSlug, roleMap);
+  rd.people = planPeople(rd.leaf.resource, clientSlug, staffing);
   return refusedLabels(rd).length;
 }

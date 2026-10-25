@@ -1,7 +1,7 @@
 /**
  * Every stage runs on the config its caller passes and reads none of its
- * own. Schedule discovery and the role map are mocked to throw on any read,
- * so a stage that reaches for either fails here.
+ * own. Schedule discovery and the staffing read are mocked to throw on
+ * any use, so a stage that reaches for either fails here.
  */
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -12,7 +12,7 @@ import { diffSheet } from "./diff";
 import { parseSheet } from "./parse-sheet";
 import { computeParity } from "./parity/compare";
 import { buildPayloads } from "./payloads";
-import type { RoleMap } from "./role-map";
+import { NO_STAFFING, staffingFromRows } from "./staffing";
 import type { SheetConfig, SheetFixture } from "./types";
 
 /** An object that throws on any read, standing in for shipped config. */
@@ -25,23 +25,19 @@ function forbidden(what: string): never {
 }
 
 vi.mock("./schedule-discovery", () => ({ discoverSchedules: forbidden("schedule discovery") }));
-vi.mock("./role-map.data", () => ({ ROLE_MAP: forbidden("role map") }));
+vi.mock("./staffing-read", () => ({ loadStaffing: forbidden("staffing read") }));
 
-/** A registry entry and a role map the shipped config has never heard of. */
+/** A registry entry and staffing the shipped config has never heard of. */
 const REGISTRY_ENTRY: SheetConfig = {
   sheetId: "synthetic-options-sheet",
   clientSlug: "synthetic-co",
   engagementCode: "SYN-2601-01",
   label: "Synthetic Engagement",
 };
-const SYNTHETIC_MAP: RoleMap = {
-  "synthetic-co": {
-    accountManager: "Pat",
-    clientLabels: ["Syn"],
-    clientResource: { roleTag: "Client", person: "Syn" },
-    labels: { Builder: { roleTag: "Dev", person: "Robin" } },
-  },
-};
+const SYNTHETIC_STAFFING = staffingFromRows(
+  [{ slug: "synthetic-co", name: "Synthetic Co", nicknames: JSON.stringify(["Syn"]), team: "Dev: Robin" }],
+  [{ name: "Robin Example", firstName: "Robin", fullName: "Robin Example", roleCategory: "dev", accountsLed: null, isActive: 1 }]
+);
 
 const GRID: (string | undefined)[][] = [
   ["", "CIVILIZATION"],
@@ -55,7 +51,7 @@ const GRID: (string | undefined)[][] = [
   [],
   ["", "✔", "TASKS", "PRIORITY", "START DATE", "DUE DATE", "DURATION", "PREDECESSOR", "LAG", "RESOURCE", "STATUS"],
   ["", "FALSE", "Build", "", "1-Jun-2026", "5-Jun-2026"],
-  ["", "FALSE", "   1.1 Build the widget", "", "1-Jun-2026", "5-Jun-2026", "", "", "", "Builder"],
+  ["", "FALSE", "   1.1 Build the widget", "", "1-Jun-2026", "5-Jun-2026", "", "", "", "Dev"],
 ];
 const FIXTURE: SheetFixture = {
   sheetId: REGISTRY_ENTRY.sheetId,
@@ -85,13 +81,13 @@ const BUNDLE = {
 };
 
 describe("stages run on the options they are passed", () => {
-  it("parse, diff and payloads plan people from a synthetic registry entry and role map", () => {
+  it("parse, diff and payloads plan people from a synthetic registry entry and staffing", () => {
     const parsed = parseSheet(FIXTURE, { config: REGISTRY_ENTRY });
     expect(parsed.config).toBe(REGISTRY_ENTRY);
     expect(parsed.leafTasks.map((l) => l.title)).toEqual(["Build the widget"]);
 
     const ledger = { sheetId: REGISTRY_ENTRY.sheetId, updatedAt: "", lastRunId: "", entries: {} };
-    const diff = diffSheet(parsed, BUNDLE, ledger, { runId: "run-options", roleMap: SYNTHETIC_MAP });
+    const diff = diffSheet(parsed, BUNDLE, ledger, { runId: "run-options", staffing: SYNTHETIC_STAFFING });
     expect(diff.runId).toBe("run-options");
     expect(diff.counts["role-map-refusals"]).toBe(0);
     const row = diff.rowDiffs.find((rd) => rd.leaf);
@@ -103,17 +99,17 @@ describe("stages run on the options they are passed", () => {
     expect(buildPayloads(diff, "run-options").length).toBeGreaterThan(0);
   });
 
-  it("the same diff with an empty role map refuses the label, so the map passed in is the one used", () => {
+  it("the same diff with no staffing refuses the label, so the staffing passed in is the one used", () => {
     const parsed = parseSheet(FIXTURE, { config: REGISTRY_ENTRY });
     const ledger = { sheetId: REGISTRY_ENTRY.sheetId, updatedAt: "", lastRunId: "", entries: {} };
-    const diff = diffSheet(parsed, BUNDLE, ledger, { runId: "run-options", roleMap: {} });
+    const diff = diffSheet(parsed, BUNDLE, ledger, { runId: "run-options", staffing: NO_STAFFING });
     expect(diff.counts["role-map-refusals"]).toBe(1);
   });
 
-  it("parity runs on the synthetic role map", () => {
+  it("parity runs on the synthetic staffing", () => {
     const parsed = parseSheet(FIXTURE, { config: REGISTRY_ENTRY });
     const snapshot = { clientSlug: "synthetic-co", capturedAt: "2026-06-01T00:00:00Z", ...BUNDLE };
-    const result = computeParity(parsed, snapshot, { runId: "run-options", roleMap: SYNTHETIC_MAP });
+    const result = computeParity(parsed, snapshot, { runId: "run-options", staffing: SYNTHETIC_STAFFING });
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0].verdict).toBe("DISAGREE");
   });
@@ -124,7 +120,7 @@ describe("stages run on the options they are passed", () => {
     expect(deriveCategory("Build the widget", null)).toBe("delivery");
   });
 
-  it("no stage module imports the registry or the role map data", () => {
+  it("no stage module imports the registry or reads staffing itself", () => {
     const stages = [
       "classify.ts",
       "derive.ts",
@@ -132,6 +128,7 @@ describe("stages run on the options they are passed", () => {
       "l1-resolve.ts",
       "field-deltas.ts",
       "people-delta.ts",
+      "role-map.ts",
       "diff.ts",
       "payloads.ts",
       "apply.ts",
@@ -139,7 +136,7 @@ describe("stages run on the options they are passed", () => {
     ];
     for (const file of stages) {
       const text = readFileSync(join(__dirname, file), "utf8");
-      expect(text, file).not.toMatch(/from "\.\.?\/(schedule-discovery|discover-live|role-map\.data)"|\bROLE_MAP\b|\bdiscoverSchedules\b/);
+      expect(text, file).not.toMatch(/from "\.\.?\/(schedule-discovery|discover-live|staffing-read)"|\bloadStaffing\b|\bdiscoverSchedules\b/);
     }
   });
 });

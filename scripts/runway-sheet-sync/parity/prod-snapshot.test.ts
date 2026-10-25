@@ -18,17 +18,22 @@ describe("captureProdSnapshot, the independent instrument", () => {
     db = created.db;
     dbPath = created.dbPath;
     await seedTestDb(created.client);
+    await created.client.execute("UPDATE week_items SET owner = 'Marlo', resources = 'CD: Wren' WHERE id = 'wi-cds-review'");
 
     const snapshot = await captureProdSnapshot(db, "convergix");
 
     expect(snapshot.client).toEqual({ id: "cl-convergix", slug: "convergix", name: "Convergix" });
     const review = snapshot.weekItems.find((w) => w.id === "wi-cds-review");
     expect(review).toBeDefined();
-    // Seeded exactly as owner: 'Kathy', resources: 'Roz'. Proves this query
+    // Set above to owner 'Marlo', resources 'CD: Wren'. Proves this query
     // actually selects both columns, not merely that the type declares them.
-    expect(review?.owner).toBe("Kathy");
-    expect(review?.resources).toBe("Roz");
+    expect(review?.owner).toBe("Marlo");
+    expect(review?.resources).toBe("CD: Wren");
     expect(review?.category).toBe("review");
+
+    // Staffing is frozen with the rows: this client's team, and the members.
+    expect(Object.keys(snapshot.staffing?.clients ?? {})).toEqual(["convergix"]);
+    expect(snapshot.staffing?.members.length).toBeGreaterThan(0);
 
     // Every week item for this client is present, not a partial read.
     expect(snapshot.weekItems.map((w) => w.id).sort()).toEqual(
@@ -64,8 +69,8 @@ describe("writeProdSnapshot / loadProdSnapshot, freeze round-trip", () => {
           endDate: "2026-06-01",
           status: "scheduled",
           category: null,
-          owner: "Lane",
-          resources: "CD: Lane",
+          owner: "Wren",
+          resources: "CD: Wren",
           notes: null,
         },
       ],

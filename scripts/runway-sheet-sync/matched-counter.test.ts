@@ -21,7 +21,7 @@ import {
 import { clients, projects, weekItems } from "../../src/lib/db/runway-schema";
 import { diffSheet } from "./diff";
 import { renderReport } from "./report";
-import { ROLE_MAP } from "./role-map";
+import { NO_STAFFING } from "./staffing";
 import { buildPayloads } from "./payloads";
 import { loadLedger } from "./ledger";
 import { runSheet } from "../runway-sheet-sync";
@@ -93,7 +93,7 @@ const NO_MATCH_BUNDLE: RunwayClientBundle = {
 
 describe("renderReport — situation-aware zero-match note (#152)", () => {
   const tasks = [leaf({})];
-  const diff = diffSheet(parsedWith(tasks), NO_MATCH_BUNDLE, emptyLedger(), { runId: "run-1", roleMap: ROLE_MAP });
+  const diff = diffSheet(parsedWith(tasks), NO_MATCH_BUNDLE, emptyLedger(), { runId: "run-1", staffing: NO_STAFFING });
   const payloads = buildPayloads(diff, "run-1");
 
   it("true first run (empty ledger): prints the first-run note, no error", () => {
