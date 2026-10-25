@@ -8,7 +8,7 @@ describe("parseSheetDate", () => {
     expect(parseSheetDate("10-Jul-2026")).toBe("2026-07-10");
   });
 
-  it("parses M/D/YYYY (BP ITEP format)", () => {
+  it("parses M/D/YYYY, the slash date format", () => {
     expect(parseSheetDate("7/13/2026")).toBe("2026-07-13");
     expect(parseSheetDate("12/1/2026")).toBe("2026-12-01");
   });
@@ -47,6 +47,6 @@ describe("getMondayIso", () => {
     expect(getMondayIso("2026-06-22")).toBe("2026-06-22"); // Monday stays
     expect(getMondayIso("2026-06-24")).toBe("2026-06-22"); // Wednesday
     expect(getMondayIso("2026-06-28")).toBe("2026-06-22"); // Sunday → prior Monday
-    expect(getMondayIso("2026-07-13")).toBe("2026-07-13"); // ITEP kickoff Monday
+    expect(getMondayIso("2026-07-13")).toBe("2026-07-13"); // a kickoff Monday
   });
 });
