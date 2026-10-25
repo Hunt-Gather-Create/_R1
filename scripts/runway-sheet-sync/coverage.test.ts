@@ -1,66 +1,80 @@
 /**
- * buildCoverage over the frozen 2026-09-27 Drive listing, the real registry
- * and the real exclusions list, with no run reports on disk.
+ * buildCoverage over a synthetic discovery: a ledger, a Drive listing and
+ * clients that are all invented, with no run reports on disk.
  */
-import { readFileSync } from "fs";
-import { join } from "path";
 import { describe, expect, it } from "vitest";
-import { SHEETS } from "./config";
 import { buildCoverage, renderCoverage, stateForReport } from "./coverage";
-import { COVERAGE_EXCLUSIONS } from "./coverage-exclusions";
-import type { DriveFile } from "./discovery";
+import { discoverSchedules } from "./schedule-discovery";
+import { driveFile, ledgerJob, SYN_CLIENTS } from "./schedule.test-fixtures";
 
-const FIXTURE_PATH = join(__dirname, "__fixtures__", "drive-listing-2026-09-27.json");
-const listing = (JSON.parse(readFileSync(FIXTURE_PATH, "utf8")) as { files: DriveFile[] }).files;
-const result = buildCoverage({
-  listing,
-  registry: SHEETS,
-  exclusions: COVERAGE_EXCLUSIONS,
-  readReport: () => ({ kind: "none" }),
-});
+const JOBS = [
+  ledgerJob("ACW-2601", "Acme Widgets", "Two Versions"),
+  ledgerJob("ACW-2602", "Acme Widgets", "Twin Files", "proposed"),
+  ledgerJob("GLX-2601", "Globex", "Nothing Yet"),
+  ledgerJob("GLX-2602", "Globex", "Long Done", "shipped"),
+  ledgerJob("GLX-2603", "Initech", "Unknown Client"),
+];
+const LISTING = [
+  driveFile("syn-two-v1", "ACW-2601_two-versions_Project-Plan-v1"),
+  driveFile("syn-two-v2", "ACW-2601_two-versions_Project-Plan-v2"),
+  driveFile("syn-twin-a", "ACW-2602 | Twin Files Schedule v1"),
+  driveFile("syn-twin-b", "ACW-2602 | Twin Files Schedule v1"),
+  driveFile("syn-stray", "ZZZ-2601 Schedule v1"),
+  driveFile("syn-client", "GLX-2603 Schedule v1"),
+  driveFile("syn-not-a-schedule", "ACW-2601 budget"),
+];
+const discovery = discoverSchedules({ jobs: JOBS, listing: LISTING, clients: SYN_CLIENTS, overrides: [] });
+const result = buildCoverage({ discovery, readReport: () => ({ kind: "none" }) });
+const row = (id: string) => result.rows.find((r) => r.sheetId === id);
 
-describe("buildCoverage on the frozen listing", () => {
-  it("gives every Drive sheet exactly one row, so the denominator is the listing", () => {
-    expect(result.driveTotal).toBe(listing.length);
-    expect(result.rows.map((r) => r.sheetId).sort()).toEqual(listing.map((f) => f.id).sort());
+describe("buildCoverage on a synthetic discovery", () => {
+  it("gives every schedule file one row and every live or proposed job without a file one row", () => {
+    const fileIds = result.rows.flatMap((r) => (r.sheetId ? [r.sheetId] : [])).sort();
+    expect(fileIds).toEqual(LISTING.filter((f) => f.id !== "syn-not-a-schedule").map((f) => f.id).sort());
+    expect(result.rows.filter((r) => r.sheetId === null).map((r) => r.job)).toEqual(["GLX-2601"]);
     const c = result.counts;
-    expect(c.covered + c.excluded + c.missing + c.failed + c.couldNotTell).toBe(listing.length);
+    expect(c.covered + c.superseded + c.missing + c.failed + c.couldNotTell).toBe(result.total);
   });
 
-  it("puts the unregistered ITEP v2 plan in the denominator as MISSING", () => {
-    const itepV2 = result.rows.find((r) => r.sheetId === "1cS5yxsnNlXiMX84CwAUBpyEueEph__RmIrf9OTUmtgM");
-    expect(itepV2?.label).toBe("MISSING");
+  it("rule 2: the older version reads SUPERSEDED by rule and the chosen one reads its report state", () => {
+    expect(row("syn-two-v1")).toMatchObject({ label: "SUPERSEDED", job: "ACW-2601" });
+    expect(row("syn-two-v2")).toMatchObject({ label: "FAILED", detail: "chosen, no run report" });
   });
 
-  it("reads every registered sheet with no run report as FAILED", () => {
-    for (const s of SHEETS) {
-      expect(result.rows.find((r) => r.sheetId === s.sheetId)?.label).toBe("FAILED");
+  it("rule 3: both same-name files read COULD-NOT-TELL, naming both ids", () => {
+    for (const id of ["syn-twin-a", "syn-twin-b"]) {
+      expect(row(id)?.label).toBe("COULD-NOT-TELL");
+      expect(row(id)?.detail).toMatch(/syn-twin-a.*syn-twin-b/);
     }
   });
 
-  it("matches every real exclusion to a sheet in the listing", () => {
-    expect(result.staleExclusions).toEqual([]);
-    expect(result.counts.excluded).toBe(COVERAGE_EXCLUSIONS.length);
+  it("rule 4: a job whose client maps to nothing reads COULD-NOT-TELL with the client text", () => {
+    expect(row("syn-client")).toMatchObject({ label: "COULD-NOT-TELL" });
+    expect(row("syn-client")?.detail).toMatch(/"Initech"/);
   });
 
-  it("reads the second NFM file with the registered plan's name as EXCLUDED, with its reason", () => {
-    const row = result.rows.find((r) => r.sheetId === "1giFx_-ewRrX-vpDxsNWUWBxxWlpBh_wtu0C-Jtu6sWs");
-    expect(row?.label).toBe("EXCLUDED");
-    const reason =
-      "A second Drive file with the same name as the registered NFM plan; the registered sheet is 14x2WqepMH2iexwinkZ1mQQJY37TbSvqu1NhBqNL_dp0.";
-    expect(row?.detail.startsWith(reason)).toBe(true);
-    const registered = result.rows.find((r) => r.sheetId === "14x2WqepMH2iexwinkZ1mQQJY37TbSvqu1NhBqNL_dp0");
-    expect(registered?.label).not.toBe("EXCLUDED");
+  it("a live job with no file and a file with no job both read MISSING; a shipped job with no file is outside the count", () => {
+    expect(result.rows.find((r) => r.job === "GLX-2601")).toMatchObject({ label: "MISSING", detail: "live job with no schedule in Drive" });
+    expect(row("syn-stray")).toMatchObject({ label: "MISSING", job: null });
+    expect(result.rows.some((r) => r.job === "GLX-2602")).toBe(false);
   });
 
-  it("carries discovery's notes, such as the superseded registered ITEP v1", () => {
-    const itepV1 = result.rows.find((r) => r.sheetId === "1e0VtdHSGG-LMpQqeZ9Bm709fPSYGjrIBOi2sNFKObog");
-    expect(itepV1?.detail).toMatch(/not the latest plan/);
+  it("a sheet_registry row is named in the chosen row's detail", () => {
+    const pinned = discoverSchedules({
+      jobs: JOBS,
+      listing: LISTING,
+      clients: SYN_CLIENTS,
+      overrides: [{ engagementKey: "ACW-2601", currentSheetId: "syn-two-v1" }],
+    });
+    const rows = buildCoverage({ discovery: pinned, readReport: () => ({ kind: "clean", path: "p" }) }).rows;
+    expect(rows.find((r) => r.sheetId === "syn-two-v1")).toMatchObject({ label: "DEPLOYED" });
+    expect(rows.find((r) => r.sheetId === "syn-two-v1")?.detail).toMatch(/sheet_registry/);
+    expect(rows.find((r) => r.sheetId === "syn-two-v2")?.label).toBe("SUPERSEDED");
   });
 
-  it("renders a percent over Drive sheets that are not excluded", () => {
-    const out = renderCoverage(result, "frozen listing");
-    expect(out).toContain(`0 deployed of ${listing.length - COVERAGE_EXCLUSIONS.length} not excluded`);
+  it("renders a percent over rows that are not superseded", () => {
+    const out = renderCoverage(result, "synthetic");
+    expect(out).toContain(`0 deployed of ${result.total - 1} not superseded`);
   });
 });
 

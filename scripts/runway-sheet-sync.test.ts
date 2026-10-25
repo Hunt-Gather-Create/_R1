@@ -1,72 +1,71 @@
 /**
- * _R1#154 item 2: proves the freshness DECISION is wired into runSheet's
- * own call site and the CLI's flag resolution, not just correct as a
- * standalone unit. freshness.test.ts already proves checkFreshness itself;
- * this drives runSheet, the real entrypoint every CLI invocation goes
- * through, and resolveFreshnessDecision, the real flag-parsing path.
- *
- * TP's gate-1 ruling on the first version of this file, before it merged:
- * an optional runSheet parameter that defaulted to skipping is off in
- * practice, the exact defect this ticket exists for. The decision is now
- * required at both the CLI and runSheet's own signature, so a caller
- * cannot skip by omission, and a skip is always loud.
+ * Proves schedule discovery is wired into runSheet's own call site and the
+ * CLI's target picking, not just correct as a unit. schedule-discovery.test.ts
+ * proves the rules; this drives runSheet, the real entrypoint every CLI
+ * invocation goes through, with an injected synthetic discovery.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createTestDb, seedTestDb, cleanupTestDb, type TestDb } from "../src/lib/runway/test-db";
 import { clients, projects } from "../src/lib/db/runway-schema";
-import { getSheetConfig, SHEETS } from "./runway-sheet-sync/config";
-import {
-  freshnessDecisionForAge,
-  resolveFreshnessDecision,
-  SKIP_REASON_FLAG,
-  type DriveFile,
-} from "./runway-sheet-sync/freshness";
-import type { SheetFixture } from "./runway-sheet-sync/types";
-import { runSheet } from "./runway-sheet-sync";
+import { discoverSchedules } from "./runway-sheet-sync/schedule-discovery";
+import { driveFile, ledgerJob, oneScheduleDiscovery, SYN_CLIENTS } from "./runway-sheet-sync/schedule.test-fixtures";
+import type { SheetConfig, SheetFixture } from "./runway-sheet-sync/types";
+import { pickTargets, runSheet } from "./runway-sheet-sync";
 
-const CONFIG = getSheetConfig(SHEETS[0].sheetId)!; // beyond-petro / BPC-2603-01 / ITEP
+const CONFIG: SheetConfig = { sheetId: "syn-widget", clientSlug: "acme-widgets", engagementCode: "ACW-2603-01", label: "Widget Page" };
+const NEWER: SheetConfig = { ...CONFIG, sheetId: "syn-widget-v2" };
+const OLD_FILE = driveFile(CONFIG.sheetId, "ACW-2603-01 | Widget Page - Project Plan v1");
 
-const STALE_LISTING: DriveFile[] = [
-  { id: CONFIG.sheetId, name: "BPC-2603-01 | ITEP Landing Page - Project Plan v1", modifiedTime: "2026-09-17T17:53:33.403Z" },
-  { id: "1cS5yxsnNlXiMX84CwAUBpyEueEph__RmIrf9OTUmtgM", name: "BPC-2604_itep_Project-Plan-v2", modifiedTime: "2026-08-27T04:01:14.936Z" },
-];
-const FRESH_LISTING: DriveFile[] = [
-  { id: CONFIG.sheetId, name: "BPC-2603-01 | ITEP Landing Page - Project Plan v1", modifiedTime: "2026-09-17T17:53:33.403Z" },
-];
-
-describe("resolveFreshnessDecision and freshnessDecisionForAge, the CLI's own flag resolution (_R1#154, TP's gate-1 ruling)", () => {
-  it("acceptance a, RED on the prior tip: neither flag given refuses, naming both flags and #161", () => {
-    expect(() => resolveFreshnessDecision({ listingPath: undefined, skip: false })).toThrow(
-      /--drive-listing.*--skip-freshness-check.*#161/,
-    );
+describe("pickTargets, the CLI's --job and --sheet resolution", () => {
+  const discovery = discoverSchedules({
+    jobs: [
+      ledgerJob("ABC-2604", "Acme Widgets", "Base Work"),
+      ledgerJob("ABC-2604-02", "Acme Widgets", "Phase Two"),
+      ledgerJob("GLX-2605", "Initech", "Unmapped"),
+    ],
+    listing: [
+      driveFile("syn-base", "ABC-2604 Schedule v1"),
+      driveFile("syn-p2", "ABC-2604-02 | Phase Two Schedule v1"),
+      driveFile("syn-unmapped", "GLX-2605 Schedule v1"),
+    ],
+    clients: SYN_CLIENTS,
+    overrides: [],
+  });
+  let outDir: string;
+  beforeEach(() => {
+    outDir = mkdtempSync(join(tmpdir(), "sheet-sync-targets-"));
+  });
+  afterEach(() => {
+    rmSync(outDir, { recursive: true, force: true });
   });
 
-  it("--skip-freshness-check alone resolves to a skipped decision carrying the flag as its reason", () => {
-    const decision = resolveFreshnessDecision({ listingPath: undefined, skip: true });
-    expect(decision).toEqual({ checked: false, reason: SKIP_REASON_FLAG });
+  it("--job ABC-2604-02 picks its synthetic schedule, with no registry entry in code", () => {
+    expect(pickTargets(discovery, outDir, "ABC-2604-02")).toEqual({
+      targets: [{ sheetId: "syn-p2", clientSlug: "acme-widgets", engagementCode: "ABC-2604-02", label: "Phase Two" }],
+      refusals: [],
+    });
   });
 
-  it("acceptance c: a listing older than 7 days refuses, naming the age, when skip is not also given", () => {
-    expect(() =>
-      freshnessDecisionForAge({ listingPath: "/tmp/x.json", listing: [], ageDays: 8, skip: false }),
-    ).toThrow(/8\.0 days old.*7-day/);
+  it("--sheet resolves its id through discovery", () => {
+    expect(pickTargets(discovery, outDir, undefined, "syn-base").targets.map((t) => t.engagementCode)).toEqual(["ABC-2604"]);
   });
 
-  it("a listing exactly at 7 days does not refuse", () => {
-    const decision = freshnessDecisionForAge({ listingPath: "/tmp/x.json", listing: [], ageDays: 7, skip: false });
-    expect(decision.checked).toBe(true);
+  it("a refused --sheet throws and leaves a refusal record for that sheet", () => {
+    expect(() => pickTargets(discovery, outDir, undefined, "syn-unmapped")).toThrow(/GLX-2605.*"Initech"/);
+    expect(readdirSync(outDir).filter((n) => n.startsWith("refused-syn-unmapped-"))).toHaveLength(1);
   });
 
-  it("a stale listing combined with --skip-freshness-check does not refuse: skip overrides the age check", () => {
-    const decision = freshnessDecisionForAge({ listingPath: "/tmp/x.json", listing: [], ageDays: 30, skip: true });
-    expect(decision).toEqual({ checked: false, reason: SKIP_REASON_FLAG });
+  it("with neither flag, every chosen schedule runs and each refused job is named", () => {
+    const { targets, refusals } = pickTargets(discovery, outDir);
+    expect(targets.map((t) => t.sheetId)).toEqual(["syn-base", "syn-p2"]);
+    expect(refusals).toEqual([expect.stringMatching(/^Job GLX-2605: client "Initech"/)]);
   });
 });
 
-describe("_R1#154 item 2, runSheet's own call site", () => {
+describe("runSheet's own call site takes the discovery", () => {
   let db: TestDb;
   let dbPath: string;
   let fixturesDir: string;
@@ -79,28 +78,28 @@ describe("_R1#154 item 2, runSheet's own call site", () => {
     dbPath = t.dbPath;
 
     await db.insert(clients).values({
-      id: "cl-154-freshness",
-      name: "Beyond Petro",
-      slug: "beyond-petro",
+      id: "cl-215-discovery",
+      name: "Acme Widgets",
+      slug: "acme-widgets",
       createdAt: new Date(),
       updatedAt: new Date(),
     });
     await db.insert(projects).values({
-      id: "pj-154-freshness",
-      clientId: "cl-154-freshness",
+      id: "pj-215-discovery",
+      clientId: "cl-215-discovery",
       name: CONFIG.label,
       notes: `${CONFIG.engagementCode} SOW`,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
 
-    fixturesDir = mkdtempSync(join(tmpdir(), "sheet-sync-fixtures-154-"));
-    outDir = mkdtempSync(join(tmpdir(), "sheet-sync-out-154-"));
+    fixturesDir = mkdtempSync(join(tmpdir(), "sheet-sync-fixtures-215-"));
+    outDir = mkdtempSync(join(tmpdir(), "sheet-sync-out-215-"));
 
     const values: (string | undefined)[][] = [
       ["", "CIVILIZATION"],
       [],
-      ["", "Beyond Petro | Project Plan"],
+      ["", "Acme Widgets | Project Plan"],
       [],
       ["", `${CONFIG.label}  |   ${CONFIG.engagementCode}`],
       [],
@@ -127,39 +126,27 @@ describe("_R1#154 item 2, runSheet's own call site", () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  it("acceptance d: throws before reading the sheet fixture when the decision is a checked, stale listing, naming the sibling", async () => {
-    await expect(
-      runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, {
-        checked: true,
-        listing: STALE_LISTING,
-        listingPath: "stale-listing.json",
-        listingAgeDays: 0,
-      }),
-    ).rejects.toThrow(/BPC-2604_itep_Project-Plan-v2/);
+  it("a superseded sheet throws before reading the sheet fixture, naming the chosen schedule", async () => {
+    rmSync(join(fixturesDir, `${CONFIG.sheetId}.json`));
+    const discovery = oneScheduleDiscovery(NEWER, { superseded: [OLD_FILE] });
+    await expect(runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, discovery)).rejects.toThrow(
+      /not the latest plan for job ACW-2603-01.*syn-widget-v2/,
+    );
   });
 
-  it("acceptance d: runs to completion when the decision is a checked, fresh listing", async () => {
-    const summary = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, {
-      checked: true,
-      listing: FRESH_LISTING,
-      listingPath: "fresh-listing.json",
-      listingAgeDays: 0,
-    })) as { counts: { "leaf-tasks": number } };
-    expect(summary.counts["leaf-tasks"]).toBe(1);
+  it("a sheet discovery never found throws before reading the sheet fixture", async () => {
+    const discovery = oneScheduleDiscovery(NEWER);
+    await expect(runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, discovery)).rejects.toThrow(
+      /not found by schedule discovery/,
+    );
   });
 
-  it("acceptance b: a skipped decision runs to completion, and both the printed summary and the written report carry the NOT CHECKED line", async () => {
-    const summary = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, {
-      checked: false,
-      reason: SKIP_REASON_FLAG,
-    })) as { counts: { "leaf-tasks": number }; reportPath: string; freshness: { checked: false; note: string } };
-
+  it("runs to completion on the chosen sheet and names its job in the summary", async () => {
+    const summary = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, oneScheduleDiscovery(CONFIG))) as {
+      counts: { "leaf-tasks": number };
+      schedule: { job: string; fromRegistry: boolean };
+    };
     expect(summary.counts["leaf-tasks"]).toBe(1);
-    expect(summary.freshness.checked).toBe(false);
-    expect(summary.freshness.note).toMatch(/FRESHNESS NOT CHECKED/);
-    expect(summary.freshness.note).toMatch(new RegExp(SKIP_REASON_FLAG.replace(/[-[\]/{}()*+?.\\^$|]/g, "\\$&")));
-
-    const reportText = readFileSync(summary.reportPath, "utf8");
-    expect(reportText).toMatch(/FRESHNESS NOT CHECKED/);
+    expect(summary.schedule).toEqual({ job: "ACW-2603-01", fromRegistry: false });
   });
 });

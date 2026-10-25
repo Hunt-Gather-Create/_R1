@@ -2,8 +2,8 @@
  * Explicit locale date parsing for sheet cols E/F.
  *
  * Two observed formats across the 4-sheet set (shape variance found 2026-07-24):
- *   - "22-Jun-2026" / "2-Jul-2026"  (d-MMM-yyyy — LPPC + Soundly)
- *   - "7/13/2026"                    (M/D/YYYY — BP ITEP)
+ *   - "22-Jun-2026" / "2-Jul-2026"  (d-MMM-yyyy)
+ *   - "7/13/2026"                    (M/D/YYYY)
  *
  * No `new Date(string)` parsing — silent-corruption class (§2.3).
  */

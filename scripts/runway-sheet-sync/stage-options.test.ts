@@ -1,6 +1,6 @@
 /**
  * Every stage runs on the config its caller passes and reads none of its
- * own. The shipped registry and the staffing read are mocked to throw on
+ * own. Schedule discovery and the staffing read are mocked to throw on
  * any use, so a stage that reaches for either fails here.
  */
 import { readFileSync } from "fs";
@@ -24,7 +24,7 @@ function forbidden(what: string): never {
   }) as never;
 }
 
-vi.mock("./config", () => ({ SHEETS: forbidden("sheet registry"), getSheetConfig: forbidden("sheet registry") }));
+vi.mock("./schedule-discovery", () => ({ discoverSchedules: forbidden("schedule discovery") }));
 vi.mock("./staffing-read", () => ({ loadStaffing: forbidden("staffing read") }));
 
 /** A registry entry and staffing the shipped config has never heard of. */
@@ -136,7 +136,7 @@ describe("stages run on the options they are passed", () => {
     ];
     for (const file of stages) {
       const text = readFileSync(join(__dirname, file), "utf8");
-      expect(text, file).not.toMatch(/from "\.\.?\/(config|staffing-read)"|\bloadStaffing\b|\bSHEETS\b|\bgetSheetConfig\b/);
+      expect(text, file).not.toMatch(/from "\.\.?\/(schedule-discovery|discover-live|staffing-read)"|\bloadStaffing\b|\bdiscoverSchedules\b/);
     }
   });
 });
