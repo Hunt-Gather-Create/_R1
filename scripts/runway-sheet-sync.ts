@@ -1,14 +1,20 @@
 /**
- * Runway Sheet Sync — Phase 1a diff CLI (READ + DIFF + EMIT, zero writes).
+ * Runway Sheet Sync, Phase 1a diff CLI: read a plan sheet, diff it against Runway, emit the result.
+ *
+ * Without --apply a run never writes prod. It always opens runway-staging,
+ * whatever other flags it carries. It writes the files below to --out, plus a
+ * refusal record there when a sheet refuses, and a --live run also writes
+ * sheet_sync_ledger rows to runway-staging.
  *
  * Usage:
  *   pnpm runway:sheet-sync                       # all registered sheets
  *   pnpm runway:sheet-sync -- --sheet <sheetId>  # one sheet
  *   pnpm runway:sheet-sync -- --fixtures <dir> --out <dir>
- *   pnpm runway:sheet-sync -- --live             # read via service account (deployed path, needs GOOGLE_SERVICE_ACCOUNT_JSON)
+ *   pnpm runway:sheet-sync -- --live             # service account when GOOGLE_SERVICE_ACCOUNT_JSON is set, else the google-api CLI
  *
  * Inputs:  fixture JSON exports (google-api skill) in --fixtures dir,
- *          Runway prod via RUNWAY_DATABASE_URL (.env.local).
+ *          runway-staging via RUNWAY_STAGING_DATABASE_URL (.env.local);
+ *          prod only on --apply --target prod.
  * Outputs per sheet (in --out dir, gitignored under docs/tmp/):
  *   diff-<sheetId>-<date>.md            human-readable diff report
  *   diff-<sheetId>-<date>.payloads.json ready-to-apply operation payloads
@@ -28,18 +34,21 @@ import { loadDbLedger, saveDbLedger } from "./runway-sheet-sync/ledger-db";
 import { parseSheet } from "./runway-sheet-sync/parse-sheet";
 import { buildPayloads } from "./runway-sheet-sync/payloads";
 import { renderReport } from "./runway-sheet-sync/report";
+import { ROLE_MAP } from "./runway-sheet-sync/role-map";
 import { readClientBundle } from "./runway-sheet-sync/runway-read";
-import { readSheetViaServiceAccount } from "./runway-sheet-sync/sheets-client";
+import { chooseLiveSource, liveSourceLine, readSheetLive } from "./runway-sheet-sync/sheets-client";
 import type { SheetFixture } from "./runway-sheet-sync/types";
 import { assertTarget } from "./runway-sheet-sync/target-guard";
+import { opensStaging } from "./runway-sheet-sync/db-target";
 import { applyPayloads } from "./runway-sheet-sync/apply";
 import { writePreSnapshot, postVerifyDiff } from "./runway-sheet-sync/snapshot";
 import { checkFreshness, resolveFreshnessDecision, type FreshnessDecision } from "./runway-sheet-sync/freshness";
+import { checkTitleCode } from "./runway-sheet-sync/title-code-check";
+import { recordingRefusal, refusingAll } from "./runway-sheet-sync/refusal-record";
+import { LIVE_RANGE } from "./runway-sheet-sync/columns";
 
 const DEFAULT_FIXTURES_DIR = "docs/tmp/data/runway-sync/fixtures";
 const DEFAULT_OUT_DIR = "docs/tmp/data/runway-sync";
-// Live reads use the same tab + range the fixtures were exported from.
-const LIVE_RANGE = "Task Tracker & Gantt Chart!A1:N";
 
 function arg(name: string): string | undefined {
   const idx = process.argv.indexOf(`--${name}`);
@@ -66,6 +75,23 @@ export async function runSheet(
   force = false,
   freshness: FreshnessDecision
 ): Promise<Record<string, unknown>> {
+  return recordingRefusal(outDir, sheetId, (diffWritten) =>
+    syncSheet(db, sheetId, fixturesDir, outDir, live, apply, force, freshness, diffWritten)
+  );
+}
+
+/** One sheet's run; calls diffWritten once the diff report is on disk. */
+async function syncSheet(
+  db: ReturnType<typeof createRunwayDb>["db"],
+  sheetId: string,
+  fixturesDir: string,
+  outDir: string,
+  live: boolean,
+  apply: boolean,
+  force: boolean,
+  freshness: FreshnessDecision,
+  diffWritten: () => void
+): Promise<Record<string, unknown>> {
   const config = getSheetConfig(sheetId);
   if (!config) throw new Error(`Sheet ${sheetId} not in registry (scripts/runway-sheet-sync/config.ts)`);
 
@@ -83,10 +109,11 @@ export async function runSheet(
   } else {
     freshnessNote = `FRESHNESS NOT CHECKED: ${freshness.reason}`;
   }
+  const titleCodeNote = checkTitleCode(config, freshness.checked ? freshness.listing : null);
 
   let fixture: SheetFixture;
   if (live) {
-    fixture = await readSheetViaServiceAccount(sheetId, LIVE_RANGE);
+    fixture = await readSheetLive(sheetId, LIVE_RANGE, chooseLiveSource());
   } else {
     const fixturePath = join(fixturesDir, `${sheetId}.json`);
     if (!existsSync(fixturePath)) {
@@ -96,8 +123,9 @@ export async function runSheet(
   }
   const runId = computeRunId(sheetId, fixture);
 
-  const parsed = parseSheet(fixture, config);
+  const parsed = parseSheet(fixture, { config });
   if (freshnessNote) parsed.flags.push(freshnessNote);
+  if (titleCodeNote) parsed.flags.push(titleCodeNote);
 
   // Ledger persistence: --live uses the durable DB ledger (sheet_sync_ledger,
   // via the repo) so identity survives ephemeral serverless runs; fixture runs
@@ -119,7 +147,7 @@ export async function runSheet(
   }
 
   const bundle = await readClientBundle(db, config.clientSlug);
-  const diff = diffSheet(parsed, bundle, ledger, runId);
+  const diff = diffSheet(parsed, bundle, ledger, { runId, roleMap: ROLE_MAP });
   const payloads = buildPayloads(diff, runId);
   // Ledger row count BEFORE this run's reconcile/link — the fact that tells
   // the report whether a zero match count is a true first run or a matcher
@@ -132,6 +160,7 @@ export async function runSheet(
   const reportPath = join(outDir, `diff-${sheetId}-${date}.md`);
   const payloadsPath = join(outDir, `diff-${sheetId}-${date}.payloads.json`);
   writeFileSync(reportPath, report);
+  diffWritten();
   writeFileSync(
     payloadsPath,
     JSON.stringify({ sheetId, runId, generatedAt: diff.generatedAt, payloads }, null, 2) + "\n"
@@ -202,21 +231,20 @@ async function main(): Promise<void> {
   // _R1#154 item 2, TP's gate-1 ruling: the decision is required, resolved
   // and validated BEFORE any DB connection or sheet read, so a missing or
   // stale --drive-listing refuses immediately, not partway through a run.
-  const skipFreshnessCheck = process.argv.includes("--skip-freshness-check");
-  const freshness = resolveFreshnessDecision({ listingPath: arg("drive-listing"), skip: skipFreshnessCheck });
-
-  // E2 (#102): point --live at the runway-staging clone, never prod.
-  // E3 (#103): --target staging|prod drives DB resolution when --apply is set.
-  const staging = doApply ? target === "staging" : process.argv.includes("--staging");
-
   const targets = only ? SHEETS.filter((s) => s.sheetId === only) : SHEETS;
   if (targets.length === 0) throw new Error(`--sheet ${only} not in registry`);
+  const skipFreshnessCheck = process.argv.includes("--skip-freshness-check");
+  const freshness = refusingAll(outDir, targets.map((t) => t.sheetId), () =>
+    resolveFreshnessDecision({ listingPath: arg("drive-listing"), skip: skipFreshnessCheck })
+  );
 
+  // A run without --apply opens runway-staging; only --apply --target prod opens prod.
+  const staging = opensStaging(process.argv, target);
   const { db, url } = createRunwayDb({ staging });
-  if (staging) console.error("── ledger target: runway-staging (E2 test mode)");
+  if (staging) console.error("── ledger target: runway-staging");
   if (!url.startsWith("libsql")) {
     throw new Error(
-      `RUNWAY_DATABASE_URL not loaded (resolved "${url}") — check .env.local before diffing against a stale local file`
+      `${staging ? "RUNWAY_STAGING_DATABASE_URL" : "RUNWAY_DATABASE_URL"} not loaded (resolved "${url}"): check .env.local before diffing against a stale local file`
     );
   }
 
@@ -225,6 +253,8 @@ async function main(): Promise<void> {
   if (doApply) {
     assertTarget(target, url, process.env);
   }
+
+  if (live) console.error(liveSourceLine(chooseLiveSource()));
 
   const summaries: Record<string, unknown>[] = [];
   for (const t of targets) {

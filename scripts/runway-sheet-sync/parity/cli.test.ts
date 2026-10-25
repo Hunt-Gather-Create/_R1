@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { runParity, computeParityRunId } from "./cli";
+import { runParity, runCompareCli, computeParityRunId } from "./cli";
 import type { SheetFixture } from "../types";
 import type { ProdSnapshot } from "./types";
 
@@ -44,8 +44,8 @@ function prodSnapshot(): ProdSnapshot {
         endDate: "2026-06-01",
         status: "completed", // TRUE checkbox -> derivedStatus "completed", agrees
         category: null, // tool derives "kickoff" -> disagrees
-        owner: "Lane", // tool never plans an owner -> disagrees
-        resources: "CD: Lane", // tool never plans resources -> disagrees
+        owner: "Lane", // no role map entry for acme, tool plans no owner -> disagrees
+        resources: "CD: Lane", // no role map entry for acme, tool plans no resources -> disagrees
         notes: null,
       },
     ],
@@ -138,5 +138,57 @@ describe("runParity, the real CLI call site, not a re-implementation of it", () 
     expect(a).toBe(b);
     const c = computeParityRunId("sheet-bytes-changed", "prod-bytes");
     expect(c).not.toBe(a);
+  });
+});
+
+describe("a missing capture stops the parity CLI with one plain message", () => {
+  let dir: string | undefined;
+
+  afterEach(() => {
+    if (dir) {
+      rmSync(dir, { recursive: true, force: true });
+      dir = undefined;
+    }
+  });
+
+  it("runParity names the missing prod snapshot path and how to capture it, and writes no verdict", () => {
+    dir = mkdtempSync(join(tmpdir(), "parity-cli-missing-"));
+    const sheetPath = join(dir, "sheet.json");
+    const prodPath = join(dir, "never-captured", "prod-snapshot.json");
+    const outPath = join(dir, "verdict.json");
+    writeFileSync(sheetPath, JSON.stringify(fixture()));
+
+    let message = "";
+    try {
+      runParity({ sheetFixturePath: sheetPath, prodSnapshotPath: prodPath, engagementCode: "ACM-2601-01", label: "Widget Refresh", outPath });
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toContain(`prod snapshot not found at ${prodPath}`);
+    expect(message).toContain("--capture-prod");
+    expect(existsSync(outPath)).toBe(false);
+  });
+
+  it("the compare command returns a non-zero exit code and prints one line naming the missing sheet fixture path", () => {
+    dir = mkdtempSync(join(tmpdir(), "parity-cli-missing-cmd-"));
+    const sheetPath = join(dir, "never-captured", "sheet-fixture.json");
+    const prodPath = join(dir, "prod.json");
+    const outPath = join(dir, "verdict.json");
+    writeFileSync(prodPath, JSON.stringify(prodSnapshot()));
+
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const code = runCompareCli(
+      ["--sheet-fixture", sheetPath, "--prod-snapshot", prodPath, "--engagement-code", "ACM-2601-01", "--label", "Widget Refresh", "--out", outPath],
+      (line) => stdout.push(line),
+      (line) => stderr.push(line)
+    );
+
+    expect(code).not.toBe(0);
+    expect(stderr).toHaveLength(1);
+    expect(stderr[0]).toContain(`sheet fixture not found at ${sheetPath}`);
+    expect(stderr[0].split("\n")).toHaveLength(1);
+    expect(stdout.join("\n")).not.toContain("AGREE");
+    expect(existsSync(outPath)).toBe(false);
   });
 });

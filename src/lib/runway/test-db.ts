@@ -205,7 +205,10 @@ CREATE TABLE apply_review_queue (
   id TEXT PRIMARY KEY NOT NULL,
   run_id TEXT NOT NULL,
   payload_json TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  status TEXT,
+  resolved_at INTEGER,
+  resolved_by TEXT
 );
 `;
 

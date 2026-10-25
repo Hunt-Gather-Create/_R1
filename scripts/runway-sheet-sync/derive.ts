@@ -7,7 +7,7 @@ import { NOTES_MAX_LEN_L2 } from "../../src/lib/runway/operations-utils";
 import type { LeafTask } from "./types";
 
 /** §2.4 CREATE branch. in-progress / blocked / at-risk are human-set only. */
-export function deriveStatus(completed: boolean): "completed" | "scheduled" {
+export function deriveStatus(completed: boolean): LeafTask["derivedStatus"] {
   return completed ? "completed" : "scheduled";
 }
 

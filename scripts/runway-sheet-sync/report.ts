@@ -4,6 +4,8 @@
  */
 import type { DiffResult, FieldDelta, RowDiff, SyncPayload } from "./types";
 import type { ParityResult } from "./parity/types";
+import { errorLine, refusedLabels } from "./refusal-record";
+import { COMPARED_FIELDS, isPeopleField, NEVER_COMPARED_FIELDS } from "./sync-fields";
 
 /**
  * _R1#160 item 4: the report must distinguish "compared and equal" from
@@ -13,16 +15,20 @@ import type { ParityResult } from "./parity/types";
  * equal". category never runs that comparison on an update, TP ruling
  * 2026-09-22: the sheet has no category column to compare against. Its
  * own flag, when one exists, is visible in the Detail column instead.
- * owner/resources have no comparator at all (rule R1, _R1#159).
+ * owner/resources are compared whenever the role map plans them, rule R1
+ * as amended 2026-10-24; a row the map did not plan says why.
  */
-const COMPARED_FIELDS: FieldDelta["field"][] = [
-  "status",
-  "startDate",
-  "endDate",
-  "weekOf",
-  "title",
-];
-const NEVER_COMPARED_FIELDS = ["category", "owner", "resources"] as const;
+export { NEVER_COMPARED_FIELDS } from "./sync-fields";
+
+/** The line for a compared field with no delta. Owner and resources were only compared if the map planned them. */
+function noDeltaLine(f: FieldDelta["field"], rd: RowDiff): string {
+  if (!isPeopleField(f)) return `- ${f}: compared, equal`;
+  if (rd.people?.kind === "planned") return `- ${f}: compared, equal`;
+  if (rd.people?.kind === "refused") {
+    return `- ${f}: not planned, unmapped label ${rd.people.unmapped.map((l) => `"${l}"`).join(", ")} sent to review`;
+  }
+  return `- ${f}: not planned, no RESOURCE label on this row`;
+}
 
 function fieldComparisonLines(rd: RowDiff): string[] {
   const deltaByField = new Map((rd.deltas ?? []).map((d) => [d.field, d]));
@@ -32,7 +38,7 @@ function fieldComparisonLines(rd: RowDiff): string[] {
     lines.push(
       d
         ? `- ${f}: sheet=${d.sheet ?? "null"} runway=${d.runway ?? "null"} [${d.action}]`
-        : `- ${f}: compared, equal`
+        : noDeltaLine(f, rd)
     );
   }
   for (const f of NEVER_COMPARED_FIELDS) {
@@ -105,6 +111,7 @@ export function renderReport(
   lines.push(`| mismatched-field | ${c["mismatched-field"]} |`);
   lines.push(`| runway-only-orphan | ${c["runway-only-orphan"]} |`);
   lines.push(`| mid-week collisions | ${c.collisions} |`);
+  lines.push(`| role-map refusals, unmapped column J labels | ${c["role-map-refusals"]} |`);
   lines.push(
     `| skipped (header/milestone/empty/spacer) | ${c["skipped-header"]}/${c["skipped-milestone"]}/${c["skipped-empty"]}/${c["skipped-spacer"]} |`
   );
@@ -122,10 +129,13 @@ export function renderReport(
     } else {
       error = true;
       lines.push(
-        `> **ERROR: ledger populated, nothing matched.** The identity ledger already holds ` +
+        errorLine(
+          "ledger populated, nothing matched.",
+          `The identity ledger already holds ` +
           `${priorLedgerRowCount} row(s) banked from a prior run, but this run matched 0 sheet ` +
           `tasks. A matcher stuck at zero would print the same counts a genuine first run does, so ` +
           `this is a failure, not a note. Do not apply these payloads until the matcher is fixed.`
+        )
       );
     }
     lines.push("");
@@ -180,6 +190,20 @@ export function renderReport(
       for (const line of fieldComparisonLines(rd)) lines.push(line);
       lines.push("");
     }
+  }
+
+  const refusals = diff.rowDiffs.flatMap((rd) => refusedLabels(rd).map((label) => ({ leaf: rd.leaf!, label })));
+  if (refusals.length > 0) {
+    lines.push(`## Role map refusals`);
+    lines.push("");
+    lines.push(`Owner and resources are not planned for these rows. Each label is a review item.`);
+    lines.push("");
+    lines.push(`| Row | Task | Unmapped label |`);
+    lines.push(`|---|---|---|`);
+    for (const r of refusals) {
+      lines.push(`| ${r.leaf.rowNumber} | ${r.leaf.taskNo ?? "n/a"} | ${r.label} |`);
+    }
+    lines.push("");
   }
 
   if (diff.orphans.length > 0) {

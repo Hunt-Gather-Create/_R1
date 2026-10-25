@@ -4,6 +4,10 @@
  * Spec: civ-account-manager/docs/runway-tp-runway-integration-pre-plan.md (v4)
  * §2 data model, §2.9 row-identity ledger, §3 Phase 1a.
  */
+import type { WeekItemCategory } from "../../src/lib/runway/week-item-categories";
+import type { WeekItemStatus } from "../../src/lib/runway/week-item-statuses";
+import type { PeoplePlan } from "./role-map";
+import type { SyncField } from "./sync-fields";
 
 /** One sheet in the sync registry. Client slug comes from config, never parsed from banners. */
 export interface SheetConfig {
@@ -37,6 +41,8 @@ export interface SheetConfig {
    * the entry, not a type-system inconvenience to paper over.
    */
   planSlug?: string;
+  /** Exact Drive title codes this sheet may carry although they disagree with engagementCode. Each one is a written exception. */
+  acceptedTitleCodes?: string[];
 }
 
 /** Fixture file shape produced by the google-api skill export step. */
@@ -84,15 +90,9 @@ export interface LeafTask {
   /** Col B checkbox. */
   completed: boolean;
   /** §2.4 CREATE-branch derived status. */
-  derivedStatus: "completed" | "scheduled";
+  derivedStatus: Extract<WeekItemStatus, "completed" | "scheduled">;
   /** Q1.12 keyword-derived category. */
-  category:
-    | "delivery"
-    | "review"
-    | "kickoff"
-    | "deadline"
-    | "approval"
-    | "launch";
+  category: WeekItemCategory;
   /** Enclosing section header title, if any. */
   section: string | null;
   priority: string | null;
@@ -165,7 +165,8 @@ export type Disposition =
   | "skipped-spacer";
 
 export interface FieldDelta {
-  field: "status" | "startDate" | "endDate" | "weekOf" | "category" | "title";
+  /** A literal union, never string, so a mistyped field name fails to compile. */
+  field: SyncField;
   sheet: string | null;
   runway: string | null;
   /** §2.4 update policy applied to this delta. */
@@ -184,6 +185,8 @@ export interface RowDiff {
   /** Mid-week collision: WI matches (title, weekOf, client) but under another L1 / not in ledger. */
   collision?: boolean;
   note?: string;
+  /** Owner and resources as the role map plans them for this leaf row. */
+  people?: PeoplePlan;
 }
 
 /** Self-contained ready-to-apply operation (Q1.14 (a) — no downstream re-encoding). */
@@ -251,6 +254,8 @@ export interface DiffResult {
   counts: Record<Disposition, number> & {
     "leaf-tasks": number;
     collisions: number;
+    /** Unmapped column J labels, one per label, each sent to review. */
+    "role-map-refusals": number;
   };
   flags: string[];
 }

@@ -3,11 +3,10 @@
  *
  * `diffSheet`, thread B, read-only here, resolves WHICH prod row a sheet
  * leaf matches. That resolution work is reused as-is. What is NOT reused
- * is diff.ts's own field comparison: it emits a FieldDelta on exactly three
- * fields, status, startDate, endDate, and never looks at owner, resources
- * or category, which is the defect this ticket exists to make visible.
- * Measured 2026-09-07: `matched: 18, mismatched-field: 0` while three
- * fields differed on every one of those 18 rows.
+ * is diff.ts's own field verdict: diff.ts decides what to write, this
+ * module decides whether the tool and the hand walk agree. Measured
+ * 2026-09-07: `matched: 18, mismatched-field: 0` while three fields
+ * differed on every one of those 18 rows.
  *
  * So this module re-derives AGREE/DISAGREE itself, field by field, against
  * an independently frozen prod snapshot that was read by a query this file
@@ -18,6 +17,8 @@ import { diffSheet } from "../diff";
 import { buildPayloads } from "../payloads";
 import type { DiffResult, LeafTask, Ledger, ParsedSheet, RowDiff, SheetConfig, SyncPayload } from "../types";
 import type { RunwayClientBundle } from "../runway-read";
+import { planPeople, type RoleMap } from "../role-map";
+import { PEOPLE_FIELDS, type PeopleField } from "../sync-fields";
 import {
   PARITY_FIELDS,
   type ParityFieldValues,
@@ -29,59 +30,57 @@ import {
 } from "./types";
 
 /**
- * _R1#159 will teach the tool to plan owner and resources. Until it does,
- * neither field has a real planning path this comparator can read, so
- * status/startDate/endDate come from the sheet leaf, category is the
- * sheet's own derived value, a genuine sheet-versus-prod comparison rather
- * than an assertion about a write, and owner/resources are hardcoded null.
- *
- * That hardcoded null is a claim about today's payloads.ts, not a
- * permanent fact, and a stale claim here would make _R1#159's own bar
- * unsatisfiable: once the tool starts planning owner or resources, this
- * comparator would keep reporting null and every row would stay DISAGREE
- * forever, even after the fix landed. assertToolNeverPlansField, called
- * from computeParity below on every run, turns that risk into a loud
- * failure instead of a silent one.
+ * The tool's own plan for one row. status, startDate and endDate come from
+ * the sheet leaf, category is the sheet's derived value, and owner and
+ * resources are whatever the role map planned for the row, null when the
+ * row has no label or a label the map refused.
  */
-function toolPlannedFields(leaf: { derivedStatus: string; startDate: string | null; endDate: string | null; category: string }): ParityFieldValues {
+function toolPlannedFields(rd: RowDiff & { leaf: LeafTask }): ParityFieldValues {
+  const people = rd.people?.kind === "planned" ? rd.people : null;
   return {
-    status: leaf.derivedStatus,
-    startDate: leaf.startDate,
-    endDate: leaf.endDate,
-    category: leaf.category,
-    owner: null,
-    resources: null,
+    status: rd.leaf.derivedStatus,
+    startDate: rd.leaf.startDate,
+    endDate: rd.leaf.endDate,
+    category: rd.leaf.category,
+    owner: people?.owner ?? null,
+    resources: people?.resources ?? null,
   };
 }
 
+/** The owner or resources value a payload would set, or undefined when it sets neither. */
+function plannedPeopleValue(payload: SyncPayload, field: PeopleField): unknown {
+  const direct = payload.params[field];
+  if (direct !== undefined && direct !== null) return direct;
+  if (payload.params.field === field) return payload.params.newValue ?? payload.params.sheetValue ?? null;
+  return undefined;
+}
+
 /**
- * Fails loudly the moment payloads.ts starts planning a field this
- * comparator still hardcodes to null. Checked two ways: a generic key on
- * the payload's own params, for an op that might carry the field directly,
- * and `params.field` naming the guarded field, for any op at all.
- *
- * The second check is deliberately not tied to a specific op name.
- * `params.field` names a WeekItem column under both the updateWeekItemField
- * convention and the flag-for-review convention, and payloads.ts has no op
- * where `field` means anything else. So the guard's premise, the tool
- * never plans owner or resources, is broken by any payload carrying
- * `params.field === "owner"` or `"resources"`, regardless of which op
- * carries it, today or after a future op is added that reuses the same
- * convention. Allowlisting a single op name is what let this guard miss
- * the flag-for-review branch the first time.
+ * Rule R1 as amended 2026-10-24: owner and resources come only from the
+ * role map. Every payload that plans either field is checked against an
+ * independent re-resolution of its own source row's column J label, so a
+ * value typed anywhere else in payloads.ts, or a stale plan, fails loudly.
+ * Checked two ways, as the guard it replaces was: a key directly on params,
+ * and `params.field` naming the field, under any op.
  */
-export function assertToolNeverPlansField(payloads: SyncPayload[], field: "owner" | "resources"): void {
+export function assertPeopleFromRoleMap(
+  payloads: SyncPayload[],
+  clientSlug: string,
+  leaves: LeafTask[],
+  roleMap: RoleMap
+): void {
+  const leafByRow = new Map(leaves.map((l) => [l.rowNumber, l]));
   for (const payload of payloads) {
-    const directValue = payload.params[field];
-    if (directValue !== undefined && directValue !== null) {
-      throw new Error(
-        `PARITY INTEGRITY: payloads.ts now plans "${field}" via op "${payload.op}". toolPlannedFields' hardcoded null for "${field}" is stale, replace it with a real read of the tool's planning output before trusting this comparator.`
-      );
-    }
-    if (payload.params.field === field) {
-      throw new Error(
-        `PARITY INTEGRITY: payloads.ts now proposes writing "${field}" via op "${payload.op}". toolPlannedFields' hardcoded null for "${field}" is stale, replace it with a real read of the tool's planning output before trusting this comparator.`
-      );
+    for (const field of PEOPLE_FIELDS) {
+      const value = plannedPeopleValue(payload, field);
+      if (value === undefined) continue;
+      const leaf = leafByRow.get(payload.source.rowNumber);
+      const plan = leaf ? planPeople(leaf.resource, clientSlug, roleMap) : null;
+      if (plan?.kind !== "planned" || plan[field] !== value) {
+        throw new Error(
+          `PARITY INTEGRITY: op "${payload.op}" on row ${payload.source.rowNumber} plans "${field}" = ${JSON.stringify(value)} without a role map source. Owner and resources come only from role-map.ts, rule R1 as amended 2026-10-24.`
+        );
+      }
     }
   }
 }
@@ -156,7 +155,7 @@ export function reconcileVerdicts(
     }
     claimed.add(rd.weekItemId);
 
-    const tool = toolPlannedFields(leaf);
+    const tool = toolPlannedFields({ ...rd, leaf });
     const hand = handActualFields(prodRow);
     const mismatchedFields = PARITY_FIELDS.filter((f) => tool[f] !== hand[f]).map((f) => ({
       field: f,
@@ -208,9 +207,9 @@ function toMatchingBundle(snapshot: ProdSnapshot): RunwayClientBundle {
       endDate: w.endDate,
       status: w.status,
       category: w.category,
+      owner: w.owner,
+      resources: w.resources,
       notes: w.notes,
-      // owner/resources deliberately dropped. RunwayClientBundle, diff.ts's
-      // matching input, has no such fields, and matching never needs them.
     })),
   };
 }
@@ -252,11 +251,10 @@ const STRUCTURAL_PROBE_CONFIG: SheetConfig = {
  * A live run's own payloads are a valid thing to check too, but they are
  * not sufficient on their own: payloads.ts only emits a per-field payload
  * inside `disposition === "mismatched-field" && rd.deltas`, and that list
- * is empty whenever status, startDate and endDate all already agree,
- * exactly the shape every DISAGREE row on owner/resources/category takes
- * today, and the exact shape _R1#159's own NFM bar will take once it
- * lands. A guard keyed only to a live run's output is unreachable on
- * precisely the data it exists to protect. This probe forces both the
+ * is empty whenever every compared field already agrees. A guard keyed
+ * only to a live run's output is unreachable on precisely the data it
+ * exists to protect. The probe leaf has no column J label, so any owner
+ * or resources value on a probe payload is unsourced. This probe forces both the
  * write branch and the flag-for-review branch, so a change to either one
  * is caught regardless of what any one sheet contains.
  */
@@ -292,6 +290,7 @@ export function structuralProbeDiff(): DiffResult {
       "skipped-spacer": 0,
       "leaf-tasks": 2,
       collisions: 0,
+      "role-map-refusals": 0,
     },
     flags: [],
   };
@@ -305,23 +304,26 @@ export function structuralProbeDiff(): DiffResult {
  * ticket's "Re-running on the same snapshots produces a byte-identical
  * file" rule.
  */
+export interface ParityOptions {
+  runId: string;
+  sheetFrozenAt?: string;
+  roleMap: RoleMap;
+}
+
 export function computeParity(
   parsed: ParsedSheet,
   prodSnapshot: ProdSnapshot,
-  runId: string,
-  sheetFrozenAt = ""
+  { runId, sheetFrozenAt = "", roleMap }: ParityOptions
 ): ParityResult {
   const bundle = toMatchingBundle(prodSnapshot);
   const ledger: Ledger = { sheetId: parsed.config.sheetId, updatedAt: "", lastRunId: "", entries: {} };
-  const diff = diffSheet(parsed, bundle, ledger, runId);
+  const diff = diffSheet(parsed, bundle, ledger, { runId, roleMap });
   const payloads = buildPayloads(diff, runId);
-  const probePayloads = buildPayloads(structuralProbeDiff(), "structural-probe");
-  for (const field of ["owner", "resources"] as const) {
-    // Checked against this run's real output, which can legitimately be
-    // empty, and against the unconditional structural probe, which cannot.
-    assertToolNeverPlansField(payloads, field);
-    assertToolNeverPlansField(probePayloads, field);
-  }
+  const probe = structuralProbeDiff();
+  // Checked against this run's real output, which can legitimately be
+  // empty, and against the unconditional structural probe, which cannot.
+  assertPeopleFromRoleMap(payloads, parsed.config.clientSlug, parsed.leafTasks, roleMap);
+  assertPeopleFromRoleMap(buildPayloads(probe, "structural-probe"), probe.config.clientSlug, [STRUCTURAL_PROBE_LEAF], roleMap);
   const prodById = new Map(prodSnapshot.weekItems.map((w) => [w.id, w]));
   const rows = reconcileVerdicts(diff.rowDiffs, diff.orphans, prodById);
 

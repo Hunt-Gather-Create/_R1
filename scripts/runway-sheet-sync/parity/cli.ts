@@ -16,23 +16,41 @@
  *     --sheet-fixture <path> --prod-snapshot <path> \
  *     --engagement-code <code> --label <label> --out <verdictPath>
  *
+ * Captured files hold real client data, so they go in .data-walks/ at the
+ * repo root, which git ignores, never in docs/ or anywhere tracked.
+ *
  * Re-running step 3 on the same two files produces a byte-identical verdict
  * file. Nothing here reads a live sheet or a live DB.
  */
 import { createHash } from "crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname } from "path";
 import { createRunwayDb, runIfDirect } from "../../lib/run-script";
 import { parseSheet } from "../parse-sheet";
 import { renderParityReport } from "../report";
+import { ROLE_MAP } from "../role-map";
 import type { SheetConfig, SheetFixture } from "../types";
 import { computeParity } from "./compare";
 import { captureProdSnapshot, writeProdSnapshot } from "./prod-snapshot";
 import type { ParityResult, ProdSnapshot } from "./types";
 
-function arg(name: string): string | undefined {
-  const idx = process.argv.indexOf(`--${name}`);
-  return idx >= 0 ? process.argv[idx + 1] : undefined;
+function arg(name: string, argv: string[] = process.argv): string | undefined {
+  const idx = argv.indexOf(`--${name}`);
+  return idx >= 0 ? argv[idx + 1] : undefined;
+}
+
+/** A capture the run needs is not on disk. The message is the whole report. */
+export class MissingCaptureError extends Error {}
+
+const CAPTURE_HOW = {
+  "sheet fixture": "export the sheet there with the google-api skill export step, the SheetFixture format",
+  "prod snapshot": "capture it with npx tsx scripts/runway-sheet-sync/parity/cli.ts --capture-prod --client <slug> --out",
+} as const;
+
+function requireCapture(kind: keyof typeof CAPTURE_HOW, path: string): void {
+  if (existsSync(path)) return;
+  const how = kind === "prod snapshot" ? `${CAPTURE_HOW[kind]} ${path}` : CAPTURE_HOW[kind];
+  throw new MissingCaptureError(`${kind} not found at ${path}; ${how}. Captures live in .data-walks/, which git ignores.`);
 }
 
 /** Hash of the two frozen files' raw bytes, no wall clock, so re-running on
@@ -68,6 +86,8 @@ export function runParity(opts: RunParityOptions): ParityResult {
     // verdict file it was supposed to sit next to.
     throw new Error(`--out must end in .json, got "${opts.outPath}"`);
   }
+  requireCapture("sheet fixture", opts.sheetFixturePath);
+  requireCapture("prod snapshot", opts.prodSnapshotPath);
   const sheetFixtureRaw = readFileSync(opts.sheetFixturePath, "utf8");
   const prodSnapshotRaw = readFileSync(opts.prodSnapshotPath, "utf8");
   const fixture = JSON.parse(sheetFixtureRaw) as SheetFixture;
@@ -84,9 +104,9 @@ export function runParity(opts: RunParityOptions): ParityResult {
   // below — those stay bytes-of-the-two-frozen-files only, so a re-run on
   // the same inputs still produces a byte-identical verdict file.
   const wallClockStart = Date.now();
-  const parsed = parseSheet(fixture, config);
+  const parsed = parseSheet(fixture, { config });
   const runId = computeParityRunId(sheetFixtureRaw, prodSnapshotRaw);
-  const result = computeParity(parsed, prodSnapshot, runId, fixture.exportedAt);
+  const result = computeParity(parsed, prodSnapshot, { runId, sheetFrozenAt: fixture.exportedAt, roleMap: ROLE_MAP });
   const wallClockMs = Date.now() - wallClockStart;
 
   writeParityResult(result, opts.outPath);
@@ -99,6 +119,40 @@ export function runParity(opts: RunParityOptions): ParityResult {
   );
 
   return result;
+}
+
+/**
+ * The compare command as the shell sees it: argv in, exit code out. A missing
+ * capture prints one plain line and returns 1, never a stack and never a verdict.
+ */
+export function runCompareCli(
+  argv: string[],
+  log: (line: string) => void = console.log,
+  logError: (line: string) => void = console.error
+): number {
+  const sheetFixturePath = arg("sheet-fixture", argv);
+  const prodSnapshotPath = arg("prod-snapshot", argv);
+  const engagementCode = arg("engagement-code", argv);
+  const label = arg("label", argv);
+  const outPath = arg("out", argv);
+  if (!sheetFixturePath || !prodSnapshotPath || !engagementCode || !label || !outPath) {
+    throw new Error(
+      "Usage: --sheet-fixture <path> --prod-snapshot <path> --engagement-code <code> --label <label> --out <path>"
+    );
+  }
+
+  let result: ParityResult;
+  try {
+    result = runParity({ sheetFixturePath, prodSnapshotPath, engagementCode, label, outPath });
+  } catch (err) {
+    if (err instanceof MissingCaptureError) {
+      logError(err.message);
+      return 1;
+    }
+    throw err;
+  }
+  log(JSON.stringify({ runId: result.runId, counts: result.counts, interventions: result.interventions, outPath }, null, 2));
+  return 0;
 }
 
 async function main(): Promise<void> {
@@ -119,20 +173,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const sheetFixturePath = arg("sheet-fixture");
-  const prodSnapshotPath = arg("prod-snapshot");
-  const engagementCode = arg("engagement-code");
-  const label = arg("label");
-  const outPath = arg("out");
-  if (!sheetFixturePath || !prodSnapshotPath || !engagementCode || !label || !outPath) {
-    throw new Error(
-      "Usage: --sheet-fixture <path> --prod-snapshot <path> --engagement-code <code> --label <label> --out <path>"
-    );
-  }
-
-  const result = runParity({ sheetFixturePath, prodSnapshotPath, engagementCode, label, outPath });
-  console.log(JSON.stringify({ runId: result.runId, counts: result.counts, interventions: result.interventions, outPath }, null, 2));
-  process.exit(0);
+  process.exit(runCompareCli(process.argv));
 }
 
 runIfDirect("cli", main);

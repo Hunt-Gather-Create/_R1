@@ -34,7 +34,7 @@ const VARIANT_A: (string | undefined)[][] = [
 ];
 
 describe("parseSheet — variant A", () => {
-  const parsed = parseSheet(fixture(VARIANT_A), CONFIG);
+  const parsed = parseSheet(fixture(VARIANT_A), { config: CONFIG });
 
   it("detects banner variant A and engagement title", () => {
     expect(parsed.meta.bannerVariant).toBe("A");
@@ -93,7 +93,7 @@ describe("parseSheet — variant B + unfilled template", () => {
     ["", "✔", "TASKS", "PRIORITY", "START DATE", "DUE DATE", "DURATION", "PREDECESSOR", "LAG", "RESOURCE", "STATUS", "DURATION", "DAYS LEFT", "%"], // 9
     ["", "FALSE", "", "", "1-Jan-2026", "", "", "", "", "", "", "", "-", "-"], // 10 template junk
   ];
-  const parsed = parseSheet(fixture(VARIANT_B), CONFIG);
+  const parsed = parseSheet(fixture(VARIANT_B), { config: CONFIG });
 
   it("detects variant B, header row 9, and flags both", () => {
     expect(parsed.meta.bannerVariant).toBe("B");
@@ -111,7 +111,7 @@ describe("parseSheet — variant B + unfilled template", () => {
 
 describe("parseSheet — degenerate inputs", () => {
   it("flags missing contract header row and returns no tasks", () => {
-    const parsed = parseSheet(fixture([["", "random"], ["", "rows"]]), CONFIG);
+    const parsed = parseSheet(fixture([["", "random"], ["", "rows"]]), { config: CONFIG });
     expect(parsed.leafTasks).toHaveLength(0);
     expect(parsed.flags.some((f) => f.includes("column-header row"))).toBe(true);
   });
@@ -121,7 +121,7 @@ describe("parseSheet — degenerate inputs", () => {
       ["", "✔", "TASKS", "PRIORITY", "START DATE", "DUE DATE", "", "PREDECESSOR", "LAG", "RESOURCE", "STATUS"],
       ["", "FALSE", "   1.1 Task", "", "sometime soon", "5-Jun-2026", "", "", "", ""],
     ];
-    const parsed = parseSheet(fixture(grid), CONFIG);
+    const parsed = parseSheet(fixture(grid), { config: CONFIG });
     expect(parsed.leafTasks).toHaveLength(1);
     expect(parsed.leafTasks[0].startDate).toBeNull();
     expect(parsed.leafTasks[0].weekOf).toBeNull();

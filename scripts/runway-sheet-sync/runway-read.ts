@@ -25,6 +25,9 @@ export interface RunwayClientBundle {
     endDate: string | null;
     status: string | null;
     category: string | null;
+    /** Optional so a matching-only bundle may leave them out; read as null. */
+    owner?: string | null;
+    resources?: string | null;
     notes: string | null;
   }[];
 }
@@ -60,6 +63,8 @@ export async function readClientBundle(db: RunwayDb, slug: string): Promise<Runw
       endDate: weekItems.endDate,
       status: weekItems.status,
       category: weekItems.category,
+      owner: weekItems.owner,
+      resources: weekItems.resources,
       notes: weekItems.notes,
     })
     .from(weekItems)

@@ -53,7 +53,8 @@ Three consequences follow, and they are the spine of the tables below.
    gate is not a span. A spacer is not anything.
 2. **A row must be complete to authorize a write.** Incomplete is not a nudge to guess.
 3. **The sheet grants authority over the fields it actually carries, and nothing else.** It carries
-   titles, dates and a done box. It does not carry people. So the tool can never plan an owner.
+   titles, dates and a done box. It does not carry people. So the tool never plans an owner from
+   the sheet alone; it plans one only through the role map in rule R1, as amended 2026-10-24.
 
 ## 4. Table A. Row class authority
 
@@ -115,7 +116,7 @@ Columns are as `parse-sheet.ts:10-22` reads them.
 | G | DURATION | **computed, never read** | a formula from E and F on every sheet checked. Never read, never written, never flagged. |
 | H | PREDECESSOR | intent, structural | carried into notes. Does not itself schedule anything. |
 | I | LAG | intent, structural | carried into notes UNCHANGED. See rule L1. |
-| J | RESOURCE | intent, but not assignable | carried into notes as text. See rule R1. |
+| J | RESOURCE | intent, assignable only through the role map | carried into notes as text. Plans owner and resources only through the role map; an unmapped label is a counted refusal sent to review. See rule R1. |
 | K | STATUS | **derived, never read as intent** | see rule K1. |
 | L and beyond | DURATION, DAYS LEFT, the Gantt grid | **computed, never read** | never read. Not empty; every sheet checked carries a second duration and the Gantt columns here. |
 
@@ -149,17 +150,54 @@ something the sheet cannot carry, which is exactly the run 2 finding that the sh
 states while reality has three. Overwriting them is wrong. Guessing what they meant is worse. Step
 around that one field and make the text visible.
 
-**Rule R1, the tool never plans a person.** Column J holds a role on some sheets and a person's
-first name on others, and mixes them on EDF and Merit: "Civ Creative", "NFM", "Lane", "Leslie",
-"Kathy", "Civ → EDF". The tool cannot tell which is which. Ammonia's column J reads "Design +
-Creatives", "Dev + QA", "Account", "BP". Runway's `validateRoleTagOnResources`
-needs a role bound to a person, for example "CD: Lane". The sheet does not contain that binding and
-cannot be made to.
+**Rule R1, the tool plans a person only through the role map.** Amended 2026-10-24 by the
+operator's ruling on [_R1#159](https://github.com/jasonburks23/_R1/issues/159), answer A to
+Question 3. The rule as signed on 2026-09-14 said the tool never plans owner or resources. That
+version is retired.
 
-So `owner` and `resources` are outside the sheet's authority entirely. The tool carries column J
-into notes as text and never plans either field. This is already enforced by
-`assertToolNeverPlansField` in `parity/compare.ts`, which throws if a payload ever proposes one.
-That guard is the enforcement of this rule, and this document is the rule it enforces.
+Column J holds a role on some sheets and a person's first name on others, and mixes them on EDF and
+Merit: "Civ Creative", "NFM", "Lane", "Leslie", "Kathy", "Civ → EDF". Ammonia's column J reads
+"Design + Creatives", "Dev + QA", "Account", "BP". Runway's `validateRoleTagOnResources` needs a
+role bound to a person, for example "CD: Lane". The sheet does not contain that binding and cannot
+be made to. The binding is a fact about our own staffing, so it lives in our code, not in the sheet.
+
+The rule, as amended:
+
+1. The tool plans `owner` and `resources` only from one role map kept in code, keyed by client,
+   `scripts/runway-sheet-sync/role-map.data.ts`. A label that names a person or a mapped role
+   resolves to one role bound to one person.
+2. The first label named on a row sets the owner. Every mapped label on the row sets resources, each
+   as a role-tagged entry that passes `validateRoleTagOnResources`.
+3. A label that names the client itself makes the row a client-resource row. Resources is the
+   client, and the owner is that client's account manager, from the map's `accountManager` entry.
+4. Any label the map does not hold plans neither field for that row. It adds one review item naming
+   the exact label and adds one to the refusal counter in the run report. It is never a silent
+   blank.
+5. The ruling did not say what happens when Runway already holds a different value. The build
+   sets the safe default: an empty Runway value is written, and a value a person already set is
+   flagged for review, never overwritten. The operator may change this default.
+
+The tool still carries column J into notes as text. `assertPeopleFromRoleMap` in
+`parity/compare.ts` enforces this rule: it throws if any payload plans owner or resources with a
+value that an independent role map lookup of that row's own label does not produce. It replaces
+`assertToolNeverPlansField`, which enforced the rule as first signed.
+
+**Rule R7, code drift.** Amended 2026-10-24 by the operator's ruling on
+[_R1#195](https://github.com/jasonburks23/_R1/issues/195), answer C. R7 came from the M1 plan: prod
+may track the engagement under the code the sheet banner carries, so banner drift is reported and
+the run goes on. That still holds for the banner. The file title is now held to a stricter line.
+
+1. The code at the start of the Drive file name must agree with the registry's `engagementCode`.
+   A title that drops the registry's two digit sub-number agrees: `BPC-2602` names the same
+   engagement as `BPC-2602-01`.
+2. A title code that disagrees stops the run before the sheet is read. The message names the sheet
+   id, the title code, the registry code, and how to add an exception.
+3. A registry entry may list exact title codes it accepts, in `acceptedTitleCodes` in
+   `scripts/runway-sheet-sync/config.ts`. The run reports each use. The first entry is the Soundly
+   RX Card sheet, titled `SND-2602`, registry `SND-2603`. Old documents keep their labels, operator
+   ruling 2026-10-07, so that mismatch is permanent. Any other title code on that sheet still stops.
+4. The title comes from the Drive listing. A run with `--skip-freshness-check` has no listing, so
+   it reports that the title code was not checked.
 
 ## 7. What this document does NOT decide
 

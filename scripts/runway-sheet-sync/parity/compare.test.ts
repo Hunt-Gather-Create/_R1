@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { assertToolNeverPlansField, computeParity, reconcileVerdicts, structuralProbeDiff } from "./compare";
+import { assertPeopleFromRoleMap, computeParity, reconcileVerdicts, structuralProbeDiff } from "./compare";
+import { ROLE_MAP, type RoleMap } from "../role-map";
 import { buildPayloads } from "../payloads";
 import type { ProdWeekItemRow } from "./types";
 import type { LeafTask, ParsedSheet, RowDiff, SheetConfig, SyncPayload } from "../types";
@@ -245,8 +246,8 @@ describe("reconcileVerdicts, the harness's own instrument, tested in isolation f
 // Unit test of the field comparator, not the milestone proof. Both sides of
 // the comparison below are authored in this same file, so a broken
 // comparator could be made to pass it. The real bar is a run against a
-// frozen Ammonia sheet fixture and prod snapshot, docs/data-walks/fixtures/,
-// captured separately per _R1#151 thread follow-up, TP note 2026-09-07.
+// frozen sheet fixture and prod snapshot captured into the untracked
+// .data-walks/ folder, never committed, since they hold client data.
 describe("computeParity, comparator unit test: owner/resources/category on an 18-row synthetic scenario", () => {
   it("names exactly {owner, resources, category} when a synthetic scenario differs on exactly those fields", () => {
     const tasks: LeafTask[] = Array.from({ length: 18 }, (_, i) =>
@@ -279,7 +280,7 @@ describe("computeParity, comparator unit test: owner/resources/category on an 18
         })
       ),
     };
-    const result = computeParity(parsed, prodSnapshot, "test-run-id");
+    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-id", roleMap: ROLE_MAP });
     expect(result.rows).toHaveLength(18);
     expect(result.rows.every((r) => r.verdict === "DISAGREE")).toBe(true);
     for (const row of result.rows) {
@@ -299,8 +300,8 @@ describe("computeParity, comparator unit test: owner/resources/category on an 18
       projects: [],
       weekItems: [prodRow({ id: "wi-x", owner: "Lane" })],
     };
-    const first = computeParity(parsed, prodSnapshot, "fixed-run-id");
-    const second = computeParity(parsed, prodSnapshot, "fixed-run-id");
+    const first = computeParity(parsed, prodSnapshot, { runId: "fixed-run-id", roleMap: ROLE_MAP });
+    const second = computeParity(parsed, prodSnapshot, { runId: "fixed-run-id", roleMap: ROLE_MAP });
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
   });
 });
@@ -324,7 +325,7 @@ describe("_R1#156 intervention count: HAND_ONLY + DISAGREE, the rows the tool co
         prodRow({ id: "wi-3", projectId: "p-1", title: "Prod-only task B", weekOf: "2026-06-15" }),
       ],
     };
-    const result = computeParity(parsed, prodSnapshot, "test-run-interventions-3");
+    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-interventions-3", roleMap: ROLE_MAP });
     expect(result.counts).toEqual({ AGREE: 0, DISAGREE: 1, TOOL_ONLY: 0, HAND_ONLY: 2 });
     expect(result.interventions).toBe(3);
 
@@ -358,102 +359,103 @@ describe("_R1#156 intervention count: HAND_ONLY + DISAGREE, the rows the tool co
         }),
       ],
     };
-    const result = computeParity(parsed, prodSnapshot, "test-run-interventions-0");
+    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-interventions-0", roleMap: ROLE_MAP });
     expect(result.counts).toEqual({ AGREE: 1, DISAGREE: 0, TOOL_ONLY: 0, HAND_ONLY: 0 });
     expect(result.interventions).toBe(0);
   });
 });
 
-describe("assertToolNeverPlansField, guards toolPlannedFields' hardcoded null against a silent _R1#159 landing", () => {
-  it("control: today's real updateWeekItemField payload, which only ever writes status/startDate/endDate, does not throw", () => {
-    expect(() => assertToolNeverPlansField([payload({})], "owner")).not.toThrow();
-    expect(() => assertToolNeverPlansField([payload({})], "resources")).not.toThrow();
+const MAP: RoleMap = {
+  acme: {
+    accountManager: "Kathy",
+    clientLabels: ["BP"],
+    clientResource: { roleTag: "Client", person: "BP" },
+    labels: { "Design + Creatives": { roleTag: "CD", person: "Lane" } },
+  },
+};
+const MAPPED_LEAF = leaf({ resource: "Design + Creatives" });
+
+describe("assertPeopleFromRoleMap, owner and resources only from the role map, rule R1 as amended 2026-10-24", () => {
+  it("control: a status write and a map-sourced owner write on a mapped row do not throw", () => {
+    const payloads = [
+      payload({}),
+      payload({ params: { weekOf: "2026-06-01", weekItemTitle: "Kickoff call", field: "owner", newValue: "Lane", updatedBy: "sheet-sync:test" } }),
+      payload({ op: "createWeekItem", params: { clientSlug: "acme", owner: "Lane", resources: "CD: Lane" } }),
+    ];
+    expect(() => assertPeopleFromRoleMap(payloads, "acme", [MAPPED_LEAF], MAP)).not.toThrow();
   });
 
-  it("mutation A: FAILS when an updateWeekItemField payload proposes writing the guarded field", () => {
-    const payloads = [payload({ params: { weekOf: "2026-06-01", weekItemTitle: "Kickoff call", field: "owner", newValue: "Lane", updatedBy: "sheet-sync:test" } })];
-    expect(() => assertToolNeverPlansField(payloads, "owner")).toThrow(/payloads\.ts now proposes writing "owner" via op "updateWeekItemField"/);
-    expect(() => assertToolNeverPlansField(payloads, "resources")).not.toThrow();
+  it("mutation A: FAILS when an updateWeekItemField payload writes an owner the map did not plan", () => {
+    const payloads = [payload({ params: { weekOf: "2026-06-01", weekItemTitle: "Kickoff call", field: "owner", newValue: "Kathy", updatedBy: "sheet-sync:test" } })];
+    expect(() => assertPeopleFromRoleMap(payloads, "acme", [MAPPED_LEAF], MAP)).toThrow(/op "updateWeekItemField" on row 12 plans "owner" = "Kathy" without a role map source/);
   });
 
-  it("mutation B: FAILS when any payload carries the guarded field directly on params, independent of op", () => {
+  it("mutation B: FAILS when any payload carries resources directly on params for a row with no label", () => {
     const payloads = [payload({ op: "createWeekItem", params: { clientSlug: "acme", resources: "CD: Lane" } })];
-    expect(() => assertToolNeverPlansField(payloads, "resources")).toThrow(/payloads\.ts now plans "resources"/);
-    expect(() => assertToolNeverPlansField(payloads, "owner")).not.toThrow();
+    expect(() => assertPeopleFromRoleMap(payloads, "acme", [leaf({})], MAP)).toThrow(/plans "resources" = "CD: Lane" without a role map source/);
   });
 
-  it("mutation C: FAILS when a flag-for-review payload proposes writing the guarded field, the branch the op allowlist missed", () => {
-    // TP mutation finding, 2026-09-08: payloads.ts:110's flag-for-review
-    // branch also names its column via params.field, but the guard only
-    // ever checked op === "updateWeekItemField". A payload routing an
-    // owner/resources mismatch to flag-for-review instead of an
-    // auto-write reached exit 0 on the real Ammonia pair. The fix drops
-    // the op allowlist entirely: any op naming the guarded field via
-    // params.field is a hit.
+  it("mutation C: FAILS when a flag-for-review payload proposes an owner for a row whose label the map refused", () => {
     const payloads = [
       payload({ op: "flag-for-review", params: { weekItemId: "wi-1", field: "owner", sheetValue: "Lane", runwayValue: null, policy: "flag-for-review" } }),
     ];
-    expect(() => assertToolNeverPlansField(payloads, "owner")).toThrow(/payloads\.ts now proposes writing "owner" via op "flag-for-review"/);
-    expect(() => assertToolNeverPlansField(payloads, "resources")).not.toThrow();
+    expect(() => assertPeopleFromRoleMap(payloads, "acme", [leaf({ resource: "Account" })], MAP)).toThrow(/op "flag-for-review" on row 12 plans "owner"/);
   });
 
-  it("mutation D: FAILS when a flag-for-review payload proposes writing resources, same branch as mutation C with the other guarded field", () => {
+  it("mutation D: FAILS when a payload names resources for a row the run never parsed", () => {
     const payloads = [
       payload({ op: "flag-for-review", params: { weekItemId: "wi-1", field: "resources", sheetValue: "CD: Lane", runwayValue: null, policy: "flag-for-review" } }),
     ];
-    expect(() => assertToolNeverPlansField(payloads, "resources")).toThrow(/payloads\.ts now proposes writing "resources" via op "flag-for-review"/);
-    expect(() => assertToolNeverPlansField(payloads, "owner")).not.toThrow();
+    expect(() => assertPeopleFromRoleMap(payloads, "acme", [], MAP)).toThrow(/plans "resources"/);
   });
 
-  it("control: addProject and createWeekItem payloads never carry params.field, so the dropped op allowlist creates no false positive", () => {
+  it("control: addProject, createWeekItem without people, and a refusal review item carry no owner or resources value", () => {
     const addProjectPayload = payload({ op: "addProject", params: { clientSlug: "acme", name: "Acme", notes: "n", updatedBy: "sheet-sync:test" } });
-    const createWeekItemPayload = payload({ op: "createWeekItem", params: { clientSlug: "acme", projectName: "Acme", title: "t", status: "scheduled", category: "kickoff", notes: "", updatedBy: "sheet-sync:test" } });
-    expect(() => assertToolNeverPlansField([addProjectPayload, createWeekItemPayload], "owner")).not.toThrow();
-    expect(() => assertToolNeverPlansField([addProjectPayload, createWeekItemPayload], "resources")).not.toThrow();
+    const createWeekItemPayload = payload({ op: "createWeekItem", params: { clientSlug: "acme", projectName: "Acme", title: "t", status: "scheduled", category: null, notes: "", updatedBy: "sheet-sync:test" } });
+    const refusal = payload({ op: "flag-for-review", params: { weekItemId: null, unmappedLabel: "Account", policy: "role-map-refusal" } });
+    expect(() => assertPeopleFromRoleMap([addProjectPayload, createWeekItemPayload, refusal], "acme", [leaf({})], MAP)).not.toThrow();
   });
 
-  it("computeParity on real Ammonia-shaped input calls the guard and does not throw, today", () => {
-    const tasks: LeafTask[] = Array.from({ length: 3 }, (_, i) =>
-      leaf({ rowNumber: 12 + i, taskNo: `${i + 1}.1`, title: `Task ${i}`, resolvedTitle: `Task ${i}` })
-    );
-    const parsed = parsedWith(tasks);
+  it("computeParity reads the tool's role map plan: AGREE when prod holds the same owner and resources", () => {
+    const parsed = parsedWith([MAPPED_LEAF]);
     const prodSnapshot = {
-      clientSlug: "beyond-petro",
-      capturedAt: "2026-09-07T22:00:00Z",
-      client: { id: "c-1", slug: "beyond-petro", name: "Beyond Petro" },
-      projects: [],
-      weekItems: tasks.map((t, i) => prodRow({ id: `wi-${i}`, title: t.title, weekOf: t.weekOf, owner: "Lane" })),
+      clientSlug: "acme",
+      capturedAt: "2026-10-24T00:00:00Z",
+      client: { id: "c-1", slug: "acme", name: "Acme" },
+      projects: [{ id: "p-1", name: "Widget Refresh", status: null, category: null, notes: "ACM-2601-01" }],
+      weekItems: [prodRow({ category: "kickoff", owner: "Lane", resources: "CD: Lane" })],
     };
-    expect(() => computeParity(parsed, prodSnapshot, "test-run-id")).not.toThrow();
+    const result = computeParity(parsed, prodSnapshot, { runId: "test-run-map", roleMap: MAP });
+    expect(result.counts).toEqual({ AGREE: 1, DISAGREE: 0, TOOL_ONLY: 0, HAND_ONLY: 0 });
+    const disagree = computeParity(parsed, { ...prodSnapshot, weekItems: [prodRow({ category: "kickoff", owner: "Kathy", resources: "CD: Lane" })] }, { runId: "test-run-map", roleMap: MAP });
+    expect(disagree.rows[0].mismatchedFields).toEqual([{ field: "owner", tool: "Lane", hand: "Kathy" }]);
   });
 
   it("the structural probe itself is non-vacuous: it reaches both the write and flag-for-review branches", () => {
-    // A live run's payload list is empty whenever status/startDate/endDate
-    // all agree, exactly the shape the test above exercises and exactly
-    // the shape every real DISAGREE row on owner/resources/category takes.
-    // TP mutation finding, 2026-09-07: payloads.ts:93 changed to a
+    // A live run's payload list is empty whenever every compared field
+    // agrees. TP mutation finding, 2026-09-07: payloads.ts:93 changed to a
     // hardcoded field, real Ammonia CLI run produced zero payloads and did
-    // not throw. This test guards the probe against the same failure
-    // mode: if a future edit to structuralProbeDiff ever stops forcing
-    // both branches, this goes red before the guard silently goes blind
-    // again.
+    // not throw. If a future edit to structuralProbeDiff ever stops forcing
+    // both branches, this goes red before the guard silently goes blind.
     const probePayloads = buildPayloads(structuralProbeDiff(), "structural-probe-test");
     expect(probePayloads.length).toBeGreaterThan(0);
     expect(probePayloads.some((p) => p.op === "updateWeekItemField")).toBe(true);
     expect(probePayloads.some((p) => p.op === "flag-for-review")).toBe(true);
   });
 
-  it("FAILS when the structural probe's own write branch plans the guarded field, independent of any live sheet", () => {
-    const mutatedProbePayloads = buildPayloads(structuralProbeDiff(), "structural-probe-test").map((p) =>
+  it("FAILS when the structural probe's own write branch plans owner, the probe leaf has no label", () => {
+    const probe = structuralProbeDiff();
+    const mutatedProbePayloads = buildPayloads(probe, "structural-probe-test").map((p) =>
       p.op === "updateWeekItemField" ? { ...p, params: { ...p.params, field: "owner" } } : p
     );
-    expect(() => assertToolNeverPlansField(mutatedProbePayloads, "owner")).toThrow(/payloads\.ts now proposes writing "owner"/);
+    expect(() => assertPeopleFromRoleMap(mutatedProbePayloads, probe.config.clientSlug, [probe.rowDiffs[0].leaf!], MAP)).toThrow(/plans "owner"/);
   });
 
-  it("FAILS when the structural probe's own flag-for-review branch plans the guarded field, the exact shape mutations C/D exercise on the real Ammonia pair", () => {
-    const mutatedProbePayloads = buildPayloads(structuralProbeDiff(), "structural-probe-test").map((p) =>
+  it("FAILS when the structural probe's own flag-for-review branch plans resources", () => {
+    const probe = structuralProbeDiff();
+    const mutatedProbePayloads = buildPayloads(probe, "structural-probe-test").map((p) =>
       p.op === "flag-for-review" ? { ...p, params: { ...p.params, field: "resources" } } : p
     );
-    expect(() => assertToolNeverPlansField(mutatedProbePayloads, "resources")).toThrow(/payloads\.ts now proposes writing "resources" via op "flag-for-review"/);
+    expect(() => assertPeopleFromRoleMap(mutatedProbePayloads, probe.config.clientSlug, [probe.rowDiffs[0].leaf!], MAP)).toThrow(/op "flag-for-review" on row 1 plans "resources"/);
   });
 });
