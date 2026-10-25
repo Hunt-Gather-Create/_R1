@@ -5,6 +5,7 @@ import { join } from "path";
 import { runParity, runCompareCli, computeParityRunId } from "./cli";
 import type { SheetFixture } from "../types";
 import type { ProdSnapshot } from "./types";
+import { NO_STAFFING } from "../staffing";
 
 const SHEET_ID = "sheet-cli-test";
 
@@ -31,6 +32,7 @@ function fixture(): SheetFixture {
 function prodSnapshot(): ProdSnapshot {
   return {
     clientSlug: "acme",
+    staffing: NO_STAFFING,
     capturedAt: "2026-09-07T22:00:00Z",
     client: { id: "c-1", slug: "acme", name: "Acme" },
     projects: [{ id: "p-1", name: "Widget Refresh", status: null, category: null, notes: "ACM-2601-01" }],
@@ -44,8 +46,8 @@ function prodSnapshot(): ProdSnapshot {
         endDate: "2026-06-01",
         status: "completed", // TRUE checkbox -> derivedStatus "completed", agrees
         category: null, // tool derives "kickoff" -> disagrees
-        owner: "Lane", // no role map entry for acme, tool plans no owner -> disagrees
-        resources: "CD: Lane", // no role map entry for acme, tool plans no resources -> disagrees
+        owner: "Wren", // no staffing for acme, tool plans no owner -> disagrees
+        resources: "CD: Wren", // no staffing for acme, tool plans no resources -> disagrees
         notes: null,
       },
     ],
@@ -166,6 +168,19 @@ describe("a missing capture stops the parity CLI with one plain message", () => 
     }
     expect(message).toContain(`prod snapshot not found at ${prodPath}`);
     expect(message).toContain("--capture-prod");
+    expect(existsSync(outPath)).toBe(false);
+  });
+
+  it("runParity refuses a prod snapshot that holds no staffing, and writes no verdict", () => {
+    dir = mkdtempSync(join(tmpdir(), "parity-cli-no-staffing-"));
+    const sheetPath = join(dir, "sheet.json");
+    const prodPath = join(dir, "prod-snapshot.json");
+    const outPath = join(dir, "verdict.json");
+    writeFileSync(sheetPath, JSON.stringify(fixture()));
+    writeFileSync(prodPath, JSON.stringify({ ...prodSnapshot(), staffing: undefined }));
+    expect(() =>
+      runParity({ sheetFixturePath: sheetPath, prodSnapshotPath: prodPath, engagementCode: "ACM-2601-01", label: "Widget Refresh", outPath })
+    ).toThrow(/holds no staffing/);
     expect(existsSync(outPath)).toBe(false);
   });
 

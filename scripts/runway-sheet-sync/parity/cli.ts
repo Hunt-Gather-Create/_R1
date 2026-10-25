@@ -28,7 +28,6 @@ import { dirname } from "path";
 import { createRunwayDb, runIfDirect } from "../../lib/run-script";
 import { parseSheet } from "../parse-sheet";
 import { renderParityReport } from "../report";
-import { ROLE_MAP } from "../role-map";
 import type { SheetConfig, SheetFixture } from "../types";
 import { computeParity } from "./compare";
 import { captureProdSnapshot, writeProdSnapshot } from "./prod-snapshot";
@@ -92,6 +91,11 @@ export function runParity(opts: RunParityOptions): ParityResult {
   const prodSnapshotRaw = readFileSync(opts.prodSnapshotPath, "utf8");
   const fixture = JSON.parse(sheetFixtureRaw) as SheetFixture;
   const prodSnapshot = JSON.parse(prodSnapshotRaw) as ProdSnapshot;
+  if (!prodSnapshot.staffing) {
+    throw new MissingCaptureError(
+      `prod snapshot at ${opts.prodSnapshotPath} holds no staffing, so owner and resources cannot resolve; ${CAPTURE_HOW["prod snapshot"]} ${opts.prodSnapshotPath}.`
+    );
+  }
 
   const config: SheetConfig = {
     sheetId: fixture.sheetId,
@@ -106,7 +110,7 @@ export function runParity(opts: RunParityOptions): ParityResult {
   const wallClockStart = Date.now();
   const parsed = parseSheet(fixture, { config });
   const runId = computeParityRunId(sheetFixtureRaw, prodSnapshotRaw);
-  const result = computeParity(parsed, prodSnapshot, { runId, sheetFrozenAt: fixture.exportedAt, roleMap: ROLE_MAP });
+  const result = computeParity(parsed, prodSnapshot, { runId, sheetFrozenAt: fixture.exportedAt, staffing: prodSnapshot.staffing });
   const wallClockMs = Date.now() - wallClockStart;
 
   writeParityResult(result, opts.outPath);

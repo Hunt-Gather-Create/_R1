@@ -112,6 +112,7 @@ export function renderReport(
   lines.push(`| runway-only-orphan | ${c["runway-only-orphan"]} |`);
   lines.push(`| mid-week collisions | ${c.collisions} |`);
   lines.push(`| role-map refusals, unmapped column J labels | ${c["role-map-refusals"]} |`);
+  lines.push(`| staffing parts ignored, clients.team not a Role: Name pair | ${c["staffing-ignored-parts"]} |`);
   lines.push(
     `| skipped (header/milestone/empty/spacer) | ${c["skipped-header"]}/${c["skipped-milestone"]}/${c["skipped-empty"]}/${c["skipped-spacer"]} |`
   );

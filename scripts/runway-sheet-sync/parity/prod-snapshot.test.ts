@@ -30,6 +30,10 @@ describe("captureProdSnapshot, the independent instrument", () => {
     expect(review?.resources).toBe("Roz");
     expect(review?.category).toBe("review");
 
+    // Staffing is frozen with the rows: this client's team, and the members.
+    expect(Object.keys(snapshot.staffing?.clients ?? {})).toEqual(["convergix"]);
+    expect(snapshot.staffing?.members.length).toBeGreaterThan(0);
+
     // Every week item for this client is present, not a partial read.
     expect(snapshot.weekItems.map((w) => w.id).sort()).toEqual(
       ["wi-cds-deliver", "wi-cds-review", "wi-completed", "wi-canceled"].sort()

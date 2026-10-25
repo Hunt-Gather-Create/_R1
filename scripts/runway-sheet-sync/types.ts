@@ -256,6 +256,8 @@ export interface DiffResult {
     collisions: number;
     /** Unmapped column J labels, one per label, each sent to review. */
     "role-map-refusals": number;
+    /** Parts of this client's clients.team that are not a usable "Role: Name" pair. */
+    "staffing-ignored-parts": number;
   };
   flags: string[];
 }
