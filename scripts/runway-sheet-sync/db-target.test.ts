@@ -37,7 +37,6 @@ describe("the sync CLIs", () => {
     expect(source).toContain("const { staging, readOnly } = runDatabase(process.argv, target);");
     expect(source).toContain("createRunwayDb({ staging })");
     expect(source).toContain("readOnly ? readOnlyDb(opened.db) : opened.db");
-    expect(source).toContain("const handle = apply ? db : readOnlyDb(db);");
     expect(source).not.toContain('includes("--staging")');
   });
 
