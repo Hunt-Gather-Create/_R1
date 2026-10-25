@@ -153,7 +153,7 @@ describe("contentHash (change detection over sheet cols B–J)", () => {
     expect(contentHash(leaf({ priority: "P1" }))).not.toBe(base);
     expect(contentHash(leaf({ predecessorRow: 5 }))).not.toBe(base);
     expect(contentHash(leaf({ lag: 2 }))).not.toBe(base);
-    expect(contentHash(leaf({ resource: "Lane" }))).not.toBe(base);
+    expect(contentHash(leaf({ resource: "Wren" }))).not.toBe(base);
   });
 
   it("ignores positional / non-structural fields", () => {
