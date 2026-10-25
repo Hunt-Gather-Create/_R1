@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { createTestDb, seedTestDb, cleanupTestDb, type TestDb } from "../../src/lib/runway/test-db";
 import { clients } from "../../src/lib/db/runway-schema";
-import { readOnlyDb, WRITE_METHODS } from "./read-only-db";
+import { readOnlyDb } from "./read-only-db";
+
+/** Written out here, not imported, so a method dropped from the source list goes red. */
+const WRITES = ["insert", "update", "delete", "run", "batch", "transaction", "with", "$with", "$client"];
 
 describe("readOnlyDb", () => {
   let db: TestDb;
@@ -27,7 +30,7 @@ describe("readOnlyDb", () => {
     expect(rows).toEqual([{ slug: "acme-widgets" }]);
   });
 
-  it.each(WRITE_METHODS)("db.%s throws", (method) => {
+  it.each(WRITES)("db.%s throws", (method) => {
     expect(() => (readOnlyDb(db) as unknown as Record<string, unknown>)[method]).toThrow(/read-only database.*only --apply writes/);
   });
 
