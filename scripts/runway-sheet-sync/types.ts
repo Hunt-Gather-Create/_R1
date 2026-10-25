@@ -232,9 +232,9 @@ export interface DiffResult {
     collisions: number;
     /** Unmapped column J labels, one per label, each sent to review. */
     "role-map-refusals": number;
-    /** Parts of this client's clients.team that are not a usable "Role: Name" pair. */
+    /** This client's Account Teams rows whose role is not in the vocabulary. */
     "staffing-ignored-parts": number;
-    /** Account Teams rows for this client whose person is not in People or not active. */
+    /** Account Teams rows for this client whose person is not in People or not active, plus rows for a client not in Runway. */
     "staffing-skipped-people": number;
   };
   flags: string[];

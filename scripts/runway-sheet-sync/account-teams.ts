@@ -68,12 +68,19 @@ export function staffingFromSheet(grids: AccountTeamsGrids, clientRows: ClientLa
     clients[row.slug] = { name: row.name, nicknames: jsonStrings(row.nicknames), team: [], ignoredTeamParts: [], skippedPeople: [] };
   }
 
+  const skippedRows: string[] = [];
   for (const row of grids.teams.slice(1)) {
-    const client = clients[cell(row, 0)];
+    const slug = cell(row, 0);
+    const client = clients[slug];
     const role = cell(row, 2);
     const person = cell(row, 3);
-    if (!client || (!role && !person)) continue;
+    if (!slug && !role && !person) continue;
     const text = `${role}: ${person}`;
+    if (!client) {
+      skippedRows.push(`${slug}: ${text}, client not in Runway`);
+      continue;
+    }
+    if (!role && !person) continue;
     const roleTag = roleTagForCell(role);
     if (!roleTag || !person) {
       client.ignoredTeamParts.push(text);
@@ -89,7 +96,7 @@ export function staffingFromSheet(grids: AccountTeamsGrids, clientRows: ClientLa
     // Every active person an AM row names leads the client, so two active AMs refuse as before.
     if (roleTag === "AM") for (const m of active) if (!m.accountsLed.includes(cell(row, 0))) m.accountsLed.push(cell(row, 0));
   }
-  return { clients, members };
+  return { clients, members, skippedRows };
 }
 
 export async function readAccountTeams(sheetId: string, read: ReadRange = readRangeWithCli): Promise<AccountTeamsGrids> {

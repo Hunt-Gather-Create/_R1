@@ -69,7 +69,7 @@ export async function captureProdSnapshot(db: RunwayDb, clientSlug: string, sour
 
   return {
     clientSlug,
-    staffing: { clients: { [clientSlug]: staffing.clients[clientSlug] }, members: staffing.members },
+    staffing: { clients: { [clientSlug]: staffing.clients[clientSlug] }, members: staffing.members, skippedRows: staffing.skippedRows },
     capturedAt: new Date().toISOString(),
     client,
     projects: projectRows,

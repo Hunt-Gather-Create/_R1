@@ -105,6 +105,14 @@ describe("a wrong header row refuses, naming the tab", () => {
     );
   });
 
+  it("refuses the right columns in the wrong order, Role and Person swapped", () => {
+    const swapped = ["Client Slug", "Client Name", "Person", "Role", "Notes", "Source"];
+    expect(swapped).toHaveLength(TEAMS_HEADER.length);
+    expect(() => staffingFromSheet({ people: PEOPLE_GRID, teams: [swapped, ...TEAMS_GRID.slice(1)] }, CLIENT_LABEL_ROWS)).toThrow(
+      new Error(`Account Teams sheet tab "Account Teams" header row must be exactly: ${TEAMS_HEADER.join(", ")}.`)
+    );
+  });
+
   it("accepts the exact header with trailing blank cells", () => {
     const grids = { people: [[...PEOPLE_HEADER, "", undefined], ...PEOPLE_GRID.slice(1)], teams: TEAMS_GRID };
     expect(() => staffingFromSheet(grids, CLIENT_LABEL_ROWS)).not.toThrow();
@@ -123,6 +131,17 @@ describe("an inactive or unknown person is skipped and counted", () => {
     expect(staffing.members.find((m) => m.firstName === "Ossian")?.isActive).toBe(false);
   });
 
+  it("a row whose client slug is not in the Runway clients table is skipped and counted", () => {
+    const staffing = staffingFromSheet(
+      { people: PEOPLE_GRID, teams: [...TEAMS_GRID, ["ghostco", "Ghost Co", "CD", "Wren", "", "synthetic"]] },
+      CLIENT_LABEL_ROWS
+    );
+    expect(staffing.skippedRows).toEqual(["ghostco: CD: Wren, client not in Runway"]);
+    expect(staffing.clients.ghostco).toBeUndefined();
+    const diff = diffSheet(parsedWith([leaf({ resource: "Design" })]), BUNDLE, emptyLedger(), { runId: "run-1", staffing });
+    expect(diff.counts["staffing-skipped-people"]).toBe(1);
+  });
+
   it("the run report counts each skipped row", () => {
     const staffing = staffingFromSheet(
       {
@@ -139,7 +158,9 @@ describe("an inactive or unknown person is skipped and counted", () => {
     );
     const diff = diffSheet(parsedWith([leaf({ resource: "Design" })]), BUNDLE, emptyLedger(), { runId: "run-1", staffing });
     expect(diff.counts["staffing-skipped-people"]).toBe(3);
-    expect(renderReport(diff, []).report).toMatch(/\| staffing rows skipped, person not in People or not active \| 3 \|/);
+    expect(renderReport(diff, []).report).toMatch(
+      /\| staffing rows skipped, Account Teams person not in People or not active, or client not in Runway \| 3 \|/
+    );
   });
 });
 
