@@ -27,6 +27,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname } from "path";
 import { createRunwayDb, runIfDirect } from "../../lib/run-script";
 import { parseSheet } from "../parse-sheet";
+import { readOnlyDb } from "../read-only-db";
 import { renderParityReport } from "../report";
 import type { SheetConfig, SheetFixture } from "../types";
 import { computeParity } from "./compare";
@@ -159,6 +160,17 @@ export function runCompareCli(
   return 0;
 }
 
+/** Freezes one client's prod rows to outPath through a read-only handle, so the capture cannot write. */
+export async function captureProd(
+  db: ReturnType<typeof createRunwayDb>["db"],
+  clientSlug: string,
+  outPath: string,
+): Promise<ProdSnapshot> {
+  const snapshot = await captureProdSnapshot(readOnlyDb(db), clientSlug);
+  writeProdSnapshot(snapshot, outPath);
+  return snapshot;
+}
+
 async function main(): Promise<void> {
   if (process.argv.includes("--capture-prod")) {
     const clientSlug = arg("client");
@@ -171,8 +183,7 @@ async function main(): Promise<void> {
       throw new Error(`RUNWAY_DATABASE_URL not loaded, resolved "${url}". Check .env.local`);
     }
     console.error(`capturing prod snapshot for ${clientSlug}, read-only`);
-    const snapshot = await captureProdSnapshot(db, clientSlug);
-    writeProdSnapshot(snapshot, outPath);
+    const snapshot = await captureProd(db, clientSlug, outPath);
     console.log(JSON.stringify({ clientSlug, capturedAt: snapshot.capturedAt, weekItems: snapshot.weekItems.length, outPath }, null, 2));
     process.exit(0);
   }

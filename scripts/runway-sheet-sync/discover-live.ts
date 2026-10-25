@@ -39,5 +39,5 @@ export async function discoverForRun(env: NodeJS.ProcessEnv, deps: DiscoveryDeps
     deps.readClients(),
     deps.readOverrides(),
   ]);
-  return discoverSchedules({ jobs: ledger.jobs, listing, clients: clientRows, overrides });
+  return discoverSchedules({ jobs: ledger.jobs, listing, clients: clientRows, overrides, skipped: ledger.skipped });
 }

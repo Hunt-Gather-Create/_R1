@@ -5,7 +5,7 @@
  * never needs a code change.
  */
 import { matchClient, type RunwayClient } from "./client-match";
-import type { LedgerJob } from "./job-ledger";
+import type { LedgerJob, SkippedLedgerRow } from "./job-ledger";
 import { scheduleVersion, startsWithJob, type DriveFile } from "./schedule-files";
 import type { SheetConfig } from "./types";
 
@@ -25,6 +25,8 @@ export interface ScheduleDiscovery {
   /** Schedule files whose name starts with no ledger job number. */
   unowned: DriveFile[];
   listing: DriveFile[];
+  /** Job ledger rows the run skipped, for the run report. */
+  skipped: SkippedLedgerRow[];
 }
 
 export interface DiscoveryInput {
@@ -32,6 +34,7 @@ export interface DiscoveryInput {
   listing: DriveFile[];
   clients: RunwayClient[];
   overrides: ScheduleOverride[];
+  skipped?: SkippedLedgerRow[];
 }
 
 const sameKey = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -83,7 +86,7 @@ export function discoverSchedules(input: DiscoveryInput): ScheduleDiscovery {
   });
 
   const unowned = schedules.filter((f) => !owned.has(f.id) && !overrideIds.has(f.id));
-  return { jobs, unowned, listing: input.listing };
+  return { jobs, unowned, listing: input.listing, skipped: input.skipped ?? [] };
 }
 
 /** A file an override names belongs to the override's job, never to another job by its name. */

@@ -14,8 +14,9 @@ import { createRunwayDb, runIfDirect } from "./lib/run-script";
 import { discoverForRun, liveDiscoveryDeps } from "./runway-sheet-sync/discover-live";
 import { readOnlyDb } from "./runway-sheet-sync/read-only-db";
 import type { ScheduleDiscovery } from "./runway-sheet-sync/schedule-discovery";
+import { skippedRowLines } from "./runway-sheet-sync/schedule-select";
 
-/** One line per job and per unowned file. */
+/** One line per job, per unowned file and per skipped job ledger row. */
 export function discoveryLines(d: ScheduleDiscovery): string[] {
   const lines = d.jobs.map((e) => {
     if (e.kind === "chosen") {
@@ -25,7 +26,7 @@ export function discoveryLines(d: ScheduleDiscovery): string[] {
     if (e.kind === "refused") return `${e.job.jobNumber} refused: ${e.reason}`;
     return `${e.job.jobNumber} none, status ${e.job.status}`;
   });
-  return [...lines, ...d.unowned.map((f) => `no job: ${f.name} ${f.id}`)];
+  return [...lines, ...d.unowned.map((f) => `no job: ${f.name} ${f.id}`), ...skippedRowLines(d)];
 }
 
 async function main(): Promise<void> {

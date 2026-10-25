@@ -27,9 +27,16 @@ export interface ClientPrefix {
   active: boolean;
 }
 
+/** A Job Numbers row the run cannot use, kept with its text so the run report names it. */
+export interface SkippedLedgerRow {
+  text: string;
+  reason: string;
+}
+
 export interface JobLedger {
   jobs: LedgerJob[];
   prefixes: ClientPrefix[];
+  skipped: SkippedLedgerRow[];
 }
 
 export type Grid = (string | undefined)[][];
@@ -57,23 +64,28 @@ const cell = (row: (string | undefined)[], i: number) => (row[i] ?? "").trim();
 
 export function parseJobLedger(jobGrid: Grid, prefixGrid: Grid): JobLedger {
   const jc = columnIndex(jobGrid, JOB_TAB, JOB_COLUMNS);
-  const jobs: LedgerJob[] = [];
-  const seen = new Set<string>();
+  const rows: LedgerJob[] = [];
+  const skipped: SkippedLedgerRow[] = [];
   for (const row of jobGrid.slice(1)) {
     const jobNumber = cell(row, jc.get("Job #")!).toUpperCase();
     if (!jobNumber) continue;
     if (!JOB_NUMBER.test(jobNumber)) {
-      throw new Error(`Job ledger tab "${JOB_TAB}" has job number "${jobNumber}", which is not shaped like ABC-2604 or ABC-2604-02.`);
+      skipped.push({ text: jobNumber, reason: "not shaped like ABC-2604, AB1-2601 or ABC-2501-03-35" });
+      continue;
     }
-    if (seen.has(jobNumber)) throw new Error(`Job ledger tab "${JOB_TAB}" lists job ${jobNumber} twice.`);
-    seen.add(jobNumber);
-    jobs.push({
+    rows.push({
       jobNumber,
       client: cell(row, jc.get("Client")!),
       engagement: cell(row, jc.get("Engagement")!),
       status: cell(row, jc.get("Status")!).toLowerCase(),
     });
   }
+
+  // A job number listed twice names no one job, so every copy is skipped.
+  const count = new Map<string, number>();
+  for (const j of rows) count.set(j.jobNumber, (count.get(j.jobNumber) ?? 0) + 1);
+  const jobs = rows.filter((j) => count.get(j.jobNumber) === 1);
+  for (const [text, n] of count) if (n > 1) skipped.push({ text, reason: `listed ${n} times` });
 
   const pc = columnIndex(prefixGrid, PREFIX_TAB, PREFIX_COLUMNS);
   const prefixes: ClientPrefix[] = prefixGrid
@@ -85,7 +97,7 @@ export function parseJobLedger(jobGrid: Grid, prefixGrid: Grid): JobLedger {
       active: /^(true|yes|y)$/i.test(cell(row, pc.get("Active?")!)),
     }));
 
-  return { jobs, prefixes };
+  return { jobs, prefixes, skipped };
 }
 
 /** sheets:read through the google-api CLI; throws when the output has no values array. */

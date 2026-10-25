@@ -40,6 +40,7 @@ export function oneScheduleDiscovery(
       },
     ],
     unowned: [],
+    skipped: [],
     listing: [file, ...superseded],
   };
 }

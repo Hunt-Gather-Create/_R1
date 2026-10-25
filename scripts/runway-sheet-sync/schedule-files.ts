@@ -12,8 +12,11 @@ export interface DriveFile {
   parents?: string[];
 }
 
-/** Job numbers look like ABC-2604 or ABC-2604-02. */
-export const JOB_NUMBER = /^[A-Za-z]+-\d{4}(?:-\d{2})?$/;
+/**
+ * A job number is a prefix of letters and digits, a dash, four digits, then
+ * any number of dash and two digit groups: ABC-2604, AB1-2601, ABC-2501-03-35.
+ */
+export const JOB_NUMBER = /^[A-Za-z0-9]+-\d{4}(?:-\d{2})*$/;
 
 const VERSION_MARK = /(?:Schedule v|Project Plan v|Project-Plan-v)(\d+)/i;
 

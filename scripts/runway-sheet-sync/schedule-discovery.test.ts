@@ -25,6 +25,13 @@ describe("rule 1: a schedule belongs to the job whose number starts its name", (
     expect(entryFor(d.jobs, "ACW-2604").kind).toBe("none");
   });
 
+  it("a file belongs to the longest job number that starts its name as a whole token", () => {
+    const deep = [ledgerJob("GLX-2501-03", "Globex", "Phase Three"), ledgerJob("GLX-2501-03-35", "Globex", "Sub Phase")];
+    const d = discover({ jobs: deep, listing: [driveFile("syn-deep", "GLX-2501-03-35 | Sub Phase Schedule v1")] });
+    expect(entryFor(d.jobs, "GLX-2501-03-35")).toMatchObject({ kind: "chosen", config: { sheetId: "syn-deep" } });
+    expect(entryFor(d.jobs, "GLX-2501-03").kind).toBe("none");
+  });
+
   it("a file that names the job later in its title belongs to no job", () => {
     const d = discover({ jobs, listing: [driveFile("syn-copy", "Copy of ACW-2604 Schedule v1")] });
     expect(entryFor(d.jobs, "ACW-2604").kind).toBe("none");

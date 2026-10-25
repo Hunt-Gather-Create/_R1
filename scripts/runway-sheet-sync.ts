@@ -3,7 +3,7 @@
  *
  * A run without --apply, with or without --live, opens prod read-only and
  * writes nothing to any database: no sheet_sync_ledger, sheet_registry or
- * queue rows. Its handle throws on every write method. It writes only the
+ * queue rows. Its handle passes only select and throws on anything else. It writes only the
  * report files below to --out on local disk, plus a refusal record there
  * when a sheet refuses. Only --apply writes, to prod, or to runway-staging
  * with --target staging.
@@ -51,7 +51,7 @@ import { applyPayloads } from "./runway-sheet-sync/apply";
 import { writePreSnapshot, postVerifyDiff } from "./runway-sheet-sync/snapshot";
 import { discoverForRun, liveDiscoveryDeps } from "./runway-sheet-sync/discover-live";
 import type { ScheduleDiscovery } from "./runway-sheet-sync/schedule-discovery";
-import { allSchedules, scheduleForJob, scheduleForSheet } from "./runway-sheet-sync/schedule-select";
+import { allSchedules, scheduleForJob, scheduleForSheet, skippedRowLines } from "./runway-sheet-sync/schedule-select";
 import { checkTitleCode } from "./runway-sheet-sync/title-code-check";
 import { recordingRefusal, refusingAll } from "./runway-sheet-sync/refusal-record";
 import { LIVE_RANGE } from "./runway-sheet-sync/columns";
@@ -254,6 +254,8 @@ async function main(): Promise<void> {
   if (live) console.error(liveSourceLine(chooseLiveSource()));
 
   const discovery = await discoverForRun(process.env, liveDiscoveryDeps(db));
+  const skipped = skippedRowLines(discovery);
+  if (skipped.length > 0) console.error(`── SKIPPED ${skipped.length} job ledger row(s):\n${skipped.map((l) => `   ${l}`).join("\n")}`);
   const { targets, refusals } = pickTargets(discovery, outDir, onlyJob, onlySheet);
   for (const r of refusals) console.error(`── REFUSED: ${r}`);
 

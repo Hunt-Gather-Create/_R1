@@ -64,9 +64,26 @@ describe("parseJobLedger", () => {
     expect(() => parseJobLedger(JOBS, [["Prefix"]])).toThrow(/"Client Prefixes".*"Client Full Name"/);
   });
 
-  it("a malformed or repeated job number refuses", () => {
-    expect(() => parseJobLedger([JOB_HEADER, ["ACW2604", "x", "y", "live"]], PREFIXES)).toThrow(/ACW2604/);
-    expect(() => parseJobLedger([JOB_HEADER, ["ACW-2604", "x", "y"], ["acw-2604", "x", "z"]], PREFIXES)).toThrow(/ACW-2604 twice/);
+  it("a prefix with a digit and two suffix groups both parse as job numbers", () => {
+    const grid: Grid = [JOB_HEADER, ["zq7-2601", "Acme Widgets", "Digit Prefix", "live"], ["ZQX-2501-03-35", "Globex", "Two Groups", "live"]];
+    const ledger = parseJobLedger(grid, PREFIXES);
+    expect(ledger.jobs.map((j) => j.jobNumber)).toEqual(["ZQ7-2601", "ZQX-2501-03-35"]);
+    expect(ledger.skipped).toEqual([]);
+  });
+
+  it("a malformed row is skipped and counted with its text, and the rows after it still parse", () => {
+    const grid: Grid = [JOB_HEADER, ["ACW2604", "x", "y", "live"], ["ACW-26O4", "x", "y", "live"], ["GLX-2605", "Globex", "Launch Site", "live"]];
+    const ledger = parseJobLedger(grid, PREFIXES);
+    expect(ledger.jobs.map((j) => j.jobNumber)).toEqual(["GLX-2605"]);
+    expect(ledger.skipped.map((s) => s.text)).toEqual(["ACW2604", "ACW-26O4"]);
+    expect(ledger.skipped[0].reason).toMatch(/not shaped like/);
+  });
+
+  it("a repeated job number skips every copy, naming the count", () => {
+    const grid: Grid = [JOB_HEADER, ["ACW-2604", "x", "y"], ["acw-2604", "x", "z"], ["GLX-2605", "Globex", "Launch Site"]];
+    const ledger = parseJobLedger(grid, PREFIXES);
+    expect(ledger.jobs.map((j) => j.jobNumber)).toEqual(["GLX-2605"]);
+    expect(ledger.skipped).toEqual([{ text: "ACW-2604", reason: "listed 2 times" }]);
   });
 });
 
