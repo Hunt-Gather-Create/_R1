@@ -187,17 +187,21 @@ value that an independent role map lookup of that row's own label does not produ
 may track the engagement under the code the sheet banner carries, so banner drift is reported and
 the run goes on. That still holds for the banner. The file title is now held to a stricter line.
 
-1. The code at the start of the Drive file name must agree with the registry's `engagementCode`.
-   A title that drops the registry's two digit sub-number agrees: `BPC-2602` names the same
-   engagement as `BPC-2602-01`.
+No schedule is registered in code. Schedule discovery reads the job ledger sheet and a Drive
+search for plan sheets, and picks at most one schedule per job. A row in the `sheet_registry`
+table overrides discovery for its job. The rules below use the job number the ledger gives.
+
+1. The code at the start of the Drive file name must agree with the job number. A title that
+   drops the job number's two digit sub-number agrees: `ACM-2602` names the same engagement as
+   `ACM-2602-01`.
 2. A title code that disagrees stops the run before the sheet is read. The message names the sheet
-   id, the title code, the registry code, and how to add an exception.
-3. A registry entry may list exact title codes it accepts, in `acceptedTitleCodes` in
-   `scripts/runway-sheet-sync/config.ts`. The run reports each use. The first entry is the Soundly
-   RX Card sheet, titled `SND-2602`, registry `SND-2603`. Old documents keep their labels, operator
-   ruling 2026-10-07, so that mismatch is permanent. Any other title code on that sheet still stops.
-4. The title comes from the Drive listing. A run with `--skip-freshness-check` has no listing, so
-   it reports that the title code was not checked.
+   id, the title code, the job number, and how to add an exception.
+3. A `sheet_registry` row that names the sheet accepts its title code, and the run reports each
+   use. Old documents keep their labels, operator ruling 2026-10-07, so such a mismatch can be
+   permanent. Adding the row is a data change through the data-integrity pipeline, not a code
+   change.
+4. The title comes from the Drive listing. A sheet with no entry in the listing is reported as
+   title code not checked.
 
 ## 7. What this document does NOT decide
 

@@ -98,7 +98,7 @@ These issues already exist on `jasonburks23/_R1`. They belong to M1 scope and sh
 
 Note on #92: the pretriage says it is P2, downstream of #91, and operator confirmed Stage 3 timing = post-Stage 2. File it under `01 Schedule Sync` as deferred so it shows on the board, but do not pick it up until #91 is in prod for at least 30 days.
 
-Note on #40: the sheet-config concept is partially handled by `scripts/runway-sheet-sync/config.ts` (SheetConfig registry). #40 may shift to a UI/API config surface. Park as parallel and revisit after #91 ships.
+Note on #40: no schedule is registered in code. Schedule discovery finds each one from the job ledger sheet and a Drive search, and a `sheet_registry` table row overrides discovery for its job. #40 may shift to a UI/API config surface over that table. Park as parallel and revisit after #91 ships.
 
 ---
 
@@ -133,7 +133,7 @@ These cover gaps not addressed by any existing issue. Sequenced so Ticket 1 is t
 **Gate flow:** branch off fresh runway -> Ops gate-1 (Ops confirms `--live` flag reads real sheet from a cold start without fixture) -> Holdout gate-2 -> Ops merges same cycle -> Holdout closes on merged main.
 
 **References:**
-- `scripts/runway-sheet-sync/config.ts` (SheetConfig, registry)
+- `scripts/runway-sheet-sync/schedule-discovery.ts` (SheetConfig per job, from the job ledger, Drive and `sheet_registry`)
 - `scripts/runway-sheet-sync/parse-sheet.ts` (SheetFixture consumer)
 - `scripts/runway-sheet-sync.ts` (CLI entry, fixture-file path today)
 - Pre-plan Q1.11 (service account as the deployed read path)
