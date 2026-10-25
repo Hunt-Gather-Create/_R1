@@ -17,7 +17,8 @@ import { diffSheet } from "../diff";
 import { buildPayloads } from "../payloads";
 import type { DiffResult, LeafTask, Ledger, ParsedSheet, RowDiff, SheetConfig, SyncPayload } from "../types";
 import type { RunwayClientBundle } from "../runway-read";
-import { planPeople, type RoleMap } from "../role-map";
+import { planPeople } from "../role-map";
+import type { Staffing } from "../staffing";
 import { PEOPLE_FIELDS, type PeopleField } from "../sync-fields";
 import {
   PARITY_FIELDS,
@@ -56,8 +57,8 @@ function plannedPeopleValue(payload: SyncPayload, field: PeopleField): unknown {
 }
 
 /**
- * Rule R1 as amended 2026-10-24: owner and resources come only from the
- * role map. Every payload that plans either field is checked against an
+ * Rule R1: owner and resources come only from planPeople over the run's
+ * staffing. Every payload that plans either field is checked against an
  * independent re-resolution of its own source row's column J label, so a
  * value typed anywhere else in payloads.ts, or a stale plan, fails loudly.
  * Checked two ways, as the guard it replaces was: a key directly on params,
@@ -67,7 +68,7 @@ export function assertPeopleFromRoleMap(
   payloads: SyncPayload[],
   clientSlug: string,
   leaves: LeafTask[],
-  roleMap: RoleMap
+  staffing: Staffing
 ): void {
   const leafByRow = new Map(leaves.map((l) => [l.rowNumber, l]));
   for (const payload of payloads) {
@@ -75,10 +76,10 @@ export function assertPeopleFromRoleMap(
       const value = plannedPeopleValue(payload, field);
       if (value === undefined) continue;
       const leaf = leafByRow.get(payload.source.rowNumber);
-      const plan = leaf ? planPeople(leaf.resource, clientSlug, roleMap) : null;
+      const plan = leaf ? planPeople(leaf.resource, clientSlug, staffing) : null;
       if (plan?.kind !== "planned" || plan[field] !== value) {
         throw new Error(
-          `PARITY INTEGRITY: op "${payload.op}" on row ${payload.source.rowNumber} plans "${field}" = ${JSON.stringify(value)} without a role map source. Owner and resources come only from role-map.ts, rule R1 as amended 2026-10-24.`
+          `PARITY INTEGRITY: op "${payload.op}" on row ${payload.source.rowNumber} plans "${field}" = ${JSON.stringify(value)} without a staffing source. Owner and resources come only from planPeople over staffing, rule R1.`
         );
       }
     }
@@ -291,6 +292,7 @@ export function structuralProbeDiff(): DiffResult {
       "leaf-tasks": 2,
       collisions: 0,
       "role-map-refusals": 0,
+      "staffing-ignored-parts": 0,
     },
     flags: [],
   };
@@ -307,23 +309,23 @@ export function structuralProbeDiff(): DiffResult {
 export interface ParityOptions {
   runId: string;
   sheetFrozenAt?: string;
-  roleMap: RoleMap;
+  staffing: Staffing;
 }
 
 export function computeParity(
   parsed: ParsedSheet,
   prodSnapshot: ProdSnapshot,
-  { runId, sheetFrozenAt = "", roleMap }: ParityOptions
+  { runId, sheetFrozenAt = "", staffing }: ParityOptions
 ): ParityResult {
   const bundle = toMatchingBundle(prodSnapshot);
   const ledger: Ledger = { sheetId: parsed.config.sheetId, updatedAt: "", lastRunId: "", entries: {} };
-  const diff = diffSheet(parsed, bundle, ledger, { runId, roleMap });
+  const diff = diffSheet(parsed, bundle, ledger, { runId, staffing });
   const payloads = buildPayloads(diff, runId);
   const probe = structuralProbeDiff();
   // Checked against this run's real output, which can legitimately be
   // empty, and against the unconditional structural probe, which cannot.
-  assertPeopleFromRoleMap(payloads, parsed.config.clientSlug, parsed.leafTasks, roleMap);
-  assertPeopleFromRoleMap(buildPayloads(probe, "structural-probe"), probe.config.clientSlug, [STRUCTURAL_PROBE_LEAF], roleMap);
+  assertPeopleFromRoleMap(payloads, parsed.config.clientSlug, parsed.leafTasks, staffing);
+  assertPeopleFromRoleMap(buildPayloads(probe, "structural-probe"), probe.config.clientSlug, [STRUCTURAL_PROBE_LEAF], staffing);
   const prodById = new Map(prodSnapshot.weekItems.map((w) => [w.id, w]));
   const rows = reconcileVerdicts(diff.rowDiffs, diff.orphans, prodById);
 

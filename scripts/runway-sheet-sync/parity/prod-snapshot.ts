@@ -12,7 +12,7 @@
  * This module owns its own query, selecting every field the parity
  * comparator needs, and its own frozen-file format. Freezing, write once,
  * read many, is what makes a run reproducible. A live query re-run five
- * minutes later could read a cell Kathy just edited and manufacture a fake
+ * minutes later could read a cell a person just edited and manufacture a fake
  * disagreement. The lessons doc calls this "the one trap to design out,
  * every time."
  */
@@ -21,6 +21,7 @@ import { dirname } from "path";
 import { eq } from "drizzle-orm";
 import { clients, projects, weekItems } from "../../../src/lib/db/runway-schema";
 import type { createRunwayDb } from "../../lib/run-script";
+import { loadStaffing } from "../staffing-read";
 import type { ProdSnapshot } from "./types";
 
 type RunwayDb = ReturnType<typeof createRunwayDb>["db"];
@@ -63,8 +64,11 @@ export async function captureProdSnapshot(db: RunwayDb, clientSlug: string): Pro
     .from(weekItems)
     .where(eq(weekItems.clientId, client.id));
 
+  const staffing = await loadStaffing(db);
+
   return {
     clientSlug,
+    staffing: { clients: { [clientSlug]: staffing.clients[clientSlug] }, members: staffing.members },
     capturedAt: new Date().toISOString(),
     client,
     projects: projectRows,

@@ -1,20 +1,26 @@
 /**
  * Runway Sheet Sync, Phase 1a diff CLI: read a plan sheet, diff it against Runway, emit the result.
  *
- * Without --apply a run never writes prod. It always opens runway-staging,
- * whatever other flags it carries. It writes the files below to --out, plus a
- * refusal record there when a sheet refuses, and a --live run also writes
- * sheet_sync_ledger rows to runway-staging.
+ * A run without --apply, with or without --live, opens prod read-only and
+ * writes nothing to any database: no sheet_sync_ledger, sheet_registry or
+ * queue rows. Its handle passes only select and throws on anything else. It writes only the
+ * report files below to --out on local disk, plus a refusal record there
+ * when a sheet refuses. Only --apply writes, to prod, or to runway-staging
+ * with --target staging.
  *
  * Usage:
- *   pnpm runway:sheet-sync                       # all registered sheets
- *   pnpm runway:sheet-sync -- --sheet <sheetId>  # one sheet
+ *   pnpm runway:sheet-sync                       # every schedule discovery chooses
+ *   pnpm runway:sheet-sync -- --job <jobNumber>  # one job's schedule, the main way to pick one
+ *   pnpm runway:sheet-sync -- --sheet <sheetId>  # one sheet, resolved through discovery
  *   pnpm runway:sheet-sync -- --fixtures <dir> --out <dir>
  *   pnpm runway:sheet-sync -- --live             # service account when GOOGLE_SERVICE_ACCOUNT_JSON is set, else the google-api CLI
  *
+ * Schedules come from discovery: the job ledger named by RUNWAY_JOB_LEDGER_SHEET_ID,
+ * a Drive search, and the clients and sheet_registry tables. No sheet lives in code.
+ *
  * Inputs:  fixture JSON exports (google-api skill) in --fixtures dir,
- *          runway-staging via RUNWAY_STAGING_DATABASE_URL (.env.local);
- *          prod only on --apply --target prod.
+ *          prod via RUNWAY_DATABASE_URL (.env.local), read-only without --apply;
+ *          runway-staging via RUNWAY_STAGING_DATABASE_URL only on --apply --target staging.
  * Outputs per sheet (in --out dir, gitignored under docs/tmp/):
  *   diff-<sheetId>-<date>.md            human-readable diff report
  *   diff-<sheetId>-<date>.payloads.json ready-to-apply operation payloads
@@ -26,7 +32,6 @@ import { createHash } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { createRunwayDb, runIfDirect } from "./lib/run-script";
-import { getSheetConfig, SHEETS } from "./runway-sheet-sync/config";
 import { getSheetSyncLedger } from "../src/lib/runway/sheet-sync-ledger-repo";
 import { diffSheet } from "./runway-sheet-sync/diff";
 import { loadLedger, reconcileLedger, saveLedger } from "./runway-sheet-sync/ledger";
@@ -34,15 +39,19 @@ import { loadDbLedger, saveDbLedger } from "./runway-sheet-sync/ledger-db";
 import { parseSheet } from "./runway-sheet-sync/parse-sheet";
 import { buildPayloads } from "./runway-sheet-sync/payloads";
 import { renderReport } from "./runway-sheet-sync/report";
-import { ROLE_MAP } from "./runway-sheet-sync/role-map";
 import { readClientBundle } from "./runway-sheet-sync/runway-read";
+import type { Staffing } from "./runway-sheet-sync/staffing";
+import { loadStaffing } from "./runway-sheet-sync/staffing-read";
 import { chooseLiveSource, liveSourceLine, readSheetLive } from "./runway-sheet-sync/sheets-client";
 import type { SheetFixture } from "./runway-sheet-sync/types";
 import { assertTarget } from "./runway-sheet-sync/target-guard";
-import { opensStaging } from "./runway-sheet-sync/db-target";
+import { runDatabase } from "./runway-sheet-sync/db-target";
+import { readOnlyDb } from "./runway-sheet-sync/read-only-db";
 import { applyPayloads } from "./runway-sheet-sync/apply";
 import { writePreSnapshot, postVerifyDiff } from "./runway-sheet-sync/snapshot";
-import { checkFreshness, resolveFreshnessDecision, type FreshnessDecision } from "./runway-sheet-sync/freshness";
+import { discoverForRun, liveDiscoveryDeps } from "./runway-sheet-sync/discover-live";
+import type { ScheduleDiscovery } from "./runway-sheet-sync/schedule-discovery";
+import { allSchedules, scheduleForJob, scheduleForSheet, skippedRowLines } from "./runway-sheet-sync/schedule-select";
 import { checkTitleCode } from "./runway-sheet-sync/title-code-check";
 import { recordingRefusal, refusingAll } from "./runway-sheet-sync/refusal-record";
 import { LIVE_RANGE } from "./runway-sheet-sync/columns";
@@ -73,10 +82,13 @@ export async function runSheet(
   live: boolean,
   apply = false,
   force = false,
-  freshness: FreshnessDecision
+  discovery: ScheduleDiscovery,
+  staffing?: Staffing
 ): Promise<Record<string, unknown>> {
-  return recordingRefusal(outDir, sheetId, (diffWritten) =>
-    syncSheet(db, sheetId, fixturesDir, outDir, live, apply, force, freshness, diffWritten)
+  // Only --apply may write, so every other run gets a handle that cannot.
+  const handle = apply ? db : readOnlyDb(db);
+  return recordingRefusal(outDir, sheetId, async (diffWritten) =>
+    syncSheet(handle, sheetId, fixturesDir, outDir, live, apply, force, discovery, staffing ?? (await loadStaffing(handle)), diffWritten)
   );
 }
 
@@ -89,27 +101,13 @@ async function syncSheet(
   live: boolean,
   apply: boolean,
   force: boolean,
-  freshness: FreshnessDecision,
+  discovery: ScheduleDiscovery,
+  staffing: Staffing,
   diffWritten: () => void
 ): Promise<Record<string, unknown>> {
-  const config = getSheetConfig(sheetId);
-  if (!config) throw new Error(`Sheet ${sheetId} not in registry (scripts/runway-sheet-sync/config.ts)`);
-
-  // _R1#154 item 2, TP's gate-1 ruling on PR 202: the decision is required,
-  // not an optional parameter that quietly defaulted to skipping. A caller
-  // must pass either a checked decision, which refuses here on a stale
-  // sibling, or an explicit skip, which is recorded loudly below rather
-  // than reading like a clean run.
-  let freshnessNote: string | undefined;
-  if (freshness.checked) {
-    const result = checkFreshness(config, freshness.listing);
-    if (!result.fresh) {
-      throw new Error(`Sheet ${sheetId} (${config.label}) is not the latest plan: ${result.reason}`);
-    }
-  } else {
-    freshnessNote = `FRESHNESS NOT CHECKED: ${freshness.reason}`;
-  }
-  const titleCodeNote = checkTitleCode(config, freshness.checked ? freshness.listing : null);
+  // Discovery already chose the newest schedule per job, so a superseded or refused sheet throws here.
+  const config = scheduleForSheet(discovery, sheetId);
+  const titleCodeNote = checkTitleCode(config, discovery.listing);
 
   let fixture: SheetFixture;
   if (live) {
@@ -124,7 +122,6 @@ async function syncSheet(
   const runId = computeRunId(sheetId, fixture);
 
   const parsed = parseSheet(fixture, { config });
-  if (freshnessNote) parsed.flags.push(freshnessNote);
   if (titleCodeNote) parsed.flags.push(titleCodeNote);
 
   // Ledger persistence: --live uses the durable DB ledger (sheet_sync_ledger,
@@ -147,7 +144,7 @@ async function syncSheet(
   }
 
   const bundle = await readClientBundle(db, config.clientSlug);
-  const diff = diffSheet(parsed, bundle, ledger, { runId, roleMap: ROLE_MAP });
+  const diff = diffSheet(parsed, bundle, ledger, { runId, staffing });
   const payloads = buildPayloads(diff, runId);
   // Ledger row count BEFORE this run's reconcile/link — the fact that tells
   // the report whether a zero match count is a true first run or a matcher
@@ -167,7 +164,9 @@ async function syncSheet(
   );
 
   let ledgerSink: string;
-  if (repo) {
+  if (repo && !apply) {
+    ledgerSink = "db:sheet_sync_ledger (not saved, dry run)";
+  } else if (repo) {
     const saved = await saveDbLedger(repo, config.engagementCode, ledger, runId);
     for (const w of saved.warnings) parsed.flags.push(`LEDGER: ${w}`);
     ledgerSink = `db:sheet_sync_ledger (persisted ${saved.persisted}, skipped ${saved.skipped})`;
@@ -212,36 +211,34 @@ async function syncSheet(
     reportPath,
     payloadsPath,
     ledgerPath: ledgerSink,
-    freshness: freshness.checked
-      ? { checked: true, listingPath: freshness.listingPath, listingAgeDays: freshness.listingAgeDays }
-      : { checked: false, note: freshnessNote },
+    schedule: { job: config.engagementCode, fromRegistry: config.fromRegistry === true },
     ...(apply ? { applied: appliedCount, review: reviewCount } : {}),
   };
+}
+
+/** --job, then --sheet, else every chosen schedule; a refused --sheet leaves a refusal record. */
+export function pickTargets(discovery: ScheduleDiscovery, outDir: string, job?: string, sheet?: string) {
+  if (job) return { targets: [scheduleForJob(discovery, job)], refusals: [] };
+  if (sheet) return { targets: refusingAll(outDir, [sheet], () => [scheduleForSheet(discovery, sheet)]), refusals: [] };
+  return allSchedules(discovery);
 }
 
 async function main(): Promise<void> {
   const fixturesDir = arg("fixtures") ?? DEFAULT_FIXTURES_DIR;
   const outDir = arg("out") ?? DEFAULT_OUT_DIR;
-  const only = arg("sheet");
+  const onlySheet = arg("sheet");
+  const onlyJob = arg("job");
   const live = process.argv.includes("--live");
   const doApply = process.argv.includes("--apply") && !process.argv.includes("--dry-run");
   const target = arg("target");
   const force = process.argv.includes("--force");
 
-  // _R1#154 item 2, TP's gate-1 ruling: the decision is required, resolved
-  // and validated BEFORE any DB connection or sheet read, so a missing or
-  // stale --drive-listing refuses immediately, not partway through a run.
-  const targets = only ? SHEETS.filter((s) => s.sheetId === only) : SHEETS;
-  if (targets.length === 0) throw new Error(`--sheet ${only} not in registry`);
-  const skipFreshnessCheck = process.argv.includes("--skip-freshness-check");
-  const freshness = refusingAll(outDir, targets.map((t) => t.sheetId), () =>
-    resolveFreshnessDecision({ listingPath: arg("drive-listing"), skip: skipFreshnessCheck })
-  );
-
-  // A run without --apply opens runway-staging; only --apply --target prod opens prod.
-  const staging = opensStaging(process.argv, target);
-  const { db, url } = createRunwayDb({ staging });
-  if (staging) console.error("── ledger target: runway-staging");
+  // A run without --apply opens prod read-only; --apply opens prod or --target staging.
+  const { staging, readOnly } = runDatabase(process.argv, target);
+  const opened = createRunwayDb({ staging });
+  const db = readOnly ? readOnlyDb(opened.db) : opened.db;
+  const url = opened.url;
+  console.error(readOnly ? "── dry run: prod, read-only, writes nothing" : `── apply target: ${staging ? "runway-staging" : "prod"}`);
   if (!url.startsWith("libsql")) {
     throw new Error(
       `${staging ? "RUNWAY_STAGING_DATABASE_URL" : "RUNWAY_DATABASE_URL"} not loaded (resolved "${url}"): check .env.local before diffing against a stale local file`
@@ -256,13 +253,21 @@ async function main(): Promise<void> {
 
   if (live) console.error(liveSourceLine(chooseLiveSource()));
 
+  const discovery = await discoverForRun(process.env, liveDiscoveryDeps(db));
+  const skipped = skippedRowLines(discovery);
+  if (skipped.length > 0) console.error(`── SKIPPED ${skipped.length} job ledger row(s):\n${skipped.map((l) => `   ${l}`).join("\n")}`);
+  const { targets, refusals } = pickTargets(discovery, outDir, onlyJob, onlySheet);
+  for (const r of refusals) console.error(`── REFUSED: ${r}`);
+
+  // Owner and resources resolve through Runway staffing, read once for every sheet.
+  const staffing = await loadStaffing(db);
   const summaries: Record<string, unknown>[] = [];
   for (const t of targets) {
-    console.error(`── diffing ${t.label} (${t.sheetId.slice(0, 8)}…)`);
-    summaries.push(await runSheet(db, t.sheetId, fixturesDir, outDir, live, doApply, force, freshness));
+    console.error(`── diffing ${t.engagementCode} ${t.label} (${t.sheetId.slice(0, 8)}…)`);
+    summaries.push(await runSheet(db, t.sheetId, fixturesDir, outDir, live, doApply, force, discovery, staffing));
   }
   console.log(JSON.stringify(summaries, null, 2));
-  process.exit(0);
+  process.exit(refusals.length > 0 ? 1 : 0);
 }
 
 runIfDirect("runway-sheet-sync", main);

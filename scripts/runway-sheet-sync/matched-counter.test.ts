@@ -21,19 +21,13 @@ import {
 import { clients, projects, weekItems } from "../../src/lib/db/runway-schema";
 import { diffSheet } from "./diff";
 import { renderReport } from "./report";
-import { ROLE_MAP } from "./role-map";
+import { NO_STAFFING } from "./staffing";
 import { buildPayloads } from "./payloads";
 import { loadLedger } from "./ledger";
-import { getSheetConfig, SHEETS } from "./config";
 import { runSheet } from "../runway-sheet-sync";
 import type { RunwayClientBundle } from "./runway-read";
 import type { LeafTask, Ledger, ParsedSheet, SheetConfig, SheetFixture } from "./types";
-import type { FreshnessDecision } from "./freshness";
-
-// _R1#154, TP's gate-1 ruling: runSheet's freshness decision is required, not
-// optional. This suite is about the matched counter, not freshness, so the
-// explicit skip here is a test-harness choice, never a default.
-const SKIP_FRESHNESS: FreshnessDecision = { checked: false, reason: "_R1#152 matched-counter test, freshness not under test here" };
+import { oneScheduleDiscovery } from "./schedule.test-fixtures";
 
 // ── Unit level: renderReport must read the ledger's row count, not just
 // the current run's match count (report.ts:43 before the fix). ──
@@ -99,7 +93,7 @@ const NO_MATCH_BUNDLE: RunwayClientBundle = {
 
 describe("renderReport — situation-aware zero-match note (#152)", () => {
   const tasks = [leaf({})];
-  const diff = diffSheet(parsedWith(tasks), NO_MATCH_BUNDLE, emptyLedger(), { runId: "run-1", roleMap: ROLE_MAP });
+  const diff = diffSheet(parsedWith(tasks), NO_MATCH_BUNDLE, emptyLedger(), { runId: "run-1", staffing: NO_STAFFING });
   const payloads = buildPayloads(diff, "run-1");
 
   it("true first run (empty ledger): prints the first-run note, no error", () => {
@@ -122,13 +116,13 @@ describe("renderReport — situation-aware zero-match note (#152)", () => {
 // fixture snapshot. This is the falsifiable check the ticket asks for — an
 // assertion the two runs agree, not a printed number a person has to read. ──
 
-const CONFIG = getSheetConfig(SHEETS[0].sheetId)!; // beyond-petro / BPC-2603-01
+const CONFIG: SheetConfig = { sheetId: "syn-widget", clientSlug: "acme-widgets", engagementCode: "ACW-2603-01", label: "Widget Page" };
 
 function frozenFixture(taskTitles: [string, string]): SheetFixture {
   const values: (string | undefined)[][] = [
     ["", "CIVILIZATION"], // 1
     [], // 2
-    ["", "Beyond Petro | Project Plan"], // 3
+    ["", "Acme Widgets | Project Plan"], // 3
     [], // 4
     ["", `${CONFIG.label}  |   ${CONFIG.engagementCode}`], // 5
     [], [], ["", "OVERALL PROGRESS"], [], // 6-9
@@ -159,15 +153,15 @@ describe("runSheet twice against one frozen snapshot (#152)", () => {
     dbPath = t.dbPath;
 
     await db.insert(clients).values({
-      id: "cl-bp-152",
-      name: "Beyond Petro",
-      slug: "beyond-petro",
+      id: "cl-acw-152",
+      name: "Acme Widgets",
+      slug: "acme-widgets",
       createdAt: new Date(),
       updatedAt: new Date(),
     });
     await db.insert(projects).values({
-      id: "pj-bp-152",
-      clientId: "cl-bp-152",
+      id: "pj-acw-152",
+      clientId: "cl-acw-152",
       name: CONFIG.label,
       notes: `${CONFIG.engagementCode} SOW`,
       createdAt: new Date(),
@@ -192,8 +186,8 @@ describe("runSheet twice against one frozen snapshot (#152)", () => {
     await db.insert(weekItems).values([
       {
         id: "wi-152-kick",
-        projectId: "pj-bp-152",
-        clientId: "cl-bp-152",
+        projectId: "pj-acw-152",
+        clientId: "cl-acw-152",
         title: "Kickoff call",
         weekOf: "2026-06-01",
         startDate: "2026-06-01",
@@ -204,8 +198,8 @@ describe("runSheet twice against one frozen snapshot (#152)", () => {
       },
       {
         id: "wi-152-design",
-        projectId: "pj-bp-152",
-        clientId: "cl-bp-152",
+        projectId: "pj-acw-152",
+        clientId: "cl-acw-152",
         title: "Design review",
         weekOf: "2026-06-08",
         startDate: "2026-06-08",
@@ -219,7 +213,7 @@ describe("runSheet twice against one frozen snapshot (#152)", () => {
     const fixture = frozenFixture(["Kickoff call", "Design review"]);
     writeFileSync(join(fixturesDir, `${CONFIG.sheetId}.json`), JSON.stringify(fixture));
 
-    const summary1 = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, SKIP_FRESHNESS)) as {
+    const summary1 = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, oneScheduleDiscovery(CONFIG))) as {
       counts: { matched: number };
     };
 
@@ -230,7 +224,7 @@ describe("runSheet twice against one frozen snapshot (#152)", () => {
     expect(bankedN).toBeGreaterThan(0);
     expect(summary1.counts.matched).toBe(bankedN);
 
-    const summary2 = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, SKIP_FRESHNESS)) as {
+    const summary2 = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, oneScheduleDiscovery(CONFIG))) as {
       counts: { matched: number };
     };
     expect(summary2.counts.matched).toBe(bankedN);
@@ -244,7 +238,7 @@ describe("runSheet twice against one frozen snapshot (#152)", () => {
     const fixture = frozenFixture(["Nothing like prod A", "Nothing like prod B"]);
     writeFileSync(join(fixturesDir, `${CONFIG.sheetId}.json`), JSON.stringify(fixture));
 
-    const summary1 = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, SKIP_FRESHNESS)) as {
+    const summary1 = (await runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, oneScheduleDiscovery(CONFIG))) as {
       counts: { matched: number };
     };
     expect(summary1.counts.matched).toBe(0);
@@ -252,7 +246,7 @@ describe("runSheet twice against one frozen snapshot (#152)", () => {
     const ledgerAfterRun1 = loadLedger(join(outDir, `ledger-${CONFIG.sheetId}.json`), CONFIG.sheetId);
     expect(Object.keys(ledgerAfterRun1.entries).length).toBeGreaterThan(0);
 
-    await expect(runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, SKIP_FRESHNESS)).rejects.toThrow(
+    await expect(runSheet(db, CONFIG.sheetId, fixturesDir, outDir, false, false, false, oneScheduleDiscovery(CONFIG))).rejects.toThrow(
       /matched 0 sheet tasks against a populated ledger/
     );
   });

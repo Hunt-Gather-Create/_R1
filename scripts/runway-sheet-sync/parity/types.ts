@@ -8,6 +8,7 @@
  * because this harness compares its own field set, not the tool's.
  */
 
+import type { Staffing } from "../staffing";
 import type { ParityField } from "../sync-fields";
 
 export type ParityVerdict = "AGREE" | "DISAGREE" | "TOOL_ONLY" | "HAND_ONLY";
@@ -48,6 +49,8 @@ export interface ProdProjectRow {
  * snapshots in" rule. */
 export interface ProdSnapshot {
   clientSlug: string;
+  /** This client's staffing and the team members, frozen with the rows; owner and resources resolve through it. */
+  staffing?: Staffing;
   capturedAt: string;
   client: { id: string; slug: string; name: string };
   projects: ProdProjectRow[];

@@ -12,21 +12,22 @@ import { resolveL1 } from "./l1-resolve";
 import { ledgerKey, linkEntry, normalizeTitle } from "./ledger";
 import { WI_CANDIDATE_THRESHOLD, WI_MATCH_THRESHOLD } from "./match-thresholds";
 import { attachPeople } from "./people-delta";
-import { planPeople, type RoleMap } from "./role-map";
+import { planPeople } from "./role-map";
 import type { RunwayClientBundle } from "./runway-read";
+import type { Staffing } from "./staffing";
 import type { DiffResult, Disposition, Ledger, ParsedSheet, RowDiff } from "./types";
 
-/** Config the caller passes in; the stage reads no registry or role map of its own. */
+/** Config the caller passes in; the stage reads no registry or staffing of its own. */
 export interface DiffOptions {
   runId: string;
-  roleMap: RoleMap;
+  staffing: Staffing;
 }
 
 export function diffSheet(
   parsed: ParsedSheet,
   bundle: RunwayClientBundle,
   ledger: Ledger,
-  { runId, roleMap }: DiffOptions
+  { runId, staffing }: DiffOptions
 ): DiffResult {
   const l1 = resolveL1(parsed, bundle, ledger);
   const rowDiffs: RowDiff[] = [];
@@ -64,7 +65,7 @@ export function diffSheet(
       const wi = clientWis.find((w) => w.id === banked.weekItemId);
       if (wi) {
         matchedWiIds.add(wi.id);
-        const deltas = matchedDeltas(leaf, wi, true, planPeople(leaf.resource, parsed.config.clientSlug, roleMap));
+        const deltas = matchedDeltas(leaf, wi, true, planPeople(leaf.resource, parsed.config.clientSlug, staffing));
         rowDiffs.push({
           disposition: deltas.length > 0 ? "mismatched-field" : "matched",
           leaf,
@@ -107,7 +108,7 @@ export function diffSheet(
 
     if (best && best.score >= WI_MATCH_THRESHOLD) {
       matchedWiIds.add(best.wi.id);
-      const deltas = matchedDeltas(leaf, best.wi, false, planPeople(leaf.resource, parsed.config.clientSlug, roleMap));
+      const deltas = matchedDeltas(leaf, best.wi, false, planPeople(leaf.resource, parsed.config.clientSlug, staffing));
       rowDiffs.push({
         disposition: deltas.length > 0 ? "mismatched-field" : "matched",
         leaf,
@@ -190,11 +191,12 @@ export function diffSheet(
     "skipped-spacer": 0,
     collisions: 0,
     "role-map-refusals": 0,
+    "staffing-ignored-parts": staffing.clients[parsed.config.clientSlug]?.ignoredTeamParts.length ?? 0,
   } as DiffResult["counts"];
   for (const rd of rowDiffs) {
     counts[rd.disposition as Disposition]++;
     if (rd.collision) counts.collisions++;
-    counts["role-map-refusals"] += attachPeople(rd, parsed.config.clientSlug, roleMap);
+    counts["role-map-refusals"] += attachPeople(rd, parsed.config.clientSlug, staffing);
   }
 
   return {

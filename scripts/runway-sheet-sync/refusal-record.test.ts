@@ -9,25 +9,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createTestDb, seedTestDb, cleanupTestDb, type TestDb } from "../../src/lib/runway/test-db";
 import { clients, projects } from "../../src/lib/db/runway-schema";
-import { getSheetConfig } from "./config";
 import { buildCoverage } from "./coverage";
-import { resolveFreshnessDecision, type DriveFile } from "./freshness";
+import { requireJobLedgerSheetId } from "./job-ledger";
 import { recordingRefusal, refusingAll } from "./refusal-record";
 import { reportStatusReader } from "./run-report-status";
-import type { SheetFixture } from "./types";
+import type { ScheduleDiscovery } from "./schedule-discovery";
+import { driveFile, oneScheduleDiscovery } from "./schedule.test-fixtures";
+import type { SheetConfig, SheetFixture } from "./types";
 import { runSheet } from "../runway-sheet-sync";
 
-const ITEP = getSheetConfig("1e0VtdHSGG-LMpQqeZ9Bm709fPSYGjrIBOi2sNFKObog")!;
-const GOOD_TITLE = "BPC-2603-01 | ITEP Landing Page - Project Plan v1";
-const WRONG_CODE_TITLE = "BPC-2699-01 | ITEP Landing Page - Project Plan v1";
+const WIDGET: SheetConfig = { sheetId: "syn-widget", clientSlug: "acme-widgets", engagementCode: "ACW-2603-01", label: "Widget Page" };
+const GOOD_TITLE = "ACW-2603-01 | Widget Page - Project Plan v1";
+const WRONG_CODE_TITLE = "ACW-2699-01 | Widget Page - Project Plan v1";
 
-function listing(name: string): DriveFile[] {
-  return [{ id: ITEP.sheetId, name, modifiedTime: "2026-09-17T17:53:33.403Z" }];
-}
-
-function checked(files: DriveFile[]) {
-  return { checked: true as const, listing: files, listingPath: "listing.json", listingAgeDays: 0 };
-}
+const listing = (name: string): ScheduleDiscovery => oneScheduleDiscovery(WIDGET, { name });
 
 function writeFixture(dir: string): void {
   const values: (string | undefined)[][] = [
@@ -35,7 +30,7 @@ function writeFixture(dir: string): void {
     [],
     ["", "Client | Project Plan"],
     [],
-    ["", `${ITEP.label}  |   ${ITEP.engagementCode}`],
+    ["", `${WIDGET.label}  |   ${WIDGET.engagementCode}`],
     [],
     [],
     ["", "OVERALL PROGRESS"],
@@ -45,17 +40,17 @@ function writeFixture(dir: string): void {
     ["", "TRUE", "   1.1 Kickoff call", "", "1-Jun-2026", "1-Jun-2026"],
   ];
   const fixture: SheetFixture = {
-    sheetId: ITEP.sheetId,
+    sheetId: WIDGET.sheetId,
     tab: "Task Tracker & Gantt Chart",
     range: "A1:N",
     exportedAt: "2026-09-27T00:00:00Z",
     values,
   };
-  writeFileSync(join(dir, `${ITEP.sheetId}.json`), JSON.stringify(fixture));
+  writeFileSync(join(dir, `${WIDGET.sheetId}.json`), JSON.stringify(fixture));
 }
 
 function refusals(dir: string): string[] {
-  return readdirSync(dir).filter((n) => n.startsWith(`refused-${ITEP.sheetId}-`));
+  return readdirSync(dir).filter((n) => n.startsWith(`refused-${WIDGET.sheetId}-`));
 }
 
 describe("a refusal before the diff leaves a record coverage reads", () => {
@@ -64,15 +59,9 @@ describe("a refusal before the diff leaves a record coverage reads", () => {
   let fixturesDir: string;
   let outDir: string;
 
-  const run = (files: DriveFile[]) =>
-    runSheet(db, ITEP.sheetId, fixturesDir, outDir, false, false, false, checked(files));
-  const coverageRow = () =>
-    buildCoverage({
-      listing: listing(GOOD_TITLE),
-      registry: [ITEP],
-      exclusions: [],
-      readReport: reportStatusReader(outDir),
-    }).rows[0];
+  const run = (discovery: ScheduleDiscovery) =>
+    runSheet(db, WIDGET.sheetId, fixturesDir, outDir, false, false, false, discovery);
+  const coverageRow = () => buildCoverage({ discovery: listing(GOOD_TITLE), readReport: reportStatusReader(outDir) }).rows[0];
 
   beforeEach(async () => {
     const t = await createTestDb();
@@ -81,10 +70,10 @@ describe("a refusal before the diff leaves a record coverage reads", () => {
     dbPath = t.dbPath;
     const now = new Date();
     await db.insert(clients).values([
-      { id: "cl-201-bp", name: "Beyond Petro", slug: "beyond-petro", createdAt: now, updatedAt: now },
+      { id: "cl-201-acw", name: "Acme Widgets", slug: "acme-widgets", createdAt: now, updatedAt: now },
     ]);
     await db.insert(projects).values([
-      { id: "pj-201-itep", clientId: "cl-201-bp", name: ITEP.label, notes: `${ITEP.engagementCode} SOW`, createdAt: now, updatedAt: now },
+      { id: "pj-201-widget", clientId: "cl-201-acw", name: WIDGET.label, notes: `${WIDGET.engagementCode} SOW`, createdAt: now, updatedAt: now },
     ]);
     fixturesDir = mkdtempSync(join(tmpdir(), "sheet-sync-fixtures-201-"));
     outDir = mkdtempSync(join(tmpdir(), "sheet-sync-out-201-"));
@@ -101,22 +90,23 @@ describe("a refusal before the diff leaves a record coverage reads", () => {
     await run(listing(GOOD_TITLE));
     expect(coverageRow().label).toBe("DEPLOYED");
 
-    await expect(run(listing(WRONG_CODE_TITLE))).rejects.toThrow(/title code BPC-2699-01/);
+    await expect(run(listing(WRONG_CODE_TITLE))).rejects.toThrow(/title code ACW-2699-01/);
     const row = coverageRow();
     expect(row.label).toBe("FAILED");
-    expect(row.detail).toMatch(/refused before the diff.*title code BPC-2699-01/);
+    expect(row.detail).toMatch(/refused before the diff.*title code ACW-2699-01/);
   });
 
-  it("acceptance 1: a freshness refusal after a clean run reads FAILED", async () => {
+  it("acceptance 1: a superseded refusal after a clean run reads FAILED", async () => {
     await run(listing(GOOD_TITLE));
-    const other: DriveFile[] = [{ id: "some-other-sheet", name: GOOD_TITLE, modifiedTime: "2026-09-17T17:53:33.403Z" }];
-    await expect(run(other)).rejects.toThrow(/not the latest plan/);
+    const newer = { ...WIDGET, sheetId: "syn-widget-v2" };
+    const superseded = oneScheduleDiscovery(newer, { superseded: [driveFile(WIDGET.sheetId, GOOD_TITLE)] });
+    await expect(run(superseded)).rejects.toThrow(/not the latest plan/);
     expect(coverageRow().label).toBe("FAILED");
   });
 
   it("acceptance 1: a missing fixture after a clean run reads FAILED", async () => {
     await run(listing(GOOD_TITLE));
-    rmSync(join(fixturesDir, `${ITEP.sheetId}.json`));
+    rmSync(join(fixturesDir, `${WIDGET.sheetId}.json`));
     await expect(run(listing(GOOD_TITLE))).rejects.toThrow(/Fixture missing/);
     expect(coverageRow().label).toBe("FAILED");
   });
@@ -137,7 +127,7 @@ describe("a refusal before the diff leaves a record coverage reads", () => {
     const names = refusals(outDir);
     expect(names).toHaveLength(1);
     const body = readFileSync(join(outDir, names[0]), "utf8");
-    expect(body).toContain(`- Sheet: \`${ITEP.sheetId}\``);
+    expect(body).toContain(`- Sheet: \`${WIDGET.sheetId}\``);
     expect(body).toMatch(/^- Refused at \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/m);
     expect(body).toContain(`> **ERROR: refused before the diff.** ${(err as Error).message}`);
   });
@@ -167,10 +157,10 @@ describe("recordingRefusal and refusingAll", () => {
   });
 
   it("records a refusal of the whole run for every target sheet and rethrows it", () => {
-    const decide = () => refusingAll(outDir, ["S1", "S2"], () => resolveFreshnessDecision({ skip: false }));
-    expect(decide).toThrow(/A freshness decision is required/);
+    const decide = () => refusingAll(outDir, ["S1", "S2"], () => requireJobLedgerSheetId({}));
+    expect(decide).toThrow(/RUNWAY_JOB_LEDGER_SHEET_ID is not set/);
     const names = readdirSync(outDir).sort();
     expect(names.map((n) => n.slice(0, "refused-S1-".length))).toEqual(["refused-S1-", "refused-S2-"]);
-    expect(reportStatusReader(outDir)("S2")).toMatchObject({ kind: "failed", reason: expect.stringMatching(/freshness decision is required/) });
+    expect(reportStatusReader(outDir)("S2")).toMatchObject({ kind: "failed", reason: expect.stringMatching(/RUNWAY_JOB_LEDGER_SHEET_ID is not set/) });
   });
 });

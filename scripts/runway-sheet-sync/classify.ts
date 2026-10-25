@@ -2,11 +2,11 @@
  * Row classifier — §2.2 row taxonomy, extended with variance found in the
  * 2026-07-24 fixture sweep:
  *   - "leaf-unnumbered": indented + dated but no numeric prefix
- *     (Soundly row 47 "   Buffer / contingency"). The Appendix D regex alone
+ *     (a row like "   Buffer / contingency"). The Appendix D regex alone
  *     would silently drop these.
- *   - Milestones can carry predecessor/lag values and appear mid-sheet (ITEP).
- *   - Rollup detection is span-based (two-pass), not position-based: ITEP's
- *     first data row is a section header, not a rollup.
+ *   - Milestones can carry predecessor/lag values and appear mid-sheet.
+ *   - Rollup detection is span-based, two-pass, not position-based: a sheet's
+ *     first data row can be a section header, not a rollup.
  */
 import { COL } from "./columns";
 import { parseSheetDate } from "./parse-dates";
@@ -81,9 +81,9 @@ export function classifyRows(values: (string | undefined)[][]): {
 
 /**
  * Second pass: a section-header whose [start, end] date span envelopes every
- * leaf task's dates is the engagement rollup (LPPC "Phase 2.1 Release").
- * At most the first such row is promoted. Sheets without one (ITEP, Soundly)
- * simply have no rollup row.
+ * leaf task's dates is the engagement rollup, for example a release row.
+ * At most the first such row is promoted. Sheets without one simply have
+ * no rollup row.
  */
 function promoteRollup(rows: ClassifiedRow[]): void {
   const leafDates: string[] = [];

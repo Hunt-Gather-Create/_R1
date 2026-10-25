@@ -28,14 +28,14 @@ export function readErrorLine(body: string): string | null {
   return error ? error[0].replace(/^> /, "").replace(/\*\*/g, "") : null;
 }
 
-/** The column J labels the role map refused on this row; owner and resources are not planned for it. */
+/** The column J labels staffing could not resolve on this row; owner and resources are not planned for it. */
 export function refusedLabels(rd: RowDiff): string[] {
   return rd.leaf && rd.people?.kind === "refused" ? rd.people.unmapped : [];
 }
 
-/** Why a row refused by the role map gets a review item instead of an owner. */
+/** Why a row staffing refused gets a review item instead of an owner. */
 export function roleMapRefusalReason(label: string, clientSlug: string): string {
-  return `column J label "${label}" is not in the role map for "${clientSlug}", owner and resources not planned for this row`;
+  return `column J label "${label}" does not resolve through staffing for "${clientSlug}", owner and resources not planned for this row`;
 }
 
 /** File-safe form of an ISO time: colons become dashes, so names still sort by time. */

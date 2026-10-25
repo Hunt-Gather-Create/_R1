@@ -7,7 +7,6 @@ import { join } from "path";
 import { describe, expect, it } from "vitest";
 import { WEEK_ITEM_CATEGORIES } from "../../src/lib/runway/week-item-categories";
 import { WEEK_ITEM_STATUSES } from "../../src/lib/runway/week-item-statuses";
-import { CLIENT_SLUGS } from "./client-slugs";
 import { SYNC_FIELDS } from "./sync-fields";
 
 const HERE = __dirname;
@@ -45,11 +44,6 @@ const LISTS: NamedList[] = [
   { name: "week item status enum", owner: null, defines: listLiteral(WEEK_ITEM_STATUSES) },
   { name: "week item category enum", owner: null, defines: listLiteral(WEEK_ITEM_CATEGORIES) },
   { name: "FieldDelta field names", owner: "runway-sheet-sync/sync-fields.ts", defines: listLiteral(SYNC_FIELDS) },
-  {
-    name: "client slugs",
-    owner: "runway-sheet-sync/client-slugs.ts",
-    defines: new RegExp(`["'](?:${Object.values(CLIENT_SLUGS).map(escape).join("|")})["']`),
-  },
   { name: "sheet column letters", owner: "runway-sheet-sync/columns.ts", defines: /\bB:\s*1\s*,\s*C:\s*2\b/ },
   { name: "live sheet range", owner: "runway-sheet-sync/columns.ts", defines: /!A1:N\b/ },
   { name: "refusal ERROR marker", owner: "runway-sheet-sync/refusal-record.ts", defines: /\*\*ERROR:|\\\*\\\*ERROR:/ },
@@ -75,7 +69,6 @@ describe("one owner per named list", () => {
       "week item status enum": `type S = "scheduled" | "in-progress" | "blocked";`,
       "week item category enum": `const C = ["delivery", "review", "kickoff"] as const;`,
       "FieldDelta field names": `field: "status" | "startDate" | "endDate";`,
-      "client slugs": `clientSlug: "lppc",`,
       "sheet column letters": `const COL = { B: 1, C: 2, E: 4 } as const;`,
       "live sheet range": `const R = "Task Tracker & Gantt Chart!A1:N";`,
       "refusal ERROR marker": "lines.push(`> **ERROR: refused.** ${why}`);",
