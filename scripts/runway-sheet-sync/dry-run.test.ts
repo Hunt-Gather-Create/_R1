@@ -18,6 +18,10 @@ import { READ_METHODS } from "./read-only-db";
 import { oneScheduleDiscovery } from "./schedule.test-fixtures";
 import type { SheetConfig, SheetFixture } from "./types";
 
+vi.mock("./staffing-read", async (original) =>
+  (await import("./account-teams.test-fixtures")).loaderOverSyntheticSheet(await original())
+);
+
 const CONFIG: SheetConfig = { sheetId: "syn-dry-run", clientSlug: "acme-widgets", engagementCode: "ACW-2603-01", label: "Widget Page" };
 
 const FIXTURE: SheetFixture = {

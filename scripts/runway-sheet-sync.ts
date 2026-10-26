@@ -259,7 +259,7 @@ async function main(): Promise<void> {
   const { targets, refusals } = pickTargets(discovery, outDir, onlyJob, onlySheet);
   for (const r of refusals) console.error(`── REFUSED: ${r}`);
 
-  // Owner and resources resolve through Runway staffing, read once for every sheet.
+  // Owner and resources resolve through the Account Teams sheet, read once for every sheet.
   const staffing = await loadStaffing(db);
   const summaries: Record<string, unknown>[] = [];
   for (const t of targets) {

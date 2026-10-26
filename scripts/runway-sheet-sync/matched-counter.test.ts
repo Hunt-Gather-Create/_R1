@@ -8,7 +8,7 @@
  * information — a matcher that never links anything would have looked
  * exactly like a clean bootstrap on every run after the first.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,6 +28,10 @@ import { runSheet } from "../runway-sheet-sync";
 import type { RunwayClientBundle } from "./runway-read";
 import type { LeafTask, Ledger, ParsedSheet, SheetConfig, SheetFixture } from "./types";
 import { oneScheduleDiscovery } from "./schedule.test-fixtures";
+
+vi.mock("./staffing-read", async (original) =>
+  (await import("./account-teams.test-fixtures")).loaderOverSyntheticSheet(await original())
+);
 
 // ── Unit level: renderReport must read the ledger's row count, not just
 // the current run's match count (report.ts:43 before the fix). ──

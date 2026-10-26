@@ -177,10 +177,10 @@ describe("the diff report compares owner and resources and counts ignored team p
     expect(report).toMatch(/- category: not compared/);
   });
 
-  it("each clients.team part that is not a Role: Name pair is counted in the report", () => {
+  it("each team part whose role is not in the vocabulary is counted in the report", () => {
     const { diff, payloads } = run([leaf({ resource: "Design" })], bundle());
     expect(diff.counts["staffing-ignored-parts"]).toBe(2);
-    expect(renderReport(diff, payloads).report).toMatch(/\| staffing parts ignored, clients\.team not a Role: Name pair \| 2 \|/);
+    expect(renderReport(diff, payloads).report).toMatch(/\| staffing rows ignored, Account Teams role not in the vocabulary \| 2 \|/);
   });
 });
 

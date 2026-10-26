@@ -11,6 +11,10 @@ import { clients } from "../../../src/lib/db/runway-schema";
 import { captureProd } from "./cli";
 import { captureProdSnapshot } from "./prod-snapshot";
 
+vi.mock("../staffing-read", async (original) =>
+  (await import("../account-teams.test-fixtures")).loaderOverSyntheticSheet(await original())
+);
+
 vi.mock("./prod-snapshot", async (original) => {
   const real = await original<typeof import("./prod-snapshot")>();
   return { ...real, captureProdSnapshot: vi.fn(real.captureProdSnapshot) };

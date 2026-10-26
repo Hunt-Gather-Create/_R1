@@ -3,7 +3,7 @@
  * proven to leave a record coverage reads, and a clean run after it to
  * read DEPLOYED again.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +17,10 @@ import type { ScheduleDiscovery } from "./schedule-discovery";
 import { driveFile, oneScheduleDiscovery } from "./schedule.test-fixtures";
 import type { SheetConfig, SheetFixture } from "./types";
 import { runSheet } from "../runway-sheet-sync";
+
+vi.mock("./staffing-read", async (original) =>
+  (await import("./account-teams.test-fixtures")).loaderOverSyntheticSheet(await original())
+);
 
 const WIDGET: SheetConfig = { sheetId: "syn-widget", clientSlug: "acme-widgets", engagementCode: "ACW-2603-01", label: "Widget Page" };
 const GOOD_TITLE = "ACW-2603-01 | Widget Page - Project Plan v1";

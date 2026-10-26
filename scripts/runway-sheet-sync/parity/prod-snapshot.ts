@@ -21,12 +21,13 @@ import { dirname } from "path";
 import { eq } from "drizzle-orm";
 import { clients, projects, weekItems } from "../../../src/lib/db/runway-schema";
 import type { createRunwayDb } from "../../lib/run-script";
-import { loadStaffing } from "../staffing-read";
+import { loadStaffing, type StaffingSource } from "../staffing-read";
 import type { ProdSnapshot } from "./types";
 
 type RunwayDb = ReturnType<typeof createRunwayDb>["db"];
 
-export async function captureProdSnapshot(db: RunwayDb, clientSlug: string): Promise<ProdSnapshot> {
+/** Staffing is frozen from the Account Teams sheet read, beside the prod rows. */
+export async function captureProdSnapshot(db: RunwayDb, clientSlug: string, source?: StaffingSource): Promise<ProdSnapshot> {
   const clientRows = await db
     .select({ id: clients.id, slug: clients.slug, name: clients.name })
     .from(clients)
@@ -64,11 +65,11 @@ export async function captureProdSnapshot(db: RunwayDb, clientSlug: string): Pro
     .from(weekItems)
     .where(eq(weekItems.clientId, client.id));
 
-  const staffing = await loadStaffing(db);
+  const staffing = await loadStaffing(db, source);
 
   return {
     clientSlug,
-    staffing: { clients: { [clientSlug]: staffing.clients[clientSlug] }, members: staffing.members },
+    staffing: { clients: { [clientSlug]: staffing.clients[clientSlug] }, members: staffing.members, skippedRows: staffing.skippedRows },
     capturedAt: new Date().toISOString(),
     client,
     projects: projectRows,

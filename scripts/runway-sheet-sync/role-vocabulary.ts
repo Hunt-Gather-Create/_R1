@@ -1,6 +1,6 @@
 /**
  * The column J vocabulary: label words to role tags. Words only, never a
- * person; who fills a role comes from the client's staffing in Runway.
+ * person; who fills a role comes from the client's Account Teams rows.
  */
 
 /** A label word, lowercased, to the role tag it names. */

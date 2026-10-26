@@ -1,7 +1,7 @@
 /**
  * Column J, RESOURCE, to owner and resources. A label word names a role
  * through the vocabulary, and the role names a person through the client's
- * staffing in Runway. Any part that does not resolve refuses the whole row.
+ * Account Teams rows. Any part that does not resolve refuses the whole row.
  */
 import { dropCiv, normWord, roleTagForCategory, roleTagForWord, WORD_SEPARATORS } from "./role-vocabulary";
 import type { ClientStaffing, StaffMember, Staffing } from "./staffing";

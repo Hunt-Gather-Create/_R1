@@ -1,26 +1,25 @@
 /**
- * Reads staffing from Runway: every client's team and nicknames, and every
- * team member. Read only.
+ * Reads staffing: client labels from the Runway clients table, and every team
+ * and person from the Civilization Account Teams sheet. Read only.
  */
-import { clients, teamMembers } from "../../src/lib/db/runway-schema";
+import { clients } from "../../src/lib/db/runway-schema";
 import type { createRunwayDb } from "../lib/run-script";
-import { staffingFromRows, type Staffing } from "./staffing";
+import { readAccountTeams, requireAccountTeamsSheetId, staffingFromSheet } from "./account-teams";
+import { readRangeWithCli, type ReadRange } from "./job-ledger";
+import type { Staffing } from "./staffing";
 
 type RunwayDb = ReturnType<typeof createRunwayDb>["db"];
 
-export async function loadStaffing(db: RunwayDb): Promise<Staffing> {
-  const clientRows = await db
-    .select({ slug: clients.slug, name: clients.name, nicknames: clients.nicknames, team: clients.team })
-    .from(clients);
-  const memberRows = await db
-    .select({
-      name: teamMembers.name,
-      firstName: teamMembers.firstName,
-      fullName: teamMembers.fullName,
-      roleCategory: teamMembers.roleCategory,
-      accountsLed: teamMembers.accountsLed,
-      isActive: teamMembers.isActive,
-    })
-    .from(teamMembers);
-  return staffingFromRows(clientRows, memberRows);
+export interface StaffingSource {
+  env: NodeJS.ProcessEnv;
+  read: ReadRange;
+}
+
+export async function loadStaffing(
+  db: RunwayDb,
+  source: StaffingSource = { env: process.env, read: readRangeWithCli }
+): Promise<Staffing> {
+  const sheetId = requireAccountTeamsSheetId(source.env);
+  const clientRows = await db.select({ slug: clients.slug, name: clients.name, nicknames: clients.nicknames }).from(clients);
+  return staffingFromSheet(await readAccountTeams(sheetId, source.read), clientRows);
 }

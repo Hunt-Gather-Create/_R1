@@ -1,9 +1,13 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createTestDb, seedTestDb, cleanupTestDb, type TestDb } from "../../../src/lib/runway/test-db";
 import { captureProdSnapshot, loadProdSnapshot, writeProdSnapshot } from "./prod-snapshot";
+
+vi.mock("../staffing-read", async (original) =>
+  (await import("../account-teams.test-fixtures")).loaderOverSyntheticSheet(await original())
+);
 
 type SqlClient = Awaited<ReturnType<typeof createTestDb>>["client"];
 

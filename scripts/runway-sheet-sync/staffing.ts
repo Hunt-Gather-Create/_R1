@@ -1,6 +1,6 @@
 /**
  * Staffing as the sync reads it: each client's team and nicknames, and the
- * team members. Built from Runway rows; the run loads it once and passes it in.
+ * team members. The run loads it once from the Account Teams sheet and passes it in.
  */
 import { roleTagForWord } from "./role-vocabulary";
 
@@ -14,7 +14,7 @@ export interface StaffMember {
   isActive: boolean;
 }
 
-/** One "Role: Name" pair from clients.team, its role already a vocabulary tag. */
+/** One role and person on a client's team, its role already a vocabulary tag. */
 export interface TeamPair {
   roleTag: string;
   name: string;
@@ -24,14 +24,18 @@ export interface ClientStaffing {
   name: string;
   nicknames: string[];
   team: TeamPair[];
-  /** Parts of clients.team that are not a "Role: Name" pair with a known role, kept for the report count. */
+  /** Team parts whose role is not in the vocabulary, kept for the report count. */
   ignoredTeamParts: string[];
+  /** Account Teams rows whose person is not in People or not active, kept for the report count. */
+  skippedPeople?: string[];
 }
 
 export interface Staffing {
   /** Keyed by client slug. */
   clients: Record<string, ClientStaffing>;
   members: StaffMember[];
+  /** Account Teams rows whose client slug is not in the Runway clients table, counted on every sheet's report. */
+  skippedRows?: string[];
 }
 
 export const NO_STAFFING: Staffing = { clients: {}, members: [] };
@@ -53,7 +57,7 @@ export interface MemberRow {
 }
 
 /** A JSON array of strings, or empty when the cell is blank or malformed. */
-function jsonStrings(raw: string | null): string[] {
+export function jsonStrings(raw: string | null): string[] {
   if (!raw || !raw.trim()) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
